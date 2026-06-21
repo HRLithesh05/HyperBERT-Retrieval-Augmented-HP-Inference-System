@@ -1,0 +1,479 @@
+Domain Adaptation with BERT-based Domain Classification and Data
+Selection
+XiaofeiMa,PengXu,ZhiguoWang,RameshNallapati,BingXiang
+AWSAILabs
+{xiaofeim, pengx, zhiguow, rnallapa, bxiang}@amazon.com
+Abstract basenetworkarefixedwhilethetargetdomainla-
+beled data is used to fine-tune the last few layers
+The performance of deep neural models can ofthenetwork. However,thisapproachrequiresa
+deteriorate substantially when there is a do- significant amount of labeled data from the target
+mainshiftbetweentrainingandtestdata. For
+domaintobesuccessful.
+example, the pre-trained BERT model can be
+While classical methods such as instance re-
+easily fine-tuned with just one additional out-
+weighting and feature transformation (Pan and
+putlayertocreateastate-of-the-artmodelfor
+awiderangeoftasks. However,thefine-tuned Yang, 2010) are among the most popular and ef-
+BERTmodelsuffersconsiderablyatzero-shot fective early solutions of domain adaptation for
+when applied to a different domain. In this classicalmachinelearningalgorithms,deeplearn-
+paper, we present a novel two-step domain
+ing architectures specifically designed for do-
+adaptation framework based on curriculum
+main adaptation is more promising for deep do-
+learninganddomain-discriminativedataselec-
+main adaptation. The major idea in unsuper-
+tion. Thedomainadaptationisconductedina
+vised domain adaptation is to learn a domain
+mostlyunsupervisedmannerusingasmalltar-
+getdomainvalidationsetforhyper-parameter invariant representation (Wang and Deng, 2018)
+tuning. We tested the framework on four leveraging both labeled data from the source do-
+large public datasets with different domain mains and unlabeled data from the target do-
+similarities and task types. Our framework main. Various methods and architectures have
+outperforms a popular discrepancy-based do-
+been proposed which often fall into discrepancy-
+mainadaptationmethodonmosttransfertasks
+basedoradversarial-baseddomainadaptationcat-
+whileconsumingonlyafractionofthetraining
+egories. In discrepancy-based methods, domain
+budget.
+discrepancy based on maximum mean discrep-
+1 Introduction ancy (MMD) (Smola et al., 2006) or Wasser-
+stein Distance (Shen et al., 2017) defined be-
+ModerndeepNLPmodelswithmillionsofparam- tween corresponding activation layers of the two
+eters are powerful learners in that they can eas- streams of the Siamese architecture is often used
+ily adapt to a new learning task and dataset when as a regularization term to enforce the learning
+enough supervision is given. However, they are of domain non-discriminative representations. In
+also very fragile when deployed in the wild since adversarial-basedapproaches,whichcanbeeither
+the data distribution and sometimes even the task generativeornon-generative,theaimistoencour-
+type can be very different between the training age domain confusion through an adversarial ob-
+and inference time. Domain adaptation (Csurka, jective. In the generative approach, a Generative
+2017),aprominentapproachtomitigatethisprob- Adversarial Network (GAN) is used to generate
+lem, aims to leverage labeled data in one or more synthetic target data to pair with synthetic source
+relatedsourcedomainstolearnaclassifierforun- data to share label information (Liu and Tuzel,
+seenorunlabeleddatainatargetdomain. 2016). InspiredbyGAN,inthenon-generativeap-
+Fine-tuning deep neural networks (Chu et al., proach, a domain confusion loss produced by the
+2016)isapopularsupervisedapproachfordomain domain discriminator helps to learn the domain-
+adaptationinwhichabasenetworkistrainedwith invariant representations. For example, Ganin
+the source data, and then the first n layers of the et al. implemented a domain-adversarial net-
+work in which unsupervised domain adaptation to the complex attention mechanisms and large
+is achieved by adding a domain classifier. The parameter size, it is hard to train BERT for do-
+domain classifier is trained via a gradient rever- main adaptation using the domain-adversarial ap-
+sal layer that multiplies the gradient by a certain proach. Our initial experiments demonstrated the
+negative constant during the backpropagation. As unsteadiness of this approach when applied to
+thetrainingprogresses,theapproachpromotesthe BERT. Unsupervised language model (LM) fine-
+emergence of a representation that is discrimina- tuningmethod(HowardandRuder,2018)consist-
+tive for the main learning task and indiscriminate ing of general-domain LM pre-training and target
+with respect to the shift between the domains. task LM fine-tuning is effective using a AWD-
+However, such type of models are usually hard LSTM language model on many text classifica-
+to train since the optimization problem involves a tion tasks such as sentimental analysis, question
+minimization with respect to some parameters, as classification and topic classification. However,
+wellasamaximizationwithrespecttotheothers. due to the unique objective of BERT language
+modelpre-training(maskedLMandnextsentence
+Very early approaches in NLP utilized instance
+prediction)whichrequiresmulti-sentencesnatural
+re-weighting (Jiang and Zhai, 2007) and target
+language paragraphs, unsupervised fine-tuning of
+data co-training (Chen et al., 2011) to achieve
+BERT LM does not apply to many sentence-pair
+domain adaptation. Recently, Denoising Auto-
+classificationdatasets.
+encoders (Glorot et al., 2011), domain discrep-
+In this work, we propose a novel domain adap-
+ancy regularization and domain adversarial train-
+tation framework, in which the idea of domain-
+ing (Shah et al., 2019; Shen et al., 2017) have
+adversarial training is effectively executed in two
+been employed to learn a domain invariant repre-
+separate steps. In the first step, a BERT-based
+sentation for neural network models. Many do-
+domain classifier is trained on data from differ-
+main adaptation studies have focused on tasks
+ent domains with domain labels. In the second
+such as sentiment analysis (Glorot et al., 2011;
+step, a small subset of source domain data is se-
+Shenetal.,2017),Part-Of-Speech(POS)tagging
+lected based on the domain classifier for fine-
+(Ruder et al., 2017a) and paraphrase detection
+tuningBERT.Theorderofpresentationofthese-
+(Shah et al., 2019), and tested on neural network
+lected source domain data to the model learner
+models such as multilayer perceptron (MLP) and
+(training curriculum) also plays an important role
+Long Short-term Memory (LSTM). In terms of
+andisdeterminedbythepoint-wisedomainprob-
+multiplesourcedomainadaptation,whilesomeof
+ability. We demonstrate the effectiveness of our
+themethodsofsingle-sourceadaptationcanbedi-
+framework by comparing it against an MMD-
+rectlyextendedtothemultiplesourcescase,mod-
+baseddomainadaptationmethodandanaivezero-
+elsthatspeciallydesignedformultiplesourcesdo-
+shot baseline. Our method achieved the best per-
+mainadaptationsuchasthemixtureofexpertsand
+formance on most transfer tasks while only con-
+knowledge adaptation (teacher-student network)
+sumingaportionofthetrainingbudget.
+(Ruderetal.,2017b)aremoreeffective.
+BERT model (Devlin et al., 2018) is one of the 2 RelatedWork
+latest models that leverage heavily on language
+model pre-training. It has achieved state-of-the- Our method is inspired by the work on curricu-
+art performance in many natural language under- lumlearningandrecentworkondataselectionfor
+standing tasks ranging from sequence classifica- transferlearning.
+tion and sequence-pair classification to question Curriculum Learning: Curriculum Learning
+answering. Although pre-trained BERT can be (Bengio et al., 2009) deals with the question of
+easily fine-tuned with just one additional output howtousepriorknowledgeaboutthedifficultyof
+layeronasuperviseddataset,sometimesthezero- the training examples, to boost the rate of learn-
+shottransferofthefine-tunedmodelfromasource ing and the performance of the final model. The
+domain is necessary due to the very limited la- ranking or weighting of the training examples is
+beled data in the target domain. The performance used to guide the order of presentation of exam-
+of the fine-tuned BERT can deteriorate substan- ples to the learner. The idea is to build a cur-
+tially if there is a domain shift between the fine- riculum of progressively harder samples in order
+tuning and the test data (see section 4.3). Due tosignificantlyaccelerateaneuralnetwork’strain-
+ing. Whilecurriculumlearningcanleveragelabel The probability score from the domain classifier
+information (loss of the model, training progress) quantifiesthedomainsimilarity.
+(Weinshall and Amir, 2018) to guide data selec- Learning Curriculum As demonstrated in
+tion, this work assumes no or few labeled data in many curriculum learning papers, the order of
+thenewdomain. training data presented to the learning algorithm
+DataSelection: Notallthedatapointsfromthe playsanimportantroleinconvergencerateandfi-
+sourcedomainareequallyimportantfortargetdo- nalmodelperformance. Theideaistobuildacur-
+main transfer. Irrelevant source data points only riculum of progressively harder samples so that a
+add noise and overfit the training model. Recent neural network can learn from easy samples first
+workfromRuderandPlank,appliedBayesianop- andgraduallyadjustitsparameters. Aspartofthe
+timization to learn a scoring function to rank the proposed domain adaptation framework, we pro-
+sourcedatapoints. Dataselectionmethodwasalso pose a learning curriculum based on the domain
+usedbyTsvetkovetal. tolearnthecurriculumfor probabilityfromthedomainclassifier. Inthecon-
+task-specificwordrepresentationlearning,andby text of domain adaptation, an “easy” source sam-
+Axelrod et al.; Duh et al. for machine translation ple is a sample very similar to the target domain
+usinganeurallanguagemodel. data, while a “hard” sample is a sample very dif-
+ferentfromthetargetdomaindata.
+3 Approach Domain Regularization Method We compare
+our framework with a popular domain adapta-
+In this section, we propose a domain adaptation tion method: MMD-based domain regularization.
+framework based on domain-discriminative data Specifically, we enforce domain regularization
+selection. Specifically, instead of training a deep by minimizing the maximum mean discrepancy
+neural network model in a domain-adversarial (MMD) in the BERT latent space between the
+way, we effectively execute the idea in two sepa- source and target domains. Formally, the squared
+ratesteps. Inthefirststep,wetrainadomainclas- MMDbetweentheprobabilitydistributionsP and
+sifierwiththesamemodelarchitectureonthedata Q in the reproducing kernel Hilbert space H
+k
+fromdifferentdomainswithdomainlabels. Inthe (RKHS)withkernelk isdefinedas:
+second step, we select a subset of source domain
+databasedonthedomainprobabilityfromthedo- d2 k(P,Q) := (cid:107)E P[x]−E Q[x](cid:107)2
+H
+k
+mainclassifier,andtraintheoriginalmodelonthe
+With that, we have the following domain regular-
+selected source data. We further design the train-
+izedtrainingobjectivefortheBERTmodel:
+ing curriculum by presenting first the data points
+thataremostsimilartothetargetdomainasranked 1
+min Σ L(x ,y ;θ)+λ·d2(D ,D ;θ)
+bythedomainprobability. Comparedwiththein- θ S (xi,yi)∈S i i k s t
+tegratedtrainingofdomainclassifierandtaskclas-
+whereSisthecollectionoflabeledsourcedomain
+sifierbasedonbatch-wiseinputofsourceandtar-
+data, and λ is the regularization parameter. We
+getdata,theadvantageofourtwo-stepapproachis
+chooserationalquadratickerneloftheform:
+that all the source data can be ranked at the same
+time and only the source data that are most sim- (x−x(cid:48))2 −α
+ilar to the target domain are selected for training k(x,x(cid:48)) = σ2(1+ )
+2al2
+thetaskclassifier. Weapplythisframeworktothe
+domainadaptationofthefine-tunedBERTmodel. asthecharacteristickernelintheexperiment. The
+lengthscale l determines the length of the “wig-
+BERT Domain Classifier BERT representa-
+gles”inthefunction. Theparameterαdetermines
+tions are very discriminative of texts from differ-
+the relative weighting of large-scale and small-
+ent domains due to the extensive language model
+scalevariations.
+pre-training. A t-SNE plot of BERT embeddings
+is presented at Figure 3, on which the data points
+4 Experiment
+from different domains are grouped into well-
+separated regions. In order to effectively select In this section, we conduct both qualitative and
+source data that is most similar to the target do- quantitative studies of the proposed method, and
+main distribution, we train a BERT-based domain compare its performance against the MMD-based
+classifieronmixeddatapointswithdomainlabels. domainregularizationmethodandnaivezero-shot
+transfer from the source domain. In the experi- matched(in-domain)section. SimilarasinSNLI,
+ments, in order to determine the optimal number weconvertthethree-labelclassificationtaskintoa
+of data points selected from the source domain, binaryclassificationtask.
+wesetasideasmalltargetdomaindatasetforval- QNLI The Question-answering Natural Lan-
+idation. Starting from only a hundred examples, guage Inference (QNLI) is a dataset converted
+wedoublethetrainingdatasizeeverytimeweob- from the Stanford Question Answering Dataset
+serveasignificantchangeintransferperformance (SQuAD) (Rajpurkar et al., 2016). Although its
+evaluatedonthevalidationset. name contains “natural language inference”, the
+text domain and task type of QNLI are funda-
+4.1 Datasets
+mentallydifferentfromthoseofSNLIandMNLI.
+We tested our framework on four large public TheoriginalSQuADdatasetconsistsofquestion-
+datasets across three task categories: natural lan- paragraph pairs, where one of the sentences in
+guage inference (SNLI and MNLI), answer sen- the paragraph (drawn from Wikipedia) contains
+tence selection (QNLI) and paraphrase detection the answer to the corresponding question (written
+(Quora). Large datasets usually have a much by an annotator). GLUE converts the task into
+smaller variance in evaluation metrics compared sentence pair classification by forming a pair be-
+with smaller datasets. We used the pre-processed tweeneachquestionandeachsentenceinthecor-
+datasetsfromGLUEnaturallanguageunderstand- respondingcontextandfilteringoutpairswithlow
+ingbenchmark(Wangetal.,2018). Asummaryof lexical overlap between the question and the con-
+the dataset statistics and the details of the experi- textsentence. Thetaskistodeterminewhetherthe
+mentsetuparepresentedinTable1. contextsentencecontainsthecorrectanswertothe
+question.
+TaskCategory Dataset TrainSize DevSize QQP The Quora Question Pairs (QQP) dataset
+NaturalLanguageInference SNLI 510,711 9,831
+is a collection of question pairs from the com-
+NaturalLanguageInference MNLI 392,702 9,815
+munity question-answering website Quora (Wang
+AnswerSentenceSelection QNLI 108,436 5,732
+ParaphraseDetection Quora 363,847 40,430 et al., 2017). The task is to determine whether a
+pairofquestionsaresemanticallyequivalent. One
+Table1: Summaryofthedatasets
+source of negative examples are pairs of “related
+questions” which, although pertaining to similar
+SNLITheStanfordNaturalLanguageInference
+topics, are not truly semantically equivalent. Due
+(SNLI) Corpus (Bowman et al., 2015) is a collec-
+tocommunitynature,theground-truthlabelscon-
+tionof570khuman-writtenEnglishsentencepairs
+tainsomeamountofnoise.
+supporting the task of natural language inference.
+Given a premise sentence and a hypothesis sen-
+4.2 ExperimentSetup
+tence, the task is to predict whether the premise
+entailsthehypothesis(entailment),contradictsthe BERT Domain Classifier The setup for training
+hypothesis(contradiction),orneither(neutral). In the BERT domain classifier is shown in Figure
+ordertomakethelabelsetthesameacrossallthe 1. Basically, the setup is similar to that for fine-
+datasets, we convert the original three-label clas- tuning BERT on sequence-pair classification task
+sificationtaskintoabinaryclassificationtaskwith (since we test our method on sequence-pair clas-
+“entailment”asthepositivelabel,and“contradic- sification tasks). We take the hidden state of the
+tion”and“neutral”asnegative. [CLS]tokenoftheinputsequencepair,andfeedit
+MNLI The Multi-Genre Natural Language In- into a two-layer feedforward neural network with
+ference (MNLI) corpus (Williams et al., 2017) hiddenunitsof100and10ineachlayerandReLU
+is a crowd-sourced collection of 433k sentence as the activation function. The label for each data
+pairs annotated with textual entailment informa- pointisthedomainthatthedatapointbelongsto.
+tion. The corpus is modeled on the SNLI cor- MMD-based Domain Regularization The
+pus but differs in that it covers a range of gen- goalofdomainregularizationistotraintheBERT
+resincludingtranscribedspeech,fiction,andgov- model on the source domain but learn domain-
+ernment reports, and supports a distinctive cross- invariant latent representations. The computation
+genre generalization evaluation. We used the pipeline of training BERT model using MMD-
+trainingdatafromGLUEbutevaluateonlyonthe based domain regularization is presented in Fig-
+finalphase.
+We train one binary domain classifier for each
+pair of source-target datasets. For each dataset,
+5,000datapointswererandomlyselectedtomake
+up the training set, and another 1,000 data points
+were sampled as the test set. We train the BERT
+domain classifier for a fixed step of 100, using a
+smalllearningrateof2e−6andbatchsizeof64.
+Due to the domain discriminative nature of pre-
+trained BERT representations, the BERT domain
+classifier can easily achieve an accuracy > 99%
+domain classification performance on the holdout
+testdataset.
+The trained domain classifier is then used to
+predictthetargetdomainprobabilityforeachdata
+point from the source domain. Source data points
+Figure1: SetupfortrainingaBERTdomainclassifier.
+with the highest target domain probability are se-
+Pictureadaptedfrom(Devlinetal.,2018)
+lected for fine-tuning BERT for domain adapta-
+tion. Foreachtargetdomain, wesetasideasmall
+ure 2. Basically, we feed both labeled source do- validationset(1percentofthetargettrainingset)
+maindataandunlabelledtargetdomaindatatothe fortuningthehyper-parameterssuchasbatchsize.
+model, a classification loss is calculated based on Weincrementallyincreasethesizeoftheselected
+source labelsand modelprediction, andan MMD sourcedata. Foreachbatchsizeandnumberofse-
+domainlossiscalculatedfromtheBERTrepresen- lectedsourcedatacombination, wefine-tunedthe
+tations of source domain data and target domain BERT model for 10 epochs, and record the best
+data. We combine the two losses as the training performanceforeachconfiguration.
+objective. Itisstraightforwardtooptimizethisob-
+jectiveusingstochasticgradientmethods. 4.3 Results
+BERT Representations The fact that pre-trained
+BERTcanbeeasilyfine-tunedwithjustoneaddi-
+tional output layer to create state-of-the-art mod-
+els for a wide range of tasks suggests that BERT
+representations are potential universal text em-
+beddings. In order to visualize BERT represen-
+tations, we randomly select 5,000 training sam-
+ples from each dataset and extract the BERT em-
+beddings of them. Figure 3 presents the t-SNE
+plot of the BERT representations. As we can see
+fromthefigure,datapointsfromdifferentdatasets
+Figure 2: Setup for BERT domain adaptation with
+are grouped into well-separated regions. This
+MMD-baseddomainregularization.
+shows that BERT is extremely effective at map-
+Experiment Details The experiments were pingtextfromdifferentdomainstodifferentloca-
+conducted in three phases. In the first phase, a tionswithinitsrepresentationspace.
+BERT-based domain classifier is trained to distin- Transfer Performance The transfer perfor-
+guish samples from a pair of datasets. In the sec- mance of different methods is presented in Ta-
+ondphase,allsourcedomaintrainingsamplesare ble 2. As the first baseline, we evaluate the per-
+rankedbasedontheoutputfromtheBERTdomain formanceofnaivezero-shottransferoffine-tuned
+classifier, and a subset of data points is selected BERT models. The results are presented in the
+fromthesourcedomaintrainingset. Theselected column “NZS”. Each fine-tuned BERT model is
+subsetofsourcedataandtheirgroundtruthlabels trainedtoconvergenceusingallthesourcedomain
+are then used to fine-tune a BERT model in the data, and zero-shot transferred to the target do-
+Source Target IFT NZS MMD DDS %Data
+MNLI QNLI 85.3 49.8 58.0 58.5 0.1%
+MNLI Quora 89.3 73.7 71.5 73.9 26.1%
+MNLI SNLI 92.9 87.4 87.6 88.3 26.1%
+QNLI MNLI 88.3 63.7 66.0 67.2 0.4%
+QNLI Quora 89.3 61.8 66.1 67.6 1.5%
+QNLI SNLI 92.9 56.1 65.3 66.6 0.4%
+Quora MNLI 88.3 71.0 70.6 83.6 3.5%
+Quora QNLI 85.3 50.8 58.8 59.1 1.8%
+Quora SNLI 92.9 69.1 72.4 71.6 1.8%
+SNLI MNLI 88.3 77.0 82.2 80.2 5.0%
+SNLI QNLI 85.3 49.0 54.9 56.7 0.1%
+SNLI Quora 89.3 67.0 70.8 70.9 1.3%
+Table 2: Transfer performance (accuracy) of different
+domain adaptation methods. “IFT”: in-domain fine-
+tuning.“NZS”:naivezero-shot.“MMD”:MMD-based
+domainregularization. “DDS”:discriminativedatase-
+Figure 3: t-SNE plot of [CLS] token activations from lection. “% Data”: percentage of source domain data
+thesecond-to-lastencoderofBERTforfourdatasetsin selectedinDDSmethod.
+this paper. Second-to-last layer is used since the last
+layerembeddingsmaybebiasedtothetargetofBERT
+pre-trainingtasks.
+riculum,wedesignedexperimentstocomparethe
+learningcurvesoffivelearningcurricula. Thefive
+main. While in-domain fine-tuned BERT models learning curricula are described as the following:
+usuallyachievestate-of-the-artperformance,their “Most Similar”: is the curriculum adopted in this
+zero-shot performance on the target domain can paper, in which all the source training samples
+be significantly degraded. For transfers between are ranked based on the target domain probabil-
+dissimilar domains such as SNLI to QNLI, naive ity. A subset of source data is selected and pre-
+zero-shot can lead to more than 40% loss in ac- sented to the model learner according to the cur-
+curacycomparedwithin-domainsupervisedtrain- riculum that the samples with the highest target
+ing. By learning a domain invariant representa- domain probability are trained first. “Most Dis-
+tion, the MMD-based domain adaptation method similar”: the curriculum ranks the source data re-
+(column “MMD”) significantly outperforms the versely according to the target domain probabil-
+naive zero-shot baseline in almost all the transfer ity, selects and trains the most dissimilar samples
+tasks. However, our discriminative data selection first. In “Random Sample” curriculum, a sub-
+method (column “DDS”) achieves the best trans- set of source samples are randomly selected and
+ferperformancein10outofthe12pairwisetrans- fed into the training model. In “Random Order
+fertaskswhiletrainingononlyasmallfractionof within Selected” case, the subset is selected first
+sourcedomaindata(column“%Data”). Therela- based on target domain probability. However, the
+tiveimprovementisaslargeas18%overthenaive order of presentation during training is random.
+zero-shot and 3.3% over the MMD-based domain In “Reverse Order within Selected” scenario, the
+regularization. Eventhoughwedoubledthetrain- subset is selected based on target domain proba-
+ingdatasizeeverytimeweobserveanincreasein bility, and the order of presentation during train-
+transferperformance,thecumulativetrainingtime ing is based on the reverse order of target domain
+isstillmuchsmallerthanfine-tuningonthewhole probability. As we can see from the figure, both
+source dataset. Compared with the batch-wise thedataselectionstrategyandlearningcurriculum
+iterative adaptation or regularization techniques, have a clear effect on the transfer performance.
+ourmethodranksallthesourcedomaindataatthe “MostSimilar”curriculumenjoysthehighestcon-
+same time, and the learner is trained on the most vergence rate when trained on a small amount of
+target-domain-similardatafirst. Thisdifferenceis source data, while “Most Dissimilar” curriculum
+critical since early stage updates usually play an hasthelowestconvergencerate. Thetransferper-
+importantroleinthefinalmodelperformance. formanceofallthelearningcurriculabenefitsini-
+The Effect of Learning Curriculum In order tially from adding more training data and eventu-
+to evaluate the effectiveness of our learning cur- allysaturates. Overall,“MostSimilar”curriculum
+converges to the best performance among other MinminChen,KilianQWeinberger,andJohnBlitzer.
+curricula. The observation demonstrates the ef- 2011. Co-training for domain adaptation. Ad-
+vances in neural information processing systems,
+fectiveness of using target domain probability as
+pages2456–2464.
+ameasureoflearning“hardness”.
+Brian Chu, Vashisht Madhavan, Oscar Beijbom, Judy
+Hoffman, and Trevor Darrell. 2016. Best Practices
+forFine-TuningVisualClassifierstoNewDomains.
+ECCVWorkshops,pages435–442.
+Gabriela Csurka. 2017. A comprehensive survey on
+domain adaptation for visual applications. In Ad-
+vancesinComputerVisionandPatternRecognition,
+9783319583464,pages1–35.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2018. BERT: Pre-training of
+DeepBidirectionalTransformersforLanguageUn-
+derstanding.
+KevinDuh,GrahamNeubig,KatsuhitoSudoh,andHa-
+jimeTsukada.2013. AdaptationDataSelectionus-
+ing Neural Language Models: Experiments in Ma-
+Figure 4: Transfer performance from MNLI to SNLI chineTranslation. InACL-2013: 51stAnnualMeet-
+forfivelearningcurricula. “MostSimilar”curriculum ing of the Association for Computational Linguis-
+achievesthebestconvergencerateandtransferperfor- tics,1,pages678–683.
+mance.
+Yaroslav Ganin, Evgeniya Ustinova, Hana Ajakan,
+Pascal Germain, Hugo Larochelle, Franc¸ois Lavio-
+lette,MarioMarchand,andVictorLempitsky.2015.
+5 Conclusion Domain-Adversarial Training of Neural Networks.
+17:1–35.
+In conclusion, we propose a novel domain adap-
+Xavier Glorot, Antoine Bordes, and Yoshua Bengio.
+tation framework for fine-tuned BERT models
+2011. Domain Adaptation for Large-Scale Senti-
+throughatwo-stepdomain-discriminativedatase-
+ment Classification: A Deep Learning Approach.
+lection and curriculum learning. Our approach Proceedingsofthe28thInternationalConferenceon
+significantly outperforms the baseline models on MachineLearning,(1):513–520.
+four large datasets, which demonstrates the effec-
+JeremyHowardandSebastianRuder.2018. Universal
+tivenessofboththedataselectionstrategyandcur-
+LanguageModelFine-tuningforTextClassification.
+riculum design. The method can be readily ex-
+tended to multi-source domain adaptation, or ap- Jing Jiang and Chengxiang Zhai. 2007. Instance
+Weighting for Domain Adaptation in NLP. Pro-
+plied to few-shot learning scenarios in which the
+ceedings of the 45th Annual Meeting of the Associ-
+selected source domain data can be used to aug-
+ationofComputationalLinguistics,(October):264–
+mentthelimitedtargetdomaintrainingdata. 271.
+Ming-yuLiuandOncelTuzel.2016. CoupledGenera-
+tiveAdversarialNetworks. (Nips).
+References
+Sinno Jialin Pan and Qiang Yang. 2010. A survey on
+Amittai Axelrod, Xiaodong He, and Jianfeng Gao.
+transferlearning. IEEETransactionsonKnowledge
+2011. Domain Adaptation Via Pseudo In-Domain
+andDataEngineering,22(10):1345–1359.
+DataSelection. EMNLP(EmpiricalMethodsinNat-
+uralLanguageProcessing),pages355–362.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+Percy Liang. 2016. SQuAD: 100,000+ Questions
+Yoshua Bengio, Je´roˆme Louradour, Ronan Collobert,
+forMachineComprehensionofText. (ii).
+andJasonWeston.2009. Curriculumlearning. Pro-
+ceedingsofthe26thannualinternationalconference SebastianRuder,JoachimBingel,IsabelleAugenstein,
+onmachinelearning,pages41–48. andAndersSøgaard.2017a. Learningwhattoshare
+betweenlooselyrelatedtasks.
+SamuelR.Bowman,GaborAngeli,ChristopherPotts,
+and Christopher D. Manning. 2015. A large anno- Sebastian Ruder, Parsa Ghaffari, and John G. Breslin.
+tatedcorpusforlearningnaturallanguageinference. 2017b. KnowledgeAdaptation: TeachingtoAdapt.
+SebastianRuderandBarbaraPlank.2017. Learningto
+selectdatafortransferlearningwithBayesianOpti-
+mization.
+Darsh Shah, Tao Lei, Alessandro Moschitti, Salvatore
+Romeo, andPreslavNakov.2019. AdversarialDo-
+main Adaptation for Duplicate Question Detection.
+pages1056–1063.
+Jian Shen, Yanru Qu, Weinan Zhang, and Yong Yu.
+2017. WassersteinDistanceGuidedRepresentation
+LearningforDomainAdaptation.
+A.J.Smola,H.-P.Kriegel,M.J.Rasch,B.Scholkopf,
+K. M. Borgwardt, and A. Gretton. 2006. Integrat-
+ing structured biological data by Kernel Maximum
+Mean Discrepancy. Bioinformatics, 22(14):e49–
+e57.
+Yulia Tsvetkov, Manaal Faruqui, Wang Ling, Brian
+MacWhinney, and Chris Dyer. 2016. Learning the
+Curriculum with Bayesian Optimization for Task-
+SpecificWordRepresentationLearning. pages130–
+139.
+Alex Wang, Amapreet Singh, Julian Michael, Felix
+Hill, Omer Levy, and Samuel R Bowman. 2018.
+GLUE:AMulti-TaskBenchmarkandAnalysisPlat-
+formforNaturalLanguageUnderstanding.
+Mei Wang and Weihong Deng. 2018. Deep visual
+domain adaptation: A survey. Neurocomputing,
+312:135–153.
+Zhiguo Wang, Wael Hamza, and Radu Florian. 2017.
+Bilateralmulti-perspectivematchingfornaturallan-
+guagesentences. IJCAIInternationalJointConfer-
+enceonArtificialIntelligence,pages4144–4150.
+Daphna Weinshall and Dan Amir. 2018. Theory of
+CurriculumLearning,withConvexLossFunctions.
+pages1–18.
+Adina Williams, Nikita Nangia, and Samuel R. Bow-
+man. 2017. A Broad-Coverage Challenge Cor-
+pus for Sentence Understanding through Inference.
+pages1112–1122.

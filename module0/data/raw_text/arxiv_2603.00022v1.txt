@@ -1,0 +1,644 @@
+NOISE REDUCTION IN BERT NER MODELS FOR CLIN-
+ICAL ENTITY EXTRACTION
+KuldeepJiwani YashKJeengar
+ConcertAILLC,Bengaluru,India ConcertAILLC,Bengaluru,India
+kjiwani@concertai.com yjeengar@concertai.com
+AyushDhaka
+ConcertAILLC,Bengaluru,India
+adhaka@concertai.com
+ABSTRACT
+Precision is of utmost importance in the realm of clinical entity extraction from
+clinical notes and reports. Encoder Models fine-tuned for Named Entity Recog-
+nition (NER) are an efficient choice for this purpose, as they don’t hallucinate.
+We pre-trained an in-house BERT over clinical data and then fine-tuned it for
+NER. These models performed well on recall but could not close upon the high
+precisionrange,neededforclinicalmodels. Toaddressthischallenge,wedevel-
+oped a Noise Removal model that refines the output of NER. The NER model
+assignstoken-levelentitytagsalongwithprobabilityscoresforeachtoken. Our
+NoiseRemoval(NR)modelthenanalyzestheseprobabilitysequencesandclassi-
+fiespredictionsaseitherweakorstrong. Ana¨ıveapproachmightinvolvefiltering
+predictions based on low probability values; however, this method is unreliable.
+OwingtothecharacteristicsoftheSoftMaxfunction,Transformerbasedarchitec-
+turesoftenassigndisproportionatelyhighconfidencescoreseventouncertainor
+weak predictions, making simple thresholdingineffective. To address this issue,
+weadoptedasupervisedmodelingstrategyinwhichtheNRmodelleveragesad-
+vancedfeaturessuchastheProbabilityDensityMap(PDM).ThePDMcaptures
+theSemantic-PulleffectobservedwithinTransformerembeddings,aneffectthat
+manifests in the probability distributions of NER class predictions across token
+sequences. This approach enables the model to classify predictions as weak or
+strongwithsignificantlyimprovedaccuracy. WiththeseNRmodelswewereable
+toreduceFalsePositivesacrossvariousclinicalNERmodelsby50%to90%.
+1 INTRODUCTION
+IntherealmofPrecisionMedicine,datathatcompletelyandaccuratelycapturescomplexconcepts
+such as mutational status of a tumor, stage or performance status, is critical. The extraction of
+suchentitiesfromunstructuredclinicalnotes,includingbiomarkers,tumorstages,andperformance
+scores, demands both high precision and high recall. To address this challenge, we developed a
+high-fidelityclinicalNamedEntityRecognition(NER)modeloverBERT(Devlinetal.(2019))ar-
+chitecture, trainedovermillionsofclinicalnotes. Onthisfoundationalmodel, wefine-tunedfora
+NER objective aimed at extracting domain-specific clinical entities. Despite the rigorous training,
+constructionoflarge-scalelanguagemodelsinherentlyintroducesnoiseatvariousstages,owingto
+ambiguityinrealworldclinicaldata,inconsistenciesinlabelingandsampling-relatedbiases. These
+issuesmaypropagateduringmodelinference,reducingoutputreliability. Therefore,acriticalcom-
+ponentofthepipelineneedstofocusuponsuppressingnoisypredictionstoupholdhighprecision.
+NERisinherentlyasequencetaggingproblem, whereeachtokeninasentenceisassignedalabel
+with an associated confidence score. It is commonly assumed that incorrect or uncertain predic-
+tions correspond to lower confidence scores and can be filtered using a threshold-based approach.
+However, this method proves inadequate due to characteristics of the Transformer architecture as
+explainedbyVaswanietal.(2017). Specifically,thefinalpredictionlayeremploysaSoftMaxfunc-
+1
+6202
+beF
+3
+]LC.sc[
+1v22000.3062:viXra
+tion, whichoftenyieldshigh-confidencescores, evenforerroneousorOutOfDistribution(OOD)
+predictions,owingtoitsinherentlimitations(Guoetal.(2017),Pearceetal.(2021),Tuetal.(2024)).
+Uncertaintyestimationinneuralnetworks,particularlyTransformers,remainsanactiveareaofre-
+search. Numeroustechniqueshavebeenproposedtocalibratemodelconfidencescores, eachwith
+trade-offs in applicability and effectiveness (Guo et al. (2017)). Broadly, uncertainty can be cate-
+gorizedintotwotypes: aleatoric(statistical/data-related)andepistemic(model-related). Aleatoric
+uncertaintyarisesfromintrinsicnoiseorambiguityinthedata,whileepistemicuncertaintyresults
+from limited knowledge or insufficient training data. Distinguishing between these two forms is
+non-trivialandbothcanbereflected, albeitimperfectly, inSoftMaxscoredistributions. Whilethe
+SoftMaxfunctionitselfiseffectiveforestimatingrelativetokenprobabilities(Lokshin&Kreinovich
+(2023)). IttendstoinflateconfidenceinOODcontextsorunderhighuncertainty,whichcanhinder
+theidentificationoferroneousoutputs.
+In the context of NER, our primary challenge was the identification of false predictions. Rather
+thandirectlycalibratingprobabilityscores,weadoptedapragmaticapproachfocusedondetecting
+patterns of uncertainty within the model’s output. Since individual token probabilities often lack
+sufficientdiscriminativepower,weanalyzedsequencesoftokensandtheircontextualdependencies.
+Due to positional encoding and the self-attention mechanism, predictions for adjacent tokens in
+Transformerarchitecturesareinherentlyinterdependent. ThisinterdependenceinducesaSemantic-
+Pull effect, wherein semantically related and frequently co-occurring tokens in the training data
+exhibithighmutualattentionandconvergeintheembeddingspace.
+Toleveragethisphenomenon,wedesignedacomprehensivesetofprobabilitydensityandstatisti-
+calfeaturesinspiredbytheinternaldynamicsofTransformermodels. Specifically,weconstructed
+a Probability Density Map (PDM) to capture the contextual neighborhood of each predicted NER
+token. Thiswasfurtheraugmentedwithstatisticalindicatorssuchasinter-classprobabilitydiffer-
+entials,sequenceentropy,NERclassprobabilitystrength,etc. Collectively,thesefeaturesencapsu-
+late the broader semantic and statistical context governing each prediction, thereby enhancing the
+model’sabilitytoidentifyuncertainorerroneousoutputs.
+We then employed a Decision Tree model to classify each NER prediction as either “strong” or
+“weak,” based on the derived uncertainty features. The Decision Tree was selected for its in-
+terpretability, allowing transparent understanding of how uncertainty patterns affect classification.
+Recognizingtheriskthattrueentitiescouldbemistakenlyflaggedasweakduetooverlappingun-
+certaintysignals,wefurtherrefinedthedecisionboundarytominimizeFalsePositives(FPs)while
+preservingTruePositives(TPs)tothegreatestextentpossible.
+Thisuncertainty-awarepost-processingframeworkprovidesaneffectivemechanismforenhancing
+the precision of NER outputs in clinical NLP pipelines. By integrating model-internal probability
+signalswithstatisticalheuristics,weachieveapracticalbalancebetweenrecallandprecisionwithout
+modifyingthecorelanguagemodelarchitecture.
+1.1 RELATEDWORK
+The challenge of modeling uncertainty in neural networks has been extensively explored due to
+its widespread occurrence across various architectures, including Convolutional Neural Networks
+(CNNs),LongShort-TermMemory(LSTM)networks,andTransformers.Researchershaveprimar-
+ilyfocusedonaddressingtwotypesofuncertainty: epistemicandaleatoric. Studieshaverevealed
+that standard SoftMax-based neural networks are prone to feature collapse and often extrapolate
+unpredictablywhenpresentedwithOODdatapoints.
+Two principal schools of thought have emerged in this domain. The first aims to calibrate the
+SoftMaxoutputprobabilities,whilethesecondfocusesondevisingnumericalmethodstoestimate
+uncertaintydirectly.
+AsignificantbodyofresearchhasconcentratedoncalibratingSoftMaxprobabilitiestomitigatemis-
+calibrationissues. Guoetal.(2017)introducedseveralevaluationmetricsforcalibration,including
+ReliabilityDiagrams,ExpectedCalibrationError(ECE),andNegativeLog-Likelihood(NLL).They
+further surveyed popular calibration techniques such as Histogram Binning, Isotonic Regression,
+BayesianBinningintoQuantiles(BBQ),andPlattScaling. Theirkeycontributionwastheproposal
+ofTemperatureScaling,asimpleyeteffectivepost-processingmethodtocalibrateSoftMaxoutputs.
+2
+TemperatureScalingisstatedas: qˆ
+i
+= max kσ
+SM(cid:0)z Ti(cid:1)(k)
+wherez
+i
+isthelogitforinputx i,andthe
+SoftMax output or predicted probability for class k is denoted by σ (z )k, temperature scaling
+SM i
+involvesdividingthelogitsbyatemperatureparameterT beforeapplyingtheSoftMaxfunctionto
+adjusttheconfidenceofpredictionsandgenerateacalibratedprobabilityqˆ.
+i
+Beyond calibration, several works have attempted to enhance the handling of OOD samples using
+modifications to the SoftMaxfunction. Tu et al. (2024)proposed a method called Softmax Corre-
+lation (SoftmaxCorr), which leverages the cosine similarity between predicted probability vectors
+toconstructaninter-classcorrelationmatrixduringinference. Thismatrixiscomparedwitharef-
+erence matrix computed on in-distribution data. A higher deviation from the reference implies a
+greaterlevelofuncertainty. HigherSoftmaxCorrscoreindicatesmodelconfidentlyassignedprob-
+abilityto thepredictedclass. Asimilarmethod namedRelCalwas alsoproposed byGhosalet al.
+(2025)onDeepNeuralNetworksingeneral.
+In another advancement, Moz˙ejko et al. (2018) introduced Inhibited SoftMax, an extension of the
+standardSoftMaxthatincludesanadditionalconstantinputrepresentingthenetwork’suncertainty.
+Thiscomponentisincorporatedintothelossfunctiontosimultaneouslyminimizeclassificationerror
+andmaximizecertainty,therebyexplicitlyencouragingthemodeltolearnrepresentationsreflective
+ofitsownconfidence.
+Thesecondkeyareaofresearchinvolvesdirectestimationofuncertainty.Gal&Ghahramani(2016)
+madeaseminalcontributionbydemonstratingthatMonteCarloDropout(MC-Dropout)canserve
+as a Bayesian approximation to model uncertainty in deep neural networks. They showed that
+applying dropout before every weight layer in a neural network is mathematically equivalent to a
+deepGaussianProcess. Byperformingmultiplestochasticforwardpassesforthesameinput, one
+canderiveadistributionoveroutputs,therebyestimatingpredictiveuncertainty.
+Buildinguponthis,Mioketal.(2020)appliedMC-DropouttoBERTmodelsandLiuetal.(2023)
+applieditonConditionalRandomField(CRF).Theyfoundthattheresultinguncertaintyestimates
+were more reliable than traditional deterministic predictions. They noted that BERT, being pre-
+trained with a dropout rate of approximately 10%, naturally lends itself to this technique. During
+inference,dropout-inducedvariabilityacrossmultiplepasseswasusedtoquantifyconfidence,and
+theresultsshowedstrongpotentialinapplicationsrequiringuncertaintyestimation.
+TherehavebeensomecomparativestudiesbyXiaoetal.(2022)andHolmetal.(2023)comparedthe
+MC-DropoutstrategywithmultipleforwardpasseswithdirectSoftMaxwithasingleforwardpass
+withoutdropouttoestimatemodeluncertaintyfordownstreamClassificationtasks. Theyobserved
+thatwhileMCdropoutproducesthebestuncertaintyapproximations,usingasimpleSoftMaxleads
+to competitive, and in some cases better, uncertainty estimation for text classification at a much
+lowercomputationalcost.
+2 PROBLEM STATEMENT
+The objective is to identify and filter incorrect NER predictions without significantly impacting
+correct extractions. A substantial portion of such erroneous predictions can be mitigated through
+additional fine-tuning of the NER model using feedback data. However, we observed that beyond
+acertainpoint,thisapproachyieldsdiminishingreturns. Thislimitationarisesprimarilyduetothe
+inherentcomplexityandvariabilityofreal-worldclinicaldata,whichisdifficulttocomprehensively
+captureduringmodeltraining. Solerelianceonretrainingresultsinaperpetualcatch-upcycle.
+The need is to develop a mechanism for detecting and suppressing noisy predictions before they
+reachdownstreampipelines. Thesenoisypredictionstypicallyarisefromtwosources: (1)Out-of-
+Distribution(OOD)datapointsthatwerenotencounteredduringmodelfine-tuning,and(2)domain-
+specific idiosyncrasies inherent in clinical text. Medical practitioners frequently use abbreviations
+andshorthandnotations,theinterpretationofwhichishighlycontext-dependent. Thesecontextual
+shiftsoftenleadtoambiguityandmisclassification. Moreoverduetohighvolumeoftextwerequire
+a lightweight, adaptable uncertainty estimation mechanism that could dynamically adjust to local
+contextwithoutimposingsignificantcomputationaloverhead.
+3
+3 BACKGROUND
+Consider a BERT NER model taking an input x ∈ RV, representing an input token vector over
+vocabulary space V, producing final activations z = ϕ(x) ∈ RD, where D is the dimension of
+hiddenlayer. ThisactivationzispassedthroughaSoftMaxfunctiontogivepredictionsyˆ=σ(z)∈
+[0,1]K,one-hot-encodedKoutputNERclasses. TheSoftMaxconfidencecanbecomputedas
+exp(w⊤z)
+σ(z) = i (1)
+i (cid:80)K exp(w⊤z)
+j=1 j
+wherethefinallayerweightmatrixW ∈ RD×K canbeindexedsothatw representscolumniof
+i
+thematrix. ThistransformationconvertstokenembeddingsztoK NERclasses.
+ManyuncertaintymetricscanbedefinedfromSoftMax,twobasiconesare,firstlymaxprobability:
+U (z)=max σ(z) (2)
+max i i
+Secondly,itcanbedefinedviatheentropy:
+K
+(cid:88)
+U (z)=− σ(z) logσ(z) (3)
+entropy i i
+i=1
+Wecan’tfullyrelyonSoftMaxconfidencealoneasitexhibitsseverallimitations(describedbelow).
+Sowewilllaterintroducemorefeaturestocaptureuncertaintyinamoreholisticway.
+3.1 LIMITATIONSOFSOFTMAXCONFIDENCEFORUNCERTAINTYESTIMATION
+Pearceetal.(2021)notethatinlow-dimensionalinputspaces,SoftMaxmaytendtononsensically
+extrapolatewithincreasedconfidence. ThisisparticularlyproblematicinthecontextofOODdata,
+asitisunlikelytocontainthedistinguishingfeaturesthatthenetworkwastrainedupon.HenceOOD
+activationstendtobeoflowermagnitude,thisresultsinunusualpatternsoffinal-layeractivations.
+ThefollowingarekeyfailuremodesassociatedwithSoftMax-baseduncertainty:
+1. Overconfident Extrapolations: OOD inputs may be mapped to extrapolation regions
+whereSoftMaxoutputsexhibithighconfidencedespitethelackoftrainingsupport.
+2. Aleatoric Uncertainty Conflation: In scenarios withoverlapping class distributions, the
+modelmaycorrectlyassignlowSoftMaxconfidencetoambiguousin-distributioninputs.
+ThusmakingithardertodetectOODregionsandenlargingtheextrapolationregions.
+3. Final-LayerFeatureOverlap: Neuralnetworksarenotbijective. Consequently,distinct
+inputs,includingOODsamples,canmaptosimilarfinal-layeractivations. Thusmakingit
+hardertodistinguishbetweenin-distributionandOODinputs.
+4. SoftMaxSaturation: Sometimes,SoftMaxsaturatesforaproportionofbothtrainingand
+OODdataandmaximumprobability(max σ(z) )isexactly1.0. Thisleadstoaninability
+i i
+tocreateanorderingbetweensamples,therebydegradingOODdetectionperformance.
+Among these, Pearce et al. (2021) emphasize that feature overlap in the final layer plays a more
+criticalroleinuncertaintyestimationfailuresthanoverconfidentSoftMaxextrapolationsalone.
+4 METHODS
+We further consider metrics to determine uncertainty, using the fact that all tokens interact with
+each other. A token’s embedding vector captures the information of its neighborhood via SelfAt-
+tentionandpositionalencoding. TounderstandthesamewewillrefertotransformationsinBERT
+Transformer’sinferenceflowasstatedbyVaswanietal.(2017).
+4
+4.1 BERTTRANSFORMERMODEL
+Consider a BERT NER model taking an input X ∈ RT×V, where all the T tokens are one-hot-
+encoded to vocabulary space V. These vectors are passed through the Transformer architecture,
+stepwisetransformationdetailsofTransformerfunctionispresentedinAppendix-A(8)
+Z =Transformer(X) (4)
+SoforaninputX ∈RT×V,wegotanoutputembeddingvectorZ ∈RT×D.Theembeddingvector
+Z isfurtherfedtoaclassificationlayertogenerateK NERclassesastheoutputY ∈RT×K
+Y =WC.Z (5)
+logits
+Y =SoftMax(Y ) (6)
+logits
+The semantic vectors of all tokens interact with each other along with their respective positional
+information. Basedontheattentionmechanismtheyinfluencethefinallayerembeddingvectorof
+othertokens. Wewillusethispropertytodefineanewmetric.
+4.2 DENSITYANALYSISINPROBABILITYSPACE
+Equation (6) maps each token to a probability space, where the probability vector is Y ∈ RK,
+i
+which sums up to 1 and states the likelihood towards one of the K NER classes. As a result of
+allTransformeroperationstheembeddingvectorZ generatedinEquation(4)containsinformation
+i
+aboutothertokens. AsperthetransformationsinEquation(5)and(6)theprobabilityvectorY also
+i
+containsinformationaboutallothertokens.
+InthecontextofNERaspertheCoNLLlabellingschemaforasingleentitywewillhaveK =3(for
+multipleE entities,K = 2E+1). Forsimplicitywewillillustrateforasingleentitywithclasses:
+{B-Entity,I-Entity,O},signifyingbeginningandintermediatepartofentityalongwiththeOther(O)
+class.IntheprobabilityspaceeverytokenwillhaveaprobabilityvectorY =[prob ,prob ,prob ].
+i B I O
+WedefineaProbabilityDensityMaparoundtheNERpredictedtokenpositiont toassess
+predicted
+itsrelativestrengthasperitsneighboringtokens. Givenprobabilityspaceisfinite[0,1],wedivide
+thespaceintoBbins(setto10inimplementation)foreachoftheKclasses(3forsingleentity).For
+predictedtokenpositiont ,wesumtheprobabilitiesperclassforallneighboringtokensin
+predicted
+eachbinandweightthenasperthetokendistance|t−t |withaexponentialdecayfunction:
+predicted
+W
+t
+=e(−(|t−tp 2r .e Rd 2icted|)2 ) (7)
+where,tistokenpositionandRisdecayrate,ahyper-parameterforoptimaldecayeffect
+Algorithm1Functionforcomputingprobabilitydensitymap
+1: functionPROBABILITYDENSITYMAP(B,K,T,Y,t predicted)
+2: //Bno. ofbins,Ksetofclasses,Tsetoftokens,Ysetofoutputvectors,t predictedtoken
+3: numTokens←len(T)
+4: fortinTdo
+5: forkinKdo
+6: ift̸=t predictedthen
+7: probability ←Y[t][k]
+8: bin←Integer(probability∗B)
+9: W t ←exp(−(|t−t predicted|)2/(2.R2))
+10: Map[bin][k]←Map[bin][k]+W t∗probability/numTokens
+returnMap
+4.3 CAPTURINGTRANSFORMER’SSEMANTIC-PULLVIAPROBABILITYDENSITYMAP
+As discussed earlier, during Transformer training, all token embeddings interact with one another
+throughtheSelf-Attentionmechanism,whichassignscontext-dependentweightsandadjustsforpo-
+sitionalinformationusingpositionalembeddingvectors. WhenaBERTencoderisfine-tunedfora
+5
+specificNERtask,suchasbiomarkerextraction.Theback-propagationprocesscausestokenscorre-
+spondingtobiomarkerentitiestoreceivehigherattentionweights. Thisoccursbecausethemodelis
+beingoptimizedtoidentifysuchentities. Consequently,wordsthataresemanticallyorcontextually
+relatedtobiomarkers,particularlythosethatfrequentlyco-occurnearbiomarkermentions,acquire
+elevatedweightvaluesintheSelf-Attentionmatrix(seeEquation11h,Appendix-A,8).
+This phenomenon leads to what we term a Semantic-Pull of embedding vectors in the latent rep-
+resentationspaceforbiomarker-relatedconcepts. AsindicatedinEquation(4)Z denotesaT ×D
+matrix, where each token T is represented by an embedding vector of dimension D. When these
+vectors are passed through the dense linear layer described in Equation (5), they are transformed
+into probability vectors Y, forming a T ×K matrix as shown in Equation (6). These probability
+vectorsalsoexhibittheSemantic-Pulleffect.
+Toillustratethisconcept,considerfollowingsentencesandtheircorrespondingNERoutputs:
+• Sentence-1: PatientistreatedforERpositivebreastcarcinoma→[NER-Prediction]: ER
+• Sentence-2: PatientreportedseverechestpainadmittedtoER→[NER-Prediction]: ER
+In Sentence-1, “ER” refers to Estrogen Receptor, a valid biomarker entity, whereas in Sentence-2,
+“ER”denotesEmergencyRoom,representingafalsepositive(FP)inthebiomarkerNERcontext.
+HereisNER’soutputforSentence-1,generatingNERclass(B,I,O)probabilitiesforeachtoken:
+Patient is treated for ER positive breast carcinoma
+B I O B I O B I O B I O B I O B I O B I O B I O
+0. 0. 1. 0. 0. 1. 0. 0. 1. 0. 0. 1. 1. 0. 0. .001 .048 .951 0. .003 .997 0. .002 .998
+HereisNER’soutputforSentence-2,generatingNERclass(B,I,O)probabilitiesforeachtoken:
+Patient reported severe chest pain admitted to ER
+B I O B I O B I O B I O B I O B I O B I O B I O
+0. 0. 1. 0. 0. 1. 0. 0. 1. 0. 0. 1. 0. 0. 1. 0. 0. 1. 0. 0. 1. .999 0. .001
+Examining the NER output for Sentence-1, we observe that, in addition to the true biomarker to-
+ken “ER”, nearby tokens such as “positive”, which denotes the biomarker test result, exhibit non-
+zero probabilities for the B-Biomarker and I-Biomarker classes. Furthermore, because the “ER”
+biomarkeristypicallyassociatedwithbreastcancerdiagnoses, thetokens“breastcarcinoma”also
+displaynon-zeroprobabilitiesfortheI-Biomarkerclass(highlightedinboldinabovetable).
+Incontrast,theNERoutputforSentence-2showsnotokensbesides”ER”withnon-zeroprobabili-
+tiesforeitherB-BiomarkerorI-Biomarkerclasses. Thisdistinctionhighlightshowcontextualtoken
+neighborhoodsyielddistinctprobabilitydistributionsbetweentrueandfalseentitycases.
+Next,wedescribethebinningstrategyusedforprobabilityanalysis.Wefirstpresenttheintermediate
+cumulativeprobabilityoutputsperbinforbothsentencestoenhanceinterpretability,whichisjustthe
+simplesumofeachprobabilitiesstatedintheaboveNERoutput.ThisisfollowedbytheProbability
+DensityMap(PDM)generation,asdetailedinAlgorithm-1(1),foreachbincorrespondingtoboth
+sentences. Since all probability values fall either below 0.1 or above 0.9, only Bin-1 and Bin-10
+containnon-emptyvalues,remainingbinsarethereforeomittedbelow.
+Sentence-1:Cumulativeprobabilitybins Sentence-1:ProbabilityDensityMap(PDM)
+Bin-1 Bin-... Bin-10 Bin-1 Bin-... Bin-10
+B I O B I O B I O B I O B I O B I O
+0.001 0.053 0.0 0.0 0.0 0.0 0.0 0.0 6.946 0.0 0.004 0.0 0.0 0.0 0.0 0.0 0.0 0.185
+Sentence-2:Cumulativeprobabilitybins Sentence-2:ProbabilityDensityMap(PDM)
+Bin-1 Bin-... Bin-10 Bin-1 Bin-... Bin-10
+B I O B I O B I O B I O B I O B I O
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 6.999 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.094
+AswecanseethePDMofSentence-1withtrueBiomarkerhasnon-zerovaluesinBin-1,whilethe
+same is not true for Sentence-2. Hence, these PDM bins can act as good distinguishable features
+thatcanbeusedbytheNoiseRemoval(NR)classifiertoidentifynoisyBiomarkerentities.
+6
+4.4 EMBEDDINGSPACEVSPROBABILITYSPACECORRELATION
+TheD-dimensionalembeddingvectorsZ(Equation4)wereprojectedintoatwo-dimensionalspace
+using Multi-Dimensional Scaling (MDS), a manifold learning technique that preserves global ge-
+ometric relationships within the embedding space. Consequently, tokens that are distant in high-
+dimensionalspaceremaindistantafterprojection,andtheconverseholdsaswell.
+Probability-space visualizations were created by directly plotting the output probability vectors Y
+(Equation 6) in a three-dimensional coordinate system, where each axis corresponds to one of the
+NERclasses{B,I,O}.
+In these plots, the TP entity token is represented by a green star, and the FP token by a red star.
+NeighboringtokensofTPentitiesareshownasgreenupwardtriangles,whilethoseofFPentitiesare
+denotedbyreddownwardtriangles. Thisconventionisconsistentlyappliedinboththeembedding
+and probability space plots. For additional contextual reference in embedding space, blue circles
+representunrelatedentities,lightgreencirclesdenotecorrectlyidentifiedtokensofthesameentity
+class,andpinkcirclesindicatefalsepositiveswithinthesameclass.
+TheanalysisusesthesametwoexamplesentencesfromSection4.3,wherethetoken“ER”appears
+indistinctclinicalcontexts,Sentence-1asaTPandSentence-2asaFP:
+• Sentence-1: PatientistreatedforERpositivebreastcarcinoma→[NER-Prediction]: ER
+• Sentence-2: PatientreportedseverechestpainadmittedtoER→[NER-Prediction]: ER
+Figure 1: Left plot shows a 2-dimensional manifold of embeddings from Biomarker NER model,
+with stars indicating predicted entity, TP as green and FP as red, triangles representing neighbor-
+hood. The space depicts training data, where green circles indicates Biomarkers and pink as FPs.
+Rightplotindicatesthepredictedentityanditscontexttokenintheprobabilityspace.
+EmbeddingSpaceAnalysis:AsillustratedinFigure-1(1),thetruepositive(TP)token“ER”(green
+star) lies within a region densely populated by correctly identified biomarker entities (light green
+circles). In contrast, the false positive (FP) “ER” (red star) occupies a sparse region near the TP
+clusterboundary,indicatingpartialsemanticoverlap. ThisproximitysuggeststhattheNERmodel
+strugglestofullydisambiguatecontextuallysimilarentities.
+Examining the neighboring tokens (triangles) further reveals that red triangles representing FP
+neighborhoodstendtoliewithinoradjacenttotheblueregioncorrespondingtootherentityclasses.
+Interestingly,thegreentriangles,denotingTPneighborhoods,arealsoclosetotheblueregionbut
+exhibit a distinct semantic-pull toward the green space, with several surrounded by green circles
+thatsignifyhighersemanticcoherence.
+ProbabilitySpaceAnalysis:InthecorrespondingprobabilityspaceFigure-1(1),both“ER”tokens
+occupytheupper-rightquadrant,reflectinghighB-tagconfidence.Theoverlapofredandgreenstars
+indicatesthatbothwereconfidentlypredictedasbiomarkeronsets. However,contextualdifferences
+7
+emergeuponcloserinspection:forSentence-1,theneighboringtokens(greentriangles)largelyalign
+with the O-tag high-probability range, with some exhibiting mild I-tag activation, consistent with
+semanticallyrelatedtermslikepositive. Thisreinforcesthesemantic-pulleffect,whereinfrequent
+co-occurrenceintrainingdatainducesprobabilisticaffinitytowardbiomarkerclasses.
+Conversely, in Sentence-2, neighboring tokens (red triangles) are positioned near the blue region
+in the embedding space and close to the O-tag axis in probability space, reflecting the absence of
+biomarker-relatedcontext.
+Theseobservationsvalidateourhypothesisthatcontextualanddensity-basedfeaturesderivedfrom
+probability distributions can effectively capture uncertainty and help flag ambiguous NER predic-
+tions.
+5 MODEL FEATURES
+We have used two kinds of features, density based and statistical features. The most important
+feature-PDM(ProbabilityDensityMap),havealreadybeendescribedindetailinSection4.2. We
+will now also introduce the statistical features to capture more forms of uncertainty from NER’s
+probabilityspace.
+FeatureSet-1: Densityfeatures
+Represented as a 10 bins map per NER class, where the bins map captures the information of the
+neighbourhoodofeachpredictedtokenpredictedforoneoftheNERclasses.
+PDM =PDM(PredictedTokenNeighbourhood)
+binsArray
+FeatureSet-2: Statisticalfeatures
+Allstatisticaloperatorsareappliedonalloperandslikeacrossproduct
+Statisticaloperators
+Operands(dataspans)
+Mean,Max PredictedTokens
+Coeff.ofVariation PredictedWords
+X
+Entropy PredictedPhrase
+Probabilityratios Neighboringtokens
+Probabilitydeltas Entirechunk
+ThecompletelistoffeatureswithdetailsisavailableinAppendix-B(8)withdefinitions.
+Modelexplainability:SinceDecisionTreeisanexplainablemodel,sowehaveaddedanexampleof
+DecisionpathfromtheDecisionTreemodelinAppendix-C(8),whereforasampletextweshowcase
+howthesefeaturesidentifyanoisefromatrueconcept.
+6 SOLUTION AND DATA OVERVIEW
+ToassesstheimpactofepistemicuncertaintyarisingfromOODinputsandmisclassificationerrors,
+alongwithimpactofSoftMaxextrapolations. WeconductedafocusedanalysisusingNERmodels
+trainedonclinicalentities. Adiversesetofclinicaldocumentswassampled,andannotatedbybusi-
+nessscriptsandmanuallyreviewedbyclinicalsubjectmatterexperts(SMEs), resultinginlabeled
+sets ofTrue Positives(TPs) andFalse Positives (FPs). Here theFPs were meticulously chosen by
+SMEs,whichwerelexicallysimilarbutwereirrelevantwhenconsideredwithneighbouringcontext.
+Wechosetwodatasetsfortestingthesemodels:
+• EMR:Realclinicaldatasetof50KLung&Breastcancerpatientstreatedin2024
+• MIMIC-III:Publiclyavailableanonymizedclinicaldataof40Kpatientswith2milliondocs
+8
+EMR:Entitydatadistribution
+Entities
+Biomarker Tumortype Surgery Medication TumorGrade Histology
+Datatype
+Trueclinicalentities 6.7K 1.7K 1.6K 10.6K 1.5K 1.4K
+Similarfalseentities 24.5K 1.4K 10.9K 46.7K 0.5K 19.8K
+MIMICdatadistribution
+Entities
+Biomarker Tumortype Surgery Medication
+Datatype
+Trueclinicalentities 200 500 950 5.6K
+Similarfalseentities 150 100 100 1K
+Usingfeaturesmentionedinsection5,wetrainedasupervisedDecisionTreeclassifiertocategorize
+eachNERpredictionintooneoftwoclasses: {Strong,Weak}. Duringtraining,SME-labeledTPs
+wereassignedtotheStrongclass,whereasFPswereassignedtotheWeakclass. Atinferencetime,
+eachNERpredictiontoken,alongwithitscorrespondingfeatureset,waspassedtotheDecisionTree
+classifier,whichproducedabinaryclassificationoutcome{Strong,Weak}. Predictionsclassifiedas
+Weak weretreatedaspotentialnoiseterms. Importantly, theDecisionTree, beinganinterpretable
+model, also provides explicit decision paths, enabling SMEs to examine the rationale for why a
+particularclinicalentitywasidentifiedasnoise.
+7 RESULTS
+To systematically evaluate the performance of the proposed Decision Tree-based Noise Removal
+(NR)models,weselectedmultipleclinicalentitiesthatarecriticaltoclinicaltrialworkflows,each
+requiringbothhighprecisionandhighrecall.Asabaseline,wefine-tunedBERT-basedNERmodels
+onEMRdata,achievingentity-levelF1-scorescloseto0.9.
+We then compared the F1-scores of the baseline NER model against widely used approaches for
+reducingFalsePositives(FPs). Foreachmethod, hyper-parameterswereoptimizedtoidentifythe
+best-performing configuration. Specifically, the optimal threshold value was selected for SoftMax
+Thresholding,thebesttemperatureparameterT waschosenforTemperatureScaling,andthemost
+effective mean–variance cutoffs were determined for Monte Carlo (MC) Dropout. These methods
+were compared against our NR approach, which applies a supervised Decision Tree model to the
+baselineNERpredictionsusingengineeredfeaturesderivedfromthemodeloutputs.
+The results in Table-1 (1) depict the F1-scores obtained for the 6 clinical entities of Base NER
+model(Fine-tunedforNERclassification),alongwithvariousotherestablishedmethodslikeSoft-
+Max Thresholding, Temperature Scaling, Bayesian inferencing via Monte Carlo (MC) Drop-out.
+Wewouldliketohighlightthatonlythosemethodswerechosenforcomparisonswhereonlysome
+post-processinglogicisappliedonmodel’soutput. Kindlynotethatwehavepurposelyavoidcom-
+parisons with techniques that calibrate probabilities via modifying the architecture of NER model
+likeSoftmaxCorrTuetal.(2024)RelCalGhosaletal.(2025),astheobjectiveistobuildanultra-
+lightweightpost-processingmodelforhighscalability.
+Table1: F1-scorecomparisononEMRdataoverdifferentclinicalentitytypes
+Element BaseNER SoftMaxThresholding Temp.Scaling MCDropout NER+NR
+Biomarkers 0.933 0.935 0.935 0.935 0.953
+Surgery 0.927 0.904 0.889 0.903 0.942
+Drugname 0.895 0.906 0.913 0.919 0.932
+TumorGrade 0.914 0.909 0.900 0.905 0.925
+Tumor 0.877 0.880 0.882 0.879 0.906
+Histology 0.932 0.940 0.940 0.950 0.935
+Tofurthervalidateourfindings,wereplicatedtheexperimentsonthepubliclyavailableMIMIC-III
+dataset. ThemodelstrainedonEMRdatawereapplieddirectlytoMIMIC-IIIwithoutfine-tuning.
+AsubsetofMIMIC-IIIdatawasrandomlysampledandannotatedbySMEsforevaluation. Since
+9
+ground-truth coverage of MIMIC-III was incomplete, we performed a relative comparison across
+approaches,measuringthepercentagereductioninbothFPsandTPsrelativetothebaseNERmodel.
+Table-2(2)showcasestheresultsonMIMIC-IIIdatabyshowingrelativecomparisoninpercentages
+ofeachmethodwithrespecttotheBaseNERmodel. ThepercentageshowsrelativeTPandFPdrop
+rate,desiredcombinationwouldbeleastTPdropwithmaximumFPdrop.
+Table2: MIMIC-IIIRelativecomparisonfrombaseNERas(%TPDrop,%FPDrop)
+Element SoftMaxThresholding Temp.Scaling MCDropout NER+NR
+Biomarkers (6%,0%) (6%,1%) (6%,2%) (6%,88%)
+Surgery (1%,32%) (1%,42%) (3%,68%) (2%,55%)
+Drugname (2%,24%) (2%,31%) (5%,44%) (1%,47%)
+Tumor (0%,41%) (1%,77%) (1%,77%) (2%,87%)
+The results in Table-1 (1) and Table-2 (2) consistently demonstrated the effectiveness of the NR
+models. On EMR data, NR achieved the best performance in 5 out of 6 entity categories, and
+on MIMIC-III data, in 3 out of 4 categories. Notably, on MIMIC-III, the NR models exhibited
+a conservative behavior, prioritizing maximal FP reduction while constraining TP loss. We set
+the hyper-parameter to limit TP drop to no more than 5–6%, while allowing FP reductions to be
+maximized. Under these conditions, NR reduced noise (FPs) by 47% to 87% while keeping TP
+degradationbelow6%.ThisdemonstratesthatNRcansubstantiallyincreaseprecisionwithminimal
+lossinrecall.
+8 CONCLUSION
+We proposed a lightweight, explainable post-processing approach for enhancing the precision of
+NER outputs in clinical text, particularly in the presence of out-of-distribution data. By leverag-
+inginternalprobabilisticsignalsandembeddingspacecharacteristics,weengineeredstatisticaland
+densityfeaturesthatfeedintoaDecisionTree-basedNoiseRemoval(NR)model.
+TheresultingNRmodelssignificantlyimprovedprecisionacrossclinicalentitieswithminimalre-
+call degradation. Crucially, this method operates without any modifications to the original NER
+training or inference processes, making it a practical and efficient solution for real-world clinical
+deploymentsrequiringhighprecisionandrobustness.
+REFERENCES
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep
+bidirectionaltransformersforlanguageunderstanding. InProceedingsofthe2019conferenceof
+the North American chapter of the association for computational linguistics: human language
+technologies,volume1(longandshortpapers),pp.4171–4186,2019.
+Yarin Gal and Zoubin Ghahramani. Dropout as a bayesian approximation: Representing model
+uncertainty in deep learning. In international conference on machine learning, pp. 1050–1059.
+PMLR,2016.
+SoumyaSuvraGhosal,RamyaHebbalaguppe,andDineshManocha. Betterfeatures,bettercalibra-
+tion: Asimplefixforoverconfidentnetworks. InMachineLearningandKnowledgeDiscovery
+inDatabases.ResearchTrack,pp.231–247,2025.
+Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q Weinberger. On calibration of modern neural
+networks. InInternationalconferenceonmachinelearning,pp.1321–1330.PMLR,2017.
+AndreasNugaardHolm,DustinWright,andIsabelleAugenstein.Revisitingsoftmaxforuncertainty
+approximationintextclassification. Information,14(7):420,2023.
+JianLiu,WeichangLiu,YufengChen,JinanXu,andZheZhao. Addressingnerannotationnoises
+withuncertainty-guidedtree-structuredcrfs.InProceedingsofthe2023ConferenceonEmpirical
+MethodsinNaturalLanguageProcessing,pp.14112–14123,2023.
+10
+AnatoleLokshinandVladikKreinovich. Whysoftmax? becauseitistheonlyconsistentapproach
+toprobability-basedclassification. 2023.
+KristianMiok, BlazSˇkrlj, DanielaZaharie, andMarkoRobnikSˇikonja. Bayesianbertfortrustful
+hatespeechdetection. 2020.
+MarcinMoz˙ejko,MateuszSusik,andRafałKarczewski. Inhibitedsoftmaxforuncertaintyestima-
+tioninneuralnetworks. arXivpreprintarXiv:1810.01861,2018.
+TimPearce,AlexandraBrintrup,andJunZhu. Understandingsoftmaxconfidenceanduncertainty.
+arXivpreprintarXiv:2106.04972,2021.
+Weijie Tu, Weijian Deng, Liang Zheng, and Tom Gedeon. What does softmax probability tell us
+aboutclassifiersrankingacrossdiversetestconditions? arXivpreprintarXiv:2406.09908,2024.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+Łukasz Kaiser, and Illia Polosukhin. Attention is all you need. Advances in neural informa-
+tionprocessingsystems,30,2017.
+Yuxin Xiao, Paul Pu Liang, Umang Bhatt, Willie Neiswanger, Ruslan Salakhutdinov, and Louis-
+Philippe Morency. Uncertainty quantification with pre-trained language models: A large-scale
+empiricalanalysis. arXivpreprintarXiv:2210.04714,2022.
+APPENDIX A: TRANSFORMER EQUATIONS
+ABERTNERmodeltakinganinputX ∈RT×V,forT tokensininputthatareone-hot-encodedto
+vocabularyspaceV. Theseone-hot-encodedvectorXgoesthroughthefollowingstepstogenerate
+theTransformeroutput,asvectorsinembeddingspaceofdimensionD.
+X =WE.X (8)
+Ew
+(cid:26) sin(pos/100002i/D) ifiiseven,∀pos ∈ [0,T),∀i ∈ [0,D/2)
+X =
+E pos cos(pos/100002i/D) ifiisodd,∀pos ∈ [0,T),∀i ∈ [0,D/2)
+(9)
+X =X +X (10)
+pos Ew Epos
+Z =MultiHeadAttention(X ,X ,X ) (11a)
+attn pos pos pos
+where,MultiHeadAttention(Q,K,V) = Concat(Head ,...,Head ).WO
+1 h
+(11b)
+where,Head =Attention(Q ,K ,V ) (11c)
+i headi headi headi
+where,Q =Q.WQ (11d)
+headi i
+where,K =K.WK (11e)
+headi i
+where,V =V.WV (11f)
+headi i
+where,Attention(Q,K,V)=AttentionWeights(Q,K).V (11g)
+Q.KT
+where,AttentionWeights(Q,K)=SoftMax( √ ) (11h)
+D
+Z =LayerNorm(X +Z ) (12)
+norm pos attn
+Z =FFN(Z ) (13a)
+ffn norm
+where,FFN(x)=max(0,x.W +b ).W +b (13b)
+1 1 2 2
+Z =LayerNorm(Z +Z ) (14)
+ffn norm
+11
+The finaloutput of Transformer isan output embeddingvector Z ∈ RT×D. That can beused for
+multiplepurposes,onedirectlyasasemanticvectortorepresentthetextconcept. Orcanbefedto
+subsequentlinearlayersforfurtherclassificationpurposelikeSentenceClassification,NER(Named
+EntityRecognition),RE(RelationExtraction),ABSA(AspectBasedSentimentAnalysis),etc.
+APPENDIX B: FEATURE DEFINITIONS
+The proposed features are designed to extract and represent nuanced information from the final
+output layer of a BERT-based NER model. As described in a preceding sections, the probability
+spaceoffersarichreservoirofinformation,whichincludesboththeintra-classprobabilitystrength
+ofindividualtokensandtheirinterdependencieswithsurroundingtokens.
+Featureextractionisconductedacrossmultiplelevelsoftextualgranularity. Thefollowingcontexts
+areconsideredforgeneratingfeatures:
+• PredictedToken: ThemostgranularunitpredictedbytheBERTmodelasa(B,I)class
+• PredictedWord:Agroupofpredictedtokenswith(B,I)classconstitutingacompleteword
+• Predicted Phrase: A sequence of words forming a coherent phrase, with predicted (B, I)
+classess
+• Immediate Neighboring Tokens: Tokens that are immediately adjacent (preceding or fol-
+lowing)tothepredictedphrasebelongingtoanyclass
+• EntireContext: Alltokensinthesentenceexcludingthepredictedphrase.
+Twoprimarytypesoffeaturesarecomputed:
+• StatisticalSummaryFeatures
+• SpatialDensityFeatures
+Statistical Summary Features: These features are computed for the predicted token, word, or
+phrase. Theycaptureaggregatestatisticalcharacteristicsofthepredictedprobabilitydistributions.
+Specifically,thefollowingmetricsareextracted:
+• ClassCounts: Frequencyofeachpredictedclasswithinthegroup.
+• ClassRatios: Proportionalrepresentationofeachclass.
+• MaximumProbability: Thehighestclassprobabilityamongtokens.
+• MeanProbability: Averageprobabilityacrosstokens.
+• CoefficientofVariation: Standarddeviationnormalizedbythemean,indicatingthespread
+oftheprobabilities.
+• ProbabilityDifference: Differencebetweenthehighestandsecond-highestclassprobabil-
+ities.
+• ProbabilityRatio: Ratioofthehighesttothesecond-highestclassprobabilities.
+SpatialDensityFeatures: Thesefeaturesarecomputedbasedonadiscretizedviewoftheproba-
+bilityspace:
+• Eachclasslabel(B,I,O)isassignedtenbinsbasedonprobabilityvalues.
+• Eachbinhasawidthof0.1,coveringtherange(0,1).
+• Tokensaremappedintooneof30totalbins(10perclass)basedontheirpredictedproba-
+bilityandclasslabel.
+• Tokens are further weighted by their distance from the predicted token using a Gaussian
+decayfunction:
+W =exp(− 2Rx 22 )
+– wherexistherelativedistancefromthepredictedtokenandRisahyperparameter
+controllingthedecayrate.
+12
+Thesespatialdensityfeaturesaredesignedtocapturethestructuraldistributionofclassprobabilities
+withinthecontextofthepredictedtoken,takingintoaccountthespatialarrangementofprobabilities
+acrossthesequence.
+APPENDIX C: MODEL INFERENCING EXPLANATION
+Thenomenclatureoffeaturesabideaconvention, wheremultiplesub-wordsseparatedby’ ’. The
+firstsub-wordcanhaveoneofthefollowingvalues: (SPD,Context, Phrase, Word, Token), where
+SPDindicatesthisisaSpatialDensityfeature,whiletheotherwordsindicateitisastatisticalfeature
+withcontextwindowasoneof(Context,Phrase,Word,Token). Thesecondsub-wordindicatesthe
+NERclasstypecanhaveoneofthesevalues:(B-tag,I-tag,O-tag).Thenthirdandfourthsub-tokens
+indicatesthetypeofstatisticalmeasureused.
+To illustrate model interpretability, we present a synthetic example: Sample text: “Signed Final
+reportImpression/PlanpatientwithnoPMH,14packyears,stageIVbcT1N2M1cadenocarcinoma
+of the lung (RLL primary met to the brain, PDL1 50% and positive ALK on Foundation ctDNA),
+ALKFISHnegativeatStanfordwith+ALKnotedonStanfordSTAMPtesting.”
+In the example above, in addition to correctly identified biomarkers such as ALK and PDL1, the
+NERmodelerroneouslypredictedtheword“met”asabiomarker. While“MET”isindeedaknown
+biomarker, in this context, the word “met” denotes metastasis to the brain, not the gene. Despite
+being assigned a high probability as a B-Biomarker token by the NER model, the Decision Tree
+correctlyidentifiedthisasaweakcandidateandrecommendeditforremoval.
+Due to the explainable nature of Decision Trees, we extracted the decision path used to reach this
+conclusion:
+Decision Path:
+(PDM B-tag WCount bkt 0.9-1.0 > 7.2e-7)
+& (Token prob class ratio 3 by 2 <= 0.667)
+& (PDM O-tag WCount bkt 0.9-1.0 <= 7.7)
+& (Phrase prob O-tag ratio <= 0.7)
+& (PDM O-tag WCount bkt 0.9-1.0 <= 6.696)
+& (Token prob class ratio 3 by 2 <= 0.653)
+& (Word B I-tag count <= 3.5)
+& (Context B-tag mean prob > 3.18e-6)
+& (Token prev word max prob > 0.944)
+ThisdecisionpathhighlightshowthemodelutilizedPartialDensityMap(PDM)features,focusing
+onthedistributionofhigh-confidencepredictionsacrosscontextwindows.Italsoleveragedtheratio
+of third-to-second class probabilities as an uncertainty metric and evaluated phrase-level coverage
+of the ‘O’ class to quantify contextual alignment. Since “met” was the only predicted token and
+formed a single-token phrase, hence all the token, word and phrase features pertained solely for
+the”met”token. Additionally, themodelconsideredtheprobabilitystrengthofadjacenttokensto
+assesssemanticconsistency.
+An SME evaluating the isolated token “met” might initially consider it a biomarker. However,
+contextual cues, especially references to brain metastasis, clearly disqualify it. The Decision Tree
+model replicated this human reasoning by prioritizing local contextual signals, effectively down-
+weightingsurroundingbiomarkersandcorrectlyidentifyingthetermasafalsepositive.
+13

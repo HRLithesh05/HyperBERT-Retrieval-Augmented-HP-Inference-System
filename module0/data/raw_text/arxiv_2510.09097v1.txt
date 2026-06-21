@@ -1,0 +1,965 @@
+FrameEOL:
+Semantic Frame Induction using Causal Language Models
+ChihiroYano1, KosukeYamada1,2, HayatoTsukagoshi1,
+RyoheiSasano1, KoichiTakeda3
+1NagoyaUniversity 2CyberAgent 3NationalInstituteofInformatics
+yano.chihiro.j3@s.mail.nagoya-u.ac.jp, yamada_kosuke@cyberagent.co.jp
+tsukagoshi.hayato.r2@s.mail.nagoya-u.ac.jp
+sasano@i.nagoya-u.ac.jp takedasu@nii.ac.jp
+Abstract Both sentences contain the same verb lost. How-
+ever, Sentence (1) conjures an image of “a com-
+Semantic frame induction is the task of
+petition comes to an end, with someone losing
+clustering frame-evoking words according to
+againstanopponentaccordingtotheirscore,”while
+the semantic frames they evoke. In recent
+years,leveragingembeddingsofframe-evoking Sentence (2) evokes a situation where “someone
+wordsthatareobtainedusingmaskedlanguage mayhaveunintentionallymisplacedapossession.”
+models(MLMs)suchasBERThasledtohigh- When reading such sentences, humans recognize
+performance semantic frame induction. Al- thedifferentmeaningsoflostfromthecontextand
+thoughcausallanguagemodels(CLMs)such
+understandeachsentence whilesupplyingthein-
+astheGPTandLlamaseriessucceedinawide
+formation necessary to understand the situation,
+range of language comprehension tasks and
+can engage in dialogue as if they understood such as COMPETITION or OPPONENT for Sen-
+frames, they have not yet been applied to se- tence (1). In frame semantics, such background
+mantic frame induction. We propose a new knowledgeisreferredtoasasemanticframeand
+methodforsemanticframeinductionbasedon words like lost are called frame-evoking words.
+CLMs. Specifically,weintroduceFrameEOL, The verb lost in Sentence (1) corresponds to the
+a prompt-based method for obtaining Frame
+FINISH_COMPETITION frame, which involves a
+EmbeddingsthatoutputsOneframe-nameasa
+competitioncomingtoanendwithanoutcomede-
+Labelrepresentingthegivensituation.1 Toob-
+terminedbyascoreorranking. Incontrast,theverb
+tainembeddingsmoresuitableforframeinduc-
+tion,weleveragein-contextlearning(ICL)and
+lost in Sentence (2) corresponds to the LOSING
+deepmetriclearning(DML).Frameinduction frame,whichdescribesasituationwheresomeone
+is then performed by clustering the resulting loseshisorherpossession.
+embeddings. ExperimentalresultsontheEn- Semanticframeknowledgeisbeingdeveloped
+glishandJapaneseFrameNetdatasetsdemon-
+for many languages. The representative resource
+strate that the proposed methods outperform
+is FrameNet (Ruppenhofer et al., 2016), a large-
+existingframeinductionmethods. Inparticu-
+scale semantic frame resource that was manu-
+lar,forJapanese,whichlacksextensiveframe
+ally developed for English. In addition, resource
+resources,theCLM-basedmethodusingonly
+5 ICL examples achieved comparable perfor- development following FrameNet is in progress
+mancetotheMLM-basedmethodfine-tuned for several languages, including Brazilian Por-
+withDML. tuguese,Chinese,Hebrew,Japanese,Korean,and
+Swedish (Baker et al., 2018). However, manual
+1 Introduction
+resourcedevelopmententailsenormouscosts,mak-
+Framesemantics(Fillmore,1982)considersaccess ing it challenging to construct such large-scale
+toworldknowledgethatisrelatedtoawordtobe frame knowledge. Accordingly, automatic con-
+essentialforunderstandingtheword. Considerthe struction of frame knowledge from massive text
+followingsentences: corpora is an active research area. Representa-
+1. Helostthegoldmedalbyjust.02points. tiveofsuchstudiesarethoseonframeinduction:
+the task of clustering a set of words given to-
+2. Helosthisgoldmedalattherestaurant.
+getherwiththeircontextaccordingtothesemantic
+1FrameEOL is a method inspired by PromptEOL, and framestheyevoke. Inrecentyears,severalmethods
+itsnameincludesthestring“EOL”toreflectthisconnection.
+(Ribeiroetal.,2019;Arefyevetal.,2019;Yamada
+However,itshouldbenotedthatwhat“EOL”standsfordiffers
+betweenthetwomethods. etal.,2021)thatleveragemaskedlanguagemodels
+5202
+tcO
+01
+]LC.sc[
+1v79090.0152:viXra
+obtaining Frame Embeddings that outputs One
+In the situa+on "He lost his gold medal at the
+restaurant," please briefly answer whether you think frame-nameasaLabelrepresentingthegivensitu-
+there was an opponent in the scene where he “lost" ation. FrameEOLextendsPromptEOL(Jiangetal.,
+the medal.
+2024),aprompt-basedsentenceembeddingmethod
+withanexplicitone-wordlimitation,forsemantic
+No, there is no indica+on of an opponent in the scene. The word "lost" suggests
+that he misplaced the medal rather than being defeated in a compe++on. frame induction. Figure 2 shows an overview of
+FrameEOL and the overall frame induction pro-
+cess. Givenaframe-evokingwordanditscontext,
+In the situa+on "He lost the gold medal by just .02 FrameEOLinputsaprompttoCLMssuchthatthe
+points," please briefly answer whether you think
+next word will be the corresponding frame name
+there was an opponent in the scene where he "lost"
+the medal. inFrameNet. Asaresult, thelasttoken’sembed-
+dingisconsideredtobetheembeddingthatwould
+Yes, there was likely an opponent in the scene because losing "by just .02 points" represent that frame. Furthermore, we apply in-
+suggests a compe++ve context where scores are compared, implying the
+context learning (ICL) and deep metric learning
+presence of at least one compe+tor.
+(DML) to obtain embeddings that are more suit-
+ableforsemanticframeinduction. Afterobtaining
+Figure1:ExamplesofChatGPToutputshowingthepos- frame embeddings for the frame-evoking words
+sibilityofrecognizingdifferencesinsemanticframes inagivencorpus,weclustertheseembeddingsto
+evokedbythesamepredicatelost.
+inducesemanticframes.
+(MLMs)suchasBERT(Devlinetal.,2019)toob- 2 RelatedWork
+tainframeembeddingshavebeenproposed. Frame
+embeddingsarevectorrepresentationsthatcapture 2.1 SemanticFrameInduction
+thesemanticframeevokedbyagivenwordandare Semantic frame induction is a task that groups
+usedtoinducesemanticframes. frame-evokingwords,typicallyverbs,alongwith
+Incontrast,large-scalecausallanguagemodels their contexts according to the semantic frames
+(CLMs) such as the GPT and Llama series have theyevoke.
+not been used for semantic frame induction, de- Unlikesemanticframeidentification,whichde-
+spite their success in a wide range of language pends on a predefined set of frame labels, frame
+comprehension tasks (Touvron et al., 2023; Ope- induction does not require such a predefined la-
+nAI, 2024). In fact, modern CLMs such as GPT- bel set. This can be advantageous depending on
+4o are potentially likely to understand semantic the setting or application. First, when new con-
+frames. Forexample,asshowninFigure1,when ceptsemerge,forexamplestreaminginthesenseof
+ChatGPTreceivesthefollowingprompttemplate watchingonlinevideos,frameinductionmakesit
+with [sentence] replaced by Sentence (1) and possibletoconstructframescorrespondingtothose
+Sentence(2),respectively,ittendstoanswer“Yes” concepts (Tsujimotoetal.,2025). Second,inspe-
+totheformerand“No”tothelatter.2
+cificdomainssuchasmedicineorcooking,domain-
+specificconceptsmayexistandtherequiredgran-
+Prompttemplate:
+ularity of frames may differ. In such cases, it be-
+Inthesituation"[sentence],"pleasebriefly
+comesnecessarytoperformframeinductionthat
+answerwhetheryouthinktherewasanoppo-
+doesnotrelyonapredefinedlabelset.
+nentinthescenewherehe"lost"themedal.
+Inrecentyears,methodsleveragingcontextual-
+This indicates that GPT-4o correctly understands
+ized embeddings have been proposed and shown
+thatanopponentispresentonlyinthesituationrep-
+to achieve strong performance (Arefyev et al.,
+resentedbySentence(1). Itisthusconceivablethat
+2019;Ribeiroetal.,2019;Anwaretal.,2019;Ya-
+frame induction could be performed with higher
+mada et al., 2021, 2023; Mosolova et al., 2024).
+accuracybyleveragingsuchCLMs.
+TheyleverageMLMssuchasBERT(Devlinetal.,
+Hence, in this paper, we propose a method for
+2019)toobtaincontextualizedwordembeddings.
+inducingsemanticframesbasedonCLMs. Wefirst
+Themethodscanbebroadlycategorizedintotwo
+introduceFrameEOL,aprompt-basedmethodfor
+groups: unsupervisedandsupervisedapproaches.
+Theunsupervisedsettingassumesthatmanuallyan-
+2We accessed https://chatgpt.com/ on 2025-02-11
+andusedtheGPT-4omodel. notatedframeinformationisunavailable,whereas
+Frame-evoking word
+・
+・・
+H ao nw
+d
+w Fe rl al mdo
+e
+Nth ee
+t
+fin rd au mc ee sd ag lir go nu ?ps
+Surrounding text Frame Frame A
+embedding
+Frame B
+Clustering Frame C
+FrameEOL
+lost : Frame-evoking word
+The FrameNet frame He lost his gold medal : Sentence containing
+evoked by “lost” in “He
+CLM ・
+・・ at the restaurant. the frame-evoking verb
+lost his gold medal at : Frame embedding
+the restaurant.” is Losing Losing : FrameNet frame
+Figure2: OverviewoftheframeinductionprocessusingFrameEOLanditsevaluation.
+thesupervisedsettingassumesthatmanuallyanno- optimizes triplets of anchor, positive, and nega-
+tatedinformationisavailableforsomeframes. tive examples to ensure the distance between the
+Intheunsupervisedsetting,severalapproaches anchor and negative example is at least a margin
+havebeenproposedinrecentyearstogroupframe- larger than the distance between the anchor and
+evoking words via contextualized word embed- positiveexample.
+dings derived from pre-trained language models
+2.2 Prompt-BasedTextEmbeddings
+(Arefyev et al., 2019; Ribeiro et al., 2019; An-
+war et al., 2019). Among these, Yamada et al. In this study, we adapt prompt-based embedding
+(2021) utilized two types of embeddings from techniquesoriginallydevelopedforsentencerep-
+BERT: the contextualized word embeddings of resentations,toderivedenseembeddingsthatrep-
+frame-evoking words; and the embeddings when resentsemanticframes. Therefore,inthissection,
+theframe-evokingwordsaremaskedwith[MASK] we first provide an overview of existing methods
+tokens. Furthermore,toaddressthetendencyofex- forobtainingsentenceembeddings.
+istingmethodstooverlydisperseexamplesacross Traditionalmethodstypicallyconstructsentence
+toomanyclusters,theyintroducedatwo-stepclus- embeddingswithvariousstrategies,includingex-
+tering approach. While the commonly used one- tractingrepresentationsfromspecialtokens(e.g.,
+step clustering approach clusters all examples at [CLS])orcomputingtheaverageofalltokenem-
+once,thisapproachfirstclustersexamplesbyverb beddings (Reimers and Gurevych, 2019; Tsuk-
+andsubsequentlyclustersthemacrossverbs,effec- agoshietal.,2021;Gaoetal.,2021).
+tivelylimitingthenumberofclustersthatexamples More recently, prompt-based approaches have
+ofasingleverbcanbelongto. Inthisstudy,wewill been explored to enhance the embedding qual-
+conductexperimentswithboththeone-stepcluster- ity (Jiang et al., 2022, 2024; Lei et al., 2024).
+ingapproachandthetwo-stepclusteringapproach PromptBERT (Jiang et al., 2022) leverages a
+insemanticframeinduction. maskedtokenpredictioncapabilitytoobtainmore
+Inthesupervisedsetting, Yamadaetal.(2023) effective sentence embeddings by using prompts
+demonstrated that semantic frame induction can such as “This sentence: [sentence] means
+be performed with even higher performance by [MASK]”,whichconsolidatethesentence’sseman-
+applying deep metric learning (DML) (Kaya and tic content into the [MASK] token representation.
+Bilge,2019). Thisapproachaddressesthelimita- By leveraging masked token prediction, this ap-
+tion that embedding spaces obtained solely from proachdynamicallycontextualizessentencemean-
+pre-training do not always reflect meanings that ing and has been shown to improve embedding
+alignwithhumanintuitionaboutsemanticframes. quality.
+ThroughDML,themodelisfine-tunedtoplaceem- PromptEOL(Jiangetal.,2024)isamethodto
+beddingsofverbsthatevokethesameframeclose obtainsentenceembeddingsbyutilizingthenext
+together, while positioning embeddings of verbs tokenpredictioncapabilityofCLMs,anditdemon-
+evokingdifferentframesfartherapartintheseman- strateshighperformancewithoptimizationviaICL
+tic space. They employed several types of loss orcontrastivelearning. Inthisapproach,aprompt
+functions for DML including triplet loss, which is fed to a CLM to predict a single-word output
+that represents a given sentence’s meaning. The Demonstration
+lasttoken’sfinallayerrepresentationisusedasthe The FrameNet frame evoked by "wear" in "On his head he wore a white
+nightcap … ` " is Wearing.
+sentenceembedding. Thefollowingisanexample
+The FrameNet frame evoked by "type" in "I typed it out for Diana Morrison .
+" is Text_creation.
+ofthepromptusedinPromptEOL.
+The FrameNet frame evoked by "kneel" in "He knelt up and leaned towards
+Lucien . " is Change_posture.
+PrompttemplateinPromptEOL:
+The FrameNet frame evoked by “lost" in “He lost his gold medal at the
+This sentence: "[sentence]" means in one restaurant.” is
+word: "
+Figure3: Exampleofinputin3-shotICLsetting.
+The placeholder [sentence] represents the sen-
+tencetobeembedded. intheaboveprompt. Thiscouldbeseenassome
+Both approaches design the input format to sortofleakage. InSection4.3,weremovetheex-
+closelyresemblethepre-trainingtask,therebyen- plicitterm“FrameNet”fromtheinputpromptand
+ablingthemodeltobetterunderstandthetaskand showthat,underbothICLandDMLsettings,omit-
+obtain more effective embeddings. Inspired by ting this term has only a limited effect on perfor-
+these methods, we design tailored prompts for mance. Sincethisstudyfocusesonframeinduction
+CLMstoeffectivelyobtainframeembeddings. in a supervised setting, we believe this potential
+leakageisnotamajorissue.
+3 ProposedMethod
+3.2 FrameEmbeddingOptimizationviaICL
+We induce semantic frames by obtaining the
+Semanticframeinductionhasprimarilybeenstud-
+frame embeddings of frame-evoking words with
+iedinEnglish. Itsapplicationtootherlanguagesre-
+FrameEOLandthenclusteringtheframe-evoking
+mainschallengingbecauseofthelimitedavailabil-
+wordsinacorpusbasedontheobtainedframeem-
+ityofsemanticframeresources. ICLisamethod
+beddings. FollowingYamadaetal.(2021),weuse
+thatadaptsCLMstodownstreamtasksbyincorpo-
+twoclusteringmethods: one-stepandtwo-stepclus-
+ratingafewdemonstrationsintotheinput(Brown
+tering. Inthissection,wefirstexplainFrameEOL,
+etal.,2020). Ithasgainedsignificantattention,par-
+a method for obtaining frame embeddings via a
+ticularlyinscenarioswithlimitedtrainingdata. To
+CLM;andthenwedescribehowtooptimizeframe
+achievehigh-performanceframeinductionevenfor
+embeddingsviaICLandDML.
+low-resourcelanguages,weintroduceamethodto
+3.1 FrameEOL obtainframeembeddingsbasedonICL.Figure3
+shows an example input provided to CLMs in a
+Inspired by PromptEOL (Jiang et al., 2024), we
+three-shot setting in our approach. We first pre-
+obtaintheembeddingofaframe-evokingwordin
+pareexamplescomprisingaframe-evokingword,
+a sentence by using a prompt tailored for frame
+its surrounding sentence, and the evoked frame
+induction. InPromptEOL,thepromptisdesigned
+name. Next, we construct demonstrations by fill-
+topredictasinglewordrepresentingthegivensen-
+ing the FrameEOL prompt template: we fill the
+tenceasthenexttoken,whereasinFrameEOL,the
+frame-evoking word into the [verb], fill the sur-
+prompt is designed to predict a FrameNet frame
+roundingsentenceintothe[sentence],andthen
+name as the next token. Specifically, FrameEOL
+appendtheevokedframenameimmediatelyafter-
+usesthefollowingprompt.
+ward. Followingthesedemonstrations,weappend
+PrompttemplateinFrameEOL:
+an inference prompt that is constructed by filling
+TheFrameNetframeevokedby"[verb]"in
+theFrameEOLtemplatewiththetargetinstance’s
+"[sentence]"is
+frame-evokingwordanditssurroundingsentence
+Here,[verb]denotesaplaceholderfortheframe- withoutappendinganevokedframename. Byin-
+evokingverbforwhichweobtaintheembedding, cludingsuchdemonstrations,weexpecttooutput
+and[sentence]representsaplaceholderforasen- embeddingsthatrepresentframenames,thusyield-
+tencecontainingthatframe-evokingverb. Weuse ingdistinctembeddingsforeachevokedframe.
+theembeddingfromthefinallayercorresponding
+3.3 FrameEmbeddingOptimizationviaDML
+tothelasttoken“is”astheframeembedding.
+Note that FrameEOL assumes that pre-trained Previous studies on semantic frame induction us-
+CLMshavelearnedknowledgeofFrameNet,ascan ing MLMs have demonstrated that, when super-
+beseenfromtheinclusionoftheword“FrameNet” viseddataareavailable,fine-tuningthroughDML
+T evh oe
+k
+F er da m bye N “le ot
+s
+tf ”r a inm “e
+H e CLM ・ ・
+Losing d ale lv ee xlo ap mm pe len st, oa fn td hete ss at m.
+e
+vT eh re bs wp eli rt es pe ln as cu er ded int th ha et
+lost his gold medal at
+the restaurant.” is samesubset,andthattheproportionofpolysemous
+The FrameNet frame verbs remained constant across all subsets. The
+evoked by “lost” in “He CLM ・ ・ statisticsfortheoveralldatasetandeachsubsetare
+lost the gold medal by Finish
+just .02 points.” is competition providedinAppendixA.Theaveragenumberof
+The FrameNet frame ・ ・ instances across the three subsets was 27,537. A
+evoked by “win” in “you CLM
+keycharacteristicoftheexperimentalsetupisthat
+won the game.” is
+thetestsetincludesframesthatwereunseenduring
+Figure4: OverviewofDML:embeddingsofthesame
+training. Forinstance,intheFrameNetdataset,an
+frame are trained to be closer, while embeddings of
+average of 135.3 out of 434.3 frames per test set
+differentframesaretrainedtobefartherapart.
+wereunseenduringtraining.
+ismoreeffectivethanusingpre-trainedmodelsas ClusteringMethods Inthesemanticframeinduc-
+they are (Yamada et al., 2023). Given its proven tiontask,theinstancesofeachverbareclustered
+effectivenessinpriorwork,weexpectDMLtobe by the semantic frame that it evokes. Following
+similarly effective here. Hence, we use DML to previouswork(Yamadaetal.,2023,2021),weem-
+enhancesemanticframeinductionusingCLMs. ploy two clustering methods in our experiments:
+Given its demonstrated effectiveness (Yamada one-step clustering and two-step clustering. For
+etal.,2023),weusethetripletloss: one-step clustering, we used group-average clus-
+tering, whereas for two-step clustering, we used
+L = max(D(x ,x )−D(x ,x )+m,0), (1)
+tri a p a n X-means (Pelleg and Moore, 2000) for the first
+wherex ,x ,andx aretheframeembeddingsof step and group-average clustering for the second
+a p n
+theanchor,positive,andnegativeinstances,respec- step. DetailsareshowninAppendixB.
+tively. Themarginmisatunablehyperparameter,
+EvaluationMethods Weevaluatedthesemantic
+andD(·,·)denotesadistancemetric. Inthisstudy,
+frame induction methods by comparing automat-
+weusetheEuclideandistanceofnormalizedframe
+ically created clusters of instances of verbs with
+embeddingsx,followingYamadaetal.(2023). Fig-
+goldclustersofinstancesofverbsevokingthesame
+ure4showsanoverviewofourDMLapplication.
+frames. Forevaluationmetrics,weusedB-cubed
+Because we use large-scale CLMs, we adopt
+Precision(BCP),Recall(BCR),andtheirharmonic
+a parameter-efficient approach to fine-tune these
+mean,F-score(BCF)(BaggaandBaldwin,1998),
+modelsunderaconstraintoflimitedcomputational
+which are representative metrics for this cluster-
+resources. Specifically, we use Low-Rank Adap-
+ing task. In our experiments, we use BCF as the
+tation (LoRA), a method that makes only the in-
+primaryevaluationmetric.
+troduced low-rank matrices in linear layers train-
+able (Hu et al., 2022). LoRA has been shown to Training Settings In our experiments, we used
+achieveperformancecomparabletothatoffullfine- widelyrecognized,general-purposepre-trainedlan-
+tuningwhilesignificantlyreducingthenumberof guagemodelsfromtheGemmaandLlamaseries.
+trainableparameters. Specifically, we conducted experiments with
+Gemma3-12B3 (GemmaTeam,2025),andLlama
+4 ExperimentsonFrameNet
+3.1-8B4 (Llama Team, 2024). Experiments on
+Wefirstconductedexperimentsonsemanticframe smallermodelsarepresentedinAppendixC,dueto
+induction using CLMs for English. In these ex- spaceconstraints. Weconductedfine-tuningwith
+periments, we used FrameNet, an English frame LoRAbyattachingLoRAadapterstoalllinearlay-
+knowledgeresource,asthedatasetforevaluation. ers within the model. We set LoRA rank r = 8
+and α = 32, and training for 20 epochs via the
+4.1 EvaluationSetup AdamWoptimizer(LoshchilovandHutter,2017)
+Dataset Weusedadatasetthatweextractedfrom with a batch size of 32. We explored triplet loss
+FrameNet1.7(Ruppenhoferetal.,2016)byselect-
+inginwhichtheframe-evokingwordisaverb. For
+3https://huggingface.co/google/
+gemma-3-12b-it
+three-foldcrossvalidation,thedatasetwasequally
+4https://huggingface.co/meta-llama/Llama-3.
+splitintothreesubsetsina1:1:1ratiofortraining, 1-8B
+Training One-StepClustering Two-StepClustering
+Model ModelSize
+Method DataSize BcP BcR BcF BcP BcR BcF
+MLM-basedmethods
+- - 41.1 44.7 42.8 49.7 65.8 56.5
+BERT 0.1B
+base DML 27,536 61.8 68.7 65.0 65.6 67.8 66.4
+- - 32.8 45.9 38.3 51.2 65.4 57.3
+BERT 0.3B
+large DML 27,536 63.6 69.0 66.2 67.3 69.2 67.8
+- - 19.6 42.8 27.0 50.7 61.4 55.4
+ModernBERT 0.1B
+base DML 27,536 59.7 69.7 64.3 65.1 68.4 66.5
+- - 29.4 45.1 35.6 51.6 62.1 56.2
+ModernBERT 0.3B
+large DML 27,536 63.5 73.1 67.9 68.2 68.7 68.2
+- - 21.9 58.0 31.7 52.9 63.8 57.6
+RoBERTa 0.3B
+large DML 27,536 62.9 73.7 67.9 70.4 69.2 69.6
+CLM-basedmethods(ours)
+0 9.1 66.7 16.0 53.3 39.6 45.4
+5 62.2 55.4 58.6 64.0 53.8 58.4
+ICL
+Gemma3 12B 10 63.0 54.9 58.7 64.5 53.7 58.6
+20 63.0 56.7 59.7 64.8 54.5 59.2
+DML 27,536 69.3 74.7 71.9 72.2 69.4 70.6
+0 20.8 45.1 28.4 43.4 48.8 46.0
+5 55.9 58.3 57.0 49.0 62.8 54.9
+ICL
+Llama3.1 8B 10 56.6 59.0 57.7 50.9 62.9 56.1
+20 56.8 60.1 58.3 51.5 63.3 56.7
+DML 27,536 67.2 74.9 70.8 74.2 68.3 70.9
+Table1: TheexperimentalresultsofsemanticframeinductiononFrameNet. Thescoreswereaveragedovera
+three-foldcross-validation,andthenmultipliedby100.
+margins of {0.1, 0.2, 0.5, 1.0} and learning rates 4.2 Results
+of {3e-5, 5e-5, 1e-4}. All hyperparameters were
+Table 1 summarizes the results. Our proposed
+determined using the development set. Training
+FrameEOL-basedmethodachievedthehighestper-
+costdetailsareshowninAppendixD.
+formanceamongallapproachesbyapplyingDML
+IntheICLexperiments,thedemonstrationsin-
+to the model. Specifically, in the one-step clus-
+cludedinthepromptwererandomlysampledfrom
+tering setting, Gemma 3 achieved a BcF score
+the training data. We experimented with 5, 10,
+of 71.9 and Llama 3.1 scored 70.8—both sub-
+and20demonstrations,conductingfourrunswith
+stantially higher than the best encoder model’s
+different random seeds to account for sampling
+score of 67.9. In the two-step clustering setting,
+variance. We set the maximum sequence length
+Gemma 3 and Llama 3.1 attained BcF scores of
+to 2048 and truncated the beginnings of input se-
+70.6 and 70.9, respectively, again surpassing the
+quences when necessary.5 To prevent truncation,
+MLM-basedmethod’sscoreof69.6.
+we replaced any demonstration exceeding 1,900
+The performance of the methods using ICL
+tokenswithanotherrandomlyselectedexample.
+tendedtoimproveslightlyasthenumberofdemon-
+ComparisonMethods Forcomparison,weeval- strations increased. The results confirmed that
+uated the method leveraging mask embeddings the CLM-based methods performed worse than
+to obtain contextualized word embeddings (Ya- theMLM-basedmethodswhentrainingdatawere
+mada et al., 2021, 2023), and also varied the not used, but the CLM-based methods achieved
+choiceofpre-trainedmodels,includingBERT , slightlybetterperformancethantheMLM-based
+base
+BERT ,ModernBERT ,ModernBERT , methodswhenatleast20instanceswereprepared.
+large base large
+and RoBERTa . ModernBERT is a powerful Specifically, the MLM-based method attained a
+large
+MLM that incorporates optimization techniques scoreof57.6intheno-tuningsetting,whereasthe
+recently applied to CLMs (Warner et al., 2025). CLM-based method attained scores of 59.7 and
+We evaluated methods without fine-tuning and 58.3 in the 20-shot ICL setting. The ICL-based
+methodswithfine-tuningbyDMLusingthetriplet methods exhibit particular potential for use with
+loss. low-resourcelanguage.
+Whenusing DMLorICL,no performanceim-
+5According to the Llama tokenizer, an average token
+provementwasobservedwithtwo-stepclustering.
+length of 26.48 per example, and the prompt token length
+was13 Thissuggeststhatthelearningprocessoptimized
+Training “FrameNet” One-Step Two-Step tion once it is provided with sufficient annotated
+Model
+Setting ininput BcF BcF
+trainingdata.
+Yes 16.0 45.4
+-
+No 13.5(–1.5) 43.9(–1.5)
+5 ExperimentsonJapaneseFrameNet
+Gemma3 ICL Yes 59.7 59.2
+-12B 20-shot No 59.6(–0.1) 59.5(+0.3)
+For languages besides English, the limited scale
+Yes 71.9 70.6
+DML
+No 71.2(–0.7) 70.8(+0.2) offrameknowledgeresourceshasconstrainedthe
+Yes 28.4 46.0 development of semantic frame induction meth-
+-
+No 8.8(–19.6) 35.9(–10.1)
+ods. Consequently,mostresearchinthisfieldhas
+Llama3 ICL Yes 58.3 56.7
+-8B 20-shot No 58.2(–0.1) 55.8(–0.9) beenconductedinEnglish. Forinstance,Japanese
+Yes 70.8 70.9 FrameNet(Oharaetal.,2004),aframeknowledge
+DML
+No 70.5(–0.3) 70.4(–0.5) resourceforJapanese,containsonly3,130exam-
+ples where verbs serve as frame-evoking words.
+Table 2: Differences in performance when the term
+This is a very small dataset, representing only
+“FrameNet”wasexcludedfromtheinput.
+about3.2%ofthenumberofsimilarexamplesin
+FrameNet. Thescarcityoftrainingdatamakes it
+thesemanticembeddingspacesufficientlyforse-
+challengingtoeffectivelytraindeeplearningmod-
+mantic frames, thus enabling effective clustering
+els, which has hindered the advancement of se-
+ofverbinstancesevenwiththeone-stepapproach.
+mantic frame induction methods in non-English
+languages.
+4.3 Effectof“FrameNet”inthePrompt
+Inthisstudy, toexploretheperformanceofse-
+FrameEOL explicitly incorporates FrameNet se-
+manticframeinductionfornon-Englishlanguages,
+mantics by instructing the prompt to generate
+we also performed experiments using Japanese
+FrameNet frames for subsequent tokens in the
+FrameNetfortrainingandevaluation. Large-scale
+prompt. Given that the CLM’s pre-training re-
+CLMs have demonstrated strong multilingual ca-
+sourceslikelyincludeFrameNet,themodel’sabil-
+pabilities, even when they are primarily English-
+itytoperformreasonablywellonfew-shotseman-
+centric (Brown et al., 2020; Holtermann et al.,
+tic frame induction can be attributed to its poten-
+2024). Accordingly,weinvestigatedwhetherlever-
+tialuseofFrameNet-relatedknowledgeacquired
+agingthesemultilingualcapabilitiescanbebenefi-
+during the pre-training phase. In this section, we
+cialforsemanticframeinduction,evenwhenthe
+examinetheperformanceimpactofthefollowing
+amountoftrainingdataislimited.
+inputtemplate,whichomitstheterm“FrameNet”
+fromtheFrameEOLtemplate. 5.1 ExperimentalSetup
+Prompttemplatewithout“FrameNet”: Ourproposedmethod,FrameEOL,isadaptableto
+The frame evoked by "[verb]" in anylanguagebysimplymodifyingtheprompt. To
+"[sentence]"is obtainframeembeddingsinJapanese,weusedthe
+followingprompt,whichisaJapanesetranslation
+Ifthemodelcanachievecomparableperformance
+ofthepromptdescribedinSection3.1.
+withouttheexplicitterm“FrameNet”,thenwecan
+rule out the possibility that it is solving the task PrompttemplateforJapanese:
+byleakingFrameNetinformationacquiredduring "[sentence]"内の"[verb]"が喚起する
+pre-training. FrameNetフレームは
+Table 2 lists the results. In the setting without
+(English Translation: The FrameNet frame
+fine-tuning,theeffectonperformanceofremoving
+evokedby"[verb]"in"[sentence]”is)
+theterm“FrameNet”fromtheinputpromptvaries
+Experimentswereconductedwithtwogeneral-
+bymodel;however,underboththeICLandDML
+purposeCLMs,Gemma3-12B-it(GemmaTeam,
+settings,thiseffectremainslimited. Thesefindings
+2025)andLlama3.1-8B(LlamaTeam,2024),and
+demonstratethatFrameNetinformationisnotdi-
+one CLM intended for use in Japanese, LLM-jp-
+rectlyleakedfromthepre-trainingcorpusthrough
+3-13B-Instruct36 (LLM-jp,2024). LLM-jp-3-13B-
+the use of the term “FrameNet”. In other words,
+Instruct3 was trained on a total of 2.1T tokens,
+evenifthepre-trainingcorpuscontainsnoexplicit
+FrameNet annotations or related content, a CLM
+6https://huggingface.co/llm-jp/
+canstillachievehighperformanceinframeinduc- llm-jp-3-13b-instruct3
+Training One-StepClustering Two-StepClustering
+Model ModelSize
+Method DataSize BcP BcR BcF BcP BcR BcF
+MLM-basedmethods
+- - 42.8 47.7 44.6 47.3 57.9 51.8
+JapaneseBERT 0.1B
+base DML 1,100 55.1 60.2 57.1 54.3 63.1 58.2
+Japanese - - 38.8 42.7 40.5 53.7 54.5 54.0
+0.1B
+ModernBERT base DML 1,100 59.0 61.3 60.0 51.6 63.0 56.6
+Japanese - - 36.8 40.0 38.2 50.6 55.5 52.7
+0.3B
+ModernBERT large DML 1,100 56.8 63.5 59.8 54.6 63.1 58.4
+CLM-basedmethods(ours)
+0 16.9 21.9 18.7 39.9 45.0 42.3
+5 55.6 61.9 58.5 57.4 60.9 59.0
+ICL
+Gemma3 12B 10 56.4 61.0 58.5 57.8 61.1 59.4
+20 56.7 60.2 58.3 57.9 60.8 59.3
+DML 1,100 51.9 66.2 57.9 53.8 66.2 59.4
+0 18.9 43.7 26.2 47.2 50.2 48.5
+5 55.7 65.1 59.9 51.2 65.5 57.4
+ICL
+Llama3.1 8B 10 56.9 64.9 60.6 51.8 65.6 57.8
+20 56.8 65.5 60.9 51.6 65.8 57.8
+DML 1,100 57.0 64.1 60.3 56.3 65.3 60.3
+0 19.7 32.7 24.5 43.1 55.1 47.9
+5 53.1 65.0 58.4 53.0 64.6 58.2
+ICL
+LLM-jp-3 13B 10 54.2 65.8 59.4 51.9 66.2 58.1
+20 53.8 66.3 59.3 51.7 67.1 58.4
+DML 1,100 56.9 66.7 61.3 53.4 66.6 59.2
+Table3: TheExperimentalresultsofsemanticframeinductiononJapaneseFrameNet. Thescoreswereaveraged
+overathree-foldcross-validation,andthenmultipliedby100.
+which included Japanese data, and underwent in- work without fine-tuning (Yamada et al., 2021)
+struction tuning and direct preference optimiza- and with fine-tuning (Yamada et al., 2023) to a
+tion (Rafael et al., 2023). The experiments on JapaneseBERTmodelandJapaneseModernBERT
+smallermodelsarepresentedinAppendixC.The model. TheBERTmodelwastheonereleasedby
+otherexperimentalsettingsforclusteringmethods, TohokuUniversity,7 whichhas110Mparameters
+DML,andICLwerethesameasthosedescribedin and was trained on the Japanese Wikipedia and
+Section4.1. Thedatasetsandcomparisonmethods CC-100 datasets. This model is widely used in
+usedforevaluationwereasfollows. Japanese natural language processing tasks. The
+ModernBERTmodel,8 wastrainedwith4.39Tto-
+Dataset WeextractedJapaneseFrameNetexam-
+kens of Japanese and English data (Tsukagoshi
+ples in which verbs evoked specific frames. For
+etal.,2025),whichismorethandoubletheamount
+three-fold cross-validation, these examples were
+usedforLLM-jp-3-13B-Instruct3.
+divided into training, development, and test sets,
+ensuring no overlap of frames or evoking words 5.2 ExperimentalResults
+acrosssubsets. Forframeswiththreeormoreevok- Table3summarizestheexperimentalresults. Our
+ingwords,overlapsbetweensubsetswereallowed proposed CLM-based methods demonstrated su-
+topreventthenumberofevokingwordsperframe periorperformancecomparedtotheMLM-based
+frombecomingtoosmall,giventhedataset’slim- methods, regardless of the training setting. The
+itedsize. Nevertheless,asthesplitwasperformed highest overall performance was achieved in the
+at the verb level, no single verb appeared in mul- one-stepclusteringsettingusingLLMjp-3,reach-
+tiplesubsets. Thestatisticsfortheoveralldataset ingaBcFscoreof61.3,surpassingtheMLM-based
+andeachsubsetareprovidedinAppendixA.The method’sscoreof60.0. Inthetwo-stepclustering
+averagenumberofinstancesacrossthethreesub- setting,Llama3.1achievedthehighestBcFscore
+setswas1,043. IntheJapaneseFrameNetdataset, of60.3,exceedingtheMLM-basedmethod’sscore
+anaverageof110.7outof137.0framespertestset of 58.4. Across both clustering approaches, the
+wereunseenduringtraining.
+7https://huggingface.co/cl-tohoku/
+bert-base-japanese-v3
+ComparisonMethods Forcomparisonmethods,
+8https://huggingface.co/sbintuitions/
+we also evaluated MLM-based approaches that modernbert-ja-130m
+ICLsettingusingfiveormorefew-shotexamples CLMs entails significant computational require-
+demonstratedperformancethatwascomparableto ments, which could restrict the practical deploy-
+themethodoffine-tuningMLMwithDML. This mentofourmethodinresource-constrainedenvi-
+waslikelyduetothesmalldatasize, as thetrain- ronments.
+ing data for Japanese FrameNet comprises only
+1,100examples,approximately4%ofthe27,536
+examplesavailableinEnglishFrameNet. Acknowledgments
+When we use ICL, sufficient performance can
+We would like to express our gratitude to Dr.
+beachievedwithasfewas20examples,whichis
+KyokoOharaofKeioUniversityforprovidingthe
+significantly smaller compared to the number of
+Japanese FrameNet data used in this study. This
+examples required for DML with MLM. Hence,
+researchwassupportedbyJSTFORESTProgram
+evenincaseswhereonlyaverylimitednumberof
+JPMJFR216N.
+examplesisavailable,theseresultsdemonstratethe
+possibilityofachievinghighlyaccurateautomatic
+constructionofsemanticframeknowledgebycre- References
+atingasmallnumberofexamplesandleveraging
+Saba Anwar, Dmitry Ustalov, Nikolay Arefyev, Si-
+CLMscombinedwithICL.
+monePaoloPonzetto,ChrisBiemann,andAlexander
+Panchenko.2019. HHMMatSemEval-2019Task2:
+6 Conclusion
+UnsupervisedFrameInductionusingContextualized
+WordEmbeddings. InProceedingsofthe13thInter-
+Inthisstudy,weproposedamethodusingcausal
+nationalWorkshoponSemanticEvaluation(SemEval
+language models (CLMs) for semantic frame in- 2019),pages125–129.
+ductionofverbs. Byleveragingthecharacteristics
+Nikolay Arefyev, Boris Sheludko, Adis Davletov,
+of CLMs, our proposed method uses a sequence
+Dmitry Kharchev, Alex Nevidomsky, and Alexan-
+in which the next word is the frame name as in-
+derPanchenko.2019. NeuralGRANNyatSemEval-
+put to the CLMs, and it uses the final layer em- 2019Task2: ACombinedApproachforBetterMod-
+beddingofthelasttokenastheframeembedding elingofSemanticRelationshipsinSemanticFrame
+Induction. InProceedingsofthe13thInternational
+representation. InexperimentsonFrameNet,deep
+WorkshoponSemanticEvaluation(SemEval2019),
+metriclearning(DML)exceededtheperformance
+pages31–38.
+ofexistingmethodsusingmaskedlanguagemod-
+els(MLMs)withDML.In-contextlearning(ICL) AmitBaggaandBreckBaldwin.1998. Entity-Based
+Cross-Document Coreferencing Using the Vector
+showedlowerperformancethanexistingmethods
+Space Model. In Proceedings of the 36th Annual
+using MLMs trained on a large amount of super-
+Meeting of the Association for Computational Lin-
+viseddatawithDML,butbetterperformancethan guisticsand17thInternationalConferenceonCom-
+existing methods without DML. In experiments putationalLinguistics(ACL-COLING1998),pages
+79–85.
+on Japanese FrameNet, the ICL method demon-
+stratedperformancecomparabletomethodsbased
+Collin F. Baker, Michael Ellsworth, Miriam R. L.
+on MLMs fine-tuned with DML. These results Petruck, and Swabha Swayamdipta. 2018. Frame
+suggestthat,whenautomaticallyconstructingse- SemanticsacrossLanguages:TowardsaMultilingual
+FrameNet. InProceedingsofthe27thInternational
+manticframeknowledgeforlanguageswithnoor
+ConferenceonComputationalLinguistics: Tutorial
+very limited training data, a promising approach
+Abstracts(COLING2018),pages9–12.
+wouldbetocreateabout20trainingexamplesand
+useamethodcombiningCLMswithICL. Tom Brown, Benjamin Mann, Nick Ryder, Melanie
+Subbiah,JaredDKaplan,PrafullaDhariwal,Arvind
+Neelakantan,PranavShyam,GirishSastry,Amanda
+Limitations
+Askell, Sandhini Agarwal, Ariel Herbert-Voss,
+Gretchen Krueger, Tom Henighan, Rewon Child,
+OurproposedCLM-basedsemanticframeinduc-
+AdityaRamesh,DanielZiegler,JeffreyWu,Clemens
+tionmethoddemonstratedhighperformance. Nev-
+Winter,and12others.2020. LanguageModelsare
+ertheless,severallimitationsremain. Inparticular, Few-ShotLearners. InAdvancesinNeuralInforma-
+ourexperimentswerelimitedtoEnglishFrameNet tionProcessingSystems(NeurIPS2020),volume33,
+pages1877–1901.
+and Japanese FrameNet, leaving it unclear how
+well our approach would generalize to other lan-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+guages or corpora. Additionally, the use of large Kristina Toutanova. 2019. BERT: Pre-training of
+DeepBidirectionalTransformersforLanguageUn- AnnaMosolova,MarieCandito,andCarlosRamisch.
+derstanding. InProceedingsofthe2019Conference 2024. InjectingWiktionarytoimprovetoken-level
+of the North American Chapter of the Association contextualrepresentationsusingcontrastivelearning.
+for Computational Linguistics: Human Language InProceedingsofthe18thConferenceoftheEuro-
+Technologies(NAACL2019),pages4171–4186. peanChapteroftheAssociationforComputational
+Linguistics(EACL2024).
+CharlesJFillmore.1982. FrameSemantics. InLinguis-
+ticsintheMorningCalm,pages111–137.Hanshin Kyoko Ohara, Seiko Yamaguchi Fujii, Toshio Ohori,
+PublishingCompany. Ryoko Suzuki, Hiroaki Saito, and Shun Ishizaki.
+2004. The Japanese FrameNet Project: An Intro-
+Tianyu Gao, Xingcheng Yao, and Danqi Chen. 2021. duction.
+SimCSE:SimpleContrastiveLearningofSentence
+Embeddings. InProceedingsofthe2021Conference OpenAI.2024. GPT-4TechnicalReport. arXivpreprint
+onEmpiricalMethodsinNaturalLanguageProcess- arXiv:2408.00118.
+ing(EMNLP2021),pages6894–6910.
+DanPellegandAndrewMoore.2000. X-means: Ex-
+GemmaTeam.2025. Gemma3TechnicalReport. arXiv tending K-means with Efficient Estimation of the
+preprintarXiv:2503.19786. NumberofClusters. InProceedingsofthe17thIn-
+ternationalConferenceonMachineLearning(ICML
+CarolinHoltermann,PaulRöttger,TimmDill,andAnne
+2000),pages727–734.
+Lauscher. 2024. Evaluating the Elementary Multi-
+lingualCapabilitiesofLargeLanguageModelswith RafailovRafael,SharmaArchit,MitchellEric,DMan-
+MultiQ. InFindingsoftheAssociationforComputa- ningChristopher,ErmonStefano,andFinnChelsea.
+tionalLinguistics(ACL2024). 2023. Direct Preference Optimization: Your Lan-
+guageModelisSecretlyaRewardModel. InThirty-
+EdwardJHu,yelongshen,PhillipWallis,ZeyuanAllen-
+seventhConferenceonNeuralInformationProcess-
+Zhu,YuanzhiLi,SheanWang,LuWang,andWeizhu
+ingSystems(NeurIPS2023).
+Chen.2022. LoRA:Low-RankAdaptationofLarge
+LanguageModels. InInternationalConferenceon
+Nils Reimers and Iryna Gurevych. 2019. Sentence-
+LearningRepresentations(ICLR2022).
+BERT:SentenceEmbeddingsusingSiameseBERT-
+Networks. InProceedingsofthe2019Conferenceon
+Ting Jiang, Shaohan Huang, Zhongzhi Luan, Deqing
+EmpiricalMethodsinNaturalLanguageProcessing
+Wang,andFuzhenZhuang.2024. ScalingSentence
+andthe9thInternationalJointConferenceonNatu-
+EmbeddingswithLargeLanguageModels. InFind-
+ralLanguageProcessing(EMNLP-IJCNLP2019).
+ingsoftheAssociationforComputationalLinguistics:
+EMNLP2024.
+Eugénio Ribeiro, Vânia Mendonça, Ricardo Ribeiro,
+DavidMartinsdeMatos,AlbertoSardinha,AnaLú-
+Ting Jiang, Jian Jiao, Shaohan Huang, Zihan Zhang,
+ciaSantos,andLuísaCoheur.2019. L2F/INESC-ID
+DeqingWang,FuzhenZhuang,FuruWei,Haizhen
+atSemEval-2019Task2: UnsupervisedLexicalSe-
+Huang,DenvyDeng,andQiZhang.2022. Prompt-
+manticFrameInductionusingContextualizedWord
+BERT:ImprovingBERTSentenceEmbeddingswith
+Representations. InProceedingsofthe13thInterna-
+Prompts. In Proceedings of the 2022 Conference
+tionalWorkshoponSemanticEvaluation(SemEval
+onEmpiricalMethodsinNaturalLanguageProcess-
+2019),pages130–136.
+ing(EMNLP2022).
+Josef Ruppenhofer, Michael Ellsworth, Myriam
+Mahmut Kaya and Hasan S¸akir Bilge. 2019. Deep
+Schwarzer-Petruck,ChristopherRJohnson,andJan
+MetricLearning: ASurvey. Symmetry,11(9):1066.
+Scheffczyk.2016. FrameNetII:Extendedtheoryand
+practice. InternationalComputerScienceInstitute.
+Yibin Lei, Di Wu, Tianyi Zhou, Tao Shen, Yu Cao,
+Chongyang Tao, and Andrew Yates. 2024. Meta-
+Hugo Touvron, Louis Martin, Kevin Stone, Peter Al-
+TaskPromptingElicitsEmbeddingsfromLargeLan-
+bert, Amjad Almahairi, Yasmine Babaei, Nikolay
+guageModels. InProceedingsofthe62ndAnnual
+Bashlykov,SoumyaBatra,PrajjwalBhargava,Shruti
+Meeting of the Association for Computational Lin-
+Bhosale, Dan Bikel, Lukas Blecher, Cristian Can-
+guistics(ACL2024).
+ton Ferrer, Moya Chen, Guillem Cucurull, David
+LlamaTeam.2024. TheLlama3HerdofModels. arXiv Esiobu, Jude Fernandes, Jeremy Fu, Wenyin Fu,
+preprintarXiv:2407.21783. and 49 others. 2023. Llama 2: Open Founda-
+tion and Fine-Tuned Chat Models. arXiv preprint
+LLM-jp.2024. LLM-jp:ACross-organizationalProject arXiv:2307.09288.
+for the Research and Development of Fully Open
+JapaneseLLMs. arXivpreprintarXiv:2407.03963. ShogoTsujimoto,KosukeYamada,andRyoheiSasano.
+2025. SemanticFrameInductionfromaReal-World
+Ilya Loshchilov and Frank Hutter. 2017. Decoupled Corpus. In Proceedings of the 63rd Annual Meet-
+WeightDecayRegularization. InProceedingsofthe ingoftheAssociationforComputationalLinguistics
+5thInternationalConferenceonLearningRepresen- (Volume4: StudentResearchWorkshop)(ACL-SRW
+tations(ICLR2017). 2025).
+Hayato Tsukagoshi, Shengzhe Li, Aki- JapaneseFrameNet. Theaverageproportionofpol-
+hiko Fukuchi, and Tomohide Shibata. ysemousverbsinthetestsets,whichcanevokedif-
+2025. ModernBERT-Ja. https://
+ferentframesdependingonthecontext,was30.3%
+huggingface.co/collections/sbintuitions/
+forFrameNetand19.1%forJapaneseFrameNet.
+modernbert-ja-67b68fe891132877cf67aa0a.
+HayatoTsukagoshi,RyoheiSasano,andKoichiTakeda. B ClusteringSetting
+2021. DefSent: Sentence Embeddings using Def-
+inition Sentences. In Proceedings of the 59th An- FollowingYamadaetal.(2021),wedetermineall
+nualMeetingoftheAssociationforComputational clusteringthresholdsonthedevelopmentset.
+Linguisticsandthe11thInternationalJointConfer-
+enceonNaturalLanguageProcessing(ACL-IJCNLP One-step clustering We employ group-average
+2021). agglomerativeclusteringanditerativelymergeclus-
+tersuntiltheirtotalnumberequalsthenumberof
+BenjaminWarner,AntoineChaffin,BenjaminClavié,
+frames in the development set. We then set the
+Orion Weller, Oskar Hallström, Said Taghadouini,
+AlexisGallagher,RajaBiswas,FaisalLadhak,Tom thresholdtotheminimuminter-clusterdistanceob-
+Aarsen,GriffinThomasAdams,JeremyHoward,and servedatthisfinalmerge.
+IacopoPoli.2025. Smarter,Better,Faster,Longer: A
+ModernBidirectionalEncoderforFast,MemoryEf- Two-step clustering We begin by applying X-
+ficient,andLongContextFinetuningandInference.
+Meansclusteringtoeachgroupofexamplesshar-
+InProceedingsofthe63rdAnnualMeetingoftheAs-
+ing the same frame-evoking word, automatically
+sociationforComputationalLinguistics(ACL2025).
+inferringtheoptimalclustercountwhilecapping
+Kosuke Yamada, Ryohei Sasano, and Koichi Takeda. the maximum clusters k to the highest num-
+max
+2021. SemanticFrameInductionusingMaskedWord
+berofuniqueframesperverbinthedevelopment
+EmbeddingsandTwo-StepClustering. InProceed-
+set. Wethenperformgroup-averageagglomerative
+ingsofthe59thAnnualMeetingoftheAssociationfor
+ComputationalLinguisticsandthe11thInternational mergingontheresultingclustersuntilthepropor-
+JointConferenceonNaturalLanguageProcessing tionofsame-lemmaexamplesassignedtothesame
+(ACL-IJCNLP2021),pages811–816.
+clustermatchestheproportionrecordedonthede-
+velopmentset. Theminimuminter-clusterdistance
+Kosuke Yamada, Ryohei Sasano, and Koichi Takeda.
+2023. SemanticFrameInductionwithDeepMetric atthismatchingmergepointservesasthesecond-
+Learning. InProceedingsofthe17thConferenceof stagethreshold.
+theEuropeanChapteroftheAssociationforCompu-
+tationalLinguistics(ACL2023),pages1833–1845. C EvaluationonSmallerModels
+A Statisticsofthedatasets We report the frame induction performance of
+our proposed method when applied to smaller
+variants of the models used in Sections 4 and 5:
+#Instances #Frames #Verbs
+Gemma 3-1B9, Gemma 3-4B10, Llama 3.2-1B11,
+Split 28,117 459 830
+0 and Llama 3.2-3B12. Table 6 shows the results
+Split 28,314 429 831
+1 on FrameNet, and Table 7 shows the results on
+Split 26,179 415 831
+2
+Full 82,610 642 2,492 JapaneseFrameNet.
+Table4: StatisticsofthedatasetsusedintheFrameNet
+experiments.
+#Instances #Frames #Verbs
+Split 1,046 112 209
+0
+Split 1,055 154 294
+1
+Split 1,029 145 263
+2
+Full 3,130 344 766
+Table5: StatisticsofthedatasetsusedintheJapanese
+9https://huggingface.co/google/gemma-3-1b-it
+FrameNetexperiments.
+10https://huggingface.co/google/gemma-3-4b-it
+Thestatisticsofthedatasetsusedintheexperi-
+11https://huggingface.co/meta-llama/Llama-3.
+2-1B
+ments are presented. Table 4 shows the statistics
+12https://huggingface.co/meta-llama/Llama-3.
+forFrameNet,andTable5showsthestatisticsfor 2-3B
+Training One-Step Two-Step
+Model Size
+Method DataSize BcP BcR BcF BcP BcR BcF
+0 3.0 88.8 5.8 28.6 28.2 28.3
+5 38.3 53.1 44.3 48.5 55.6 51.7
+ICL
+1B 10 43.7 54.2 48.3 47.5 56.9 51.7
+20 45.2 54.1 49.1 48.7 57.8 52.8
+DML 27,536 63.0 67.8 65.3 65.6 63.1 64.2
+Gemma3
+0 10.2 68.7 17.8 48.9 49.2 49.0
+5 57.2 54.4 55.7 53.3 57.0 54.8
+ICL
+4B 10 58.3 56.3 57.2 55.0 58.0 56.3
+20 58.1 59.3 58.6 56.9 59.5 57.9
+DML 27,536 67.7 68.8 68.2 69.2 67.3 68.1
+0 3.0 84.4 5.9 46.0 30.2 36.4
+5 24.9 57.4 34.1 44.2 59.4 50.6
+ICL
+1B 10 30.2 59.0 39.7 44.4 59.9 50.9
+20 34.6 59.8 43.7 44.6 60.8 51.4
+DML 27,536 64.7 70.9 67.6 70.3 65.2 67.4
+Llama3.2
+0 12.6 69.1 21.3 54.8 45.1 49.5
+5 44.3 59.4 50.6 47.7 64.2 54.7
+ICL
+3B 10 47.3 59.4 52.5 48.4 62.9 54.6
+20 48.8 60.3 53.9 48.2 63.3 54.7
+DML 27,536 66.1 73.2 69.4 74.1 65.5 69.2
+Table6: FrameinductionperformanceofsmallermodelsonFrameNet. Thescoreswereaveragedoverathree-fold
+cross-validation,andthenmultipliedby100.
+Training One-Step Two-Step
+Model Size
+Method DataSize BcP BcR BcF BcP BcR BcF
+0 16.8 19.2 17.8 37.9 44.0 40.7
+5 45.8 60.8 52.1 50.8 60.0 54.9
+ICL
+1B 10 46.8 61.8 53.1 49.1 61.7 54.6
+20 49.0 62.4 54.8 48.9 62.9 54.9
+DML 1,100 54.1 62.5 57.8 52.4 63.9 57.5
+Gemma3
+0 16.5 20.4 17.9 40.6 47.2 43.6
+5 52.4 65.5 58.2 55.1 63.3 58.8
+ICL
+4B 10 52.5 66.0 58.4 56.2 63.5 59.5
+20 53.6 66.6 59.2 55.5 64.0 59.4
+DML 1,100 55.4 64.5 59.5 52.5 65.6 58.3
+0 3.0 84.4 5.9 46.0 30.2 36.4
+5 44.2 55.4 49.0 44.1 63.5 52.1
+ICL
+1B 10 48.7 57.8 52.7 44.8 63.2 52.3
+20 51.8 61.6 56.2 46.7 64.0 53.9
+DML 1,100 55.1 63.2 58.8 52.9 64.2 58.0
+Llama3.2
+0 19.8 39.7 26.2 44.2 54.5 48.5
+5 53.1 64.2 58.1 51.0 64.8 57.0
+ICL
+3B 10 52.7 63.5 57.6 50.5 64.5 56.6
+20 53.1 63.7 57.9 51.5 64.2 57.0
+DML 1,100 55.5 65.7 60.1 55.9 64.9 60.0
+Table7: FrameinductionperformanceofsmallermodelsonJapaneseFrameNet. Thescoreswereaveragedovera
+three-foldcross-validation,andthenmultipliedby100.
+D TrainingCost
+#Params
+Model Size
+All Trainable
+1B 1,006,408,832 6,522,880
+Gemma3 4B 3,895,164,416 14,901,248
+12B 11,798,769,408 32,735,232
+1B 1,241,450,496 5,636,096
+Llama3.2
+3B 3,224,906,752 12,156,928
+Llama3.1 8B 7,525,896,192 20,971,520
+LLM-jp-3 13B 13,229,347,840 31,293,440
+Table8: Totalnumberofparametersandtrainablepa-
+rametersafteraddingtheLoRAlayers.
+Dataset Model Size TrainingTime
+1B 180min
+Gemma3 4B 540min
+12B 1200min
+FrameNet
+1B 150min
+Llama3.2
+3B 360min
+Llama3.1 8B 720min
+1B 12min
+Gemma3 4B 30min
+12B 80min
+Japanese
+1B 12min
+FramaNet Llama3.2
+3B 30min
+Llama3.1 8B 60min
+LLM-jp-3 13B 60min
+Table 9: Training time required for the DML experi-
+ments.
+In deep metric learning, LoRA weights were ap-
+pliedtoalllinearlayers. Table8showsthetotaland
+trainable parameters for each model after adding
+theLoRAlayers.
+The training was conducted on a single A100
+GPU with 80GB VRAM, and the time required
+is shown in Table 9. For English FrameNet, an
+averageof27,537instanceswereusedfortraining;
+withabatchsizeof32over20epochs,theaverage
+numberoftrainingstepswas17,210. ForJapanese
+FrameNet,anaverageof1,043instanceswereused
+fortraining;withabatchsizeof32over20epochs,
+theaveragenumberoftrainingstepswas652.

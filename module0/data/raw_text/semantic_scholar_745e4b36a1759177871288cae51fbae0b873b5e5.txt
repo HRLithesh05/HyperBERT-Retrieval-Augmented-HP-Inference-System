@@ -1,0 +1,501 @@
+TheThirty-FourthAAAIConferenceonArtificialIntelligence(AAAI-20)
+Q-BERT: Hessian Based Ultra Low Precision Quantization of BERT
+ShengShen,1∗ ZhenDong,1∗ JiayuYe,1∗ LinjianMa,†1 ZheweiYao,1
+AmirGholami,1 MichaelW.Mahoney,1 KurtKeutzer1
+1UniversityofCaliforniaatBerkeley,
+{sheng.s,zhendong,yejiayu,linjian,zheweiy,amirgh,mahoneymw,keutzer}@berkeley.edu
+Abstract Herewesolelyfocusonquantization(Courbariaux,Ben-
+gio,andDavid2015;Rastegarietal.2016;Li,Zhang,andLiu
+Transformerbasedarchitectureshavebecomede-factomod-
+2016;Zhouetal.2016;Choietal.2018;Dongetal.2019;
+elsusedforarangeofNaturalLanguageProcessingtasks.
+Zhangetal.2018).Oneofthechallengeshereisthatultra
+In particular, the BERT based models achieved significant
+accuracygainforGLUEtasks,CoNLL-03andSQuAD.How- lowprecisionquantizationcanleadtosignificantaccuracy
+ever,BERTbasedmodelshaveaprohibitivememoryfootprint degradation.Mixedprecisionquantization(Wuetal.2018;
+andlatency.Asaresult,deployingBERTbasedmodelsin Zhouetal.2018;Wangetal.2019)andmulti-stagequantiza-
+resource constrained environments has become a challeng- tion(Zhouetal.2017)havebeenproposedtosolve/alleviate
+ingtask.Inthiswork,weperformanextensiveanalysisof thisproblem.However,thechallengewithmixed-precision
+fine-tunedBERTmodelsusingsecondorderHessianinfor- quantizationisthatthesearchspaceisexponentiallylarge.
+mation,andweuseourresultstoproposeanovelmethodfor
+Forinstance,ifwehavethreeprecisionoptionsforaspecific
+quantizingBERTmodelstoultralowprecision.Inparticu-
+layer(2,4or8-bits),thenthetotalsearchspaceofeachfine-
+lar,weproposeanewgroup-wisequantizationscheme,and tunedBERTmodel(Devlinetal.2019)becomes312 ≈5.3×
+weuseHessian-basedmix-precisionmethodtocompressthe
+105differentprecisionsettings.Recently,(Dongetal.2019)
+modelfurther.Weextensivelytestourproposedmethodon
+BERTdownstreamtasksofSST-2,MNLI,CoNLL-03,and proposedasecond-ordersensitivitybasedmethodtoaddress
+SQuAD.Wecanachievecomparableperformancetobase- thisissueandachievedstate-of-the-artresultsoncomputer
+linewithatmost2.3%performancedegradation,evenwith visiontasks.Partofourpaperbuildsuponthispriorworkand
+ultra-lowprecisionquantizationdownto2bits,corresponding extendstheresultstoincludeothervariationsofsecondorder
+upto13×compressionofthemodelparameters,andupto
+information instead of just the mean value of the Hessian
+4×compressionoftheembeddingtableaswellasactivations.
+spectrum.
+Amongalltasks,weobservedthehighestperformanceloss
+forBERTfine-tunedonSQuAD.ByprobingintotheHessian
+basedanalysisaswellasvisualization,weshowthatthisis
+relatedtothefactthatcurrenttraining/fine-tuningstrategyof CompressedNLPmodelNotableexamplesforNLPcom-
+BERTdoesnotconvergeforSQuAD. pressionworkareLSTMandGRU-basedmodelsformachine
+translationandlanguagemodel(Xuetal.2018;Wangetal.
+2018).FromtherecentintroductionofTranformermodels,
+1 RelatedWork
+wehaveobservedasignificantincreaseinNLPmodelsize.
+ModelcompressionModelcompressionisaveryactivearea Thisisduetotheincorporationofverylargefullyconnected
+ofresearch.Effortsinthisareacouldbebroadlycategorized layersandattentionmatricesinTransformers(Vaswanietal.
+asfollows:(i)newarchitecturesthatarecompactbydesign 2017;Devlinetal.2019;Yangetal.2019;Liuetal.2019;
+(Iandola et al. 2016; Howard et al. 2017); (ii) automated Radfordetal.2019).Modelcompressioniscrucialfordeploy-
+neural architecture search (NAS) with reward function set ingthesemodelsinresourceconstrainedenvironments.Pilot
+as latency or model size (Wang et al. 2019); (iii) pruning workaddressingthisare(Michel,Levy,andNeubig2019;
+basedmethodstoreducemodelsizeofexistingarchitectures Bhandareetal.2019).Fromadifferentangle,(Tayetal.2019;
+(LeCun,Denker,andSolla1990;Hassibi,Stork,andWolff Maetal.2019)haveprobedthearchitecturalchangeofself-
+1994);(iv)knowledgedistillationfromalargemodeltohelp attentionlayertomaketheTransformerlightweight.There
+trainamorecompactmodel(BaandCaruana2014;Hinton, have also been attempts to use distillation to reduce large
+Vinyals,andDean2015);(v)hardwareandarchitectureco- pre-trained Transformer models such as BERT (Devlin et
+design(Gholamietal.2018);and(vi)inferencequantization al. 2019) in (Tang et al. 2019; Sun et al. 2019). However,
+(Zhang,Choromanska,andLeCun2015;Dongetal.2019). significantaccuracylossisobservedevenforrelativelysmall
+∗Equalcontribution.
+compressionratioof4×.Hereweshowthatthiscompression
+†WorkdonewhileinterningatWaveComputing.
+ratiocouldbeincreasedupto13×,including4×reduction
+Copyright(cid:2)c 2020,AssociationfortheAdvancementofArtificial ofembeddinglayer,withmuchsmallerperformancedegra-
+Intelligence(www.aaai.org).Allrightsreserved. dation.
+8815
+(a)SST-2 (b)MNLI (c)CoNLL-03 (d)SQuAD
+Figure1:From(a)to(d):TopeigenvaluedistributionsfordifferentencoderlayersforSST-2,MNLI,CoNNL-03,SQuAD,
+respectively.Layersinthemiddlehavehighermeanvaluesandlargervariancethantheothers.Thelastthreelayershavethe
+smallestvarianceandmeanvaluesamongalllayers.
+2 Methodology anon-uniformquantizercanpotentiallyfurtherincreasethe
+Inthissection,weintroduceourproposedBERTquantization accuracy.However,wesolelyfocusonuniformquantization
+methods,includingthemixedprecisionquantizationbased since it allows more efficient and easier hardware imple-
+onHessianinformation,aswellastechniquesusedforthe mentation. To backpropogate gradients through Q, which
+group-wisequantizingscheme. isnon-differentiable,weusetheStraight-throughEstimator
+Asin(Devlinetal.2019),afine-tunedBERTBASEmodel (STE)(Bengio,Le´onard,andCourville2013).SeeAppendix
+consists of three parts: embedding; Transformer based en- formoredetailsabouttheforwardandbackwardpropagation
+coderlayers;andoutputlayer.Specifically,assumingx∈X duringtheentirequantizationprocess.
+istheinputword(sentence)andy ∈Y isthecorresponding
+2.2 Mixedprecisionquantization
+label,wehavethelossfunctionLdefinedas:
+(cid:2) Different encoder layers are attending to different struc-
+L(θ)= CE(softmax(Wc(Wn(...W1(We(xi))))),yi),
+tures(Clarketal.2019),anditisexpectedthattheyexhibit
+(xi,yi) differentsensitivity.Thus,assigningthesamenumberofbits
+toallthelayersissub-optimal.Thisscenarioismorecritical
+whereCEisthecrossentropyfunction(orotherappropriate
+ifthetargetedmodelsizeisverysmall,whichrequiresultra
+lossfunctions),θisacombinationofWe,W1, W2,...,Wn
+lowprecisionsuchas4-bitsor2-bits.Asaresultweexplore
+andWc.Here,Weistheembeddingtable,W1, W2,..., Wn
+mixed-precisionquantization,whereweassignmorebitsto
+aretheencoderlayers,andWcistheoutput/classifierlayer1.
+moresensitivelayersinordertoretainperformance.
+ThesizeofparametersinBERTBASEmodelis91MBfor
+In (Dong et al. 2019), a Hessian AWare Quantization
+embedding,325MBforencoderand0.01MBforoutput.We
+(HAWQ)isdevelopedformixed-bitsassignments.Themain
+donotquantizetheoutputlayerduetoitsnegligiblesize,and
+ideaisthattheparametersinNNlayerswithhigherHessian
+focusonquantizingboththeembeddingandencoderlayers.
+spectrum(i.e.,largertopeigenvalues)aremoresensitiveto
+AswillbediscussedinSec.4.1,wefindthattheembedding
+quantization and require higher precision as compared to
+layerismuchmoresensitivetoquantizationthantheencoder
+layerswithsmallHessianspectrum.However,thereexist7M
+layers.Asaresult,wequantizeembeddingandencoderpa-
+parametersforeachencoderlayerinBERTBASE.Giventhat
+rameters in different ways. The quantization schemes we
+theHessianofeachlayerisamatrixofsize7M×7M,there
+usedareexplainedindetailinthefollowingsections.
+is a common misconception that computing second order
+statisticsisinfeasible.However,theHessianspectrumcan
+2.1 Quantizationprocess
+becomputedbyamatrix-freepoweriterationmethod(Yao
+GeneralNNinferenceisperformedinfloatingpointpreci-
+etal.2018),whichdoesnotrequireexplicitformationofthe
+sionforbothweightsandactivations.Quantizationrestricts
+operator.Toillustratethis,wetakethefirstencoderlayeras
+the network weights to a finite set of values as Q(z) =
+anexample.Denotingthegradientofthefirstencoderlayer
+qj, fortj ≤ z ≤ tj+1. Here Q is quantization operator,
+asg1,forarandomvectorvindependentwithg1,wehave
+zisarealvaluedinputtensor(activationoraweight).Here
+kisthequantizationprecisionforaspecificlayer. ∂gTv ∂gT ∂v ∂gT
+There are multiple choices for quantization function Q.
+∂W1
+1
+= ∂W1 1v+g 1T
+∂W1
+= ∂W1 1v =H1v, (1)
+Hereweuseuniformquantizationfunction,wheretherange
+offloatingpointvaluesinatensorisequallysplit(Zhouet whereH1isHessianmatrixofthefirstencoder.Thetopeigen-
+al. 2016; Hubara e(cid:3)t al. 2017) and(cid:4)then represented by un- valuethencanbecomputedbypoweriteration,asshownin
+signedintegersin 0,...,2k−1 .Itshouldbenotedthat Appendix.Wedenoteλiasthetopeigenvalueofi-thencoder
+layer.Usingthisapproach,weshowthedistributionoftop
+1Here,weuseW ∗forbothfunctionanditscorrespondingpa- HessianeigenvaluefordifferentlayersofBERTBASEare
+rameterswithoutconfusion. shown in Fig. 1. Different layers exhibit different magni-
+8816
+(a)Layer-wise (b) Group-wise (N h(c) Group-wise (2N h
+group) group)
+Figure3:TheoverviewofGroup-wiseQuantizationMethod.
+(a)SQuAD7thlayer (b)SQuAD11thlayer We illustrate this with value matrices of a multi-head self
+attentionlayer.HereNh(numberofheads)valuematricesWv
+Figure2:ThelosslandscapefordifferentlayersinSQuAD areconcatenatedtogether,whichresultsina3-dtensor.The
+is illustrated by perturbing the parameters along the first samecolordenotesthesamegroupwithasharedquantization
+twodominanteigenvectorsoftheHessian.Thesilversphere range.
+showsthepointintheparameterspacetowhichtheBERT
+modelhasconverged.
+we find that the BERT model fine-tuned for SQuAD has
+actuallynotconvergedtoalocalminima,asevidentinthe
+tudeofeigenvalueseventhoughalllayershaveexactlysame HessianeigenvaluesshowninFig.1(d),whereweobserve
+structureandsize. verylargenegativeeigenvalues.Directlyvisualizingtheloss
+TheaboveHessianbasedapproachwasusedin(Donget landscapealsoshowsthisveryclearlyasinFig.2.Because
+al.2019),wheretopeigenvaluesarecomputedandaveraged of this, our expectation is that performing quantization on
+fordifferenttrainingdata.Moreaggressivequantizationis SQuAD would lead to higher performance degradation as
+performedforlayersthathavesmallertopeigenvalue,which comparedtoothertasks,andthisisindeedthecaseaswill
+correspondstoflatterlosslandscapeasinAppendix.How- bediscussednext.
+ever,wefindthatassigningbitsbasedonlyontheaverage
+topeigenvaluesisinfeasibleformanyNLPtasks.Asshown 2.3 Group-wiseQuantization
+inFig.1,topeigenvaluesofHessianforsomelayersexhibits Assumethattheinputsequencehasnwordsandeachword
+very high variance with respect to different portion of the hasad-dimembeddingvector(d = 768forBERTBASE),
+inputdataset.Asanexample,thevarianceofthe7thlayerfor i.e., x = (x(1),...,x(n))T ∈ Rn×d. In Transformer en-
+SQuADstayslargerthan61.6whilethemeanofthatlayeris coder, each self-attention head has 4 dense matrix, i.e.,
+around1.0,eventhougheachdatapointcorrespondsto10% Wk,Wq,Wv,Wo ∈ RNd h×d , where Nh is the number of
+oftheentiredataset(whichis9Ksamples).Toaddressthis,
+attention heads. Here Wk, Wq, Wv and Wo stand for key,
+weusethefollowingmetricinsteadofjustusingmeanvalue,
+query,valueandoutputweightmatrix.Eachself-attention
+Ω i (cid:2)|mean(λi)|+std(λi), (2) headcomputestheweightedsumas
+where λi is the distribution of the top eigenvalues of Hi,
+(cid:2)n
+(cid:3)
+x(j)TWTW
+x(i)(cid:4)
+calculatedwith10%oftrainingdataset.2 Att(x,x(j))=Wo softmax √q k Wvx(i).
+AfterΩ i iscomputed,wesortthemindescendingorder, i=1 d
+andweuseitasametrictorelativelydeterminethequanti-
+Throughthisreparametrization,themulti-headself-attention
+zationprecision.Wethenperformquantization-awarefine-
+(MHSA)willaddthesefeaturesintothefinaloutput,thatis
+(cid:5)
+tun Ain ng imba ps oed rtao nn tt th ee chse nl ie cc at le pd op inre tc ti hs aio tn ws eet nti en eg d.
+toemphasize
+wewillhave N i=h 1Atti(x,x(j)).Directlyquantizingeach
+4matricesinMHSAasanentiretywiththesamequantiza-
+is that our method expects that before performing quanti-
+tionrangecansignificantlydegradetheaccuracy,sincethere
+zation the trained model has converged to a local minima.
+are more than 2M parameters in total, which corresponds
+Thatis,thepractitionerswhotrainedBERTandperformed
+to 4 × 12 × 64 = 3072 neurons, and the weights corre-
+itsfine-tuningfordownstreamtasksshouldhavechosenthe
+spondingtoeachneuronmaylieindifferentrangeofreal
+hyper-parametersandnumberofiterationssuchthatalocal
+numbers.Channel-wisequantizationcanbeusedtoalleviate
+minimahasbeenreached.Thenecessaryoptimalitycondi-
+thisprobleminconvolutionalneuralnetworks,whereeach
+tionsarezerogradient,andpositivecurvature(i.e.,positive
+convolutionalkernelcanbetreatedasasingleoutputchannel
+Hessianeigenvalue).Inouranalysis,weobservedthatforthe
+andhaveitsownquantizationrange.However,thiscannotbe
+threetasksofMNLI,CoNLL-03,andSST-2thetopHessian
+directlyappliedfordensematrices,sinceeachdensematrix
+eigenvalueisindeedpositivefor(seeAppendix).However,
+itselfisasinglekernel.Therefore,weproposegroup-wise
+2Withoutconfusion,weuseλ i forbothsingletopeigenvalue quantizationforattention-basedmodels.Wetreattheindivid-
+anditsdistributionwithrespectto10%ofthedata. ualmatrixW withrespecttoeachheadinonedensematrix
+8817
+ofMHSAasagroupsotherewillbe12groups.Furthermore, Table1:QuantizationresultsforBERTBASEonNaturalLan-
+ineachgroup,webucketsequentialoutputneuronstogether guageUnderstandingtasks.Resultsareobtainedwith128
+assub-groups,e.g.,each6outputneuronsasonesub-group groupsineachlayer.Weabbreviatequantizationbitsusedfor
+sothereare12× 64 = 128sub-groupintotal(thehidden weightsas“w-bits”,embeddingas“e-bits”,modelsizeinMB
+6
+dim in each head of BERTBASE is 768 = 64). Each sub- as“Size”,andmodelsizewithoutembeddinglayerinMB
+12 as“Size-w/o-e”.Forsimplicityandefficacy,allthemodels
+groupcanhaveitsownquantizationrange.Anillustration
+exceptforBaselineareusing8-bitsactivation.Furthermore,
+isshowninFig.3forWv,whereweconcatenateNh value
+wecompareQ-BERTwithdirectquantizationmethod(“Di-
+matrix Wv to be a 3-d tensor. For layer-wise quantization,
+rectQ”)withoutusingmixedprecisionorgroup-wisequanti-
+theentire3-dtensorwillbequantizedintothesamerange
+zation.Here“MP”referstomixed-precisionquantization.
+ofdiscretenumbers,asshowninFig.3a.Aspecialcaseof
+group-wisequantizationisthatwetreateachdensematrix
+(a) SST-2
+asagroup,andeverymatrixcanhaveitsownquantization
+rangeasshowninFig.3b.AmoregeneralcaseinFig.3c Method w-bits e-bits Acc Size Size-w/o-e
+isthatwepartitioneachdensematrixwithrespecttooutput
+d Baseline 32 32 93.00 415.4 324.5
+neuron,andwebucketeverycontinuous outputneurons
+2N
+h
+as a group. The effect of finer group-wise quantization is Q-BERT 8 8 92.88 103.9 81.2
+furtherinvestigatedinSec.3.2.
+DirectQ 4 8 85.67 63.4 40.6
+Q-BERT 4 8 92.66 63.4 40.6
+3 Experiment
+DirectQ 3 8 82.86 53.2 30.5
+Inthissection,wedescribeourexperimentsonevaluating
+Q-BERT 3 8 92.54 53.2 30.5
+theproposedQ-BERTonfourdifferentNLPtasks.Detailsof
+Q-BERTMP 2/4MP 8 92.55 53.2 30.5
+thedatasetsareshowninAppendix.Tothebestofourknowl-
+edge,thereisnopublishedworkdoneonBERTquantization DirectQ 2 8 80.62 43.1 20.4
+atthispoint,sowereportDirectquantization(DirectQ),i.e., Q-BERT 2 8 84.63 43.1 20.4
+quantizationwithoutmixed-precisionandgroup-wisequanti- Q-BERTMP 2/3MP 8 92.08 48.1 25.4
+zationasabaseline.
+(b) MNLI
+3.1 MainResults
+Method w-bits e-bits Acc Acc Size Size
+WepresentresultsofQ-BERTonthedevelopmentsetofthe m mm w/o-e
+fourtasksofSST-2,MNLI,CoNLL-03,andSQuAD,assum-
+Baseline 32 32 84.00 84.40 415.4 324.5
+marizedinTab.1and2.Asonecansee,Q-BERTperforms
+significantlybettercomparedtotheDirectQmethodacross Q-BERT 8 8 83.91 83.83 103.9 81.2
+allthefourtasksineachbitsetting.Thegapbecomesmore
+DirectQ 4 8 76.69 77.00 63.4 40.6
+obvious for ultra low bit setting. As an example, in 4-bits
+Q-BERT 4 8 83.89 84.17 63.4 40.6
+setting,Directquantization(DirectQ)ofSQuADresultsin
+11.5%performancedegradationascomparedtoBERTBASE. DirectQ 3 8 70.27 70.89 53.2 30.5
+However,forthesame4-bitssetting,Q-BERTonlyexhibits Q-BERT 3 8 83.41 83.83 53.2 30.5
+0.5%performancedegradation.Moreover,under3-bitsset- Q-BERTMP 2/4MP 8 83.51 83.55 53.2 30.5
+ting,thegapbetweenQ-BERTandDirectQincreaseseven
+DirectQ 2 8 53.29 53.32 43.1 20.4
+furtherto9.68-27.83%forvarioustasks.
+Q-BERT 2 8 76.56 77.02 43.1 20.4
+Inordertopushfurthertheprecisionsettingtolowerbits,
+Q-BERTMP 2/3MP 8 81.75 82.29 46.1 23.4
+weinvestigatethemixed-precisionQ-BERT(Q-BERTMP).
+Ascanbeseen,Q-BERTwithuniform2-bitssettinghasvery
+(c) CoNLL-03
+poorperformanceacrossallfourtasks,thoughthememory
+isreducedby20%against3-bitssetting.Thereasonbehind
+Method w-bits e-bits F1 Size Size-w/o-e
+thisisthediscrepancythatnotallthelayershavethesame
+sensitivity to quantization as evident from loss landscape Baseline 32 32 95.00 410.9 324.5
+visualizations;seeAppendix.Intuitively,formoresensitive Q-BERT 8 8 94.79 102.8 81.2
+layers,higherbitprecisionneedstobeset,whileforlayers
+DirectQ 4 8 89.86 62.2 40.6
+thatarelesssensitive,2-bitssettingisalreadysufficient.To
+Q-BERT 4 8 94.90 62.2 40.6
+setmixedprecisiontoeachencoderlayerofBERTBASE,we
+measurethesensitivitybasedonEq.2,whichcapturesboth DirectQ 3 8 84.92 52.1 30.5
+meanandvarianceofthetopeigenvalueoftheHessianshown Q-BERT 3 8 94.78 52.1 30.5
+inFig.1.NotethatallexperimentsinFig.1arebasedon10 Q-BERTMP 2/4MP 8 94.55 52.1 30.5
+runsandeachrunuses10%oftheentiretrainingdataset.We
+DirectQ 2 8 54.50 42.0 20.4
+canobversethatformostofthelowerencoderlayers(layer
+Q-BERT 2 8 91.06 42.0 20.4
+1-8),thevarianceisprettylargecomparedtothelastthree
+Q-BERTMP 2/3MP 8 94.37 45.0 23.4
+layers.Wegenerallyobservethatthemiddlepart(layer4-8)
+8818
+Table2:QuantizationresultsforBERTBASEonSQuAD. addressthisbychangingtraininghyper-parameterswerenot
+successful.WefoundthattheBERTmodelquicklyoverfits
+Method w-bits e-bits EM F1 Size Size-w/o-e thetrainingdata.However,weemphasizethatfixingBERT
+modeltrainingitselfisoutsidethescopeofthispaperand
+Baseline 32 32 81.54 88.69 415.4 324.5
+notpossiblewithacademiccomputationalresources.
+Q-BERT 8 8 81.07 88.47 103.9 81.2
+DirectQ 4 8 66.05 77.10 63.4 40.6 3.2 Effectsofgroup-wisequantization
+Q-BERT 4 8 80.95 88.36 63.4 40.6
+Wemeasuretheperformancegainswithdifferentgroupnum-
+DirectQ 3 8 46.77 59.83 53.2 30.5 bersinTab.3.Wecanobservefromthetablethatperforming
+Q-BERT 3 8 79.96 87.66 53.2 30.5 layer-wise quantization (shown in Fig. 3a) is sub-optimal
+Q-BERTMP 2/4MP 8 79.85 87.49 53.2 30.5 for all four tasks (the performance drop is around 7% to
+DirectQ 2 8 4.77 10.32 43.1 20.4 11.5%). However, the performance significantly increases
+Q-BERT 2 8 69.68 79.60 43.1 20.4 asweincreasethenumberofgroups.Forexample,for12
+Q-BERTMP 2/3MP 8 79.25 86.95 48.1 25.4 groups,theperformancedegradationislessthan2%forall
+thetasks.Furtherincreasingthegroupnumberfrom12to
+128increasestheaccuracyfurtherbyatleast0.3%accuracy.
+hasthelargestmean(λi).Beyondtherelativelysmallermean, However,increasingthegroupnumberfurtherfrom128to
+thelastthreelayersalsohavemuchsmallervariance,which 768 can only increase the performance within 0.1%. This
+indicatestheinsensitivityoftheselayers.Therefore,higher showsthattheperformancegainalmostsaturatesaround128
+bitswillonlybeassignedformiddlelayersaccordingtoEq.2 groups.Itisalsopreferablenottohaveverylargevaluefor
+forQ-BERT2/3MP.3Inthisway,withonlyadditional5MB thenumberofgroupsinceitincreasesthenumberofLook-
+memory storage, 2/3-bits Q-BERTMP is able to retain the upTables(LUTs)necessaryforeachmatrixmultiplication
+performancedropwithin2.3%forMNLI,SQuADand1.1% whichcanadverselyaffecthardwareperformance,andbased
+forSST-2,CoNLL-03,withupto13×compressionratioin onourresultstherearediminishingreturnsintermsofac-
+weights.Notethatthisisupto6.8%betterthanQ-BERTwith curacy.Inallourexperiments,weused128groupsforboth
+uniform2bits. Q-BERTandQ-BERTMPinSec.3.1.
+Oneconsiderationforquantizationisthat3-bitquantized
+executionistypicallynotsupportedinhardware.Itishow- Table3:Effectsofgroup-wisequantizationforQ-BERTon
+everpossibletoload3-bitquantizedvaluesandcastthemto threetasks.Thequantizationbitsweresettobe4forweights,
+higherbitprecisionsuchas4or8bitsintheexecutionunits. 8forembeddingsand8foractivationsforallthetasks.
+Thiswouldstillhavethebenefitofreducedmemoryvolume
+to/fromDRAM.Itisalsopossibletoavoidusing3bitsand #Group SST-2 MNLI-m/mm CoNLL-03
+insteaduseamixtureof2and4bitsasshowninTab.1.For
+Baseline 93.00 84.00/84.40 95.00
+example, SST-2 Q-BERTMP with mixed 2/4-bit precision
+weightshasthesamemodelsizeasthe3bitquantizationin 1 85.67 76.69/77.00 89.86
+53.2MBandachievessimilaraccuracy.Weobservesimilar 12 92.31 82.37/82.95 94.42
+trendforothertasksaswell. 128 92.66 83.89/84.17 94.90
+One important observation is that we found SQuAD to 7684 92.78 84.00/84.20 94.99
+behardertoquantizeascomparedtoothertasks;seeTab.2.
+For example, 2-bits DirectQ results in more than 10% F1
+score degradation. Even Q-BERT has larger performance
+4 Discussion
+dropascomparedtoothertasksinTab.1.Westudiedthisphe-
+nomenonfurtherthroughHessiananalysis.InFig.1,among InthisSection,wefurtherinvestigatethequantizationeffects
+allthetasks,itcanbeclearlyseenthatSQuADnotonlyhas ondifferentmodules,e.g.differentembeddinglayers(e.g.,
+muchlargereigenvaluevariance,butithasverylargenega- wordandpositionembeddings),andweperformqualitative
+tiveeigenvalues.InfactthisshowsthattheexistingBERT analysisusingattentiondistribution.ThisillustratesthatQ-
+modelforSQuADhasnotreachedalocalminima.Thisis BERTbettercapturesthebehaviouroftheoriginalmodelas
+furtherillustratedinthe3-dlosslandscapeofallfourtasksin comparedtoDirectQinallcases.
+Appendix.Itcanbeclearlyseenthatforotherthreetasks,the
+4.1 Quantizationeffectsondifferentmodules
+stoppingpointisataquadraticbowl(atleastinthefirsttwo
+dominant eigenvalue directions of the Hessian). However, Hereweinvestigatethequantizationeffectswithrespectto
+comparedtotheothers,SQuADhasatotallydifferentstruc- differentmodulesofBERTmodel(multi-headself-attention
+turetoitslosslandscape.AsshowninFig.2,thestopping versusfeed-forwardnetwork,anddifferentembeddinglayers,
+pointsofdifferentlayersonSQuADhavenegativecurvature i.e.,wordembeddingversuspositionembedding).
+directions,whichmeanstheyhavenotconvergedtoalocal Generallyspeaking,wefindthatembeddinglayerismore
+minimayet.Thiscouldwellexplainwhythequantizationof sensitive than weights for quantization. This is illustrated
+SQuADresultsinmoreaccuracydrop.Ourinitialattemptsto in Tab. 4a, where we use 4-bits layerwise quantization for
+3ExactdetailedbitssettingisincludedintheAppendix 4Herewetreateachoutputneuronasasinglegroup.
+8819
+embedding,whichresultsinanunacceptableperformance
+dropupto10%forSST-2,MNLI,CoNLL-03andevenmore
+than20%forSQuAD.Thisisdespitethefactthatweused
+8/8-bits for weights/activations. On the contrary, encoder
+layersconsumearound79%totalparameters(4×embedding
+parameter size), while quantizing them to 4-bits in Tab. 1
+and2leadstolessperformanceloss.
+Furthermore,wefindthatpositionembeddingisverysensi-
+tivetoquantization.Forinstance,quantizingpositionembed-
+dingto4bitsresultsingenerally2%additionalperformance
+(a)SST-2 (b)MNLI
+degradationthanquantizingwordembedding,eventhough
+the position embedding only accounts for less than 5% of
+theentireembedding.Thisindicatestheimportanceofposi-
+tionalinformationinNaturalLanguageUnderstandingtasks.
+Givenpositionembeddingonlyaccountsforasmallportion
+ofmodelsize,wecandomixed-precisionquantizationfor
+embedding to further push down the model size boundary
+withatolerableaccuracydrop,asshowninAppendix.
+Table 4: Quantization effect to different modules. We ab-
+breviatethequantizationbitsusedforwordembeddingas (c)CoNLL-03 (d)SQuAD
+“ew-bits”,positionembeddingas“ep-bits”,multi-headatten-
+Figure4:KLdivergenceoverattentiondistributionbetween
+tion layer as “s-bits” and fully-connected layer as “f-bits”.
+Q-BERT/DirectQ and Baseline. The distance between Q-
+In(a),wesetweightandactivationbitsas8.In(b),weset
+BERTandBaselineismuchsmallerthanthatofDirectQand
+embeddingandactivationbitsas8.
+Baseline.
+(a)quantizationeffectonembedding
+Method ew-bits ep-bits SST-2 MNLI-m CoNLL-03 SQuAD
+4.2 QualitativeAnalysis
+Baseline 32 32 93.00 84.00 95.00 88.69
+Weuseattentioninformationtoconductqualitativeanalysis
+Q-BERT 8 8 92.88 83.83 94.79 88.47
+toanalyzethedifferencebetweenQ-BERTandDirectQ.
+Q-BERT 4 8 91.74 82.91 94.44 87.55
+Todoso,wecomputetheKullback–Leibler(KL)diver-
+Q-BERT 8 4 89.11 82.84 93.86 72.38
+Q-BERT 4 4 85.55 78.08 84.32 61.70 gencebetweentheattentiondistributionforthesameinput
+fromthecoordinatedheadofbothquantizedBERTandfull-
+precision BERT. It should be noted that we compute the
+(b)quantizationofmulti-headattentionversusfully-connected
+layer average distance out of 10% of the entire training dataset.
+The smaller KL divergence here means that the output of
+Method s-bits f-bits SST-2 MNLI-m CoNLL-03 SQuAD themulti-headattentionofthetwomodelsisclosertoeach
+Baseline 32 32 93.00 84.00 95.00 88.69 other. We illustrate this distance score for each individual
+Q-BERTMP 1/2MP 2/3MP 89.56 73.66 91.74 75.81 headinFig.4forSST-2,MNLI,CoNLL-03andSQuAD.We
+Q-BERTMP 2/3MP 1/2MP 85.89 70.89 87.55 68.71 comparedQ-BERTandDirectQwith4-bitsweights,8-bits
+Q-BERTMP 2/3MP 2/3MP 92.08 81.75 93.91 86.95 embeddingand8-bitsactivation.EachscatterpointinFig.4
+denotesthedistancew.r.tonehead,andthelinechartshows
+theaverageresultsoverthe12headsinonelayer.Wecan
+clearlyseethatQ-BERTalwaysincursasmallerdistanceto
+Tostudythequantizationeffectsonself-attentionlayers
+theoriginalbaselinemodelascomparedtoDirectQmodel,
+andfully-connectednetworks,weconductedextensiveex-
+forallthedifferentlayers.
+perimentsunderdifferentbitssettingsfortheencoderlayers.
+TheresultsareshowninTab.4b.Specifically,weadopttheQ-
+5 Conclusion
+BERTMPsettinginTab.1,withamixtureof2and3bitsfor
+encoderweights.Totesttherobustnessofthetwomodules Inthiswork,weperformanextensiveanalysisoffine-tuned
+insideeachencoderlayer,wefurtherreduceonemorebitin BERTandproposeQ-BERT,aneffectiveschemeforquantiz-
+thecorrespondingmodulesanddenotetheresultingprecision ingBERT.Inordertoaggressivelyreducethemodelsizeby
+setting1/2MP.FromTab.4b,wecanconcludethatgenerally mixed-precisionquantization,weproposedanewlayer-wise
+self-attentionlayerismorerobusttoquantizationthanthe Hessianbasedmethodwhichcapturesboththeaverageand
+fully-connectednetwork,since1/2MPself-attentionresults thevarianceoftheeigenvalues.Moreover,anewgroup-wise
+inabout5%performancedropwhile1/2MPfully-connected quantizationisproposedtoperformfine-grainedquantization
+willworsenthisto11%. insideeachencoderlayer.Infourdownstreamtasks,equipped
+8820
+with the aforementioned methods, Q-BERT achieves 13× Liu,Y.;Ott,M.;Goyal,N.;Du,J.;Joshi,M.;Chen,D.;Levy,O.;
+compressionratioinweights,4×smalleractivationsize,and Lewis,M.;Zettlemoyer,L.;andStoyanov,V. 2019. Roberta:A
+4×smallerembeddingsize,withatmost2.3%accuracyloss. robustlyoptimizedbertpretrainingapproach. arXiv:1907.11692.
+To better understand how different factors will affect the Ma,X.;Zhang,P.;Zhang,S.;Duan,N.;Hou,Y.;Song,D.;and
+trade-offbetweenperformanceandthemodelcompression Zhou,M. 2019. Atensorizedtransformerforlanguagemodeling.
+ratioinQ-BERT,weconductcontrolledexperimentstoin- arXiv:1906.09777.
+vestigate the effect of different quantization schemes and Michel,P.;Levy,O.;andNeubig,G. 2019. Aresixteenheadsreally
+quantizingdifferentmodulesinBERT,respectively. betterthanone? arXiv:1905.10650.
+Radford,A.;Wu,J.;Child,R.;Luan,D.;Amodei,D.;andSutskever,
+References I. 2019. Languagemodelsareunsupervisedmultitasklearners.
+Rastegari, M.; Ordonez, V.; Redmon, J.; and Farhadi, A. 2016.
+Ba,J.,andCaruana,R. 2014. Dodeepnetsreallyneedtobedeep?
+Xnor-net:Imagenetclassificationusingbinaryconvolutionalneural
+InProceedingsoftheNIPS,2654–2662.
+networks. InProceedingsoftheECCV,525–542. Springer.
+Bengio,Y.;Le´onard,N.;andCourville,A. 2013. Estimatingor
+Sun,S.;Yu,C.;Zhe,G.;andJingjing,L. 2019. Patientknowledge
+propagatinggradientsthroughstochasticneuronsforconditional
+distillationforbertmodelcompression.ProceedingsoftheEMNLP.
+computation. arXivpreprintarXiv:1308.3432.
+Tang, R.; Lu, Y.; Liu, L.; Mou, L.; Vechtomova, O.; and Lin, J.
+Bhandare,A.;Sripathi,V.;Karkada,D.;Menon,V.;Choi,S.;Datta, 2019. Distilling task-specific knowledge from bert into simple
+K.;andSaletore,V.2019.Efficient8-bitquantizationoftransformer neuralnetworks. arXiv:1903.12136.
+neuralmachinelanguagetranslationmodel. arXiv:1906.00532.
+Tay,Y.;Zhang,A.;Tuan,L.A.;Rao,J.;Zhang,S.;Wang,S.;Fu,
+Choi,J.;Wang,Z.;Venkataramani,S.;Chuang,P.I.-J.;Srinivasan, J.;andHui,S.C. 2019. Lightweightandefficientneuralnatural
+V.;andGopalakrishnan,K. 2018. Pact:Parameterizedclipping languageprocessingwithquaternionnetworks. arXiv:1906.04393.
+activationforquantizedneuralnetworks. arXiv:1805.06085.
+Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones, L.;
+Clark, K.; Khandelwal, U.; Levy, O.; and Manning, C. D. Gomez, A. N.; Kaiser, Ł.; and Polosukhin, I. 2017. Attention
+2019. What does bert look at? an analysis of bert’s attention. isallyouneed. InProceedingsoftheNIPS,5998–6008.
+arXiv:1906.04341.
+Wang,P.;Xie,X.;Deng,L.;Li,G.;Wang,D.;andXie,Y. 2018.
+Courbariaux,M.;Bengio,Y.;andDavid,J.-P. 2015. Binarycon- Hitnet:hybridternaryrecurrentneuralnetwork. InProceedingsof
+nect:Trainingdeepneural networkswithbinary weightsduring theNIPS,604–614.
+propagations. InProceedingsoftheNIPS,3123–3131.
+Wang,K.;Liu,Z.;Lin,Y.;Lin,J.;andHan,S.2019.Haq:Hardware-
+Devlin,J.;Chang,M.-W.;Lee,K.;andToutanova,K. 2019. Bert: awareautomatedquantizationwithmixedprecision.InProceedings
+Pre-trainingofdeepbidirectionaltransformersforlanguageunder- oftheCVPR,8612–8620.
+standing. InProceedingsoftheNAACL,4171–4186. Wu,B.;Wang,Y.;Zhang,P.;Tian,Y.;Vajda,P.;andKeutzer,K.
+Dong, Z.; Yao, Z.; Gholami, A.; Mahoney, M.; and Keutzer, K. 2018. Mixedprecisionquantizationofconvnetsviadifferentiable
+2019. Hawq:Hessianawarequantizationofneuralnetworkswith neuralarchitecturesearch. arXiv:1812.00090.
+mixed-precision. arXiv:1905.03696. Xu,C.;Yao,J.;Lin,Z.;Ou,W.;Cao,Y.;Wang,Z.;andZha,H.2018.
+Gholami, A.; Kwon, K.; Wu, B.; Tai, Z.; Yue, X.; Jin, P.; Zhao, Alternating multi-bit quantization for recurrent neural networks.
+S.;andKeutzer,K. 2018. Squeezenext:Hardware-awareneural arXiv:1802.00150.
+networkdesign. InProceedingsoftheCVPRWorkshops,1638– Yang,Z.;Dai,Z.;Yang,Y.;Carbonell,J.;Salakhutdinov,R.;and
+1647. Le,Q.V. 2019. Xlnet:Generalizedautoregressivepretrainingfor
+Hassibi, B.; Stork, D. G.; and Wolff, G. 1994. Optimal brain languageunderstanding. arXiv:1906.08237.
+surgeon:Extensionsandperformancecomparisons. InProceedings Yao,Z.;Gholami,A.;Lei,Q.;Keutzer,K.;andMahoney,M.W.
+oftheNIPS,263–270. 2018. Hessian-basedanalysisoflargebatchtrainingandrobustness
+toadversaries. arXiv:1802.08241.
+Hinton,G.;Vinyals,O.;andDean,J.2015.Distillingtheknowledge
+inaneuralnetwork. arXiv:1503.02531. Zhang,D.;Yang,J.;Ye,D.;andHua,G. 2018. Lq-nets:Learned
+quantizationforhighlyaccurateandcompactdeepneuralnetworks.
+Howard,A.G.;Zhu,M.;Chen,B.;Kalenichenko,D.;Wang,W.;
+InProceedingsoftheECCV,365–382.
+Weyand,T.;Andreetto,M.;andAdam,H. 2017. Mobilenets:Effi-
+cientconvolutionalneuralnetworksformobilevisionapplications. Zhang,S.;Choromanska,A.E.;andLeCun,Y.2015.Deeplearning
+arXiv:1704.04861. withelasticaveragingsgd. InProceedingsoftheNIPS,685–693.
+Hubara,I.;Courbariaux,M.;Soudry,D.;El-Yaniv,R.;andBengio, Zhou,S.;Wu,Y.;Ni,Z.;Zhou,X.;Wen,H.;andZou,Y. 2016.
+Y. 2017. Quantized neural networks: Training neural networks Dorefa-net:Traininglowbitwidthconvolutionalneuralnetworks
+withlowprecisionweightsandactivations. TheJournalofMachine withlowbitwidthgradients. arXiv:1606.06160.
+LearningResearch18(1):6869–6898. Zhou,A.;Yao,A.;Guo,Y.;Xu,L.;andChen,Y.2017.Incremental
+Iandola,F.N.;Han,S.;Moskewicz,M.W.;Ashraf,K.;Dally,W.J.; network quantization: Towards lossless cnns with low-precision
+andKeutzer,K. 2016. Squeezenet:Alexnet-levelaccuracywith weights. arXiv:1702.03044.
+50x fewer parameters and¡ 0.5 mb model size. arXiv preprint Zhou,Y.;Moosavi-Dezfooli,S.-M.;Cheung,N.-M.;andFrossard,
+arXiv:1602.07360. P. 2018. Adaptivequantizationfordeepneuralnetwork. InPro-
+ceedingsoftheAAAI.
+LeCun,Y.;Denker,J.S.;andSolla,S.A. 1990. Optimalbrain
+damage. InProceedingsoftheNIPS,598–605.
+Li, F.; Zhang, B.; and Liu, B. 2016. Ternary weight networks.
+arXiv:1605.04711.
+8821

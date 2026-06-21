@@ -1,0 +1,594 @@
+TheThirty-SixthAAAIConferenceonArtificialIntelligence(AAAI-22)
+BERTMap: A BERT-Based Ontology Alignment System
+YuanHe1,JiaoyanChen1,DenvarAntonyrajah2,IanHorrocks1
+1DepartmentofComputerScience,UniversityofOxford,UK
+2SamsungResearch,UK
+{yuan.he,jiaoyan.chen,ian.horrocks}@cs.ox.ac.uk,denvar.a@samsung.com
+Abstract considerstexts’surfaceformsuchasoverlappedsub-strings,
+and cannot capture the word semantics. Recently, machine
+Ontologyalignment(a.k.aontologymatching(OM))playsa
+learninghasbeenproposedasareplacementforlexicaland
+criticalroleinknowledgeintegration.Owingtothesuccess
+structural matching; for example, DeepAlignment (Koly-
+ofmachinelearninginmanydomains,ithasbeenappliedin
+vakis, Kalousis, and Kiritsis 2018) and OntoEmma (Wang
+OM. However, the existing methods, which often adopt ad-
+hocfeatureengineeringornon-contextualwordembeddings, etal.2018)utilizewordembeddingstorepresentclassesand
+havenotyetoutperformedrule-basedsystemsespeciallyinan computetwoclasses’similarityaccordingtotheirwordvec-
+unsupervisedsetting.Inthispaper,weproposeanovelOM tors’Euclideandistance.Nevertheless,thesemethodsadopt
+systemnamedBERTMapwhichcansupportbothunsuper- either traditional non-contextual word embedding models
+visedandsemi-supervisedsettings.Itfirstpredictsmappings suchasWord2Vec(Mikolovetal.2013),whichonlylearnsa
+usingaclassifierbasedonfine-tuningthecontextualembed- global(context-free)embeddingforeachword,orusecom-
+dingmodelBERTontextsemanticscorporaextractedfrom
+plex feature engineering which is ad-hoc and relies on a
+ontologies,andthenrefinesthemappingsthroughextension
+largenumberofannotatedsamplesfortraining.Incontrast,
+andrepairbyutilizingtheontologystructureandlogic.Our
+pre-trainedtransformer-basedlanguagerepresentationmod-
+evaluationwiththreealignmenttasksonbiomedicalontolo-
+elssuchasBERT(Devlinetal.2019)canlearnrobustcon-
+gies demonstrates that BERTMap can often perform better
+thantheleadingOMsystemsLogMapandAML. textualtextembeddings,andusuallyrequireonlymoderate
+training resources for fine-tuning. Although these models
+perform well in many Natural Language Processing tasks,
+Introduction
+theyhavenotyetbeensufficientlyinvestigatedinOM.
+Ontology alignment (a.k.a. ontology matching (OM)) aims
+In this paper, we propose BERTMap, a novel ontology
+at matching semantically related entities from different on-
+alignment system that exploits BERT fine-tuning for map-
+tologies. A relationship (usually equivalence or subsump-
+ping prediction and utilizes the graphical and logical in-
+tion)betweentwomatchedentitiesisknownasamapping.
+formationofontologiesformappingrefinement.Asshown
+OM plays an important role in knowledge engineering, as
+in Figure 1, BERTMap includes the following main steps:
+a key technique for ontology integration and quality assur-
+(i) corpus construction, where synonym and non-synonym
+ance(ShvaikoandEuzenat2013).Theindependentdevelop-
+pairs from various sources are extracted; (ii) fine-tuning,
+mentofontologiesoftenresultsinheterogeneousknowledge
+where a suitable pre-trained BERT model is selected and
+representations with different categorizations and naming
+fine-tuned on the corpora constructed in (i); (iii) mapping
+schemes.Forexample,theclassnamed“musclelayer”inthe
+prediction, where mapping candidates are first extracted
+SNOMED Clinical Terms ontology is named “muscularis
+based on sub-word inverted indices and then predicted by
+propria” in the Foundational Model of Anatomy (FMA)
+thefine-tunedBERTclassifier;and(iv)mappingrefinement,
+ontology. Moreover, real-world ontologies often contain a
+where additional mappings are recalled from neighbouring
+large number of classes, which not only causes scalability
+classesofhighlyscoredmappings,andsomemappingsthat
+issues,butalsomakesithardertodistinguishclassesofsim-
+leadtologicalinconsistencyaredeletedforhigherprecision.
+ilarnamesand/orcontextsbutrepresentingdifferentobjects.
+WeevaluateBERTMap1ontheFMA-SNOMEDtaskand
+Traditional OM solutions typically use lexical matching
+theFMA-NCItaskoftheOAEILargeBioMedTrack2,and
+as their basis and combine it with structural matching and
+an extended task of FMA-SNOMED where the more com-
+logic-based mapping repair. This has led to several classic
+pletelabelsfromtheoriginalSNOMEDontologyareadded.
+systems such as LogMap (Jime´nez-Ruiz and Cuenca Grau
+Our results demonstrate that BERTMap can often outper-
+2011)andAgreementMakerLight(AML)(Fariaetal.2013)
+formthestate-of-the-artsystemsLogMapandAML.
+which still demonstrate state-of-the-art performance on
+many OM tasks. However, their lexical matching part only
+Copyright©2022,AssociationfortheAdvancementofArtificial 1Codesanddata:https://github.com/KRR-Oxford/BERTMap.
+Intelligence(www.aaai.org).Allrightsreserved. 2http://www.cs.ox.ac.uk/isg/projects/SEALS/oaei/
+5684
+Preliminaries are intuitively synonymous in the domain of the input on-
+tologies; labels from semantically distinct classes can be
+ProblemFormulation
+regarded as non-synonymous. The corpora for BERT fine-
+An ontology is mainly composed of entities (including
+tuning are composed of pairs of such synonymous labels
+classes, instances and properties), and axioms that can ex-
+(i.e.,“synonyms”)andpairsofsuchnon-synonymouslabels
+pressrelationshipsbetweenentities.Ontologyalignmentin-
+(i.e.,“non-synonyms”).Accordingtothesource,thecorpora
+volves identifying equivalence, subsumption or other more
+aredividedintothreecategoriesasfollows.
+complexrelationshipsbetweencross-ontologypairsofenti-
+Intra-ontology corpus. For each named class c in an in-
+ties.Inthiswork,wefocusonequivalencebetweenclasses.
+put ontology, we derive all its synonyms which are pairs
+Given a pair of ontologies, O and O0, whose named class
+(! ;! ) with ! ;! ∈ (cid:10)(c), and the special cases where
+setsareC andC0,respectively,weaimtofirstgenerateaset 1 2 1 2
+! = ! are referred to as identity synonyms. We consider
+ofscoredmappingsoftheform(c∈C;c0 ∈C0;P(c≡c0)), 1 2
+twotypesofnon-synonyms:(i)softnon-synonymswhichare
+whereP(c ≡ c0) ∈ [0;1]isascoreindicatingthedegreeto
+labelsfromtworandomclasses;and(ii)hardnon-synonyms
+whichcandc0areequivalent;wethenextendandrepairthe
+whicharelabelsfromlogicallydisjointclasses.Sinceclass
+scoredmappingstooutputdeterminedmappings.
+disjointness is often not defined in an ontology, we simply
+assume that sibling classes (i.e., classes that share a com-
+BERT:Pre-TrainingandFine-Tuning
+monsuperclass)aredisjoint.Infact,thisisanaivesolution
+BERT is a contextual language representation model built toinferdisjointnessfromthestructureoftheinputontology.
+onbidirectionaltransformerencoders(Vaswanietal.2017). Cross-ontology corpus. The lack of annotated mappings
+Itsframeworkinvolvespre-trainingandfine-tuning.Inpre- makes it unfeasible to apply supervised learning on ontol-
+training,theinputisasequencecomposedofaspecialtoken ogyalignment.However,itisreasonabletosupportasemi-
+[CLS],tokensofonesentenceA,aspecialtoken[SEP], supervisedsettingwhereasmallportionofannotatedmap-
+andtokensofanothersentenceB thatfollowsAinthecor- pings are given and we can extract synonyms from these
+pus.Eachtoken’sinitialembeddingencodesitscontent,its mappings.Givenamappingcomposedoftwonamedclasses
+position in the sequence, and the sentence it belongs to (A c and c0 we extract all synonyms (!;!0) where (!;!0) ∈
+orB).Themodelhasmultiplesuccessivelayersofaniden- (cid:10)(c)×(cid:10)(c0)(×referstotheCartesianProduct).Wealsoex-
+ticalarchitecture.Itsmaincomponentisthemulti-headself- tractnon-synonymsfrompairsofrandomlyalignedclasses.
+attention block which computes a contextual hidden rep- Complementary corpus. We can optionally utilize auxil-
+resentation of each token by considering the output of the iaryontologiesforadditionalsynonymsandnon-synonyms.
+wholesequencefromthepreviouslayer.Thetokens’embed- They are extracted in the same way as the intra-ontology
+dingsfromthelastlayercanbeusedastheinputofadown- corpusbutfromanauxiliaryontology.Toreducedatanoise
+streamtask.Pre-trainingisconductedbyminimizinglosses and limit the corpus size, we consider auxiliary ontologies
+ontwotasks:MaskedLanguageModelling,whichpredicts ofthesamedomainandonlyutilizenamedclassesthathave
+a part of tokens that are randomly masked, and Next Sen- sharedlabelswithsomeclassoftheinputontologies.
+tencePrediction,whichpredictswhethersentenceBfollows The intra-ontology, cross-ontology and complementary
+A.Incontrasttothetraditionalnon-contextualwordembed- corporaaredenotedasio,coandcp,respectively.Theiden-
+dingmethodswhichassigneachtokenonlyoneembedding, titysynonymsaredenotedasids.Forconvenience,weuse
+BERTdistinguishesdifferentoccurrencesofthesametoken. +todenotethecombinationofdifferentcorpus/synonyms;
+For instance, given a sentence “the bank robber was seen for example, io + ids refers to the intra-ontology corpus
+on the river bank”, BERT computes different embeddings withidentitysynonymsconsidered,andio+co+cprefers
+for the two occurrences of “bank”, while a non-contextual to including all three corpora without identity synonyms.
+modelyieldsaunifiedembeddingthatisbiasedtowardsthe Tolearnthesymmetricalproperty,wealsoappendreversed
+most frequent meaning in the corpus. In fine-tuning, pre- synonyms,i.e.,if(! ;! )isinthesynonymset,(! ;! )is
+1 2 2 1
+trainedBERTisattachedtocustomizeddownstreamlayers added. Since some non-synonyms are extracted randomly,
+and takes as input either one sentence (e.g., for sentiment theycanoccasionallyalsoappearinthesynonymset;inthis
+classification) or two sentences (e.g., for paraphrasing) ac- case,wedeletethenon-synonyms.
+cordingtospecifictasks.Ittypicallynecessitatesonlyafew
+epochsandamoderatenumberofsamplesfortraining. Fine-tuning Given sets of synonyms and non-synonyms
+aspositiveandnegativesamples,respectively,wefine-tune
+BERTMap apre-trainedBERTalongwithadownstreambinaryclassi-
+fieronthecross-entropyloss.Notethatweconductnopre-
+CorpusConstructionandBERTFine-Tuning
+trainingbutuseanexistingonefromtheHugging Face
+Text Semantics Corpora In real-world ontologies, a library4. The inputs of BERT are the tokenized label pairs
+named class often has multiple labels (aliases) defined by withthemaximumlengthsetto128.Theclassifierconsists
+annotation properties such as rdfs:label. For convenience, of a linear layer (with dropout) that takes as input the em-
+wedenotealabelafterpreprocessing3 by!,anddenotethe bedding of [cls] token from BERT’s last-layer outputs,
+setofallthepreprocessedlabelsofaclasscas(cid:10)(c).Labels andtransformsitintoa2-dimensionalvectorbeforeapply-
+of the same class or from semantically equivalent classes ingtheoutputsoftmaxlayer.Theoptimizationisdoneusing
+3Thisincludeslowercasingandunderscoresymbolremoving. 4https://huggingface.co/models
+5685
+Prediction Inputs
+Create Indices Scored Mappings
+Source Ontology
+Intra-ontology Corpus Sub-word Inverted Indices
+Target Ontology
+Mapping Extension
+candidate selection
+if matched
+Known Mappings Cross-ontology Corpus String-match Module
+Mapping Repair
+Fine-tuning if no matched labels
+Inputs Refinement
+Complementary Sources Complementary Corpus BERT Classifier
+Corpora Prediction Output Mappings
+Figure1:IllustrationofBERTMapsystem.
+the Adam algorithm (Loshchilov and Hutter 2017). The fi- denotedasT(·).Givenasourceclassc,wesearchfromC0
+nal output is of the form h1−s;si, where s ∈ [0;1] is the the target candidate classes as follows: we first select tar-
+score thatindicates thedegree thatthe inputlabel pairs are get classes that share at least one sub-word token with c,
+synonymous. i.e.,S I0[t],andthenrankthemaccordingtoascoring
+t2T(c)
+metricbasedoninverteddocumentfrequency(idf):
+MappingPrediction
+X X |C0|
+S (c;c0)= idf(t)= log
+Tocomputeamatchedclassforeachclassc∈C,anaiveso- select 10 |I0[t]|
+lutionistosearchforargmax P(c ≡ c0).Computing t2T(c) t2T(c)
+c02C0
+mappingsinthiswayhasatimecomplexityofO(n2),which where|·|denotessetcardinality.Finally,wechoosethetop
+is impractical for matching large ontologies. To reduce the k scored target classes for c to form potential mappings of
+searchspace,BERTMapfirstselectsasetofcandidatesof which the scores will be computed. As a result, we reduce
+matched classes using sub-word inverted indices, and then the quadratic time complexity to O(kn) where k << n is
+scoreseachpotentialmappingwiththefine-tunedBERT. thecut-offofcandidateselection.
+CandidateSelection Theassumptionofourcandidatese- MappingScoreComputation Foratargetclasscandidate
+lection is that matched classes are likely to have labels c0 of the source class c, BERTMap uses string matching
+withoverlappedsub-tokens.Previousworkstypicallyadopt andthefine-tunedBERTclassifiertocalculatethemapping
+word-level inverted index with additional text processing scorebetweenthemasfollows:
+such as stemming and dictionary consulting (Jime´nez-Ruiz (cid:26) 1:0 if(cid:10)(c)T (cid:10)(c0)6=∅
+S (c;c0)=
+and Cuenca Grau 2011; Wang et al. 2018). In contrast, map S ((cid:10)(c);(cid:10)(c0)) otherwise
+bert
+BERTMapexploitsthesub-wordinvertedindexwhichcan
+(i)capturevariouswordformswithoutextraprocessing,and where (cid:10)(c)T (cid:10)(c0) 6= ∅ means c and c0 have at least one
+(ii)parseunknownwordsintoconsecutiveknownsub-words exactlymatchedlabel.S bert(·;·)denotestheaverageofthe
+insteadofsimplytreatingthemasonespecialtoken.
+synonymscoresofallthelabelpairs(i.e.,(!;!0)∈(cid:10)(c)×
+We build sub-word inverted indices based on BERT’s
+(cid:10)(c0)),whicharepredictedbytheBERTclassifier.Thepur-
+inherent WordPiece tokenizer (Wu et al. 2016), which is poseofthestring-matchingistosavecomputationbyavoid-
+trainedbyanincrementalprocedurethatmergescharacters ingunnecessaryuseoftheBERTclassifieron“easy”map-
+(from the corpus) into most likely sub-words at each iter- pings. BERTMap finally returns the mapping for c by se-
+ation. We opt to use the built-in sub-word tokenizer rather lectingthetopscoredcandidatec0 =argmaxS map(c;c0).
+than re-train it on our corpora because it has already been With the above steps, we can optionally generate three
+fitted to an enormous corpus (with 3:3 billion words) that sets of scored mappings: (i) src2tgt by looking for a
+coversvarioustopics(Devlinetal.2019),andinthiscontext
+matchedtargetclassc0 ∈C0foreachsourceclassc∈C;(ii)
+weconsidergeneralitytobepreferabletotaskspecificity. tgt2srcbylookingforamatchedsourceclassc ∈ C for
+We construct5 indices I and I0 for the two input ontolo- eachtargetclassc0 ∈ C0;and(iii)combinedbymerging
+giesOandO0,respectively.Eachentryofanindexisasub- src2tgtandtgt2srcwithduplicatesremoved.Wede-
+notethehyperparametersas(cid:28) and(cid:21)where(cid:28) referstotheset
+word, and its values are classes that have at least one la-
+type(src2tgt,tgt2srcorcombined)ofscoredmap-
+bel containing this sub-word after tokenization. A query of
+source(resp.target)classesthatcontainatokentisdenoted
+pingsand(cid:21)∈[0;1]referstothemappingscorethreshold.
+as I[t] (resp. I0[t]). The function that takes a class as input
+MappingRefinement
+and returns all the sub-word tokens of this class’s labels is
+MappingExtension Ifasourceclasscandatargetclass
+5Indexconstructionislinearw.r.t.thenumberofsub-words. c0 arematched,theirrespectivesemanticallyrelatedclasses
+5686
+Algorithm1:IterativeMappingExtension Task SRC TGT Refs(=) Refs(?)
+Input:Highconfidencemappingset,M FMA-SNOMED 10,157 13,412 6,026 2,982
+Parameter:Extensionthreshold,(cid:20) FMA-NCI 3,696 6,488 2,686 338
+Output:Extendedmappingset,M
+ex
+Table1:Numbersofclassesandreferencemappingsinthe
+1: Initializethefrontier:M fr ←M FMA-SNOMEDandFMA-NCItasks.
+2: Initializetheextendedmappingset:M ex ←{}
+3: LetSup(·)bethefunctionthatreturnssuperclasses
+4: LetSub(·)bethefunctionthatreturnssubclasses
+gorithm(Jime´nez-Ruizetal.2013).
+5: whileM fr isnotemptydo
+6: Initializeanemptynewextensionset:M new ←{} Evaluation
+7: foreachmapping(c;c0;S map(c;c0))∈M fr do
+8: for (x;x0) ∈ (Sup(c) × Sup(c0)) ∪ (Sub(c) × ExperimentSettings
+Sub(c0))do
+Datasets and Tasks The evaluation considers the FMA-
+9: m←(x;x0;S map(x;x0)) SNOMEDandFMA-NCIsmallfragmenttasksoftheOAEI
+10: ifS map(x;x0)≥(cid:20)andm∈= Mandm∈= M ex LargeBioTrack.Theyhavelarge-scaleontologiesandhigh
+then quality gold standards created by domain experts. Table 1
+11: M new ←M new∪{m} summarizesthenumbersofclassesinsource(SRC)andtar-
+12: endif get (TGT) ontologies, and the numbers of reference map-
+13: endfor pings. “Refs (=)” refers to the reference mappings to be
+14: endfor considered, while “Refs (?)” refers to the reference map-
+15: M ex ←M ex∪M new pings that will cause logical inconsistency after alignment
+16: M fr ←M new and are ignored as suggested by OAEI. We also consider
+17: endwhile an extended task of FMA-SNOMED, denoted as FMA-
+18: returnM ex SNOMED+, where the target ontology is extended by in-
+troducing the labels from the latest version of SNOMED.6
+This is because the LargeBio SNOMED is many years
+such as parents and children are likely to be matched. This out of date, and the naming scheme in the newly released
+is referred to as the locality principle which is assumed in SNOMED has changed and many more class labels have
+manyontologyengineeringtasks(Grauetal.2007;Jime´nez- been added. We adopt the following strategy to construct
+Ruiz et al. 2020). BERTMap utilizes this principle to dis- SNOMED+:foreachclasscinSNOMED,weextractitsla-
+cover new mappings from those highly scored mappings bels(cid:10)(c)andforeachlabel!in(cid:10)(c),wesearchforclasses
+with an iterative mapping extension algorithm (see Algo- in the original SNOMED that have ! as an alias; we then
+rithm 1). Note that this algorithm only preserves extended add all the labels of the searched classes to the LargeBio
+mappingsthatarenotpreviouslyseen(inMandM )and SNOMEDforSNOMED+.Wealsousetheseadditionalla-
+ex
+havescores≥(cid:20)(Line10-12),i.e.,theextensionthreshold. bels to construct the complementary corpus for the FMA-
+Moreover,although(cid:20)isahyperparameter,theempiricalev- SNOMEDtask.Thekeydifferenceisthattheyareusedfor
+idence shows that the results are insensitive to (cid:20), and thus fine-tuning alone on the FMA-SNOMED task but for both
+we set it to a fixed value (cid:20) = 0:9. Finally, the algorithm fine-tuningandpredictionontheFMA-SNOMED+task.
+terminatesiterationwhennonewmappingscanbefound.
+EvaluationMetrics WeevaluateallthesystemsonPreci-
+MappingRepair Mappingrepairremovesmappingsthat sion(P),Recall(R),andMacro-F1(F1),definedas:
+will lead to logical conflicts after integrating two ontolo-
+|M ∩M \M | |M ∩M \M |
+gies.A“perfectrepair”(a.k.a.adiagnosis)referstoremov- P = out = ? ;R= out = ?
+|M \M | |M \M |
+ing a minimal number of mappings to achieve logical co- out ? = ?
+herence. However, computing a diagnosis is usually time-
+andF1=2PR=(P +R),whereM isthesystem’sout-
+out
+consuming, and there may be no unique solution. To ad-
+putmappings,M andM refertoreferencemappingsto
+= ?
+dress this, Jime´nez-Ruiz et al. (2013) proposes a proposi-
+beconsidered(Refs(=))andignored(Refs(?)),respectively.
+tionallogic-basedrepairmethodthatcanefficientlycompute
+Intheunsupervisedsetting,wedivideM intoM (10%)
+= val
+anapproximaterepairRwhichensuresthat:(i)Risasubset
+and M (90%); and in the semi-supervised setting, we
+test
+ofthediagnosis(sothatthereisnosacrificeofcorrectmap-
+divide M into M (20%), M (10%) and M
+= train val test
+pings); (ii) only a small number of unsatisfiable classes re-
+(70%). When computing the metrics on the hold-out vali-
+main.MappingrepairiscommonlyusedinclassicOMsys-
+dationortestset,weshouldregardreferencemappingsthat
+tems, but rarely considered in machine learning-based ap-
+are not in this set as neither positive nor negative (i.e., as
+proaches. In this work, we adopt the repair tool developed
+ignoredmappings).Forexample,duringvalidation,weadd
+byJime´nez-Ruizetal.(2013).
+themappingsfromM (ifsemi-supervised)andM
+train test
+Note that mapping extension and repair can consistently
+(forbothsettings)intoM whencalculatingthemetrics.
+?
+improve the performance without excessive time cost, be-
+cause the former only needs to handle mappings of high 6Theversionof20210131isavailableat:https://www.nlm.nih.
+prediction scores and the later adopts an efficient repair al- gov/healthit/snomedct/index.html.
+5687
+BERTMap Settings We set up various BERTMap set- wesetupthesamecandidateselectionandhyperparameter
+tings considering (i) being unsupervised (without co) or searchprocedureforthemasforBERTMap;whereas(iii)to
+semi-supervised(+co),(ii)includingtheidentitysynonyms (v)areexternalsystemswithdefaultimplementations.Note
+(+ids),(iii)beingaugmentedwithacomplementarycorpus that by comparing to LogMap and AML, we actually have
+(+cp),and(iv)applyingmappingextension(ex)andrepair severalindirectbaselinesthathaveparticipatedintheLarge-
+(rp).Infine-tuning,thesemi-supervisedsettingtakesallthe Bio Track (e.g., ALOD2Vec (Portisch and Paulheim 2018)
+label pairs extracted from both within the input ontologies andWiktionary(Portisch,Hladik,andPaulheim2019)).
+andM astrainingdata,labelpairsfromM asvali-
+train val
+dation data and label pairs from M as test data, while Results
+test
+the unsupervised setting partitions all the label pairs ex- Theresultstogetherwiththecorrespondinghyperparameter
+tractedfromwithintheinputontologiesinto80%fortrain- settings are shown in Tables 2, 3 and 4, where 90% (resp.
+ing and 20% for validation. Note that the the validation in 70%)TestMappingsrefertotheresultsmeasuredonM
+test
+fine-tuning is different from the mapping validation which oftheunsupervised(resp.semi-supervised)setting.Tofairly
+usesM val becausetheformerconcernstheperformanceof comparetheunsupervisedandsemi-supervisedsettings,we
+the BERT classifier while the latter concerns selecting the reporttheresults onboth90% and 70% TestMappingsfor
+besthyperparametersfordeterminingoutputmappings. theunsupervisedsetting.
+Besides,wesetthepositive-negativesampleratioto1:4. The overall results show that BERTMap can achieve
+Namely, we sample 4 non-synonyms for each synonym in higher F1 score than all the baselines on the FMA-
+co, and 2 soft and 2 hard non-synonyms for each synonym SNOMED and FMA-SNOMED+ tasks, but its F1 score
+in other corpora. We use Bio-Clinical BERT, which has is lower than LogMap and AML on the FMA-NCI task.
+beenpre-trainedonbiomedicalandclinicaldomaincorpora On the FMA-SNOMED task, the unsupervised BERTMap
+(Alsentzeretal.2019).TheBERTmodelisfine-tunedfor3 can surpass AML (resp. LogMap) by 1:4% (resp. 4:2%) in
+epochswithabatchsizeof32,andevaluatedonthevalida- F1,whilethesemi-supervisedBERTMapcanexceedAML
+tionsetforevery0:1epoch,throughwhichthebestcheck- (resp. LogMap) by 3:0% (resp. 5:4%). The corresponding
+pointonthecross-entropylossisselectedforprediction.The rates become 2:5% (resp. 1:8%) and 3:3% (resp. 2:7%)
+cut-offofsub-wordinvertedindex-basedcandidateselection on the FMA-SNOMED+ task. On the FMA-NCI task, the
+issetto200.Ourimplementationuses(i)owlready27for
+bestF1scoreoftheunsupervisedBERTMapisworsethan
+ontology processing and (ii) transformers8 for BERT. AML(resp.LogMap)by2:5%(resp.2:6%),andthebestF1
+ThetrainingusesasingleGTX1080TiGPU. scoreofthesemi-supervisedBERTMapisworsethanAML
+Afterfine-tuning,weperforma2-stepmappingvalidation (resp.LogMap)by2:3%(resp.2:3%).NotethatBERTMap
+using M val as follows: we first validate the scored map- without ex or rp consistently outperforms LogMapLt on
+pings from prediction and obtain the best {(cid:28);(cid:21)}; we then all the tasks. This suggests that with a more suitable map-
+extend the mappings by Algorithm 1 and validate the ex- pingrefinementstrategy,BERTMapislikelytooutperform
+tended mappings and obtain another best mapping filtering LogMapontheFMA-NCItaskaswell.BERTMapcanalso
+threshold(cid:21).Interestingly,inallourBERTMapexperiment significantly outperform the machine learning-based base-
+settings,wefindthebest(cid:21)obtainedinthefirststepalways line LogMap-ML(cid:3) on all the three tasks. This is because
+coincides with the best (cid:21) obtained in the second step. This LogMap-ML(cid:3) relies on LogMap and heuristic rules to ex-
+demonstratestherobustnessofourmappingextensionalgo- tract high quality samples (anchor mappings) for training,
+rithm. After validation, we repair and ouput the mappings. but this strategy is not effective on our data. In contrast,
+NotethatwealsotestBERTMapwithoutextensionandre- BERTMapprimarilyreliesonunsuperviseddata(synonyms
+pair,andinthiscase,weskipthesecondmappingvalidation andnon-synonyms)tofine-tunetheBERTmodel.
+stepandoutputmappingswithscores≥(cid:21). BycomparingdifferentBERTMapsettings,wehavethe
+following observations. First, the semi-supervised setting
+Baselines WecompareBERTMapwithvariousbaselines
+(+co)isgenerallybetterthantheunsupervisedsetting(with-
+as follows: (i) String-matching as defined in the Mapping
+outco),implyingthatBERTMapcaneffectivelylearnfrom
+Score Computation; (ii) Edit-similarity, which computes
+given mappings. Second, complementary corpus is helpful
+the maximum normalized edit similarity between the la-
+especially when the task-involved ontologies are deficient
+bels of two classes as their mapping score (note that (i) is
+in class labels — on the FMA-SNOMED task, BERTMap
+a special case of (ii)); (iii) LogMap and AML, which are
+with the complementary corpus (+cp) attains a higher F1
+the leading systems in many OAEI tracks and other tasks;
+score than string-matching, edit-similarity, LogMapLt and
+(iv) LogMapLt, the lexical matching part of LogMap; (v)
+LogMap-ML(cid:3), which is a variant of LogMap-ML (Chen LogMap-ML(cid:3) baselines, all of which rely on class labels
+from within the input ontologies, by around 50%. Third,
+et al. 2021b) using no branch conflicts but only LogMap
+consideringtheidentitysynonyms(+ids)mayslightlyim-
+anchormappingsforextractingsamplesfortraining,where
+provetheperformanceormakenodifference.Finally,map-
+Word2Vec is used to embed the class label and a Siamese
+ping extension and repair can consistently boost the per-
+Neural Network with Multilayer Perception is used as the
+formance, but not by much, possibly because it is hard to
+classifier.Notethat(i)and(ii)areourinternalbaselines,and
+improvegiventhatBERTMap’spredictionparthasalready
+7https://owlready2.readthedocs.io/en/latest/. achievedhighperformance.
+8https://huggingface.co/transformers/. ItisinterestingtonoticethatBERTMapisrobusttohy-
+5688
+90%TestMappings 70%TestMappings
+System f(cid:28);(cid:21)g Precision Recall Macro-F1 Precision Recall Macro-F1
+io (tgt2src,0.999) 0.705 0.240 0.359 0.649 0.239 0.350
+io+ids (tgt2src,0.999) 0.835 0.347 0.490 0.797 0.346 0.483
+io+cp (src2tgt,0.999) 0.917 0.750 0.825 0.895 0.748 0.815
+io+ids+cp (src2tgt,0.999) 0.910 0.758 0.827 0.887 0.755 0.816
+io+ids+cp(ex) (src2tgt,0.999) 0.896 0.771 0.829 0.869 0.771 0.817
+io+ids+cp(ex+rp) (src2tgt,0.999) 0.905 0.771 0.833 0.881 0.771 0.822
+io+co (src2tgt,0.997) NA NA NA 0.937 0.564 0.704
+io+co+ids (src2tgt,0.999) NA NA NA 0.850 0.714 0.776
+io+co+cp (src2tgt,0.999) NA NA NA 0.880 0.779 0.826
+io+co+ids+cp (src2tgt,0.999) NA NA NA 0.899 0.774 0.832
+io+co+ids+cp(ex) (src2tgt,0.999) NA NA NA 0.882 0.787 0.832
+io+co+ids+cp(ex+rp) (src2tgt,0.999) NA NA NA 0.892 0.786 0.836
+string-match (combined,1.000) 0.987 0.194 0.324 0.983 0.192 0.321
+edit-similarity (combined,0.920) 0.971 0.209 0.343 0.963 0.208 0.343
+LogMapLt NA 0.965 0.206 0.339 0.956 0.204 0.336
+LogMap NA 0.935 0.685 0.791 0.918 0.681 0.782
+AML NA 0.892 0.757 0.819 0.865 0.754 0.806
+LogMap-ML(cid:3) NA 0.944 0.205 0.337 0.928 0.208 0.340
+Table2:ResultsofBERTMapunderdifferentsettingsandbaselinesontheFMA-SNOMEDtask.
+90%TestMappings 70%TestMappings
+System f(cid:28);(cid:21)g Precision Recall Macro-F1 Precision Recall Macro-F1
+io (src2tgt,0.999) 0.930 0.836 0.880 0.911 0.834 0.871
+io+ids (src2tgt,0.999) 0.926 0.834 0.878 0.906 0.832 0.868
+io+ids(ex) (src2tgt,0.999) 0.916 0.852 0.883 0.894 0.851 0.872
+io+ids(ex+rp) (src2tgt,0.999) 0.924 0.851 0.886 0.905 0.851 0.877
+io+co (src2tgt,0.999) NA NA NA 0.913 0.841 0.875
+io+co+ids (src2tgt,0.999) NA NA NA 0.913 0.836 0.873
+io+co+ids(ex) (src2tgt,0.999) NA NA NA 0.899 0.852 0.875
+io+co+ids(ex+rp) (src2tgt,0.999) NA NA NA 0.908 0.852 0.879
+string-match (src2tgt,1.000) 0.978 0.672 0.797 0.972 0.665 0.790
+edit-similarity (src2tgt,0.930) 0.978 0.728 0.834 0.972 0.724 0.830
+LogMapLt NA 0.953 0.717 0.819 0.940 0.709 0.808
+LogMap NA 0.869 0.867 0.868 0.838 0.868 0.852
+AML NA 0.895 0.829 0.861 0.868 0.825 0.846
+LogMap-ML(cid:3) NA 0.955 0.684 0.797 0.942 0.700 0.803
+Table3:ResultsofBERTMapunderdifferentsettingsandbaselinesontheFMA-SNOMED+task.
+90%TestMappings 70%TestMappings
+System f(cid:28);(cid:21)g Precision Recall Macro-F1 Precision Recall Macro-F1
+io (src2tgt,0.999) 0.930 0.847 0.887 0.912 0.851 0.880
+io+ids (src2tgt,0.999) 0.936 0.842 0.887 0.920 0.845 0.881
+io+ids(ex) (src2tgt,0.999) 0.926 0.852 0.888 0.907 0.854 0.880
+io+ids(ex+rp) (src2tgt,0.999) 0.938 0.852 0.893 0.922 0.854 0.887
+io+co (src2tgt,0.999) NA NA NA 0.939 0.838 0.886
+io+co+ids (src2tgt,0.999) NA NA NA 0.961 0.805 0.876
+io+co+ids(ex) (src2tgt,0.999) NA NA NA 0.955 0.813 0.879
+io+co+ids(ex+rp) (src2tgt,0.999) NA NA NA 0.959 0.813 0.880
+string-match (tgt2src,1.000) 0.978 0.742 0.843 0.972 0.747 0.845
+edit-similarity (src2tgt,0.900) 0.976 0.768 0.860 0.970 0.774 0.861
+LogMapLt NA 0.963 0.815 0.883 0.953 0.812 0.877
+LogMap NA 0.938 0.900 0.919 0.922 0.897 0.909
+AML NA 0.936 0.900 0.918 0.919 0.898 0.909
+LogMap-ML(cid:3) NA 0.968 0.715 0.822 0.959 0.714 0.818
+Table4:ResultsofBERTMapsystemsunderdifferentsettingsandbaselinesontheFMA-NCItask.
+5689
+repair. Although these systems have proven quite effective,
+theirlexicalmatchingonlyutilizesthesurfaceformoftexts
+and ignores word semantics. BERTMap employs a similar
+architecturebututilizesBERTsothattextualsemanticsand
+contextsareconsideredinmappingcomputation.
+Recentsupervisedlearning-basedOMapproachesmainly
+focus on constructing class embeddings or extracting fea-
+tures. Nkisi-Orji et al. (2018) uses hand-crafted features
+such as string similarities together with Word2Vec; On-
+toEmma(Wangetal.2018)reliesonbothhand-craftedfea-
+tures and word context features learned by a complex net-
+work; LogMap-ML (Chen et al. 2021b) utilizes path con-
+Figure2:ValidationresultsofBERTMap(io+co+ids)on
+textsandontologytailoredwordembeddingsbyOWL2Vec*
+the FMA-SNOMED+ task with mapping score threshold (cid:21) (Chen et al. 2021a); VeeAlign (Iyer, Agarwal, and Kumar
+rangingfrom0to1.
+2020)proposes“dualattention”forclassembeddings.How-
+ever,theseapproachesoftenheavilydependoncomplicated
+feature engineering and/or complex neural networks. More
+FMAClass SNOMEDClass
+importantly, they need a significant number of high quality
+labeledmappingsfortrainingwhichareoftennotavailable
+Third cervical spinal ganglion C3 spinal ganglion
+and costly to manually annotate. Although some solutions
+Deep posterior sacrococcygeal Structure of deep dorsal such as distant supervision (Chen et al. 2021b) and sam-
+ligament sacrococcygeal ligament
+ple transfer (Nkisi-Orji et al. 2018) were investigated, the
+Wall of smooth endoplasmic Agranular endoplasmic sample quality varies and limits their performance. Unsu-
+reticulum reticulum membrane
+pervisedlearningapproachessuchasERSOM(Xiangetal.
+2015) and DeepAlign (Kolyvakis, Kalousis, and Kiritsis
+Table 5: Typical examples of reference mappings that are
+2018) were also studied. They attempt to refine word em-
+predictedbyBERTMapbutnotbyLogMaporAML.
+beddings by, e.g., counter-fitting, to directly compute class
+similarity.However,theydonotconsiderwordcontexts.
+Neutel and Boer (2021) have presented a preliminary
+perparameterselection;mostofitssettingsleadtothesame OM investigation using BERT. Their work considered two
+besthyperparameters(i.e.(cid:28) = src2tgtand(cid:21) = 0:999}) relatively naive approaches: (i) encoding classes with pre-
+onthevalidationset,M val.Tofurtherinvestigatethisphe- trainedBERT’stokenembeddingsandcalculatingtheirco-
+nomenon,wevisualizethevalidationprocessbypresenting sine similarity; (ii) fine-tuning class embeddings with the
+theplotsofevaluationmetricsagainst(cid:21)inFigure2,where SentenceBERT(ReimersandGurevych2019)architecture,
+we can see that as (cid:21) increases, Precision increases signifi- whichreliesonalargenumberofgivenmappings.Wehave
+cantlywhileRecalldropsonlyslightly—thusF1increases implemented (i) and found it to perform much worse than
+andattainsthemaximumat(cid:21) = 0:999.Thisobservationis string-matching on our tasks; moreover, according to their
+consistentforallBERTMapmodelsinthispaper9.
+evaluation,method(ii)hasmuchlowermeanreciprocalrank
+InTable5,wepresentsomeexamplesofreferencemap- scorethanthenon-contextualwordembeddingmodel,Fast-
+pings that are retrieved by BERTMap but not by LogMap Text (Bojanowski et al. 2017), although it has higher cov-
+or AML. We can clearly see that, the BERT classifier cap- erage.Furthermore,theirevaluationdatahavenogoldstan-
+tures the implicit connection between “third cervical” and dards,andthus,Precision,RecallandF1arenotcomputed.
+“C3” in the first example, “posteior” and “dorsal” in the
+secondexample,aswellas“wall”and“membrane”inthe ConclusionandFutureWork
+thirdexample.Thisdemonstratesthestrengthofcontextual
+In this paper, we propose a novel, general and practical
+embeddingsoverthetraditionallexicalmatching.
+OM system, BERTMap, which exploits the textual, struc-
+tural and logical information of ontologies. The backbone
+RelatedWork
+of BERTMap is its predictor, which utilizes the contex-
+Classic OM systems are often based on lexical matching, tualembeddingmodel,BERT,tolearnwordsemanticsand
+structure matching and logical inference (Otero-Cerdeira, contextseffectively,andcomputesmappingscoreswiththe
+Rodr´ıguez-Mart´ınez, and Go´mez-Rodr´ıguez 2015). For ex- aid of sub-word inverted indices. The mapping extension
+ample,LogMap(Jime´nez-RuizandCuencaGrau2011)uses and repair modules further improve the recall and preci-
+alexicalindextocomputeanchormappings,thenalternates sion, respectively. BERTMap works well with just the to-
+betweenmappingextensionthatutilizesontologystructure, be-alignedontologiesandcanbefurtherimprovedbygiven
+and mappingrepair thatutilizes logicalreasoning; whereas mappingsand/orcomplementarysources.Infuture,wewill
+AML(Fariaetal.2013)mixesseveralstrategiestocalculate evaluateBERTMapwithmorelarge-scale(industrial)data.
+lexicalmatchingscores,followedbymappingextensionand Wewillalsoconsidere.g.,BERT-basedontologyembedding
+formorerobustmappingprediction,andmoreparadigmsfor
+9Seeappendixat:https://arxiv.org/abs/2112.02682. integratingmappingprediction,extensionandrepair.
+5690
+Acknowledgments Loshchilov, I.; and Hutter, F. 2017. Fixing Weight Decay
+This work was supported by the SIRIUS Centre for Scal- RegularizationinAdam. ArXiv,abs/1711.05101.
+able Data Access (Research Council of Norway, project Mikolov, T.; Chen, K.; Corrado, G. S.; and Dean, J. 2013.
+237889), eBay, Samsung Research UK, Siemens AG, and Efficient Estimation of Word Representations in Vector
+the EPSRC projects OASIS (EP/S032347/1), UK FIRES Space. InICLR.
+(EP/S019111/1)andConCur(EP/V050869/1). Neutel,S.;andBoer,M.D.2021. TowardsAutomaticOn-
+tologyAlignmentusingBERT. InAAAISpringSymposium:
+References
+Combining Machine Learning with Knowledge Engineer-
+Alsentzer,E.;Murphy,J.;Boag,W.;Weng,W.-H.;Jindi,D.; ing.
+Naumann,T.;andMcDermott,M.2019. PubliclyAvailable Nkisi-Orji, I.; Wiratunga, N.; Massie, S.; Hui, K.-Y.; and
+ClinicalBERTEmbeddings.InProceedingsofthe2ndClin- Heaven, R. 2018. Ontology alignment based on word em-
+icalNaturalLanguageProcessingWorkshop,72–78. beddingandrandomforestclassification. InJointEuropean
+Bojanowski,P.;Grave,E.;Joulin,A.;andMikolov,T.2017. ConferenceonMachineLearningandKnowledgeDiscovery
+EnrichingWordVectorswithSubwordInformation. Trans- inDatabases,557–572.Springer.
+actionsoftheAssociationforComputationalLinguistics,5:
+Otero-Cerdeira, L.; Rodr´ıguez-Mart´ınez, F. J.; and Go´mez-
+135–146.
+Rodr´ıguez, A. 2015. Ontology matching: A literature re-
+Chen,J.;Hu,P.;Jimenez-Ruiz,E.;Holter,O.M.;Antonyra- view. ExpertSystemswithApplications,42(2):949–971.
+jah,D.;andHorrocks,I.2021a. OWL2Vec*:Embeddingof
+Portisch,J.;Hladik,M.;andPaulheim,H.2019. Wiktionary
+OWLontologies. MachineLearning,1–33.
+Matcher. InOM@ISWC.
+Chen, J.; Jime´nez-Ruiz, E.; Horrocks, I.; Antonyrajah, D.;
+Portisch, J.; and Paulheim, H. 2018. ALOD2Vec matcher.
+Hadian,A.;andLee,J.2021b. Augmentingontologyalign-
+InOM@ISWC.
+ment by semantic embedding and distant supervision. In
+Reimers,N.;andGurevych,I.2019. Sentence-BERT:Sen-
+EuropeanSemanticWebConference,392–408.Springer.
+tence Embeddings using Siamese BERT-Networks. ArXiv,
+Devlin,J.;Chang,M.-W.;Lee,K.;andToutanova,K.2019.
+abs/1908.10084.
+BERT:Pre-trainingofDeepBidirectionalTransformersfor
+Language Understanding. In Proceedings of NAACL-HLT, Shvaiko,P.;andEuzenat,J.2013.OntologyMatching:State
+4171–4186. of the Art and Future Challenges. IEEE Transactions on
+KnowledgeandDataEngineering,25(1):158–176.
+Faria,D.;Pesquita,C.;Santos,E.;Palmonari,M.;Cruz,I.F.;
+andCouto,F.M.2013. TheAgreementMakerLightOntol- Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones,
+ogy Matching System. In Meersman, R.; Panetto, H.; Dil- L.; Gomez, A. N.; Kaiser, L. u.; and Polosukhin, I. 2017.
+lon,T.;Eder,J.;Bellahsene,Z.;Ritter,N.;DeLeenheer,P.; Attention is All you Need. In Guyon, I.; Luxburg, U. V.;
+andDou,D.,eds.,OntheMovetoMeaningfulInternetSys- Bengio,S.;Wallach,H.;Fergus,R.;Vishwanathan,S.;and
+tems:OTM2013Conferences,527–541.Berlin,Heidelberg: Garnett,R.,eds.,AdvancesinNeuralInformationProcess-
+SpringerBerlinHeidelberg. ISBN978-3-642-41030-7. ingSystems,volume30.CurranAssociates,Inc.
+Grau,B.C.;Horrocks,I.;Kazakov,Y.;andSattler,U.2007. Wang, L.; Bhagavatula, C.; Neumann, M.; Lo, K.; Wil-
+ALogicalFrameworkforModularityofOntologies. InIJ- helm,C.;andAmmar,W.2018. Ontologyalignmentinthe
+CAI. biomedical domain using entity definitions and context. In
+ProceedingsoftheBioNLP2018workshop,47–55.
+Iyer, V.; Agarwal, A.; and Kumar, H. 2020. VeeAlign: a
+supervised deep learning approach to ontology alignment. Wu, Y.; Schuster, M.; Chen, Z.; Le, Q. V.; Norouzi, M.;
+InOM@ISWC. Macherey,W.;Krikun,M.;Cao,Y.;Gao,Q.;Macherey,K.;
+Jime´nez-Ruiz, E.; Agibetov, A.; Chen, J.; Samwald, M.; Klingner, J.; Shah, A.; Johnson, M.; Liu, X.; Kaiser, L.;
+and Cross, V. V. 2020. Dividing the Ontology Alignment Gouws, S.; Kato, Y.; Kudo, T.; Kazawa, H.; Stevens, K.;
+TaskwithSemanticEmbeddingsandLogic-basedModules. Kurian,G.;Patil,N.;Wang,W.;Young,C.;Smith,J.;Riesa,
+ArXiv,abs/2003.05370. J.;Rudnick,A.;Vinyals,O.;Corrado,G.;Hughes,M.;and
+Dean, J. 2016. Google’s Neural Machine Translation Sys-
+Jime´nez-Ruiz, E.; and Cuenca Grau, B. 2011. LogMap:
+tem:BridgingtheGapbetweenHumanandMachineTrans-
+Logic-Based and Scalable Ontology Matching. In Aroyo,
+lation. CoRR.
+L.;Welty,C.;Alani,H.;Taylor,J.;Bernstein,A.;Kagal,L.;
+Noy,N.;andBlomqvist,E.,eds.,TheSemanticWeb–ISWC Xiang,C.;Jiang,T.;Chang,B.;andSui,Z.2015. Ersom:A
+2011,273–288.Berlin,Heidelberg:SpringerBerlinHeidel- structural ontology matching approach using automatically
+berg. ISBN978-3-642-25073-6. learned entity representation. In Proceedings of the 2015
+conference on empirical methods in natural language pro-
+Jime´nez-Ruiz,E.;Meilicke,C.;Grau,B.C.;andHorrocks,
+cessing,2419–2429.
+I. 2013. Evaluating Mapping Repair Systems with Large
+BiomedicalOntologies. InDescriptionLogics.
+Kolyvakis, P.; Kalousis, A.; and Kiritsis, D. 2018.
+DeepAlignment: Unsupervised Ontology Matching with
+Refined Word Vectors. In Proceedings of NAACL-HLT,
+787–798.
+5691

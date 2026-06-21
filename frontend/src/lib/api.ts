@@ -1,0 +1,132 @@
+/**
+ * HyperBERT API Client
+ * Connects the React frontend to the Flask backend at localhost:5000
+ */
+
+const BASE = "/api";
+
+export type SourceType = "extracted_from_paper" | "inferred_from_corpus" | "bert_default";
+
+export interface HPEntry {
+  value: number | string | null;
+  source: SourceType;
+  confidence: number;
+  confidence_pct: number;
+  papers: number | null;
+  confidence_decomposition: { similarity: number; agreement: number; support: number };
+  inference_trace: string[];
+  distribution: { v: string; count: number }[];
+}
+
+export interface AnalysisResult {
+  session_id: string;
+  generated_at: string;
+  pipeline_seconds: number;
+  paper: {
+    title: string;
+    task: string | null;
+    model: string | null;
+    dataset: string | null;
+    reproducibility_score: number;
+    explicit_hp_count: number;
+    total_hp_count: number;
+  };
+  completeness: {
+    rscore: number;
+    present_params: string[];
+    missing_params: string[];
+    completeness_pct: number;
+    needs_inference: boolean;
+  };
+  strategy_cascade: Record<string, { status: string; papers: number; label: string }>;
+  strategy_used: string;
+  config: Record<string, HPEntry>;
+  evidence_papers: any[];
+  constraints: Array<{
+    param: string;
+    rule: string;
+    old_value: any;
+    new_value: any;
+    explanation: string;
+    citation: string;
+  }>;
+  contradictions: any[];
+  contradiction_summary: string;
+  validation: {
+    verdict: string;
+    errors: any[];
+    corrections: any[];
+    warnings: any[];
+  };
+  audit_log: Array<{ module: string; timestamp: string; message: string }>;
+}
+
+/** Upload a PDF and run the full M1-M7 pipeline */
+export async function analyzePDF(file: File): Promise<AnalysisResult> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch(`${BASE}/analyze`, {
+    method: "POST",
+    body: form,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown server error" }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
+/** Fetch a previously stored session by ID */
+export async function getSession(sessionId: string): Promise<AnalysisResult> {
+  const res = await fetch(`${BASE}/session/${sessionId}`);
+  if (!res.ok) throw new Error("Session not found");
+  return res.json();
+}
+
+/** Get corpus papers with optional filters */
+export async function getCorpusPapers(params: {
+  task?: string;
+  model?: string;
+  q?: string;
+  page?: number;
+  per_page?: number;
+} = {}): Promise<{ total: number; papers: any[] }> {
+  const qs = new URLSearchParams();
+  if (params.task) qs.set("task", params.task);
+  if (params.model) qs.set("model", params.model);
+  if (params.q) qs.set("q", params.q);
+  if (params.page !== undefined) qs.set("page", String(params.page));
+  if (params.per_page !== undefined) qs.set("per_page", String(params.per_page));
+
+  const res = await fetch(`${BASE}/corpus/papers?${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch corpus papers");
+  return res.json();
+}
+
+/** Get corpus statistics */
+export async function getCorpusStats(): Promise<any> {
+  const res = await fetch(`${BASE}/corpus/stats`);
+  if (!res.ok) throw new Error("Failed to fetch corpus stats");
+  return res.json();
+}
+
+/** Fetch LLM comparison data for a session */
+export async function getComparison(sessionId: string): Promise<any> {
+  const res = await fetch(`${BASE}/compare/${sessionId}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Comparison failed" }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/** Download URL helpers */
+export const downloadUrl = {
+  notebook: (id: string) => `${BASE}/download/${id}/notebook`,
+  script: (id: string) => `${BASE}/download/${id}/script`,
+  yaml: (id: string) => `${BASE}/download/${id}/yaml`,
+  config: (id: string) => `${BASE}/download/${id}/config`,
+};

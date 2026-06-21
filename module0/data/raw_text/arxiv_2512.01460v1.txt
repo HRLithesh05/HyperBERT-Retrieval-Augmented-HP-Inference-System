@@ -1,0 +1,648 @@
+Enhancing BERT Fine-Tuning for Sentiment Analysis in Lower-Resourced
+Languages
+JozefKubík and MarekŠuppa and MartinTakácˇ
+FacultyofMathematicsPhysicsandInformatics
+ComeniusUniversityinBratislava,Slovakia
+Abstract andBERT-likemodels. However,thisgapcanbe
+closed with clever modifications in both training
+Limited data for low-resource languages typ-
+phases,withtheBERTfamilymodelsbeingeasier ically yield weaker language models (LMs).
+Since pre-training is compute-intensive, it is totrainthanGPT-likemodels(Achiametal.,2023)
+morepragmatictotargetimprovementsduring duetotheirsizeanddatarequirements.
+fine-tuning. Inthiswork,weexaminetheuse BERT’seffectivenessoftendependsonlargean-
+ofActiveLearning(AL)methodsaugmented
+notated datasets, highlighting the need for more
+bystructureddataselectionstrategieswhichwe
+efficient data exploration under limited annota-
+term’ActiveLearningschedulers,’toboostthe
+tionbudgets. Toaddressthis,weproposeanovel
+fine-tuning process with a limited amount of
+fine-tuningpipelineforlower-resourcedlanguage
+trainingdata. WeconnecttheALtodataclus-
+tering and propose an integrated fine-tuning BERTmodelsontheclassificationtask. Ourlan-
+pipelinethatsystematicallycombinesAL,clus- guages for the experiments representing lower-
+tering,anddynamicdataselectionschedulersto resourced languages will be Maltese, Icelandic,
+enhancemodel’sperformance. Experimentsin
+andSlovak,thelastbeingthemostpopularofthem
+theSlovak,Maltese,IcelandicandTurkishlan-
+spokenbyapproximately5millionpeople(Short,
+guagesshowthattheuseofclusteringduring
+2018). To show possible generalization on more
+thefine-tuningphasetogetherwithALschedul-
+popularlanguagesnotconsideredlow-resourcebut
+ingcansimultaneouslyproduceannotationsav-
+ingsupto30%andperformanceimprovements rathermedium-tohigh-resource,wealsoconduct
+uptofourF1scorepoints,whilealsoproviding experimentsontheTurkishlanguage.
+betterfine-tuningstability.
+2 RelatedWork
+1 Introduction
+LMs such as BERT (Devlin, 2018) are consid- Thedefinitionoflow-resourcecanbeinterpretedin
+ered breakthrough models in many areas. Al- differentwaysdependingonthelanguageorsetting
+thoughnowadaysmostoftheresearchisdoneusing (Nigatuetal.,2024). Forthepurposeofthisstudy,
+promptingtechniquesonlargefoundationalmodels we define low-resource operationally as a setting
+(Shin et al., 2023), BERT family models are still withseverelylimitedannotateddata.
+usedinlower-resourcescenariosforanumberof Popular techniques in low-resource scenarios
+reasons. Theyallowfullcontrol1 overfine-tuning, include adapting smaller models trained in En-
+and their size and hardware requirements make glish to other languages by modifying parts of
+themmoreeasilyfeasibletouseintheresearchand thearchitecture(Al-Sallabetal.,2017)ortransfer-
+real-world environments. In contrast, using com- ringtheknowledgeofmodelspre-trainedinhigh-
+mercialmodelsatscalecanbeexpensiveandoften resourcelanguagestoothermodelsfine-tunablein
+reliesonInternetconnection,meaningtheiruseis low-resource languages (Heinzerling and Strube,
+not possible when the data in question cannot be 2017; Bojanowski et al., 2017). One of the alter-
+sharedwiththirdparties(e.g. forprivacyreasons). native approaches, where the model itself helps
+Thereisahugeperformancegapbetweenhigh- identify the data samples which will help it to
+resource languages, such as English, and lower- learn more efficiently, is called Active learning
+resourced languages in both prompting models (Settles,2009). PopularALmethodsforclassifica-
+tiontasksarepool-basedmethodsusinguncertainty
+1Byfullcontrolwemeandirectcontroloverhyperparame-
+ters,architecturalextensions,andtrainingregimes. sampling(Lewis,1995)suchasentropy(Shannon,
+5202
+ceD
+1
+]LC.sc[
+1v06410.2152:viXra
+1948) sampling. Fine-tuning with Active learn- has no trainable parameters and serves to induce
+ingcanalsobeenhancedbyusingadaptermodules somepriorknowledgeaboutuncertaintyasavari-
+(Jukic´andŠnajder,2023),ReinforcementLearning ationoftheENNoutput(Osbandetal.,2018). In
+(Wertzetal.,2023),orEpistemicNeuralnetworks the learnable network eL, weights are initialized
+η
+(ENNs)(Osbandetal.,2022). Somemethods(es- withGlorotinitialization(GlorotandBengio,2010)
+peciallywhenfine-tuningwithALmethodswith- andtrainedtoprovidemeaningfulpredictionsfor
+outanyotherenhancements)maybelesseffective all probable epistemic index values z. The men-
+whenusedwithLMsduetotheirinconsistencycre- tioned process can be described by the equation
+ated by selecting harmful unlearnable outliers or f (x,z) = b (x)+e (r (x),z).
+θ ς η ς
+samplesthatcreateinstabilityintheoptimization The output of the Epinet e is calculated as the
+process2 (D’ArcyandDowney,2022). sumoftheresultsoflearnableeLandpriornetwork
+η
+One promising idea is to cluster data based on eP: e (r(x),z) = eP(r(x),z)+eL(r(x),z).
+η η
+the quality of their representation. For example, TheEpinetinputiscomprisedofthefeaturesof
+comparedtotheTF-IDFmethod(Xieetal.,2016), thebasenetworkr (x)(inourcasethefinalhidden
+ς
+BERTshowedbetterresultsinmanymetrics(Sub- layer)onaninputsamplexandanepistemicindex
+aktietal.,2022). Clusteringcanalsobeusedforthe z sampledfromastandardGaussiandistribution.
+initializationofAL(NguyenandSmeulders,2004)
+3.2 Activelearning
+topropagatetheclassificationdecisionoftheclas-
+sifier trained on representative samples. Cluster- WefocusonthreeALmethods: entropy,baldand
+ingcanalsobeperformedduringthetrainingpro- variance sampling (Osband et al., 2022). These
+cessaftereachiterationasinHassanandAlikhani methodscalledacquisitionfunctionsprioritizesam-
+(2023),wherethetoptenmostinformativesamples pleswhoselabelsaremostuncertaintothemodel.
+ofeachclusterareusedtotrainthemodel. For entropy defined as H[p] = (cid:80) p(x)logp(x),
+x
+Whilepriorworkhasexploredarchitecturalmod- the entropy acquisition function is defined as
+ifications,dataefficiencytechniques,andstability gentropy(θ,x) = H[p(·|x,θ)]. Theothertwometh-
+enhancements individually, our work provides a ods use an epistemic index to determine uncer-
+comprehensive empirical investigation into their tainty. Bald acquisition function gbald(θ,x) =
+concurrentapplicationandinteractiontoenhance H[p(·|θ,x)] − (cid:82) zP z(dz)H[p(·|θ,x,z)] is based
+low-resource BERT fine-tuning, focusing on the on mutual information gain. Variance function
+interplaybetweenarchitecturalmodifications,data gvariance(θ,x) = (cid:80) c(cid:82) zP z(dz)(p(c|θ,x,z) −
+selectionefficiency,andfine-tuningstability. p(c|θ,x))2 usesvariationinprobabilities.
+Themodelisfine-tunedonataskithasnotbeen
+3 Methodologies trainedon. Therefore,anewclassificationrandom-
+weightedlayercouldmakethepredictionsrandom
+3.1 Epistemicneuralnetwork
+atfirst. Thisphenomenon,knownascoldstart,can
+Toimprovethearchitecture,weuseENNsthatare create a situation where the model is assumed to
+particularlywell-suitedforlow-resourcesentiment make non-sensical decisions, since it has not yet
+analysis because they explicitly model epistemic beentrainedonanyannotateddata(Jinetal.,2022).
+uncertainty (and differentiate from aleatoric un- To examine this, we fine-tune the model in both
+certainty),allowingtheactivelearningprocessto cold(classicfine-tuning)and"warm"manner(first
+focusonsampleswherethemodelismostunsure. epochuseshalfofthedatasetatrandom).
+Thisleadstomoreefficientexplorationofthedata
+3.3 Datasampling
+space and reduces the risk of overfitting to noisy
+labels. ENNsf consistoftwoparts: basemodel DatasamplinginALcanbeperformedaftereach
+θ
+(BERT)b andEpinetnetworke . TheEpinet,as trainingepochoraftereachtrainingstep(Settles,
+ς η
+describedinOsbandetal.(2023),consistsoftwo 2009),affectingboththefrequencyofdataacqui-
+Multi-layerperceptronswithonehiddenlayereach sition and the computational cost (e.g., loading a
+called prior and learnable. The prior network eP subset vs the entire dataset). In experiments, we
+adopttraining-stepsampling. Departingfromthe
+2The definition of instability is taken from D’Arcy and conventionalALframework,weintroducetwodis-
+Downey(2022)tobethevarianceintestsetaccuracyobserved
+tinct fine-tuning approaches: Accumulating and
+whentrainingmultipledifferentrandom-seededmodelsonthe
+samesetofdata. Recalculating. In the Accumulating approach,
+alldatasampledinpreviousepochsareretainedand AL resultsasprobabilities.
+usedforsubsequentfine-tuningaligningwithstan- Linearschedulersreduceannotationusagepro-
+dardALpractices. TheRecalculatingapproach gressively after each epoch. They initially select
+re-samplesdataineachepochindependently,asif 50%ofthedataforbothwarmandcoldfine-tuning,
+eachweretheinitialtrainingiteration. Thisdesign decreasingto20%,15%,10%,andfinally5%. Like
+givesthemodelgreaterflexibilitytoselectinforma- thebasescheduler,theyeitherselectdeterministi-
+tivedataateachstage. WhileAccumulatingfine- callybyAL order(linearscheduler)orprobabilis-
+tuningiswidelyused,Recalculatingfine-tuning tically(linearprobscheduler).
+representsanovelcontribution. Furtherdetailson Dif-buildanddif-build-uniqueschedulersoper-
+thesemethodsareprovidedinAppendixA. atedifferently. TheysortAL results,computethe
+averagepairwisedifference,andlocatethefirstin-
+3.4 Clustering
+dexwherethenextdifferenceexceedsthisaverage.
+TosupportthefindingsofHuetal.(2010),weapply Thisindexsetsthesamplingthreshold. Sampling
+AgglomerativeHierarchicalClustering(Voorhees, proceedsasinprobschedulers,eitherwithorwith-
+1986)usingWard’slinkage,showneffectiveincap- outreplacement,formingdifferentvariants.
+turing semantic relationships in text embeddings
+(Sharmaetal.,2019). Clusteringstartswitheach 4 Experiments
+sample’sembeddingasaseparatecluster,sequen-
+tially merging them bottom-up. We applied clus- We trained the models for 5 epochs for the senti-
+teringintwomodes: (1)initclustering,performed mentanalysistaskwhileusingtheAdamoptimizer
+beforefine-tuningtosamplefromeachcluster,and (Kingma,2014). AllmodelsarebasedontheBERT
+(2)dynamicclustering,repeatedbeforeeachepoch architectureandpre-trainedintherespectivelower-
+similarlytoHassanandAlikhani(2023). resourcedlanguage,namelySlovakBERT(Pikuliak
+To test the dependence of acquisition func- etal.,2021),IceBERT(Snæbjarnarsonetal.,2022),
+tions on the model itself, we also propose BERTu(Micallefetal.,2022)andBERTurkmod-
+Furthest-batchacquisitionfunctionthatselects els(Schweter,2020). Allhyperparametersarede-
+samplesfurthestfromthemedoid(sampleclosest tailedintheAppendixA.Asbaselines,weemploy
+tocentroid)ofcluster. Thisfunctionismotivated theclassicBERTfine-tuningapproach,whereina
+bythehypothesisthatsampleslocatedfarfromthe pre-trainedBERTmodelisfurthertrainedonthe
+medoidrepresentboundarycasesordiverseview- downstreamtaskwithtask-specificlabels.
+points within the cluster that are not necessarily The assumption of low-resource setting holds
+outliers. Byprioritizingthesesamples,weaimto truewithoutmodificationsinexperimentswithlan-
+improvethemodel’sabilitytogeneralizetounseen guagesspokenbysmallamountsofpeople, such
+data. Italsoenablescomparisonwithuncertainty- as Maltese. To simulate a low-resource scenario,
+basedmethodsandmayrevealtheextenttowhich weintentionallydown-samplethedatasetforlan-
+fine-tuningdependsonthemodelvs. dataset. guagessuchasTurkish,asdescribedinAppendix
+A.Thisenablescontrolledcomparisonacrosslan-
+3.5 Activelearningscheduling
+guagesandalignswithrecentapproaches.
+Similarly to Gonsior et al. (2024) but more gen-
+eralizing, we introduce several Active Learning Language Size Split #Classes
+schedulers that modulate the number of samples Slovak 30k 83-8.5-8.5 3
+used. Wehypothesizethatthismayreducereliance Maltese 851 70-10-20 2
+onharmfuloutliers,minimizeannotationcosts,and Icelandic 25k 80-10-10 2
+helppreventissueslikeperformancedegradation. Turkish 25k 80-10-10 3
+Thesamplesarepassedthroughthemodeltoob-
+tainfeaturevectors,whichareevaluatedbytheAL Table1: Specificationsofdatasetsandtheirsplits.
+methodtoyieldvalues(AL results)andthecor-
+respondingindicesindicatingsampleranking(AL Forevaluation,weusedmonolingualsentiment
+order). Thebaseschedulerselects75%ofthedata analysis datasets detailed in Table 1. In experi-
+according to AL order, functioning similarly to ments, we fine-tune each model three times and
+standardAL.Theprobscheduleralsoselects75%, report the average. More details are presented in
+butsampleswithoutreplacementusingnormalized theAppendixA.
+5 Results
+The key results of our study are summarized be-
+low,withadditionaldetailsprovidedinAppendix
+A.Table2presentsacomparisonbetweenthebase
+modelandthebest-performingALmodelbasedon
+F1 score. Models using Active Learning largely
+outperformbaselinemodels. Wealsoperformeda
+Student’spairedt-testtoevaluatethestatisticalsig-
+nificanceofourfindings,withasignificancelevel
+ofp<0.05. Alltop-performingALmodelsincor-
+poratebothclusteringandschedulingstrategies.
+Model BaselineF1 BestALF1
+Figure1: Datausedinthefine-tuningofthemodels.
+SlovakBERT 70.98 71.83
+BERTu 82.08 86.10†
+IceBERT 77.89 80.06†
+BERTurk 91.06 92.16†
+Table2: ResultsofthebestALmodelsaccordingtothe
+F1scorecomparedtotheirrespectivebaselines, with
+†indicatingstatisticalsignificance.
+Figure 1 shows the dataset fraction needed to
+reach the F1 scores in Table 2, suggesting that
+data usage often drops markedly even as perfor-
+manceimproves. Evenmore,toreachatleastthe
+baselineperformancewithActiveLearningmod-
+els, amount of data samples needed reduce dras-
+Figure 2: Data used in the fine-tuning of the models
+tically. We present this fact with Figure 2. It is
+reachingbaselineperformancewhileusingfewestdata
+apparentthatifthefine-tuningismorefocusedon
+samplespossible.
+savingdataannotationsratherthanenhancingper-
+formance(butstillkeepingitatleastcomparable),
+the AL is far superior to the classic fine-tuning parisonofthebestIceBERTmodelsusingdifferent
+process. FormoredetailsseeAppendixA.4. acquisition functions. Results indicate that using
+Experiments also indicate that AL contributes anyacquisitionfunctionapartfromFurthest-batch
+to more stable fine-tuning, with fewer instances is beneficial to the fine-tuning while differences
+ofperformancedegradation. Thisispresentedin amongthemareverysmall. Furthest-batchseems
+Figure3,whereforthesakeofclarityweshowthe tohavesimilarperformanceasthebaselinemodel
+comparisonofSlovakBERTbasemodelandbest butwithmuchlessdataused(seeAppendixA.4for
+ALmodelperformancecomparison. moreinformation). Interestingly,whilefine-tuning
+Ourresultsshowthattheproposedmethodsare for more epochs seems to be crucial for most of
+most effective when combined. To assess indi- theacquistionfunctiontoenhancetheperformance
+vidual component contributions in Active Learn- tothemaximum,baselinemodelstartedtoslightly
+ing,weconductedcontrolledexperimentswiththe declineafterjust2epochs.
+BERTurkmodel,keepingallsettingsconstant(ac- To evaluate parameter-efficient strategies, we
+cumulatingsampling,coldstart,vanillaBERTar- conducted controlled experiments using LoRA
+chitecture, no clustering, no scheduling, and en- adapters(Huetal.,2022),keepingdatasplitsand
+tropyacquisition)whilemodifyingonecomponent trainingsizesidenticaltothefullfine-tuningbase-
+at a time. Table 3 presents the best performing line. Weexploredmultipleconfigurationsbyvary-
+configurationsbasedontheF1score. ingLoRArank,learningrate,anddropout. Across
+Finally,wealsopresentacomparisonoftheac- all languages and setups, LoRA consistently un-
+quisitionsfunctions. InFigure4,weshowacom- derperformedfullfine-tuning,andperformancede-
+Figure3: LearningcurvesofSlovakBERTmodels.
+Figure 4: Learning curves of IceBERT models with
+Characteristic F1score %ofdata differentacquistionfunctions.
+Dynamicclustering 91.85 96.81%
+Language BestAL BestLoRA
+Recalculatingsampling 91.70 81.86%
+Slovak +1.20% -5.11%
+Probscheduler 91.31 97.54%
+Maltese +4.90% -51.00%
+Baldacquisition 91.15 96.4%
+Icelandic +2.79% -0.60%
+ENNarchitecture 91.14 97.54%
+Turkish +1.21% -0.96%
+Linearscheduler 91.10 61.49%
+Table4: RelativeperformancechangesinF1scoreus-
+Table 3: Comparison of the best BERTurk results of
+ing Active Learning or LoRA when compared to the
+differentfine-tuningsettings.
+respectivebaselinemodels.
+gradedsubstantiallyonthelow-resourceMaltese
+achievedastrongresultwith81.9%and61.49%of
+condition. Theseresultscontrastwithpriorwork
+trainingdata,respectively. Moreover,theproposed
+reportingstrongLoRAperformanceonlarge-scale
+fine-tuningpipelinecanbeeasilyextendedtoother
+Englishbenchmarks,indicatingthattheparameter-
+classificationtasks,suchasNamedEntityRecogni-
+efficient updates were not expressive enough to
+tion,whereonlyslightchangestoarchitectureand
+modelthelanguage-specificsentimentpatternsre-
+acquisitionfunctionsareneeded.
+quiredinourexperiments.
+7 Limitations
+6 Conclusions
+7.1 Datasets
+Our findings demonstrate that integrating Active
+Learningwithclusteringandschedulingyieldssig- The datasets used in this work were expected to
+nificantimprovementsforlow-resourcelanguage bereasonablysmall,eitherbychoice(e.g.,usinga
+models. Thissystematicapproachreducedannota- portionofalargedataset)orbynecessity. Itisun-
+tionrequirementsbyupto27.6%forIceBERTand derstandablethatthesizeofthedatasetinfluences
+18.1%forBERTurkwhilesimultaneouslyimprov- expectedsavingsonannotations. Inthiswork,2of
+ingperformance,withstatisticallysignificantgains thedatasetscanalreadybeconsideredsmall. From
+intheF1scoreofupto4.02pointsforBERTuand two of the datasets with a reasonable amount of
+2.17pointsforIceBERT.Furthermore,combined data, only a smart portion was used to show the
+methodologynotablyimprovedfine-tuningstabil- possibleenhancementspresentedinthiswork.
+ity,reducingperformancefluctuationsacrosstrain-
+7.2 Models
+ingepochs. Whileeffectivenessvariesbylanguage
+anddatasetcharacteristics,empiricalevidencecon- Incomparisontostate-of-the-artarchitectures,the
+sistentlysupportsthevalueofourapproach,possi- BERTandsimilarmodelsusedinourexperiments
+blygeneralizingtomediumandhigh-resourcelan- areonlyafractionoftheirsize. Nevertheless,for
+guagessuchasTurkish,whereparticularlythere- fine-tuning, low-resource languages do not have
+calculatingsamplingstrategyandlinearscheduler many other choices. As BERT models are still
+relativelypopular,thedecisiontousetheminour References
+workwasmade,althoughweacknowledgethatfor
+JoshAchiam,StevenAdler,SandhiniAgarwal,Lama
+some (or most) use cases, using bigger decoder-
+Ahmad, Ilge Akkaya, Florencia Leoni Aleman,
+stylemodelscanobtainbetterperformance. DiogoAlmeida,JankoAltenschmidt,SamAltman,
+ShyamalAnadkat,etal.2023. Gpt-4technicalreport.
+7.3 Experiments arXivpreprintarXiv:2303.08774.
+For each combination of model’s important fine- Ahmad Al-Sallab, Ramy Baly, Hazem Hajj,
+tuningcharacteristic(ALmethod,ALscheduling, Khaled Bashir Shaban, Wassim El-Hajj, and
+Gilbert Badaro. 2017. Aroma: A recursive deep
+clustering, ...), we conducted three runs and cal-
+learningmodelforopinionmininginarabicasalow
+culatedtheaveragethatrepresentsthefinalresult.
+resourcelanguage. ACMTransactionsonAsianand
+While this aims to eliminate model bias, a larger Low-Resource Language Information Processing
+numberofrunsmighthelpreduceitmuchmore. (TALLIP),16(4):1–20.
+For Turkish and Icelandic, we simulate low-
+PiotrBojanowski,EdouardGrave,ArmandJoulin,and
+resourceconditionsviacontrolleddownsampling,
+TomasMikolov.2017. Enrichingwordvectorswith
+which, while enabling fair comparison, may not subwordinformation. Transactionsoftheassocia-
+fully capture the challenges of genuine low- tionforcomputationallinguistics,5:135–146.
+resourceenvironments.
+Keith Cortis and Brian Davis. 2019. A social opin-
+Duetocomputationalconstraints, wewereun-
+iongoldstandardfortheMaltagovernmentbudget
+able to explore all possible combinations of AL 2018. InProceedingsofthe5thWorkshoponNoisy
+methods, clustering techniques, and scheduling User-generatedText(W-NUT2019),pages364–369,
+HongKong,China.AssociationforComputational
+strategies. Futureworkshouldinvestigateawider
+Linguistics.
+rangeofconfigurations,particularlythoseexcluded
+fromthisstudyasmentionedinAppendixA.3. Mike D’Arcy and Doug Downey. 2022. Limitations
+of active learning with deep transformer language
+7.4 Results models.
+Wearguethatthepresentedresultsshowthatusing Jacob Devlin. 2018. Bert: Pre-training of deep bidi-
+ActiveLearningwithclusteringandschedulingen- rectional transformers for language understanding.
+hancesthefine-tuningprocessoflower-resourced arXivpreprintarXiv:1810.04805.
+language BERT models while also enhancing F1
+AlexieiDingliandNicoleSant.2016. Sentimentanaly-
+scores. Further experiments on more languages
+sisonmalteseusingmachinelearning. InProceed-
+could strenghten this claim; nevertheless, our re- ings of The Tenth International Conference on Ad-
+sults on bigger and more used language (Turk- vances in Semantic Processing (SEMAPRO 2016),
+pages21–25.
+ish)canserveasaformofgeneralizationonalso
+medium-resourcelanguages.
+XavierGlorotandYoshuaBengio.2010. Understanding
+The differences observed across experimental thedifficultyoftrainingdeepfeedforwardneuralnet-
+setups are likely attributable to the specific char- works. InProceedingsofthethirteenthinternational
+conference on artificial intelligence and statistics,
+acteristics of each language model and dataset.
+pages 249–256. JMLR Workshop and Conference
+WhileourresultsdemonstratethatActiveLearning
+Proceedings.
+and clustering generally lead to improved perfor-
+mance,weacknowledgethattailoringacquisition Julius Gonsior, Christian Falkenberg, Silvio Magino,
+AnjaReusch,ClaudioHartmann,MaikThiele,and
+functions and scheduling strategies to individual
+WolfgangLehner.2024. Comparingandimproving
+model–datasetcombinationscanyieldevengreater
+activelearninguncertaintymeasuresfortransformer
+gains. Therefore, it is highly plausible that con- modelsbydiscardingoutliers. Informationsystems
+ductingtargetedexperimentswithvariedacquisi- frontiers,pages1–17.
+tionfunctionsandschedulingapproachesisalways
+SabitHassanandMaliheAlikhani.2023. D-calm:Ady-
+beneficialforidentifyingthemosteffectiveconfig-
+namicclustering-basedactivelearningapproachfor
+urationineachspecificcontext.
+mitigatingbias. arXivpreprintarXiv:2305.17013.
+Acknowledgements Benjamin Heinzerling and Michael Strube. 2017.
+Bpemb: Tokenization-free pre-trained subword
+ThisworkwassupportedbygrantAPVV-21-0114.
+embeddings in 275 languages. arXiv preprint
+arXiv:1710.02187.
+Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan FilipUhlárik.2021. Slovakbert: Slovakmaskedlan-
+Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, guagemodel. arXivpreprintarXiv:2109.15254.
+Weizhu Chen, et al. 2022. Lora: Low-rank adap-
+tationoflargelanguagemodels. ICLR,1(2):3. StefanSchweter.2020. Berturk-bertmodelsforturk-
+ish.
+RongHu, BrianMacNamee, andSarahJaneDelany.
+2010. Offtoagoodstart: Usingclusteringtoselect BurrSettles.2009. Activelearningliteraturesurvey.
+theinitialtrainingsetinactivelearning. InTwenty-
+ClaudeElwoodShannon.1948. Amathematicaltheory
+ThirdInternationalFLAIRSConference.
+ofcommunication. TheBellsystemtechnicaljournal,
+Qiuye Jin, Mingzhi Yuan, Shiman Li, Haoran Wang, 27(3):379–423.
+ManningWang,andZhijianSong.2022. Cold-start
+ShwetaSharma,NehaBatra,etal.2019. Comparative
+activelearningforimageclassification. Information
+studyofsinglelinkage,completelinkage,andward
+sciences,616:16–36.
+methodofagglomerativeclustering. In2019inter-
+JosipJukic´ andJanŠnajder.2023. Parameter-efficient nationalconferenceonmachinelearning,bigdata,
+languagemodeltuningwithactivelearninginlow- cloudandparallelcomputing(COMITCon),pages
+resourcesettings. arXivpreprintarXiv:2305.14576. 568–573.IEEE.
+DiederikPKingma.2014. Adam:Amethodforstochas- Jiho Shin, Clark Tang, Tahmineh Mohati, Maleknaz
+ticoptimization. arXivpreprintarXiv:1412.6980. Nayebi, Song Wang, and Hadi Hemmati. 2023.
+Prompt engineering or fine tuning: An empiri-
+DavidDLewis.1995. Asequentialalgorithmfortrain- cal assessment of large language models in auto-
+ingtextclassifiers: Corrigendumandadditionaldata. mated software engineering tasks. arXiv preprint
+InAcmSigirForum,volume29,pages13–19.ACM arXiv:2310.10508.
+NewYork,NY,USA.
+DavidShort.2018. Czechandslovak. InTheworld’s
+KurtMicallef,AlbertGatt,MarcTanti,Lonnekevander majorlanguages,pages314–338.Routledge.
+Plas,andClaudiaBorg.2022. Pre-trainingdataqual-
+ityandquantityforalow-resourcelanguage: New Vésteinn Snæbjarnarson, Haukur Barri Símonarson,
+corpusandBERTmodelsforMaltese. InProceed- PéturOrriRagnarsson,SvanhvítLiljaIngólfsdóttir,
+ings of the Third Workshop on Deep Learning for HaukurPállJónsson,VilhjálmurÞorsteinsson,and
+Low-ResourceNaturalLanguageProcessing,pages HafsteinnEinarsson.2022. Awarmstartandaclean
+90–101,Hybrid.AssociationforComputationalLin- crawledcorpus–arecipeforgoodlanguagemodels.
+guistics. arXivpreprintarXiv:2201.05601.
+Hieu T Nguyen and Arnold Smeulders. 2004. Ac- MichalŠtefánik,MarekKadlcˇík,PiotrGramacki,and
+tive learning using pre-clustering. In Proceedings PetrSojka.2023. Resourcesandfew-shotlearners
+of the twenty-first international conference on Ma- for in-context learning in slavic languages. arXiv
+chinelearning,page79. preprintarXiv:2304.01922.
+HellinaHailuNigatu,AtnafuLambeboTonja,Benjamin AlvinSubakti,HendriMurfi,andNoraHariadi.2022.
+Rosman,ThamarSolorio,andMonojitChoudhury. Theperformanceofbertasdatarepresentationoftext
+2024. Thezeno’sparadoxoflow-resource’languages. clustering. JournalofbigData,9(1):15.
+arXivpreprintarXiv:2410.20817.
+Ellen Marie Voorhees. 1986. The effectiveness and
+Ian Osband, Seyed Mohammad Asghari, Benjamin efficiencyofagglomerativehierarchicclusteringin
+Van Roy, Nat McAleese, John Aslanides, and Ge- documentretrieval. CornellUniversity.
+offrey Irving. 2022. Fine-tuning language mod-
+Lukas Wertz, Jasmina Bogojeska, Katsiaryna
+els via epistemic neural networks. arXiv preprint
+Mirylenka, and Jonas Kuhn. 2023. Reinforced
+arXiv:2211.01568.
+active learning for low-resource, domain-specific,
+IanOsband,JohnAslanides,andAlbinCassirer.2018. multi-label text classification. In Findings of the
+Randomizedpriorfunctionsfordeepreinforcement Association for Computational Linguistics: ACL
+learning. AdvancesinNeuralInformationProcessing 2023,pages10959–10977.
+Systems,31.
+Junyuan Xie, Ross Girshick, and Ali Farhadi. 2016.
+IanOsband,ZhengWen,SeyedMohammadAsghari, Unsuperviseddeepembeddingforclusteringanaly-
+VikranthDwaracherla,MortezaIbrahimi,Xiuyuan sis. InInternationalconferenceonmachinelearning,
+Lu,andBenjaminVanRoy.2023. Epistemicneural pages478–487.PMLR.
+networks. AdvancesinNeuralInformationProcess-
+ingSystems,36:2795–2823.
+Matúš Pikuliak, Štefan Grivalsky`, Martin Konôpka,
+MiroslavBlšták,MartinTamajka,ViktorBachraty`,
+Marián Šimko, Pavol Balážik, Michal Trnka, and
+A Appendix
+A.1 Datasets
+ThelargestdatasetusedwastheSlovakCˇSFDdataset(Štefániketal.,2023)with30kannotatedsamples
+containingmoviereviews. Althoughtheoriginaldatasetincludessixsentimentlabels,wesimplifythe
+classificationtasktothreeclassesbyapplyingthefollowingmapping: [0,1→0],[2,3→1],and[4,5→
+2].
+WhileTurkishisnotalow-resourcelanguage,weintentionallydownsampledthedatasetcomprising
+tweetsandothersentiment-relatedtextsamplesto5%toinvestigatetheperformanceofactivelearning
+methodsinextremelydata-scarcescenarios. Thisallowedustoevaluatetherobustnessofourapproach
+whenannotationbudgetsareseverelylimited.
+FortheMalteselanguage,weusethejointdatasetsof(CortisandDavis,2019)and(DingliandSant,
+2016) containing data originating from comments on news articles and social media posts. Similarly
+asinTurkishdataset,inIcelandicdataset,whichwascreatedbytranslatingIMDBmoviereviews,we
+down-sampleto25kannotateddatasamplestomimiclow-resourcescenario3. Selectionoftherelatively
+small and specialized datasets stems from the setup of our research task, which tries to mimic many
+real-life scenarios (particularly in the context of lower-resourced languages), in which only a small
+task-specificdatasetisavailableand/orwhereexpertannotationisverycostly. Thisinturncreatesthe
+needtomakemaximaluseoftheavailabledata. AdditionaldetailsaboutdatasetsarepresentedinTable5.
+Dataset Class1 Class2 Class3 Avgtokennumber
+Slovak 33.2% 33.4% 33.4% 368
+Maltese 60% 40% - 123
+Icelandic 50% 50% - 1367
+Turkish 53.5% 34.9% 11.6% 140
+Table5: Specificationsofdatasets’classdistribitionandaveragetokenlength.
+A.2 Models
+SomeofthemostimportantspecificationsofthemodelsusedcanbeseeninTable6:
+Characteristic\Model SlovakBERT IceBERT BERTurk BERTu
+Architecture RoBERTa RoBERTa BERT BERT
+#Layers 12 12 12 12
+#Heads 12 12 12 12
+Hiddensize 768 768 768 768
+#Parameters 125M 125M 109M 560M
+#Trainingtokens 4.6B 2.7B 44.04B 500M
+#Trainingsteps 300K 225K 2M 1M
+Vocabularysize 50K 50K 32K 52K
+Pretrainingdatasize 19.35GB 15.8GB 35GB 2.52GB
+Table6: Importantspecificationsofmodelsusedinexperiments.
+TherearetwomainreasonswhyweuseBERT-basedmodels:
+• Formanylower-resourcedlanguages,BERT-basedmodelsarethebest(andoftentheonly)available
+Pre-trainedLanguageModeloption.
+• Themodelfamilyisfairlyeasytouse,aswellasresource-efficient,andassuchhasahigherchance
+toreachawiderresearchaudience.
+3All datasets are available on Huggingface website, namely Slovak sk_csfd-movie-reviews, Turkish turkish-sentiment-
+analysis-dataset,Maltesemaltese_saandandIcelandicimdb-isl-mideind-translate.
+A.3 Experiments
+Table7presentsimportantparametersforourlow-settingenvironment:
+Parameter Value
+Epochs 5
+Maxtextlength 64
+Batchsize 32
+Learningrate 5∗10−5
+Table7: Specificationsofparametersusedinexperiments.
+Ifweassumethatatthestartofthetraining(inourcasefine-tuning)wehaveanunlabeledpoolU
+0
+withalldatasamplesfromthedatasetandanemptyannotateddatapoolD ,thedifferenceinonetraining
+0
+epochbetweenAccumulatingandRecalculatingfine-tuningcanbesummarizedas:
+Accumulating(building)fine-tuning
+1. Load data samples from previous epoch unlabeled data pool U and used annotated data pool
+e−1
+D .
+e−1
+2. Sampleupto75%newdatasamplesfromU ,annotatethemandaddthemtoD ,thuscreating
+e−1 e−1
+newdatapoolsU (withoutnewlysampleddata)andD (withnewlysampleddata).
+e e
+3. Fine-tunethemodelwithalltheaccumulateddatainthedatasetD .
+e
+Recalculatingfine-tuning
+1. Sampleupto75%ofthedatasamplesfromU ,annotatethemandaddthemtoemptyD ,while
+0 0
+retainingthesamedatapoolU andcreatingthedatapoolD (withsampleddata).
+0 e
+2. Fine-tunethemodelwithallthedatainthedatasetD .
+e
+3. DeletethewholeD .
+e
+As the model’s weights are changing and the model is learning, it can decide that some of the data
+samples used previously can be no longer helpful or even misleading (e.g. outliers). This fact is not
+relevantinAccumulatingfine-tuning,whichusesthesesamplesnevertheless,butservesasamotivation
+forRecalculatingfine-tuning. OneimportantfactoftheRecalculatingfine-tuning: sincethishappensin
+multipleepochs,somedatacanbechosenmultipletimes(andsomewillnotbechosenatall);still,most
+ofthedatasetorthewholedatasetmaybeused(moreprecisely: thedatasamplecanbechosenmultiple
+times,butitwillbeusedatmostonceduringeachtrainingepochsincetheannotateddatasetisbuiltfrom
+fresheveryepoch.).
+Some of the combinations of acquisition function, architecture, clustering, and scheduling are not
+possibleorhelpfulduetodifferentcircumstances. Tosaveoncomputationalresources,theirexploration
+wasnotconducted. InTables8,9and10,weshowwhichofthecombinationswerenotpresentinour
+experimentalsetups:
+Option Noclustering Initclustering Dynamicclustering
+Base/probscheduler ✓ ✓ ✓
+Linearschedulers ✓ ✥ ✓
+Dif-buildschedulers ✗ ✓ ✓
+Table8: Setupsofdifferentclusteringsandschedulersusedintheexperiments.
+Due to the design of dif-build schedulers, it is appropriate to evaluate their performance only on
+data drawn from the same clusters, rather than from random samples across the entire dataset. Init
+Option ClassicAF EpistemicAF Furthest-batchAF
+AccumulatingbaseBERT ✓ ✗ ✓
+AccumulatingENN ✓ ✓ ✓
+RecalculatingbaseBERT ✓ ✗ ✓
+RecalculatingENN ✓ ✓ ✓
+Table9: Setupsofdifferentacquisitionfunctionsandarchitecturetypesusedintheexperiments.
+Option ClassicAF EpistemicAF Furthest-batchAF
+Basescheduler ✓ ✓ ✓
+Probscheduler ✓ ✓ ✗
+Linearscheduler ✓ ✓ ✓
+Linearprobscheduler ✓ ✓ ✗
+Dif-buildschedulers ✓ ✓ ✗
+Table10: Setupsofdifferentacquisitionfunctionsandschedulersusedintheexperiments.
+clusteringplaysarolesolelyduringthefirstepochoffine-tuning. Consequently,combiningitwithlinear
+schedulers—whichadjustthevolumeofsampleddataacrossepochs—offersnoadvantageoverdynamic
+clustering(markedas✥).
+EpistemicacquisitionfunctionsinherentlyrelyontheepistemicindexandthebroaderEpistemicneural
+network architecture. In contrast, the furthest-batch acquisition function is based exclusively on data
+samplecharacteristics. Asaresult,model-dependentschedulerssuchasprob,linearprobanddif-build
+arenotapplicablewhenusingfurthest-batch. Additionally,becausefurthest-batchdeterminesacquisition
+basedondistancesfrommedoids,itrequiresclusteringandcannotoperatewithoutit.
+Althoughcombiningfurthest-batchwithdynamicclusteringisfeasible,itdoesnotofferanybenefit
+overusingitwithinitclustering. Thisisbecausetheselectedsamplesremainunchangedacrossepochs,
+renderingdynamicupdatesunnecessaryinthiscase.
+A.4 Results
+Thissectionpresentssupplementaryresultsnotincludedinthemaintext. InSection5,wecomparedthe
+best-performingmodelsagainsttheirrespectivebaselinesandanalyzedtheindividualcontributionsofkey
+componentsofActiveLearning(AL).Here,weextendthisanalysisbyevaluatinghowdifferentaspects
+ofAL,whencombined,influencefine-tuningperformance—reflectingmorerealisticusagescenarios.
+Specifically, we report the average F1 score gains or losses of models incorporating particular AL
+characteristics(incombinationwithothers),relativetotheircorrespondingbaselines. Thesecomparisons
+areaggregatedacrossallmodelsandlanguages,alongwiththepercentageoflabeleddatautilized. After
+that,wereportindividualstatisticsasinTable3forotherlanguages(Slovak,Icelandic,Maltese).
+Subsequently,wepresentthelearningcurvesforBERTu,IceBERT,andBERTurkmodelstoillustrate
+performancetrendsthroughoutthefine-tuningprocess. Finally,tofacilitatedirectcomparisonsofvarious
+fine-tuning configurations, we include a series of tables showing the best results per language for the
+followingmodelvariants: (i)thevanillabasemodel,(ii)themodelwithonlyActiveLearning,(iii)Active
+Learningwithclustering,and(iv)ActiveLearningwithbothclusteringandscheduling.
+InTable11wepresenttheresultsofanablationstudydesignedtocomparetheimpactofvariousfine-
+tuningstrategies,includingdifferentschedulers,clusteringmethods,andotherdesignchoices. Notably,the
+resultshighlightthesignificantroleofActiveLearning. Alltestedacquisitionfunctionsoutperformedthe
+baselineconditionwithoutAL,underscoringitsoveralleffectiveness. Amongthem,theBaldacquisition
+functionachievedthehighestF1scores,whilethefurthest-batchstrategyledtosubstantialreductionsin
+thenumberofrequiredannotations.
+Fine-tuningBERTmodelsasEpistemicneuralnetworkscontributedtobothimprovedperformance
+and reduced data requirements. Similarly, cold fine-tuning yielded beneficial effects, challenging the
+assumptionthatpossiblerandomfine-tuningduringtheinitialepochdegradesperformance. Additionally,
+Characteristic +-%ofF1score %ofdata
+Architecture
+Vanilla +1.89% 90.72%
+ENN +2.39% 87.59%
+Start
+Warm +1.74% 93.06%
+Cold +2.44% 89.12%
+Sampling
+Recalculating +2.26% 86.43%
+Accumulating +2.39% 92.54%
+Acquisitionfunction
+None -2.67% 99.48%
+Entropy +2.28% 92.07%
+Bald +2.32% 87.89%
+Variance +2.26% 89.72%
+Furthest-batch +1.68% 79.81%
+Clustering
+Noclustering +1.76% 95.51%
+Initclustering +2.26% 78.66%
+Dynamicclustering +2.21% 97.12%
+Schedulers
+Base +2.02% 85.67%
+Probscheduler +2.24% 92.76%
+Linearscheduler +2.08% 80.68%
+Linearprobscheduler +1.66% 81.68%
+Dif-build +1.59% 90.25%
+Dif-build-unique +1.95% 90.10%
+Table11: Comparisonoftheaverageresultsofdifferentfine-tuningsettings.
+recalculating sampling showed comparable performance to traditional accumulation-based sampling,
+whileofferingfurtherannotationsavings.
+Finally,theuseoflinearschedulers—particularlythestandardlinearscheduler—provedeffectivein
+balancingannotationefficiencywithstrongmodelperformance.
+Characteristic F1score %ofdata
+ENNarchitecture 71.43 99.52%
+Dynamicclustering 71.24 99.62%
+Recalculatingsampling 71.17 94.2%
+Table12: ComparisonofthebestSlovakBERTresultsofdifferentfine-tuningsettings.
+Characteristic F1score %ofdata
+Dynamicclustering 85.38 98.9%
+Initclustering 84.52 77.98%
+Entropyacquisition 84.35 96.02%
+Table13: ComparisonofthebestBERTuresultsofdifferentfine-tuningsettings.
+Characteristic F1score %ofdata
+Baldacquisition 79.77 93.37%
+ENNarchitecture 79.22 93.37%
+Probscheduler 78.23 99.5%
+Table14: ComparisonofthebestICEBertresultsofdifferentfine-tuningsettings.
+Figure5: LearningcurvesofbaselinemodelandthebestperformingALmodelswhilefine-tuningBERTu.
+Figure6: LearningcurvesofbaselinemodelandthebestperformingALmodelswhilefine-tuningIceBERT.
+Figure7: LearningcurvesofbaselinemodelandthebestperformingALmodelswhilefine-tuningBERTurk.
+Model F1score %ofdata
+Vanilla 71.17 100%
+Entropy 71.23 99.92%
+Bald+dynamic 71.64 99.6%
+Entropy+dynamic+linearprob 71.83 99.1%
+Table15: ComparisonofthebestSlovakBERTmodels.
+Model F1score %ofdata
+Vanilla 82.76 100%
+Entropy 84.35 96.7%
+Bald+base 85.5 78%
+Bald+init+linear 86.1 72.4%
+Table16: ComparisonofthebestBERTumodels.
+Model F1score %ofdata
+Vanilla 78.07 100%
+Bald 79.77 93.4%
+Bald+init 78.89 85.3%
+Entropy+dynamic+prob 80.06 93.4%
+Table17: ComparisonofthebestIceBERTmodels.
+Model F1score %ofdata
+Vanilla 91.06 100%
+Entropy 91.3 81.9%
+Bald+init 91.94 70.13%
+Bald+dynamic+prob 92.16 81.9%
+Table18: ComparisonofthebestBERTurkmodels.

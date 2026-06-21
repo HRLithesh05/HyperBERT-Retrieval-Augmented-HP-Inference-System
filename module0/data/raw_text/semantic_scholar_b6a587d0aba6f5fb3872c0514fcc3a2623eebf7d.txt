@@ -1,0 +1,368 @@
+GlossBERT: BERT for Word Sense Disambiguation
+with Gloss Knowledge
+LuyaoHuang,ChiSun,XipengQiu∗,XuanjingHuang
+ShanghaiKeyLaboratoryofIntelligentInformationProcessing,FudanUniversity
+SchoolofComputerScience,FudanUniversity
+825ZhanghengRoad,Shanghai,China
+{lyhuang18,sunc17,xpqiu,xjhuang}@fudan.edu.cn
+Abstract 2016) focus on extracting manually designed fea-
+turesandthentrainadedicatedclassifier(wordex-
+Word Sense Disambiguation (WSD) aims to
+pert)foreverytargetlemma.
+find the exact sense of an ambiguous word
+Although word expert supervised WSD meth-
+inaparticularcontext. Traditionalsupervised
+ods perform better, they are less flexible than
+methodsrarelytakeintoconsiderationthelex-
+icalresourceslikeWordNet,whicharewidely knowledge-based methods in the all-words WSD
+utilizedinknowledge-basedmethods. Recent task(Raganatoetal.,2017a). Recentneural-based
+studieshaveshowntheeffectivenessofincor- methods are devoted to dealing with this prob-
+porating gloss (sense definition) into neural
+lem. Ka˚geba¨ck and Salomonsson (2016) present
+networks for WSD. However, compared with
+a supervised classifier based on Bi-LSTM, which
+traditional word expert supervised methods,
+sharesparametersamongallwordtypesexceptthe
+theyhavenotachievedmuchimprovement. In
+last layer. Raganato et al. (2017a) convert WSD
+thispaper,wefocusonhowtobetterleverage
+gloss knowledge in a supervised neural WSD task to a sequence labeling task, thus building a
+system. We construct context-gloss pairs and unifiedmodelforallpolysemouswords. However,
+propose three BERT-based models for WSD. neither of them can totally beat the best word ex-
+Wefine-tunethepre-trainedBERTmodeland pertsupervisedmethods.
+achieve new state-of-the-art results on WSD
+More recently, Luo et al. (2018b) propose to
+task.
+leveragetheglossinformationfromWordNetand
+1 Introduction model the semantic relationship between the con-
+text and gloss in an improved memory network.
+Word Sense Disambiguation (WSD) is a funda-
+Similarly, Luo et al. (2018a) introduce a (hi-
+mental task and long-standing challenge in Nat-
+erarchical) co-attention mechanism to generate
+ural Language Processing (NLP), which aims to
+co-dependent representations for the context and
+findtheexactsenseofanambiguouswordinapar-
+gloss. Their attempts prove that incorporating
+ticularcontext(Navigli,2009). PreviousWSDap-
+gloss knowledge into supervised WSD approach
+proachescanbegroupedintotwomaincategories:
+is helpful, but they still have not achieved much
+knowledge-basedandsupervisedmethods.
+improvement,becausetheymaynotmakefulluse
+Knowledge-based WSD methods rely on lex-
+ofglossknowledge.
+ical resources like WordNet (Miller, 1995) and
+In this paper, we focus on how to better lever-
+usually exploit two kinds of lexical knowledge.
+ageglossinformationinasupervisedneuralWSD
+The gloss, which defines a word sense meaning,
+system. Recently, the pre-trained language mod-
+is first utilized in Lesk algorithm (Lesk, 1986)
+els,suchasELMo(Petersetal.,2018)andBERT
+and then widely taken into account in many other
+(Devlin et al., 2018), have shown their effective-
+approaches (Banerjee and Pedersen, 2002; Basile
+ness to alleviate the effort of feature engineer-
+et al., 2014). Besides, structural properties of se-
+ing. Especially, BERT has achieved excellent re-
+mantic graphs are mainly used in graph-based al-
+sults in question answering (QA) and natural lan-
+gorithms(Agirreetal.,2014;Moroetal.,2014).
+guageinference(NLI).Weconstructcontext-gloss
+Traditional supervised WSD methods (Zhong
+pairsfromglossesofallpossiblesenses(inWord-
+and Ng, 2010; Shen et al., 2013; Iacobacci et al.,
+Net) of the target word, thus treating WSD task
+∗Correspondingauthor. asasentence-pairclassificationproblem. Wefine-
+Sentencewithfourtargets:
+Yourresearchstoppedwhenaconvenientassertioncouldbemade.
+Context-GlossPairsofthetargetword[research] Label SenseKey
+[CLS]Yourresearch...[SEP]systematicinvestigationto...[SEP] Yes research%1:04:00::
+[CLS]Yourresearch...[SEP]asearchforknowledge[SEP] No research%1:09:00::
+[CLS]Yourresearch...[SEP]inquireinto[SEP] No research%2:31:00::
+[CLS]Yourresearch...[SEP]attempttofindoutina...[SEP] No research%2:32:00::
+Context-GlossPairswithweaksupervisionofthetargetword[research] Label SenseKey
+[CLS]Your“research”...[SEP]research:systematicinvestigationto...[SEP] Yes research%1:04:00::
+[CLS]Your“research”...[SEP]research:asearchforknowledge[SEP] No research%1:09:00::
+[CLS]Your“research”...[SEP]research:inquireinto[SEP] No research%2:31:00::
+[CLS]Your“research”...[SEP]research:attempttofindoutina...[SEP] No research%2:32:00::
+Table 1: The construction methods. The sentence is taken from SemEval-2007 WSD dataset. The ellipsis “...”
+indicatestheremainderofthesentenceorthegloss.
+tunethepre-trainedBERTmodelandachievenew BERT(Token-CLS) Sinceeverytargetinasen-
+state-of-the-artresultsonWSDtask. Inparticular, tence needs to be disambiguated to find its exact
+ourcontributionistwo-fold: sense, WSD task can be regarded as a token-level
+1. Weconstructcontext-glosspairsandpropose classification task. To incorporate BERT to WSD
+threeBERT-basedmodelsforWSD. task, we take the final hidden state of the token
+2. We fine-tune the pre-trained BERT model, correspondingtothetargetword(ifmorethanone
+andtheexperimentalresultsonseveralEnglishall- token, we average them) and add a classification
+wordsWSDbenchmarkdatasetsshowthatourap- layerforeverytargetlemma,whichisthesameas
+proach significantly outperforms the state-of-the- the last layer of the Bi-LSTM model (Ka˚geba¨ck
+artsystems. andSalomonsson,2016).
+2 Methodology 2.3 GlossBERT
+BERT can explicitly model the relationship of a
+Inthissection,wedescribeourmethodindetail.
+pair of texts, which has shown to be beneficial
+2.1 TaskDefinition tomanypair-wisenaturallanguageunderstanding
+In WSD, a sentence s usually consists of a series tasks. Inordertofullyleverageglossinformation,
+of words: {w ,··· ,w }, and some of the words weproposeGlossBERTtoconstructcontext-gloss
+1 m
+{w ,··· ,w } are targets {t ,··· ,t } need to pairsfromallpossiblesensesofthetargetwordin
+i1 i k 1 k
+be disambiguated. For each target t, its candi- WordNet, thus treating WSD task as a sentence-
+date senses {c ,··· ,c } come from entries of its pairclassificationproblem.
+1 n
+lemma in a pre-defined sense inventory (usually We describe our construction method with an
+WordNet). Therefore, WSD task aims to find the example (See Table 1). There are four targets in
+most suitable entry (symbolized as unique sense this sentence, and here we take target word re-
+key) for each target in a sentence. See a sentence searchasanexample:
+exampleinTable1.
+Context-Gloss Pairs The sentence containing
+target words is denoted as context sentence. For
+2.2 BERT
+eachtargetword,weextractglossesofallN pos-
+BERT(Devlinetal.,2018)isanewlanguagerep-
+sible senses (here N = 4) of the target word
+resentation model, and its architecture is a multi-
+(research) in WordNet to obtain the gloss sen-
+layer bidirectional Transformer encoder. BERT
+tence. [CLS]and[SEP]marksareaddedtothe
+model is pre-trained on a large corpus and two
+context-gloss pairs to make it suitable for the in-
+novel unsupervised prediction tasks, i.e., masked
+putofBERTmodel. Asimilarideaisalsousedin
+languagemodelandnextsentencepredictiontasks
+aspect-basedsentimentanalysis(Sunetal.,2019).
+are used in pre-training. When incorporating
+BERTintodownstreamtasks,thefine-tuningpro- Context-Gloss Pairs with Weak Supervision
+cedure is recommended. We fine-tune the pre- Based on the previous construction method, we
+trainedBERTmodelonWSDtask. add weak supervised signals to the context-gloss
+Dataset Total Noun Verb Adj Adv chooseSemCor3.0astrainingcorpus,whichisthe
+SemCor 226036 87002 88334 31753 18947
+largest corpus manually annotated with WordNet
+SE2 2282 1066 517 445 254
+SE3 1850 900 588 350 12 senseforWSD.
+SE07 455 159 296 0 0
+SE13 1644 1644 0 0 0 Evaluation Datasets We evaluate our method
+SE15 1022 531 251 160 80 on several English all-words WSD datasets. For
+a fair comparison, we use the benchmark datasets
+Table2:Statisticsofthedifferentpartsofspeechanno-
+proposed by Raganato et al. (2017b) which in-
+tationsinEnglishall-wordsWSDdatasets.
+clude five standard all-words fine-grained WSD
+datasets from the Senseval and SemEval com-
+pairs (see the highlighted part in Table 1). The petitions: Senseval-2 (SE2), Senseval-3 (SE3),
+signal in the gloss sentence aims to point out the SemEval-2007 (SE07), SemEval-2013 (SE13)
+targetword,andthesignalinthecontext sentence and SemEval-2015 (SE15). Following Luo et al.
+aimstoemphasizethetargetwordconsideringthe (2018a), Luo et al. (2018b) and Raganato et al.
+situation that a target word may occur more than (2017a), we choose SE07, the smallest among
+onetimeinthesamesentence. thesetestsets,asthedevelopmentset.
+Therefore,eachtargetwordhasN context-gloss
+WordNet SinceRaganatoetal.(2017b)mapall
+pairtraininginstances(label ∈ {yes,no}). When
+the sense annotations in these datasets from their
+testing, we output the probability of label = yes
+originalversionstoWordNet3.0,weextractword
+of each context-gloss pair and choose the sense
+senseglossesfromWordNet3.0.
+correspondingtothehighestprobabilityasthepre-
+diction label of the target word. We experiment
+3.2 Settings
+withthreeGlossBERTmodels:
+We use the pre-trained uncased BERT
+BASE
+GlossBERT(Token-CLS) Weusecontext-gloss model1 for fine-tuning, because we find that
+pairsasinput. Wehighlightthetargetwordbytak- BERT LARGE model performs slightly worse than
+ingthefinalhiddenstateofthetokencorrespond- BERT BASE in this task. The number of Trans-
+ing to the target word (if more than one token, former blocks is 12, the number of the hidden
+we average them) and add a classification layer layer is 768, the number of self-attention heads
+(label ∈ {yes,no}). is 12, and the total number of parameters of the
+pre-trainedmodelis110M.Whenfine-tuning, we
+GlossBERT(Sent-CLS) We use context-gloss
+usethedevelopmentset(SE07)tofindtheoptimal
+pairs as input. We take the final hidden state
+settingsforourexperiments. Wekeepthedropout
+of the first token [CLS] as the representation of
+probability at 0.1, set the number of epochs to 4.
+the whole sequence and add a classification layer
+Theinitiallearningrateis2e-5,andthebatchsize
+(label ∈ {yes,no}), whichdoesnothighlightthe
+is64.
+targetword.
+3.3 Results
+GlossBERT(Sent-CLS-WS) We use context-
+Table 3 shows the performance of our method on
+gloss pairs with weak supervision as input. We
+the English all-words WSD benchmark datasets.
+takethefinalhiddenstateofthefirsttoken[CLS]
+Wecompareourapproachwithpreviousmethods.
+andaddaclassificationlayer(label ∈ {yes,no}),
+The first block shows the MFS baseline, which
+which weekly highlight the target word by the
+selectsthemostfrequentsenseinthetrainingcor-
+weaksupervision.
+pusforeachtargetword.
+The second block shows two knowledge-based
+3 Experiments
+systems. Lesk (Basile et al., 2014) is a
+ext+emb
+3.1 Datasets variant of Lesk algorithm (Lesk, 1986) by calcu-
+latingthegloss-contextoverlapofthetargetword.
+The statistics of the WSD datasets are shown in
+Babelfy (Moro et al., 2014) is a unified graph-
+Table2.
+based approach which exploits the semantic net-
+Training Dataset Following previous work workstructurefromBabelNet.
+(Luo et al., 2018a,b; Raganato et al., 2017a,b; Ia-
+1https://storage.googleapis.com/bert models/2018 10 18/
+cobacci et al., 2016; Zhong and Ng, 2010), we uncased L-12 H-768 A-12.zip
+Dev TestDatasets ConcatenationofTestDatasets
+System SE07 SE2 SE3 SE13 SE15 Noun Verb Adj Adv All
+MFSbaseline 54.5 65.6 66.0 63.8 67.1 67.7 49.8 73.1 80.5 65.5
+Lesk 56.7 63.0 63.7 66.2 64.6 70.0 51.1 51.7 80.6 64.2
+ext+emb
+Babelfy 51.6 67.0 63.5 66.4 70.3 68.9 50.7 73.2 79.8 66.4
+IMS 61.3 70.9 69.3 65.3 69.5 70.5 55.8 75.6 82.9 68.9
+IMS 62.6 72.2 70.4 65.9 71.5 71.9 56.6 75.9 84.7 70.1
++emb
+Bi-LSTM - 71.1 68.4 64.8 68.3 69.5 55.9 76.2 82.4 68.4
+Bi-LSTM 64.8 72.0 69.1 66.9 71.5 71.5 57.5 75.0 83.8 69.9
++att.+LEX+POS
+GAS (Linear) - 72.4 70.1 67.1 72.1 71.9 58.1 76.4 84.7 70.4
+ext
+GAS (Concatenation) - 72.2 70.5 67.2 72.6 72.2 57.7 76.6 85.0 70.6
+ext
+CANs - 72.2 70.2 69.1 72.2 73.5 56.5 76.6 80.3 70.9
+HCAN - 72.8 70.3 68.5 72.8 72.7 58.2 77.4 84.1 71.1
+BERT(Token-CLS) 61.1 69.7 69.4 65.8 69.5 72.0 57.8 73.5 84.4 68.6
+GlossBERT(Sent-CLS) 69.2 76.5 73.4 75.1 79.5 79.1 65.4 79.3 84.8 75.8
+GlossBERT(Token-CLS) 71.9 77.0 75.4 74.6 79.3 78.8 66.8 79.9 85.0 76.3
+GlossBERT(Sent-CLS-WS) 72.5 77.7 75.2 76.1 80.4 79.8 67.1 79.6 87.4 77.0
+Table3: F1-score(%)forfine-grainedEnglishall-wordsWSDonthetestsetsintheframeworkofRaganatoetal.
+(2017b) (including the development set SE07). Bold font indicates best systems. The five blocks list the MFS
+baseline, twoknowledge-basedsystems, twotraditionalwordexpert supervisedsystems, sixrecentneural-based
+systemsandoursystems,respectively. ResultsinfirstthreeblockscomefromRaganatoetal.(2017b),andothers
+fromthecorrespondingpapers.
+.
+The third block shows two word expert tradi- guitylevelamongalldatasetsandallPOStagsre-
+tional supervised systems. IMS (Zhong and Ng, spectivelyaccordingtoRaganatoetal.(2017b).
+2010) is a flexible framework which trains SVM Moreover, GlossBERT(Token-CLS) performs
+classifiers and uses local features. And IMS better than GlossBERT(Sent-CLS), which proves
++emb
+(Iacobacci et al., 2016) is the best configuration that highlighting the target word in the sentence
+oftheIMSframework,whichalsointegratesword is important. However, the weakly highlight-
+embeddingsasfeatures. ing method GlossBERT(Sent-CLS-WS) performs
+The fourth block shows several recent neural- bestinmostcircumstances,whichmayresultfrom
+based methods. Bi-LSTM (Ka˚geba¨ck and Sa- itscombinationoftheadvantagesoftheothertwo
+lomonsson, 2016) is a baseline for neural mod- methods.
+els. Bi-LSTM (Raganato et al.,
++att.+LEX+POS
+3.4 Discussion
+2017a) is a multi-task learning framework for
+WSD, POS tagging, and LEX with self-attention Therearetwomainreasonsforthegreatimprove-
+mechanism, which converts WSD to a sequence ments of our experimental results. First, we con-
+learningtask. GAS (Luoetal.,2018b)isavari- struct context-gloss pairs and convert WSD prob-
+ext
+antofGASwhichisagloss-augmentedvariantof lem to a sentence-pair classification task which is
+the memory network by extending gloss knowl- similar to NLI tasks and train only one classifier,
+edge. CANs and HCAN (Luo et al., 2018a) are whichisequivalenttoexpandingthecorpus. Sec-
+sentence-levelandhierarchicalco-attentionneural ond, we leverage BERT (Devlin et al., 2018) to
+networkmodelswhichleverageglossknowledge. betterexploittheglossinformation. BERTmodel
+In the last block, we report the performance of shows its advantage in dealing with sentence-pair
+our method. BERT(Token-CLS) is our baseline, classification tasks by its amazing improvement
+whichdoesnotincorporateglossinformation,and on QA and NLI tasks. This advantage comes
+itperformsslightlyworsethanprevioustraditional frombothofitstwonovelunsupervisedprediction
+supervisedmethodsandrecentneural-basedmeth- tasks.
+ods. ItprovesthatdirectlyusingBERTcannotob- Compared with traditional word expert super-
+tainperformancegrowth. Theotherthreemethods vised methods, our GlossBERT shows its effec-
+outperform other models by a substantial margin, tivenesstoalleviatetheeffortoffeatureengineer-
+which proves that the improvements come from inganddoesnotrequiretrainingadedicatedclas-
+leveraging BERT to better exploit gloss informa- sifier for every target lemma. Up to now, it can
+tion. It is worth noting that our method achieves besaidthattheneuralnetworkmethodcantotally
+significant improvements in SE07 and Verb over beat the traditional word expert method. Com-
+previous methods, which have the highest ambi- pared with recent neural-based methods, our so-
+lutionismoreintuitiveandcanmakebetteruseof MikaelKa˚geba¨ckandHansSalomonsson.2016. Word
+gloss knowledge. Besides, our approach demon- sense disambiguation using a bidirectional lstm.
+arXivpreprintarXiv:1606.03568.
+strates that when we fine-tune BERT on a down-
+streamtask,convertingitintoasentence-pairclas- MichaelLesk.1986. Automaticsensedisambiguation
+sificationtaskmaybeagoodchoice. using machine readable dictionaries: how to tell a
+pineconefromanicecreamcone. InProceedingsof
+4 Conclusion the5thannualinternationalconferenceonSystems
+documentation,pages24–26.Citeseer.
+In this paper, we seek to better leverage gloss
+Fuli Luo, Tianyu Liu, Zexue He, Qiaolin Xia, Zhi-
+knowledge in a supervised neural WSD system.
+fang Sui, and Baobao Chang. 2018a. Leveraging
+We propose a new solution to WSD by construct- gloss knowledge in neural word sense disambigua-
+ing context-gloss pairs and then converting WSD tionbyhierarchicalco-attention. InProceedingsof
+the2018ConferenceonEmpiricalMethodsinNat-
+to a sentence-pair classification task. We fine-
+uralLanguageProcessing,pages1402–1411.
+tunethepre-trainedBERTmodelandachievenew
+state-of-the-artresultsonWSDtask. Fuli Luo, Tianyu Liu, Qiaolin Xia, Baobao Chang,
+andZhifangSui.2018b. Incorporatingglossesinto
+Acknowledgments neural word sense disambiguation. arXiv preprint
+arXiv:1805.08028.
+We would like to thank the anonymous reviewers
+GeorgeAMiller.1995. Wordnet:alexicaldatabasefor
+fortheirvaluablecomments. Theresearchworkis
+english. Communications of the ACM, 38(11):39–
+supportedbyNationalNaturalScienceFoundation 41.
+of China (No. 61751201 and 61672162), Shang-
+AndreaMoro,AlessandroRaganato,andRobertoNav-
+hai Municipal Science and Technology Commis-
+igli. 2014. Entity linking meets word sense disam-
+sion (16JC1420401 and 17JC1404100), Shanghai biguation: a unified approach. Transactions of the
+MunicipalScienceandTechnologyMajorProject Association for Computational Linguistics, 2:231–
+(No.2018SHZDZX01)andZJLab. 244.
+RobertoNavigli.2009. Wordsensedisambiguation: A
+survey. ACMcomputingsurveys(CSUR),41(2):10.
+References
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt
+EnekoAgirre,OierLo´pezdeLacalle,andAitorSoroa.
+Gardner, Christopher Clark, Kenton Lee, and Luke
+2014. Random walks for knowledge-based word
+Zettlemoyer. 2018. Deep contextualized word rep-
+sense disambiguation. Computational Linguistics,
+resentations. In Proceedings of the 2018 Confer-
+40(1):57–84.
+ence of the North American Chapter of the Associ-
+ation for Computational Linguistics: Human Lan-
+Satanjeev Banerjee and Ted Pedersen. 2002. An
+guageTechnologies,Volume1(LongPapers),pages
+adapted lesk algorithm for word sense disambigua-
+2227–2237.
+tion using wordnet. In International conference on
+intelligent text processing and computational lin- AlessandroRaganato,ClaudioDelliBovi,andRoberto
+guistics,pages136–145.Springer. Navigli. 2017a. Neural sequence learning models
+for word sense disambiguation. In Proceedings of
+Pierpaolo Basile, Annalina Caputo, and Giovanni Se- the2017ConferenceonEmpiricalMethodsinNat-
+meraro. 2014. An enhanced lesk word sense dis- uralLanguageProcessing,pages1156–1167.
+ambiguation algorithm through a distributional se-
+mantic model. In Proceedings of COLING 2014, Alessandro Raganato, Jose Camacho-Collados, and
+the25thInternationalConferenceonComputational Roberto Navigli. 2017b. Word sense disambigua-
+Linguistics: TechnicalPapers,pages1591–1600. tion: A unified evaluation framework and empiri-
+calcomparison. InProceedingsofthe15thConfer-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and enceoftheEuropeanChapteroftheAssociationfor
+KristinaToutanova.2018. Bert:Pre-trainingofdeep ComputationalLinguistics: Volume1,LongPapers,
+bidirectional transformers for language understand- pages99–110.
+ing. arXivpreprintarXiv:1810.04805.
+HuiShen,RazvanBunescu,andRadaMihalcea.2013.
+Ignacio Iacobacci, Mohammad Taher Pilehvar, and Coarse to fine grained sense disambiguation in
+RobertoNavigli.2016. Embeddingsforwordsense wikipedia. In Second Joint Conference on Lexical
+disambiguation: An evaluation study. In Proceed- and Computational Semantics (* SEM), Volume 1:
+ings of the 54th Annual Meeting of the Association ProceedingsoftheMainConferenceandtheShared
+forComputationalLinguistics(Volume1: LongPa- Task: SemanticTextualSimilarity, volume1, pages
+pers),volume1,pages897–907. 22–31.
+ChiSun,LuyaoHuang,andXipengQiu.2019. Utiliz-
+ingbertforaspect-basedsentimentanalysisviacon-
+structing auxiliary sentence. In Proceedings of the
+2019ConferenceoftheNorthAmericanChapterof
+theAssociationforComputationalLinguistics: Hu-
+man Language Technologies, Volume 1 (Long and
+ShortPapers),pages380–385.
+Zhi Zhong and Hwee Tou Ng. 2010. It makes sense:
+Awide-coveragewordsensedisambiguationsystem
+forfreetext. InProceedingsoftheACL2010system
+demonstrations,pages78–83.

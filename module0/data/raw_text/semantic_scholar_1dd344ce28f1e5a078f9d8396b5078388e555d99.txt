@@ -1,0 +1,1001 @@
+Template-free Prompt Tuning for Few-shot NER
+RuotianMa1 ,XinZhou1 ,TaoGui2 ,YidingTan1,
+∗ ∗ †
+LinyangLi1,QiZhang1 ,XuanjingHuang1
+†
+1SchoolofComputerScience,FudanUniversity,Shanghai,China
+2InstituteofModernLanguagesandLinguistics,FudanUniversity,Shanghai,China
+{rtma19,xzhou20,tgui,qz,xjhuang}@fudan.edu.cn
+Abstract LM predictions
+person ➔ label: PER ✔
+organization ➔ label: ORG
+Prompt-basedmethodshavebeensuccessfully Input: Obama was born in America . location ➔ label: LOC
+none ➔ label: O
+applied in sentence-level few-shot learning
+[CLS] Input Obama is a [MASK] entity. [SEP] Query LM x 1
+tasks,mostlyowingtothesophisticateddesign
+oftemplatesandlabelwords. However,when [CLS] Input Obama was is a [MASK] entity. [SEP] Query LM x 2
+applied to token-level labeling tasks such as ......
+NER,itwouldbetime-consumingtoenumerate [CLS] Input America . is a [MASK] entity. [SEP] Query LM x 21
+the template queries over all potential entity
+Figure1:Anexampleoftemplate-basedpromptmethod
+spans. Inthiswork,weproposeamoreelegant
+forNER.Predictingalllabelsinsentence“Obamawas
+methodtoreformulateNERtasksasLMprob-
+borninAmerica."requiresenumerationoverallspans.
+lemswithoutanytemplates. Specifically, we
+discardthetemplateconstructionprocesswhile
+maintainingthewordpredictionparadigmof questions. Typically,foreachinput[X],atemplate
+pre-training models to predict a class-related is used to convert [X] into an unfilled text (e.g.,
+pivotword(orlabelword)attheentityposition. “[X] It was __."), allowing the model to fill in
+Meanwhile, we also explore principled ways
+theblankwithitslanguagemodelingability. For
+to automatically search for appropriate label
+instance,whenperformingsentimentclassification
+words that the pre-trained models can easily
+task,theinput“Ilovethemilk."canbeconverted
+adapt to. While avoiding the complicated
+template-based process, the proposed LM into“Ilovethemilk. Itwas__.". Consequently,the
+objective also reduces the gap between LM may predict a label word “great", indicating
+different objectives used in pre-training and thattheinputbelongstoapositiveclass.
+fine-tuning, thus it can better benefit the
+Two main factors contribute to the success of
+few-shot performance. Experimental results
+prompt-basedlearningonfew-shotclassification.
+demonstratetheeffectivenessoftheproposed
+First, re-using the masked LM objective helps
+method over bert-tagger and template-based
+alleviate the gap between different training
+methodunderfew-shotsettings. Moreover,the
+decodingspeedoftheproposedmethodisup objectives used at pre-training and fine-tuning.
+to1930.12timesfasterthanthetemplate-based Therefore,theLMscanfasteradapttodownstream
+method. tasks even with a few training samples (Schick
+and Schütze, 2021a,b; Brown et al., 2020).
+1 Introduction
+Second, the sophisticated template and label
+Pre-trained language models (LMs) have led to worddesignhelpsLMsbetterfitthetask-specific
+large improvements in NLP tasks (Devlin et al., answerdistributions,whichalsobenefitsfew-shot
+2019;Liuetal.,2019;Lewisetal.,2020). Popular performance. Asprovedinpreviousworks,proper
+practicetoperformdownstreamclassificationtasks templatesdesignedbymanuallyselecting(Schick
+is to replace the pretrained model’s output layer and Schütze, 2021a,b), gradient-based discrete
+with a classifier head and fine-tune it using a searching(Shinetal.,2020),LMgenerating(Gao
+task-specific objective function. Recently, a new etal.,2021)andcontinuouslyoptimizing(Liuetal.,
+paradigm, prompt-based learning, has achieved 2021)areabletoinducetheLMstopredictmore
+great success on few-shot classification tasks appropriateanswersneededincorrespondingtasks.
+by reformulating classification tasks as cloze However, the template-based prompt methods
+areintrinsicallydesignedforsentence-leveltasks,
+∗Equalcontribution.
+†Correspondingauthors. and they are difficult to adapt to token-level clas-
+5721
+Proceedingsofthe2022ConferenceoftheNorthAmericanChapteroftheAssociationforComputationalLinguistics:
+HumanLanguageTechnologies,pages5721-5732
+July10-15,2022©2022AssociationforComputationalLinguistics
+sification tasks such as named entity recognition Tosummarizethecontributionofthiswork:
+(NER).First,searchingforappropriatetemplates
+• We propose a template-free approach to
+is harder as the search space grows larger when
+promptNERunderfew-shotsetting.
+encounteringspan-levelqueryinginNER.What’s
+worse, such searching with only few annotated • We explore several approaches for label
+samplesasguidancecaneasilyleadtooverfitting. wordengineeringaccompaniedwithintensive
+Second,obtainingthelabelofeachtokenrequires experiments.
+enumerating all possible spans, which would be
+• Experimentalresultsverifytheeffectiveness
+time-consuming. AsanexampleinFig.1,theinput
+of the proposed method under few-shot
+“Obama was born in America." can be converted
+setting. Meanwhile, the decoding speed of
+into “Obama was born in America. [Z] is a __
+theproposedmethodis1930.12timesfaster
+entity.",where[Z]isfilledbyenumeratingallthe
+thantemplate-basedbaseline.
+spans in [X] (e.g., “Obama", “Obama was") for
+querying. Fig.1showsthatobtainingallentitiesin
+“ObamawasborninAmerica."requirestotally21 2 ProblemSetup
+timestoquerytheLMswitheveryspan. Moreover,
+In this work, we focus on few-shot NER task.
+the decoding time of such an approach would
+Differentfrompreviousworksthatassumearich-
+growcatastrophicallyassentencelengthincreasing,
+resourcesourcedomainandavailablesupportsets
+makingitimpracticaltodocument-levelcorpus.
+during testing, we follow the few-shot setting of
+(Gaoetal.,2021),whichsupposesthatonlyasmall
+Inthiswork,weproposeamoreelegantwayfor
+numberofexamplesareusedforfine-tuning. Such
+prompting NER without templates. Specifically,
+settingmakesminimalassumptionsaboutavailable
+we reformulate NER as an LM task with an
+resourcesandismorepractical. Specifically,when
+Entity-oriented LM (EntLM) objective. Without
+training on a new dataset D with the label space
+modifying the output head, the pre-trained LMs
+, we assume only K training examples for each
+arefine-tunedtopredictclass-relatedpivotwords Y
+classinthetrainingset,suchthatthetotalnumber
+(or label words) instead of the original words
+ofexamplesisK = K . Then,themodel
+at the entity positions, while still predicting the tot ×|Y|
+is tested with an unseen test set (Xtest,Ytest)
+original word at none-entity positions. Next, ∼
+D . Here,forNERtask,atrainingsamplerefers
+similar to template-based methods, we explore test
+principled ways to automatically search for the
+toacontinualentityspane = {x 1,...,x
+m
+}thatis
+labeledwithapositiveclass(e.g.,“PERSON").
+mostappropriatelabelwords. Differentapproaches
+areinvestigatedincludingselectingdiscretelabel
+3 Approach
+words based on the word distribution in lexicon-
+annotatedcorpusorLMpredictions,andobtaining In this work, we propose a template-free prompt
+theprototypesasvirtuallabelwords. Ourapproach tuning method, Entity-oriented LM (EntLM)
+keeps the merits of prompt-based learning as fine-tuning, for few-shot NER. We first give a
+no new parameters are introduced during fine- description of the template-based prompt tuning.
+tuning. Also, through the EntLM objective, the ThenweintroducetheEntLMmethodalongwith
+LMareallowedtoperformNERtaskwithonlya thelabelwordengineeringprocess.
+slight adjustment of the output distribution, thus
+3.1 Template-basedPromptTuning
+benefiting few-shot learning. Moreover, well-
+selected label words accelerate the adaptation of The standard fine-tuning process for NER is
+LM distribution towards the desired predictions, replacing the LM head with a token-level
+which also promotes few-shot performance. It’s classification head and optimizing the newly-
+also worth noting that the proposed method introduced parameters and the pre-trained LM.
+requires only one-pass decoding to obtain all Differentfromstandardfine-tuning,prompt-based
+entitylabelsinthesentence,whichissignificantly tuning reformulates classification tasks as LM
+more efficient compared to the time-consuming tasks,andfine-tunesLMtopredictalabelword.
+enumeration process of template-based methods. Formally, a prompt consists of a template
+Our codes are publicly available at https:// function T ( ) that converts the input x to a
+prompt
+·
+github.com/rtmaww/EntLM/. prompt input x = T (x), and a set of
+prompt prompt
+5722
+PER PER O O O LOC PER PER O O O LOC Label words PER
+Label Classifier John John was born in Australia person
+Pre-trained Language Model Pre-trained Language Model Pre-trained Language Model
+Steve Jobs was born in America Steve Jobs was born in America [Input] Steve Jobs is a [MASK] entity
+(a) Standard fine-tuning. (b) Entity-oriented LM fine-tuning. (c) Template-based prompt tuning.
+Figure2: Comparisonofdifferentfine-tuningmethodsforNER.(a)isthestandardfine-tuningmethod, which
+replacetheLMheadwithaclassifierheadandperformlabelclassification. (c)isthetemplate-basedpromptlearning
+method,whichinducestheLMtopredictlabelwordsbyconstructingatemplate. (b)istheproposedEntity-oriented
+LM fine-tuning method, which also re-uses the LM head and leads the LM to predict label words through an
+Entity-orientedLMobjective. (Forentitieswithmultiplespans,themodelpredictsthesamelabelwordateach
+position,whichissimilartothe“IO"labelingscheme.)
+labelwords whichareconnectedwiththelabel wholesentencerequiresenumerationoverallthe
+V
+space through a mapping function : . spans:
+M Y → V
+The template is a textual string with two unfilled Y = argmaxP([Z] = ( ) T (X,si)),
+{ y M Y | prompt j
+slot: a input slot [X] to fill the input x and an ∈Y
+si = Enumerate( x ,...,x ,i,j 1..n ) ,
+answerslot[Z]thatallowsLMtofilllabelwords. j { i j } ∈ { } }
+Forinstance,forasentimentclassificationtask,the (2)
+Such a decoding way is time-consuming and the
+templatecantaketheformas“[X]Itwas[Z].". The
+decoding time increasing as the sequence length
+inputisthenmappedto“xItwas[Z].". Specifically,
+gettinglonger. Therefore,althoughefficientinfew-
+whenusingamaskedlanguagemodel(MLM)for
+shotsetting,template-basedprompttuningisnot
+prompt-basedtuning,[Z]isfilledwithamasktoken
+suitableforNERtask.
+[MASK]. By feeding the prompt into the MLM,
+theprobabilitydistributionoverthelabelset is
+Y
+modeledby: 3.2 Entity-OrientedLMFine-tuning
+In this work, we propose a more elegant way to
+P(y x) = P([MASK] = ( ) x )
+| M Y | prompt (1) promptNERwithouttemplates,whilemaintaining
+= Softmax(W h )
+lm [MASK] theadvantagesofprompt-tuning. Specifically,we
+·
+whereW aretheparametersofthepre-trained
+lm also reformulate NER as a LM task. However,
+LM head. Unlike in standard fine-tuning, no
+instead of forming templates to re-use the LM
+new parameters are introduced in this approach,
+objective, we propose a new objective, Entity-
+therefore the model can easier fit the target task
+oriented LM (EntLM) objective for fine-tuning
+withfewsamples. Also,theLMobjectivereduce
+NER. As shown in Fig. 2 (b), when fed with
+thegapbetweenpre-trainingandfine-tuning,thus
+“ObamawasborninAmerica",theLMistrained
+benefitingfew-shottraining(Gaoetal.,2021).
+topredictalabelword“John"atthepositionofthe
+entity“Obama"asanindicationofthelabel“PER".
+3.1.1 ProblemsofPrompt-basedNER
+Whilefornone-entityword“was",theLMremains
+However, when applied to NER, such prompt- topredicttheoriginalword.
+based approach becomes complicated. given an Formally, to fine-tune the LM with EntLM
+input X = x ,...,x , we need to obtain objective, we first construct a label word set
+1 n
+{ }
+the label sequence Y = y ,...,y ,y which is also connected with the task label
+1 n i l
+{ } ∈ Y V
+correspondingtoeachtokenofX. Therefore, an set through a mapping function :
+M Y →
+additional slot [S] is added in the template to fill . Next, given the input sentence X =
+l
+V
+a token x or a continual span si = x ,...,x x ,...,x andthecorrespondinglabelsequence
+i j { i j } { 1 n }
+thatstartsfromx andendswithx . Forexample, Y = y ,...,y ,weconstructatargetsentence
+i j 1 n
+{ }
+the template can take the form as “[X] [S] is XEnt = x ,..., (y ),...,x by replacing
+1 i n
+{ M }
+a [Z] entity.", where the LMs are fine-tuned to thetokenattheentitypositioni(hereweassume
+predict an entity label word at [Z] (e.g., person) y isanentitylabel)withcorrespondinglabelword
+i
+corresponding to an entity label (e.g., PERSON). (y ),andmaintainingtheoriginalwordsatnone-
+i
+M
+During decoding, obtaining the labels Y of the entity positions. Then, given the original input
+5723
+X,theLMistrainedtomaximizetheprobability
+P(XEnt X)ofthetargetsentenceXEnt:
+|
+...
+n
+= logP(x = xEnt X) (3)
+LEntLM − i i | Dataset
+i=1 distribution
+X
+where P(x = xEnt X) = Softmax(W h ). i i | lm · i
+Noted that W are also the parameters of the lm
+pre-trained LM head. By re-using the whole pre- pretrained LM
+trainedmodel,nonewparametersareintroduced LM output
+during this fine-tuning process. Meanwhile, the distribution
+EntLMobjectiveservesasaLM-basedobjective
+to reduce the gap between pre-training and fine-
+tuning. In this way, we avoid the complicated
+templateconstructingforNERtask,andkeepthe LM embedding
+prototype
+goodfew-shotabilityofprompt-basedmethod.
+Duringtesting,wedirectlyfeedthetestinputX
+intothemodel,andtheprobabilityoflabelingthe
+ith tokenwithclassy ismodeledby:
+∈ Y
+p(y = y X) = p(x = (y) X) (4) i i
+| M |
+Notedthatweonlyneedone-passdecodingprocess
+to obtain all labels for each sentence, which
+is intensively more efficient than template-based
+promptquerying.
+3.3 LabelWordEngineering
+Previoustemplate-basedstudieshaveverifiedthe
+significantimpactoftemplateengineeringonfew-
+shot performance. Similarly, in this work, we
+explore approaches for automatically selecting
+properlabelwords. SincetheEntLMobjectlead
+allentitiesthatbelongtoaclasstopredictthesame
+label word, we believe that the purpose of label
+word searching is to find a pivot word that can
+mostlyrepresentthewordsineachclass.
+3.3.1 Low-resourceLabelwordselection
+When selecting label words with only few
+annotatedsamplesasguidance,therandomnessof
+samplingwilllargelyaffecttheselection. Inorder
+to obtain more consistent selection, we explore
+the usage of unlabeled data and lexicon-based
+annotationasaresourceforlabelwordsearching.
+This is a practical setting since unlabeled data of
+a target domain or a general domain is usually
+available,andforNER,theentitylexiconoftarget
+classesareusuallyeasytoaccess.
+Toobtainannotationviaentitylexicon,weadopt
+theKB-matchingapproachproposedbyLiangetal.
+(2020),whichleveragesanexternalKBs,wikidata,
+Steve John David Australia
+...
+PER
+(label) Germany
+...
+Steve Bush David Australia
+...
+Germany
+Discrete label words
+frequency
+✔
+frequency combine
+LOC
+(label)
+✔
+Continuous vectors
+as virtual label words
+PER LOC
+(label) (label)
+Figure3: Searchingfortwotypesoflabelwords: the
+discrete label words and the continuous vectors as
+virtual label words. To search for the discrete label
+words, we selectthe high-frequencywordsin dataor
+LMoutputdistribution,orcombinethesetwoways. To
+search for virtual label words, we calculate the mean
+vectors of the high-frequency words of each class as
+prototypes.
+asthesourceoflexiconannotation. Suchlexicon-
+basedannotationisinevitablynoisy. However,our
+approachdonotsuffersalotfromthenoisesince
+we only regarded it as an indication of the data
+distribution and do not train the model directly
+withthenoisyannotation.
+3.3.2 Labelwordsearching
+Withthehelpoflexicon-annotateddata =
+lexicon
+D (X ,Y ) N ,weexplorethreemethodsforlabel
+{ i i∗ }i=1
+wordsearching.
+Searchingwithdatadistribution(Datasearch)
+The most intuitive method is to select the most
+frequent word of the given class in the corpus.
+Specifically, when searching for label words for
+classC,wecalculatethefrequencyϕ(x = w,y =
+∗
+C)ofeachwordw labeledasC andselectthe
+∈ V
+mostfrequentwordsbyranking:
+(C) = argmaxϕ(x = w,y ∗ = C) (5)
+M w
+Searching with LM output distribution (LM
+search) In this approach, we leverage the pre-
+trained language model for label word searching.
+Specifically,wefeedeachsample(X,Y )intoLM
+∗
+and get the probability distribution p(xˆ = w X)
+i
+|
+of predicting each word w at each position
+∈ V
+j. Suppose (xˆ = w X,Y ) 0,1 isthe
+topk i ∗
+I | → { }
+5724
+Datasets Domain #Class #Train #Test 4.1 Experimentalsettings
+CoNLL’03 News 4 14.0k 3.5k AsmentionedinSection2,inthiswork,wefocus
+OntoNotes* General 11 60.0k 8.3k
+on few-shot setting that no source domain data
+MITMovie Review 12 7.8k 2.0k
+yetonlyK samplesofeachclassareavailablefor
+Table 1: Dataset details. OntoNotes* denotes trainingonanewNERtask. Tobetterevaluatethe
+the Ontonotes5.0 dataset after removing models’few-shotability,weconductexperiments
+value/numerical/time/dateentitytypes. with K 5,10,20,50 . For each K-shot
+∈ { }
+experiment,wesample3differenttrainingsetand
+indicatorfunctionindicatingwhetherw belongsto
+repeatexperimentsoneachtrainingsetfor4times.
+thetopk predictionsofx insample(X,Y ). The
+i ∗ Few-shotdatasampling. Differentfromsentence-
+labelwordofclassC canbeobtainedby:
+level few-shot tasks, in NER, a sample refers
+(C) = argmax
+to one entity span in a sentence. One sampled
+M w
+X sentence might include multiple entity instances.
+| |
+ϕ (xˆ = w,y = C) Inourexperiments,weconductanexactsampling
+topk i i∗
+strategy to ensure that we sample exactly K
+(X,XY∗) ∈DXi
+(6) samplesforeachclass. Thedetailsofthealgorithm
+where ϕ (xˆ = w,y = C) = (xˆ = canbefoundatAppendixA.2.
+topk i ∗ topk i
+I
+w X,Y ) (y = C)denotesthefrequencyofw
+oc|
+currin∗
+gi· nI
+thei∗
+topk predictionsofthepositions 4.2 DatasetsandImplementationDetails
+labeledasclassC. Weevaluatetheproposedmethodwiththreebench-
+Searching with both data & LM output distri- mark NER datasets from different domains: the
+bution (Data&LM seach) In this approach, we CoNLL2003dataset(SangandDeMeulder,2003)
+selectlabelwordsbysimultaneouslyconsidering fromthenewswiredomain,Ontonotes5.0dataset
+the data distribution and LM output distribution. (Weischedeletal.,2013)fromgeneraldomainand
+Specifically, the label word of class C can be theMIT-Moviedataset(Liuetal.,2013)1 fromthe
+obtainedby: review domain. As we focus on named entities,
+X
+| | weomitthevalue/numerical/time/dateentitytypes
+(C) = argmax ϕ(x = w,y = C)
+M w {
+i i∗ (e.g.,“Cardinal",“Money",etc)inOntoNotes5.0.
+(X,XY∗) ∈DXi DetailsofthedatasetsareshowninTable1.
+|X | Labelingmulti-spanentities. Forentitieswith
+ϕ (xˆ = w,y = C)
+·
+topk i i∗
+}
+multiple spans (including multiple words or sub-
+(X,XY∗) ∈DXi tokensaftertokenization),weletthemodelpredict
+(7)
+thesamelabelwordateachposition. Thislabeling
+methodisthesamewiththe“IO"labelingschema,
+3.3.3 Removingconflictlabelwords
+whichisconsistenttoourbaselineimplementation.
+The selected high-frequency label words are
+To ensure a few-shot scenario, we didn’t use
+potentially high-frequency words among all the
+a development set for model choosing. Instead,
+classes. Using such label words will result
+weusethemodelofthelastepochforpredicting.
+in conflicts when training for different classes.
+For lexicon-based annotation, we use the KB-
+Therefore, after label word selection, we remove
+matchingmethodofLiangetal.(2020)2. Formore
+theconflictlabelwordsofaclassC by:
+implementationdetails(e.g.,thelearningrate,etc.),
+ϕ(x = w,y = C) pleaserefertoAppendixA.1orourcodes.
+∗
+w = (C),if > Th
+M ϕ(x = w,y = k)
+k ∗
+(8) 4.3 BaselinesandProposedModels
+P
+whereThisamanuallysetthreshold. In our experiments, we compare our method
+withcompetitivebaselines,involvingbothmetric-
+4 Experiments
+learningbasedandprompt-basedapproaches.
+Inthissection,weconductfew-shotexperiments BERT-tagger(Devlinetal.,2019)TheBERT-
+toverifytheeffectivenessoftheproposedmethod. basedbaselinewhichfine-tunestheBERTmodel
+Wealsoconductsintensiveanalyticalexperiments 1https://groups.csail.mit.edu/sls/downloads/
+forlabelwordsselection. 2https://github.com/cliang1453/BOND
+5725
+Datasets Methods K=5 K=10 K=20 K=50
+BERT-tagger(IO) 41.87(12.12) 59.91(10.65) 68.66(5.13) 73.20(3.09)
+NNShot 42.31(8.92) 59.24(11.71) 66.89(6.09) 72.63(3.42)
+StructShot 45.82(10.30) 62.37(10.96) 69.51(6.46) 74.73(3.06)
+CoNLL03
+TemplateNER 43.04(6.15) 57.86(5.68) 66.38(6.09) 72.71(2.13)
+EntLM(Ours) 49.59(8.30) 64.79(3.86) 69.52(4.48) 73.66(2.06)
+EntLM+Struct(Ours) 51.32(7.67) 66.86(3.01) 71.23(3.91) 74.80(1.87)
+BERT-tagger(IO) 34.77(7.16) 54.47(8.31) 60.21(3.89) 68.37(1.72)
+NNShot 34.52(7.85) 55.57(9.20) 59.59(4.20) 68.27(1.54)
+StructShot 36.46(8.54) 57.15(5.84) 62.22(5.10) 68.31(5.72)
+OntoNotes5.0
+TemplateNER 40.52(8.62) 49.89(3.66) 59.53(2.25) 65.15(2.95)
+EntLM(Ours) 45.21(9.17) 57.64(4.18) 65.64(4.24) 71.77(1.31)
+EntLM+Struct(Ours) 46.60(10.35) 59.35(3.24) 67.91(4.55) 73.52(0.97)
+BERT-tagger(IO) 39.57(6.38) 50.60(7.29) 59.34(3.66) 71.33(3.04)
+NNShot 38.97(5.54) 50.47(6.09) 58.94(3.47) 71.17(2.85)
+StructShot 41.60(8.97) 53.19(5.52) 61.42(2.98) 72.07(6.41)
+MIT-Movie
+TemplateNER 45.97(3.86) 49.30(3.35) 59.09(0.35) 65.13(0.17)
+EntLM(Ours) 46.62(9.46) 57.31(3.72) 62.36(4.14) 71.93(1.68)
+EntLM+Struct(Ours) 49.15(8.91) 59.21(3.96) 63.85(3.7) 72.99(1.80)
+Table2: MainresultsofEntLMonthreedatasetsunderdifferentfew-shotsettings(K=5,10,20,50). Wereportmean
+(anddeviationinbrackets)performanceover3differentsplits(4repeatedexperimentsforeachsplit).
+withalabelclassifier. the table, we can observe that: (1) On all
+NNShot and StructShot (Yang and Katiyar, the three datasets, for all few-shot settings, the
+2020) Two metric-based few-shot learning ap- proposedmethodperformsconsistentlybetterthan
+proaches for NER. Different from Prototypical all the baseline methods, especially for 5-shot
+Network, they leverage a a nearest neighbor learning. Also, the performance of the proposed
+classifier for few-shot prediction. StructShot is methodismorestable(accordingtothedeviation)
+anextensionofNNShotwhichproposesaviterbi than the compared baselines. (2) BERT-tagger
+algorithm during decoding. We extend these method shows poor ability of few-shot learning,
+two approaches to our few-shot setting. Noted and the proposed method achieves up to 9.45%,
+that the viterbi algorithm in the original paper 11.83%, 9.58% improvement over BERT-tagger
+calculatesthedatadistributionofasourcedomain, on CoNLL03, OntoNotes 5.0 and MIT-Movie,
+yetinoursetting,thesourcedomainisunavailable. respectively. These results show the advantages
+Therefore,wealsousethelexicon-annotateddata oftheproposedmethodoverstandardfine-tuning,
+forperformingthismethod. which introduces no new parameters and uses
+TemplateNER (Cui et al., 2021) A template- an LM-like objective to reduce the gap between
+basedpromptmethod. Byconstructingatemplate pre-training and fine-tuning. (3) The proposed
+foreachclass,itquerieseachspanwitheachclass method consistently outperforms the template-
+separately. The score of each query is obtained based prompt method, Template NER, which
+bycalculatingthegeneralizationprobabilityofthe showstheadvantageoftheproposedmethodover
+query sentence through a generative pre-trained standardtemplate-basedmethod. (4)Whennorich-
+LM,BART(Lewisetal.,2020). resource source domain is available, the metric-
+EntLMTheproposedmethod. basedmethods(NNShot)donotshowadvantages
+EntLM+StructBasedontheproposedmethod, over BERT-tagger, which shows the limitation
+wefurtherleveragestheviterbialgorithmproposed of these method under more practical few-shot
+in (Yang and Katiyar, 2020) to boost the scenarios. (5)Amongallbaselines,theStructShot
+performance. Formoredetailspleasereferto(Yang isacompetitivebaselinethatalsoleverageslexicon
+andKatiyar,2020)orourcodes. and unlabeled data for structure-based decoder,
+In Appendix A.5, we also compare with the yet our method can also benefit from the viterbi
+roberta-basebaselinesfrom(Huangetal.,2020). decoderandoutperformStructShot.
+4.4 Few-shotResults 4.5 EfficiencyStudy
+Table 2 show the results of the proposed method Inthissection,weperformanefficiencystudyon
+and baselines under few-shot setting. From all the three datasets. We calculate the decoding
+5726
+CoNLL03 OntoNotes MIT-Movie
+Methods
+K=5 K=10 K=5 K=10 K=5 K=10
+DataSearch 50.00(9.75) 61.31(4.73) 36.94(5.04) 49.54(5.02) 39.25(4.83) 51.65(5.52)
+LMSearch 48.40(6.81) 59.39(5.50) 36.98(6.71) 48.20(5.46) 39.12(4.18) 48.30(3.76)
+Data&LMSeach 49.55(7.76) 61.00(6.98) 36.60(7.90) 50.64(6.12) 38.86(11.43) 50.42(6.45)
+Data+Virtual 49.25(4.96) 63.40(5.13) 45.61(10.51) 55.13(4.95) 45.59(8.25) 55.10(4.42)
+LM+Virtual 42.65(12.58) 59.39(5.50) 45.29(7.77) 54.50(3.66) 46.23(5.60) 54.92(6.15)
+Data&LM+Virtual 49.59(8.30) 64.79(3.86) 45.21(9.17) 57.64(4.18) 46.62(9.46) 57.31(3.72)
+Table3: Comparisonofourlabelwordselectionmethods. Wereportmean(andstandarddeviation)performance.
+Methods CoNLL OntoNotes MIT-Movie
+46
+BERT-tagger 8.57 23.89 6.46
+44
+TemplateNER 6,491.00 50,241.00 5254.00
+NNShot 16.03 82.62 15.98 42
+StructShot 19.84 98.67 17.66 40
+EntLM 9.26 26.03 6.64
+38
+EntLM+Struct 13.40 34.92 7.38
+36
+34
+Table4: Thedecodingtime(s)ofdifferentmethods. 510 20 40 60 80 100
+Lexicon size (%)
+timeofeachmethodonaTiTanXPGPUwithbatch
+size=8. (ThesourcecodesofTemplateNERdonot
+allowustochangethebatchsize,sowekeepthe
+original batch size=45, which is the enumeration
+number of a 9-gram span. ) From Tab.4, we can
+observe that: 1) EntLM can achieve comparable
+speed with BERT-tagger, as only one pass of
+tokenclassificationisrequiredfordecodingeach
+batch. 2)ThedecodingspeedofTemplateNERis
+severelyslow,whileEntLMisupto1930.12times
+fasterthanTemplateNER.Theseresultsshowthe
+advantagesofEntLMovertemplate-basedprompt
+tuningmethodsinNERtask.
+4.6 LabelWordSelection
+In Sec.3.3, we have presented different ways for
+label word selection. In this section, we conduct
+experimentsonthesemethodsandtheresultsare
+reported in table 3. We can observe that: 1)
+The virtual word selection approach is always
+better than the discrete word selection. While
+amongallvirtualselectionmethods,choosinghigh-
+frequency words with the combination of data
+andLMdistributionshowsadvantagesoverother
+methods. Thereasonoftheseresultsmightbethat
+simultaneouslyconsideringbothdatadistribution
+gives not only the data prior in the target dataset,
+but also the contextualized information from
+the PLM, thus benefiting the performance. 2)
+SearchingonlywithLMdistributionleadstopoor
+results especially under 5-shot setting, showing
+that the general knowledge learned from pre-
+trainedmightbelesshelpfulthanthedata-specific
+knowledgeunderfew-shotsettings.
+erocs-1F
+F1 score against lexicon size
+EntLM+Stuct(Data&LM+Virtual)
+EntLM(Data&LM+Virtual)
+EntLM+Stuct(Data&LM)
+EntLM(Data&LM) SturctShot
+NNShot
+Bert-tagger
+Figure4: Impactofdifferentlexiconsizes.
+4.6.1 ImpactofLexiconQualityonLabel
+WordSelection
+Notethatweleverageunlabeleddataandlexicon
+annotation for label word selection. In this
+experiment, we study how the quality of lexicon
+impacts the performance on the OntoNotes*
+dataset. Specifically, we obtain different sizes of
+lexicon (5% to 80% of the original lexicon size)
+by sampling entity words in the original lexicon
+withtheweightsofentityfrequency. Thissampling
+methodfollowsthereal-worldsituationsincehigh-
+frequencyentitiesareeasiertoobtain. Fig.4shows
+theresultsofEntLMandbaselinemethodsagainst
+lexiconsize. Wecanobservethat: (1)EntLMwith
+theData&LM+Virtualselectionmethodillustrates
+consistenthighperformanceevenwith5%lexicon.
+This means our method is not limited to the
+lexiconquality,andweonlyrequireasmalllexicon
+to reach acceptable few-shot performance. (2)
+Compared with Data&LM+Virtual method, the
+Data&LM is much more fragile regarding the
+lexicon quality. However, it still performs better
+thanthecomparedbaselines.
+We further conduct experiments on different
+sizes of the unlabeled dataset by uniformly
+sampling5%-80%oftheoriginaldata. Asshown
+in Fig.5, the proposed method also shows high
+robustnesstotheamountofunlabeleddata.
+4.7 EffectofFurtherPre-training
+Whenpredictinglabelwordsontask-specificdata
+duringfine-tuning,thereisanintrinsicgapbetween
+5727
+48
+46
+44
+42
+40
+38
+36
+34
+510 20 40 60 80 100
+Dataset size (%)
+erocs-1F
+F1 score against dataset size have explore continuous prompts for both text
+classification and generation tasks Li and Liang
+EntLM+Stuct(Data&LM+Virtual) (2021);Liuetal.(2021);Hanetal.(2021). Also,
+EntLM(Data&LM+Virtual)
+EntLM+Stuct(Data&LM)
+E Sn tutL rcM tS(D ha ot ta&LM) several approaches are proposed to enhance the
+NNShot
+Bert-tagger
+templates with illustrative cases (Madotto et al.,
+2020; Gao et al., 2021; Brown et al., 2020) or
+context(Petronietal.,2020). Althoughtemplate-
+basedmethodsareprovedtobeusefulinsentence-
+level tasks, for NER task (Cui et al., 2021),
+Figure5: Impactoftheamountofunlabeleddata.
+suchtemplate-basedmethodcanbeexpensivefor
+CoNLL03 decoding. Therefore, in this work, we propose a
+Methods
+K=5 K=10
+newparadigmofprompt-tuningforNERwithout
+BERT-tagger 41.87(12.12) 59.91(10.65) templates.
+EntLM 49.59(8.30) 64.79(3.86)
+EntLM+Struct 51.32(7.67) 66.86(3.01)
+BERT-tagger(further) 41.16(10.41) 61.70(5.15) 5.2 Few-shotNER
+EntLM(further) 56.82(12.27) 66.82(4.65)
+EntLM+Struct(further) 58.77(12.16) 68.96(4.41) Recently,manystudiesfocusesonfew-shotNER
+(Hofer et al., 2018; Fritzler et al., 2019; Li et al.,
+Table5: Impactoffurtherpre-training.
+2020;Dingetal.,2021;Chenetal.,2021). Among
+these,Fritzleretal.(2019)leveragesprototypical
+the LM output distribution and the target data
+networks for few-shot NER. Yang and Katiyar
+distribution. Therefore, it is natural to conduct a
+(2020) propose to calculate the nearest neighbor
+furtherpre-trainingapproachonthetarget-domain
+of each queried sample instead of the nearest
+unlabeleddatatoboosttheLMpredictionstowards
+prototype. Huang et al. (2021) experimented
+target distribution. In Table 5, we show the
+comprehensive baselines on different datasets.
+results of our method and BERT-tagger trained
+Tongetal.(2021)proposestominetheundefined
+afterfurtherpre-trainingwithMLMobjectiveon
+classes for few-shot learning. Cui et al. (2021)
+domain-specific unlabeled data. As seen, the
+leverages prompts for few-shot NER. However,
+furtherpre-trainingpracticecanlargelyboostthe
+mostofthesestudiesfollowthemannerofepisode
+few-shotlearningabilityofEntLM,whileshowing
+trainingorassumearich-resourcesourcedomain.
+lesshelpfulforclassifier-basedfine-tuningmethod.
+Inthiswork,wefollowthemorepracticalfew-shot
+This might because the LM objective used in
+setting of Gao et al. (2021), which assumes only
+EntLMcanbenefitmorefromatask-specificLM
+fewsampleseachclassfortraining. Wealsoadapt
+output distribution, showing the superiority of
+previous methods to this setting as competitive
+EntLMinbetterleveragingthepre-trainedmodels.
+baselines.
+5 RelatedWorks
+6 Conclution
+5.1 Template-basedpromptlearning
+In this work, we propose a template-free prompt
+StemfromtheGPTmodels(Radfordetal.,2019; tuning method, EntLM, for few-shot NER.
+Brown et al., 2020), prompt-based learning have Specifically, we reformulate the NER task as a
+beenwidelydiscussed. Thesemethodsreformulate Entity-oriented LM task, which induce the LM
+downstream tasks as cloze tasks with textual to predict label words at entity positions during
+templatesandasetoflabelwords,andthedesign fine-tuning. Inthisway,notonlythecomplicated
+oftemplatesisprovedtobesignificantforprompt- template-basedmethodscanbediscarded,butalso
+based learning. Schick and Schütze (2021a,b) the few-shot performance can be boosted since
+usesmanuallydefinedtemplatesforpromptingtext theEntLMobjectivereducesthegapbetweenpre-
+classification tasks. Jiang et al. (2020) proposes trainingandfine-tuning. Experimentalresultsshow
+a mining approach for automatically search for that the proposed method can achieve significant
+templates. Shinetal.(2020)searchesforoptimal improvementonfew-shotNERoverBERT-tagger
+discrete templates by a gradient-based approach. and template-based method. Also, the decoding
+(Gaoetal.,2021)generatestemplateswiththeT5 speedofEntLMisupto1930.12timesfasterthan
+pre-trainedmodel. Meanwhile,severalapproaches thetemplate-basedmethod.
+5728
+Acknowledgements Tianyu Gao, Adam Fisch, and Danqi Chen. 2021.
+Makingpre-trainedlanguagemodelsbetterfew-shot
+Theauthorswishtothanktheanonymousreviewers learners. InProceedingsofthe59thAnnualMeeting
+fortheirhelpfulcomments. Thisworkwaspartially of the Association for Computational Linguistics
+and the 11th International Joint Conference on
+funded by National Natural Science Foundation
+Natural Language Processing (Volume 1: Long
+of China (No. 61976056, 62076069), Shanghai
+Papers),pages3816–3830,Online.Associationfor
+MunicipalScienceandTechnologyMajorProject ComputationalLinguistics.
+(No.2021SHZDZX0103).
+Xu Han, Weilin Zhao, Ning Ding, Zhiyuan Liu, and
+MaosongSun.2021. Ptr: Prompttuningwithrules
+fortextclassification.
+References
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie MaximilianHofer,AndreyKormilitzin,PaulGoldberg,
+Subbiah, Jared D Kaplan, Prafulla Dhariwal, andAlejoNevado-Holgado.2018. Few-shotlearning
+Arvind Neelakantan, Pranav Shyam, Girish Sastry, fornamedentityrecognitioninmedicaltext.
+Amanda Askell, Sandhini Agarwal, Ariel Herbert-
+JiaxinHuang,ChunyuanLi,KrishanSubudhi,Damien
+Voss, Gretchen Krueger, Tom Henighan, Rewon
+Jose,ShobanaBalakrishnan,WeizhuChen,Baolin
+Child,AdityaRamesh,DanielZiegler,JeffreyWu,
+Peng,JianfengGao,andJiaweiHan.2020. Few-shot
+Clemens Winter, Chris Hesse, Mark Chen, Eric
+namedentityrecognition: Acomprehensivestudy.
+Sigler,MateuszLitwin,ScottGray,BenjaminChess,
+Jack Clark, Christopher Berner, Sam McCandlish,
+JiaxinHuang,ChunyuanLi,KrishanSubudhi,Damien
+Alec Radford, Ilya Sutskever, and Dario Amodei.
+Jose,ShobanaBalakrishnan,WeizhuChen,Baolin
+2020. Language models are few-shot learners. In
+Peng, Jianfeng Gao, and Jiawei Han. 2021. Few-
+AdvancesinNeuralInformationProcessingSystems,
+shotnamedentityrecognition: Anempiricalbaseline
+volume 33, pages 1877–1901. Curran Associates,
+study. In Proceedings of the 2021 Conference on
+Inc.
+EmpiricalMethodsinNaturalLanguageProcessing,
+XiangChen,NingyuZhang,LeiLi,XinXie,Shumin pages 10408–10423, Online and Punta Cana,
+Deng,ChuanqiTan,FeiHuang,LuoSi,andHuajun DominicanRepublic.AssociationforComputational
+Chen. 2021. Lightner: A lightweight generative Linguistics.
+framework with prompt-guided attention for low-
+ZhengbaoJiang,FrankF.Xu,JunAraki,andGraham
+resourcener. arXivpreprintarXiv:2109.00720.
+Neubig. 2020. How can we know what language
+Leyang Cui, Yu Wu, Jian Liu, Sen Yang, and modelsknow? TransactionsoftheAssociationfor
+Yue Zhang. 2021. Template-based named entity ComputationalLinguistics,8:423–438.
+recognition using BART. In Findings of the
+Mike Lewis, Yinhan Liu, Naman Goyal, Marjan
+Association for Computational Linguistics: ACL-
+Ghazvininejad,AbdelrahmanMohamed,OmerLevy,
+IJCNLP2021,pages1835–1845,Online.Association
+Veselin Stoyanov, and Luke Zettlemoyer. 2020.
+forComputationalLinguistics.
+BART:Denoisingsequence-to-sequencepre-training
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and for natural language generation, translation, and
+Kristina Toutanova. 2019. BERT: Pre-training comprehension. InProceedingsofthe58thAnnual
+of deep bidirectional transformers for language Meeting of the Association for Computational
+understanding. In Proceedings of the 2019 Linguistics,pages7871–7880,Online.Association
+Conference of the North American Chapter of the forComputationalLinguistics.
+AssociationforComputationalLinguistics: Human
+LanguageTechnologies,Volume1(LongandShort Jing Li, Billy Chiu, Shanshan Feng, and Hao Wang.
+Papers),pages4171–4186,Minneapolis,Minnesota. 2020. Few-shotnamedentityrecognitionviameta-
+AssociationforComputationalLinguistics. learning. IEEETransactionsonKnowledgeandData
+Engineering,pages1–1.
+Ning Ding, Guangwei Xu, Yulin Chen, Xiaobin
+Wang, Xu Han, Pengjun Xie, Haitao Zheng, and Xiang Lisa Li and Percy Liang. 2021. Prefix-tuning:
+Zhiyuan Liu. 2021. Few-NERD: A few-shot Optimizing continuous prompts for generation.
+named entity recognition dataset. In Proceedings In Proceedings of the 59th Annual Meeting of
+of the 59th Annual Meeting of the Association for the Association for Computational Linguistics
+ComputationalLinguisticsandthe11thInternational and the 11th International Joint Conference on
+JointConferenceonNaturalLanguageProcessing Natural Language Processing (Volume 1: Long
+(Volume1: LongPapers),pages3198–3213,Online. Papers),pages4582–4597,Online.Associationfor
+AssociationforComputationalLinguistics. ComputationalLinguistics.
+Alexander Fritzler, Varvara Logacheva, and Maksim Chen Liang, Yue Yu, Haoming Jiang, Siawpeng
+Kretov. 2019. Few-shot classification in named Er, Ruijia Wang, Tuo Zhao, and Chao Zhang.
+entity recognition task. Proceedings of the 34th 2020. BOND:BERT-AssistedOpen-DomainNamed
+ACM/SIGAPPSymposiumonAppliedComputing. Entity Recognition with Distant Supervision, page
+5729
+1054–1064.AssociationforComputingMachinery, the 59th Annual Meeting of the Association for
+NewYork,NY,USA. ComputationalLinguisticsandthe11thInternational
+JointConferenceonNaturalLanguageProcessing
+Jingjing Liu, Panupong Pasupat, Yining Wang, Scott (Volume1: LongPapers),pages6236–6247,Online.
+Cyphers,andJimGlass.2013. Queryunderstanding AssociationforComputationalLinguistics.
+enhancedbyhierarchicalparsingstructures. In2013
+IEEE Workshop on Automatic Speech Recognition Ralph Weischedel, Martha Palmer, Mitchell Marcus,
+andUnderstanding,pages72–77.IEEE. Eduard Hovy, Sameer Pradhan, Lance Ramshaw,
+NianwenXue,AnnTaylor,JeffKaufman,Michelle
+Xiao Liu, Yanan Zheng, Zhengxiao Du, Ming Ding, Franchini, et al. 2013. Ontonotes release 5.0
+YujieQian, ZhilinYang, andJieTang.2021. GPT ldc2013t19. LinguisticDataConsortium,Philadel-
+understands,too. CoRR,abs/2103.10385. phia,PA,23.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, YiYangandArzooKatiyar.2020. Simpleandeffective
+Mandar Joshi, Danqi Chen, Omer Levy, Mike few-shot named entity recognition with structured
+Lewis, Luke Zettlemoyer, and Veselin Stoyanov. nearest neighbor learning. In Proceedings of the
+2019. Roberta:Arobustlyoptimizedbertpretraining 2020ConferenceonEmpiricalMethodsinNatural
+approach. arXivpreprintarXiv:1907.11692. LanguageProcessing(EMNLP),pages6365–6375,
+Online.AssociationforComputationalLinguistics.
+AndreaMadotto,ZihanLiu,ZhaojiangLin,andPascale
+Fung.2020. Languagemodelsasfew-shotlearner
+fortask-orienteddialoguesystems.
+FabioPetroni,PatrickLewis,AleksandraPiktus,Tim
+Rocktäschel, Yuxiang Wu, Alexander H. Miller,
+and Sebastian Riedel. 2020. How context affects
+languagemodels’factualpredictions. InAutomated
+KnowledgeBaseConstruction.
+Alec Radford, Jeff Wu, Rewon Child, David Luan,
+DarioAmodei,andIlyaSutskever.2019. Language
+modelsareunsupervisedmultitasklearners.
+ErikFSangandFienDeMeulder.2003. Introduction
+totheconll-2003sharedtask:Language-independent
+namedentityrecognition. arXivpreprintcs/0306050.
+TimoSchickandHinrichSchütze.2021a. Exploiting
+cloze-questionsforfew-shottextclassificationand
+natural language inference. In Proceedings of the
+16th Conference of the European Chapter of the
+Association for Computational Linguistics: Main
+Volume, pages 255–269, Online. Association for
+ComputationalLinguistics.
+TimoSchickandHinrichSchütze.2021b. It’snotjust
+sizethatmatters:Smalllanguagemodelsarealsofew-
+shotlearners. InProceedingsofthe2021Conference
+of the North American Chapter of the Association
+for Computational Linguistics: Human Language
+Technologies,pages2339–2352,Online.Association
+forComputationalLinguistics.
+Taylor Shin, Yasaman Razeghi, Robert L. Logan IV,
+EricWallace,andSameerSingh.2020. AutoPrompt:
+Eliciting Knowledge from Language Models with
+AutomaticallyGeneratedPrompts. InProceedings
+of the 2020 Conference on Empirical Methods
+in Natural Language Processing (EMNLP), pages
+4222–4235,Online.AssociationforComputational
+Linguistics.
+MeihanTong,ShuaiWang,BinXu,YixinCao,Minghui
+Liu, Lei Hou, and Juanzi Li. 2021. Learning
+frommiscellaneousother-classwordsforfew-shot
+named entity recognition. In Proceedings of
+5730
+A Appendix
+46
+A.1 ImplementationDetails
+44
+We implement our method based on the hug-
+42
+gingface transformers3. For all our experiments
+40
+except TemplateNER, we use “bert-base-cased"
+38
+pre-trained model as the base model for fine-
+36
+tuning,andnonewparametersareintroducedinthe
+0.0 0.2 0.4 0.6 0.8
+proposedmethod. Forbothbert-basebaselinesand Conflict threshold
+our method, we set learning rate=1e-4 and batch
+size=4forfew-shottraining. Forallexperiments,
+we train the model for 20 epochs, and AdamW
+optimizer is used with the same linear decaying
+schedule as the pre-training stage. These hyper-
+parameter settings are as the same with (Huang
+etal.,2021). Forotherhyper-parametersettingsof
+thebaselinemethods,wesimplyfollowthedefault
+settings. When implementing all methods, we
+adopt the “IO" labeling schema since we found
+thatthe“IO"schemaisbetterthan“BIO"schema
+underfew-shotsetting.
+As for label word selection, we use the
+Data&LMseachingalongwiththevirtualmethod
+(Data&LM+Virtual) for all dataset and set the
+conflict ratio to Th = 0.6. When selecting the
+topk high-frequencywordsforvirtualmethod,we
+setkto6.
+A.2 SamplingAlgorithm
+Weconductanexactsamplingalgorithmtoensure
+samplingexactlyK samplesforeachclass,which
+isdifferentfromthegreedysamplingmethodused
+inpreviousmethods(YangandKatiyar,2020). The
+algorithm is detailed in Algorithm 1. For all of
+thethreedatasetsweused,weexactlyobtainedK
+samplesforeachclassunderalltheK-shotsetting.
+A.3 EffectofConflictthreshold
+Fig. 6 shows the impact of conflict threshold on
+5-shotperformance. Asseen,forData&LMSearch,
+lower conflict threshold results in improper label
+words that bring noisy annotated entities. There-
+fore, the performance promoting as the conflict
+threshold increasing. As for Data&LM+Virtual
+method, the impact of conflict words are less
+significant since multiple words are selected to
+constructthevirtualvector.
+A.4 Effectofk invirtualmethod
+Fig.7 shows the impact of the choice of top
+k number for virtual method. We conduct
+3https://github.com/huggingface/transformers
+erocs-1F
+Data&LM+Virtual(OntoNotes)
+Data&LM(OntoNotes)
+Figure6: Impactoftheconflictthreshold.
+52
+51
+50
+49
+48
+2 3 4 5 6 7
+Top k number for virtual method
+erocs-1F
+EntLM+Struct(CoNLL)
+EntLM(CoNLL)
+Figure7:Effectofthechoiceoftopknumberforvirtual
+method.
+experiments using the Data&LMSearch+Virtual
+method on CoNLL 5-shot dataset. We can see
+that the performance of the proposed method is
+robusttothechoiceofk,sinceitcanconsistently
+achieve good results when k >= 3. In our main
+experiments, we simply choose k = 6 for all
+datasets.
+A.5 ComparisonwithComprehensive
+few-shotNERbenchmark
+We also conduct experiments on the few-shot
+benchmark provided by (Huang et al., 2021), in
+ordertocomparewiththecompetitivebaselinesin
+the paper. These methods are implemented with
+the “Roberta-base" pretrained model. Therefore,
+wealsoimplementourmethodbasedon“Roberta-
+base" for fair comparison. Since the sampled
+data of OntoNotes is not available, we only
+experimented on the CoNLL’03 and MIT-Movie
+datasets. TheresultsareshowninTable6.
+Theresultsshowthat,ourmethodoutperforms
+over all baselines. Notice that the NSP method
+leverages the 6.8GB WiFiNE dataset for pre-
+training, and that the ST method performs self-
+training on the unlabeled data. However, our
+methodstillshowsbetterresults,whichillustrates
+the effectiveness of the proposed objective over
+standard fine-tuning. Also, the proposed method
+canbefurtherboostedwithNSPandST.Weleave
+5731
+Methods CoNLL MIT-Movie
+5-shot 5-shot
+LC 53.5 51.3
+LC+NSP 61.4 53.1 Algorithm1Few-shotSampling
+Proto 58.4 38.0
+Proto+NSP 60.9 43.8 Require: #ofshotK,labeledtrainingsetDwithalabelset
+LC+ST 56.7 54.1 .
+LC+NSP+ST 65.4 55.9 1: Y S ϕ//Initializethesupportset
+EntLM 68.6 55.2 ←
+2: foreachclassi do
+EntLM(Struct) 69.9 57.1 ∈Y
+3: Count[i] 0 // Initialize the counts of each entity
+←
+class
+Table 6: Comparison with the methods presented in 4: endfor
+(Huangetal.,2021). LCislinearclassifierfine-tuning 5: ShuffleD
+method. Pisprototype-basedtrainingusinganearest 6: for(X,Y) Ddo
+∈
+7: Add True
+neighbor objective. NSP is noising supervised pre- ←
+8: fori do
+trainingandSTisself-training. Noticethatourmethod ∈Y
+9: CalculateTemp_count[i]//Calculatethemention
+showsbetterresultsevenwithoutNSPandST,andcan numberofclassiin(X,Y)
+alsobefurtherboostedbythesetwomethods. 10: ifCount[i]+Temp_count[i]>Kthen
+11: Add False // Skip current sample that
+←
+violatestheK-shotrule
+thisforfutureworks.
+12: endif
+13: endfor
+A.6 CaseStudy 14: ifAddisTruethen
+15: S S (X,Y)
+InTable7,weshowthelabelwordsselectedwith ← ∪{ }
+16: Update Count[i] Count[i]+Temp_count[i]
+{ ← }
+theData&LM+Virtualmethodasexamples. i
+∀ ∈Y
+17: endif
+18: ifCount[i]==K, i then
+∀ ∈Y
+19: break//Finishsampling
+20: endif
+21: endfor
+22: return
+S
+Datasets Labelwords(Data&LM+VirtualSearch)
+{"I-PER":["Michael","John","David","Thomas","Martin","Paul"],"I-ORG":["Corp","Inc",
+CoNLL’03 "Commission","Union","Bank","Party"],"I-LOC":["England","Germany","Australia","France",
+"Russia","Italy"],"I-MISC":["Palestinians","Russian","Chinese","Russians","English","Olympic"]}
+{"I-EVENT":["War","Games","Katrina","Year","Hurricane","II"],"I-FAC":["Airport","Bridge",
+"Base","Memorial","Canal","Guantanamo"],"I-GPE":["US","China","United","Beijing",
+"Israel","Taiwan"],"I-LANGUAGE":["Mandarin","Streetspeak","Romance","Ogilvyspeak",
+"Pentagonese","Pilipino"],"I-LAW":["Chapter","Constitution","Code","Amendment","Protocol",
+OntoNotes*
+"RICO"],"I-LOC":["Middle","River","Sea","Ocean","Mars","Mountains"],"I-NORP":["Chinese",
+"Israeli","Palestinians","American","Japanese","Palestinian"],"I-ORG":["National","Corp","News",
+"Inc","Senate","Court"],"I-PERSON":["John","David","Peter","Michael","Robert","James"],
+"I-PRODUCT":["USS","Discovery","Cole","Atlantis","Coke","Galileo"],
+"I-WORK_OF_ART":["Prize","Nobel","Late","Morning","PhD","Edition"]}
+{"I-ACTOR":["al","jack","bill","pat","der","mac"],"I-CHARACTER":["solo"],
+"I-DIRECTOR":["de","del","stone","marks","bell","dick"],"I-GENRE":["fantasy","adventure",
+"romance","comedy","action","thriller"],"I-PLOT":["murder","death","vampires","aliens",
+MIT-Movie "zombies","suicide"],"I-RATING":["13"],"I-RATINGS_AVERAGE":["very","nine","well",
+"highly","really","popular"],"I-REVIEW":["comments","regarded","opinions","positive"],
+"I-SONG":["heart","favourite","loves"],"I-TITLE":["man","woman","night","story","men",
+"dark"],"I-TRAILER":["trailers","trailer","preview","glimpse","clips"],
+"I-YEAR":["last","past","years","decades","ten","three"]}
+Table7: LabelwordsobtainedbyData&LM+VirtualSearchmethod. Thenumberoflabelwordsforeachclass
+mightbelessthank =6ifthewordscannotmeettheconflictthresholdTh=0.6.
+5732

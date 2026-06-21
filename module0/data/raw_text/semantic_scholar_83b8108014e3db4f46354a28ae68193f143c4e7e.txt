@@ -1,0 +1,914 @@
+Structured Pruning of Large Language Models
+ZihengWang* JeremyWohlwend* TaoLei*
+ASAPP,Inc. ASAPP,Inc. ASAPP,Inc.
+zihengw@stanford.edu jwohlwend@csail.mit.edu tao@asapp.com
+Abstract areprogressivelyremoved,resultinginsparsema-
+trices across the network. Earlier work focuses
+Largelanguagemodelshaverecentlyachieved
+mostlyonunstructuredpruning,whereweightsare
+state of the art performance across a wide va-
+prunedindividually(Narangetal.,2017a;Zhuand
+riety of natural language tasks. Meanwhile,
+Gupta, 2017). While this method is effective, it
+thesizeofthesemodelsandtheirlatencyhave
+resultsinunstructuredsparsematricesthataredif-
+significantly increased, which makes their us-
+age costly, and raises an interesting question: ficulttosupportoncommonhardware(Hanetal.,
+do language models need to be large? We 2016),makingitchallengingtoobtaintrainingand
+study this question through the lens of model inferencespeedupsdespiteasignificantreduction
+compression. We present a generic, struc-
+inmodelsize.
+tured pruning approach by parameterizing
+Ontheotherhand,structuredpruningimposes
+each weight matrix using its low-rank factor-
+structuredsparsepatternsbyremovinggroupsof
+ization, and adaptively removing rank-1 com-
+ponents during training. On language model- consecutiveparameters,suchasrows,columnsor
+ingtasks,ourstructuredapproachoutperforms k×ksub-blocksoftheweightmatrix(Narangetal.,
+other unstructured and block-structured prun- 2017b;Wenetal.,2018;Caoetal.,2019). These
+ing baselines at various compression levels, methods lead to significant speedup, but tend to
+while achieving significant speedups during
+givelowerperformancethanunstructuredpruning
+both training and inference. We also demon-
+giventhesameparameterbudget(Yaoetal.,2019).
+strate that our method can be applied to prun-
+ing adaptive word embeddings in large lan- Anothercaveatisthatsomeofthesemethodsre-
+guagemodels,andtopruningtheBERTmodel quirespeciallinearalgebraimplementations(Gray
+on several downstream fine-tuning classifica- et al., 2017; Yao et al., 2019) or hardware (Cao
+tionbenchmarks.1
+et al., 2019) in order to accelerate matrix multi-
+plication,thereforelimitingtheirapplicationtoa
+1 Introduction
+broadsetofexistingmodels.
+Recent advances in language modeling have led Weproposeageneric,improvedstructuredprun-
+toremarkableimprovementsonavarietyofnatu- ingapproachbasedonadaptivelow-rankfactoriza-
+rallanguagetasks(DaiandLe,2015;Petersetal., tion. Asanalternativetounstructuredsparseand
+2018;Radfordetal.,2018;Devlinetal.,2019;Liu block sparse representations, low-rank factoriza-
+et al., 2019; Dai et al., 2019; Zhang et al., 2019). tionretainsthefulldensestructureofweightmatri-
+Thesemodels,however,havegrownincreasingly ces,eliminatingtheneedforspeciallinearalgebra
+large,renderingthemslowandexpensiveforreal- primitivesandhardwareforcomputationspeedup.
+worldapplications. Throughtheuseofmodelcom- Comparedtorow(andcolumn)basedpruning,low-
+pression, we aim to reduce this overhead, and to rankfactorizationbetterpreservesthelineartrans-
+better understand the role of model capacity in formationoftheun-compressedmatrices. During
+largelanguagemodels. training,ourmethodadaptivelylearnswhichlow-
+A common approach to model compression is rank components to remove in order to achieve
+known as weight pruning (Zhu and Gupta, 2017; a strong performance-compression trade-off. We
+Hanetal.,2015a;Seeetal.,2016). Modelweights showthatasimplemagnitudebasedpruningstrat-
+egy is sufficient to accomplish strong results. In
+*Denotesequalcontribution.
+addition, we further increase performance via an
+1Ourcodeispubliclyavailableathttps://github.
+com/asappresearch/flop. improved l 0 regularization (Louizos et al., 2018)
+1202
+raM
+82
+]LC.sc[
+2v23740.0191:viXra
+technique which uses an augmented Lagrangian guagemodels(Graveetal.,2017;BaevskiandAuli,
+method to directly control the final compression 2019;Lietal.,2018;Varianietal.,2019),andcom-
+levelofthemodel. Ourmethod,whichwereferto pressingBERTmodelsviadistillation(Chiaetal.,
+as FLOP (Factorized Low-rank Pruning) applies 2019;Jiaoetal.,2019;Sanhetal.,2019;Sunetal.,
+toanymatrixmultiplication. 2019;Tsaietal.,2019;Turcetal.,2019). Onlyone
+Pruning large language models introduces ofthecompressiontechniquessuchasdistillation
+uniquechallengeswiththehandlingoflargeinput hasbeenusedintheseworksforsimplicity. How-
+andoutputlayers. Althoughourmethodisgeneric, ever,thesetechniquescanbecombinedtoachieve
+itisparticularlywellsuitedtothistask. Inparticu- greatercompression(Hanetal.,2015a;Shangguan
+lar,weshowthatFLOPcandynamicallylearnthe et al., 2019). Our pruning method is compatible
+embeddingdimensionsofdifferentwordclusters, withquantizationanddistillation, asitcanbeap-
+effectivelyextendingtheideaofadaptiveembed- plied to compress any matrix multiplication in a
+dings and softmax (Grave et al., 2017; Baevski network.
+and Auli, 2019). Since these embedding layers Previousworkhasconsidereddifferentweight
+takeasignificantamountofparametersinthelan- pruningapproachessuchasunstructuredpruning
+guagemodels,learningflexibledimensionsinstead basedonmagnitude(Narangetal.,2017a;Frankle
+ofspecifyingthemmanuallyresultsinamoreop- andCarbin,2019),dropout(Galeetal.,2019;Fan
+timal trade-off between parameter reduction and etal.,2020;Molchanovetal.,2017),andstructured
+performance. pruning (Wen et al., 2018; Louizos et al., 2017).
+Weevaluateourmethodoncommonlanguage Model weights are often removed via threshold-
+modelingandlanguageunderstandingtasksinclud- ing and l 1 regularization during the pruning pro-
+ingtheWiki-103,Enwiki8andGLUEbenchmarks, cess(Narangetal.,2017b;Liuetal.,2018). Our
+and by testing our method on both recurrent net- methoddiffersfrompreviousworkbyusinglow-
+worksandTransformer(Vaswanietal.,2017). rank parameterization for compression. Further-
+Ourresultsdemonstratethatfactorizationbased more, we extend l 0 regularization using an aug-
+pruningsignificantlyoutperformsblock-structured mentedLagrangianoptimizationmethodtocontrol
+pruningandevensurpassesunstructuredpruning, thefinalmodelsize.
+whileusingourimprovedl regularizationfurther
+0
+3 Background
+improves the performance in most cases. When
+pruning a large word-level language model with
+Weformalizethetaskofmodelpruningasanend-
+adaptive embeddings for example, our method
+to-endlearningproblemwithl regularization,fol-
+achieves 50% compression while losing only 0.8 0
+lowingthepriorworkofLouizosetal.(2018).
+perplexity. Moreover,ourmethodisabletoachieve
+Consideragivenneuralnetworkmodelf(·;θ)
+over 2x speed-up during both training and infer-
+parameterizedbyθ = {θ }n ,whereeachθ rep-
+ence with no additional hardware or software re- j j=1 j
+resentsanindividualparameterweightorablock
+quirements. OurmethodwillbereleasedasaPy-
+ofweights(e.g. acolumnofaweightmatrix)and
+torch(Paszkeetal.,2017)library.
+ndenotesthenumberofblocks. Apruningstrategy
+ofthemodelcanbeparameterizedbyintroducing
+2 RelatedWork
+additionalbinaryvariablesz = {z }n suchthat
+j j=1
+Thedevelopmentofmodelcompressiontechniques z j ∈ {0,1}and
+can be categorized into three areas of research:
+weightpruning(Hanetal.,2015b;ZhuandGupta, θ˜= θ(cid:12)z ∀j θ˜ j = θ jz j.
+2017), knowledge distillation (Ba and Caruana,
+2014; Hinton et al., 2015; Kim and Rush, 2016), Hereθ˜= {θ˜ }denotesthesetofmodelparameters
+j
+and quantization (Gong et al., 2014; Zhu et al., after pruning and its l norm, (cid:107)θ˜(cid:107) = (cid:80)n z ,
+0 0 j=1 j
+2017;Shenetal.,2019). measurestheeffectivesizeoftheprunedmodel.
+Recent efforts have successfully applied com- Thechoiceofbinaryvariableszcanberegulated
+pression on various architectures and NLP appli- bysomepriordistributionandoptimizedgiventhe
+cations,suchaspruningmulti-headattentionsfor trainingdata. Thatis,letq (z)bethedensityfunc-
+j
+machine translation (Voita et al., 2019), learning tionofthelearnablepriorofz . Theoptimization
+j
+adaptive embeddings and softmax layers for lan- objectiveduringtrainingcanbeformulatedasmin-
+imizingtheexpectedtrainingloss (l,r),andthefinaloutputszarerectifiedinto[0,1].
+The stretch-and-rectify process has the effect of
+(cid:34) D (cid:35)
+E 1 (cid:88) L(cid:16) x ,y ;θ˜(cid:17) +λ(cid:107)θ˜(cid:107) , (1) assigningasignificantportionofprobabilitymass
+z i i 0
+D ontheintegervalues{0,1},whichmakesitagood
+i=1
+relaxation of the binary (Bernoulli) distribution.
+where{x i,y i}D
+i=1
+aretrainingexamples,Listhe Duringtraining,wesampleuandcomputezand
+traininglossfunctionandλ > 0isaconstanthyper- thelossL()foreachtrainingbatch. Theexpected
+parameterforl 0 normregularizationencouraging l 0 normregularizationcanbeseparatelycomputed
+themodeltobesparse. Notethatinpracticeopti- viaaclosedform
+mizingthisobjectiveisintractableduetothedis-
+n
+cretenatureofz j andanexponentialnumberof2n E(cid:104) (cid:107)θ˜(cid:107) (cid:105) = (cid:88) E[z > 0]
+0 j
+choices.
+j=1
+ThekeytothemethodofLouizosetal.(2018),
+n (cid:18) (cid:19)
+(cid:88) −l
+called the re-parameterization trick, enables z to = sigmoid α −log (3)
+j
+r
+bedifferentiableandjointlytrainedwiththemodel
+j=1
+parameter θ. Specifically, the random variables
+z are relaxed as continuous variables distributed whichisdifferentiableaswell.
+within the interval [0,1]. In addition, instead of
+4 Method
+learningtheprobabilitydensityfunctionq (z),the
+j
+re-parameterizationtrickproposestolearnthein- Inthissection,weintroduceFLOP,animproved
+verse of the cumulative density function (CDF). structuredpruningmethod. FLOPproposesadiffer-
+NotethatifG()istheinverseofCDFforavariable entparameterizationoftheweightmatricesusing
+z, thenz canbeeasilysampledbyfirstsampling low-rankfactorization. Inaddition, weintroduce
+u ∼ U(0,1)andcomputingz = G(u). Assuming arevisedoptimizationobjectivethatallowsforan
+theinverseCDFfunctionisparameterizedbysome explicitcontrolofthecompressionsize.
+learnable parameters α = {α }n and the func-
+j j=1
+4.1 StructuredPruningusingFactorization
+tionG(·;α)isdifferentiable,weobtainanoverall
+end-to-endlearningobjective, Inweightpruning,akeychoiceishowwedefine
+parameter blocks θ ,··· ,θ to achieve the most
+(cid:34) D (cid:35) 1 n
+min E 1 (cid:88) L(x ,y ;θ˜)+λ(cid:107)θ˜(cid:107) , effectivepruningresults. Oneobviousmethodisto
+θ,α u∼U(0,1) D i i 0 pruneeachindividualparameterweight,whichof-
+i=1
+tenretainsstrongperformancebutposeschallenges
+z = G(u ;α ), ∀j = 1···n (2)
+j j j
+to achieve a computation speedup given unstruc-
+whereu = {u ,··· ,u }denotestheiidsamples turedsparsematrices.
+1 n
+fromtheuniformdistribution. Sincezisnowthe Structuredpruningchoosestoremovegroupsof
+outputoftheparameterizedfunctionG(·;α)and consecutiveparametersasaremedy. Forexample,
+is used as an intermediate representation for the considerafullyconnectedlayerwhichperformsa
+neuralnetwork(withθ˜= θ(cid:12)z), gradientbased multiplicationWxforaninputfeaturex ∈ Rdand
+optimizationmethodscanperformgradientupdates weightmatrixW ∈ Rd(cid:48)×d. Onepopularmethod,
+forθ andα. sometimes referred to as neuron or input feature
+Following previous work, we choose the Hard pruning, consistsofaddingthesparsityvariables
+Concrete distribution for the random variables asasparsediagonalmatrixG = diag(z ,··· ,z )
+1 d
+z = {z }. The inverse of CDF G(·;α) of this tothemultiplication,i.e.,WGx. Thiseffectively
+j
+distributionisdefinedasfollows removesthesubsetofthecolumnsinWwithz =
+k
+0,wherek isthecolumnindex.
+u ∼ U(0,1)
+In practice, this method produces significant
+s = sigmoid(logu−log(1−u)+α) speedups at both training and inference time (by
+¯s = s×(r−l)+l selectingasmallsubsetofcolumnsandperforming
+matrix multiplications given much smaller matri-
+z = min(1,max(0,¯s))
+ces). However,itisreportedtoachievelowerper-
+where l < 0 and r > 1 are two constants used formancecomparedtounstructuredpruning(Yao
+to‘stretch‘thesigmoidoutputssintotheinterval etal.,2019)duetomorerestrictivesparsepatterns.
+We propose to use low-rank factorization as a differentembeddingdimensionsandprojectionsto
+less restrictive, yet powerful representation and differentwordclusters. Considertherecentmethod
+obtainparameterreductionbypruningrank-1com- ofBaevskiandAuli(2019)withoutlossofgener-
+ponents. Thatis,wereparameterizeandfactorize ality. Let i ∈ {1,··· ,C} denotes the indice of
+thematrixWintotheproductoftwosmallerma- the i-th word cluster (sorted based on word fre-
+trices W = PQ, where P ∈ Rd(cid:48)×r, Q ∈ Rr×d quency). Two parameter matrices E
+i
+∈ Rni×di
+and r ≤ min{d,d(cid:48)} is the number of columns of andO
+i
+∈ Rdi×d areintroducedforthei-thcluster,
+P(equivalentlythenumberofrowsofQ). Letp where n is the number of words in the cluster, d
+k i
+andq bethek-thcolumnofPandk-throwofQ istheoriginalembeddingdimensionandd isthe
+k i
+respectively. SinceWisnowthesumofr rank-1 reducedworddimensionforthiscluster. Inother
+componentsp q ,wecanachievestructuredprun- words, each word embedding in this cluster has
+k k
+ingbyintroducingapruningvariablez foreach dimensiond butareprojectedbackintodimension
+k i
+component dusingaprojectionO (andviseversa). Thisisin
+i
+indeedalow-rankfactorization
+r
+(cid:88)
+W = PGQ = z ×(p × q )
+k k k E˜ = E O ∈ Rni×d
+i i i
+k=1
+where G = diag(z 1,··· ,z r) is again a diagonal for an underlying embedding matrix
+E˜
+i. While
+matrix of pruning variables. Intuitively, learning the reduced dimensions {d i}C
+i=1
+usually have to
+the factorization has the potential of keeping the be manually specified, our method automatically
+mosteffectiverank-1components,andtherebybet- learnsseparatediagonalpruningmaskG i foreach
+terpreservethemodelperformance.1 cluster, i.e. E˜
+i
+= E iG iO i. During training and
+After training, only columns and rows corre- pruning,itadaptivelylearnstoadjusttheparame-
+sponding to non-zero diagonal values need to be ter budget of each word cluster based on what is
+stored,resultinginmuchsmaller(butstilldense) needed to achieve good performance. Unsurpris-
+matrices. ThenonzerovaluesofGcanbeabsorbed ingly,ourmethodprunesmostofthedimensions
+into either P or Q. The computation boils down forrarewords,whichisconsistentwiththeempiri-
+tosimplematrixmultiplicationsatinferencetime, calchoicemadeinpriorwork.
+maximizingefficiencyoncommonhardware. Un-
+4.3 AugmentedLagrangianMethod
+like unstructured pruning, we need not store the
+indicesofthesparseweights,resultingingreater Our method can be implemented with a magni-
+memorysavings. tude based pruning strategy, or directly trained
+with the training objective (2) which uses an l
+0
+4.2 PruningAdaptiveEmbeddingand regularization λ(cid:107)θ˜(cid:107) to promote weight pruning.
+0
+SoftmaxLayer Onelimitationofthisregularizationhoweveristhe
+Theinputembeddingandsoftmaxoutputlayercan lackofeffectivecontrolonthesizeofthepruned
+takethevastmajorityofparametersinalanguage model. Forinstance,weobservethattrainingwith
+modelwhenthevocabularysizeislarge. thesameλcouldconvergetoverydifferentmodel
+Previous work have considered various tech- sizes when using slightly different learning rates
+niques that are specifically tailored to compress orpruningschedules. Thiscanbeproblematicbe-
+the embedding and softmax layer. For instance, causeadesiredmodelsizeorparameterbudgetis
+the adaptive embedding and softmax methods of oftenneededinmanyreal-worldapplications.
+Graveetal.(2017);BaevskiandAuli(2019)have We make use of an Augmented Lagrangian
+been shown to achieve impressive results in pre- method to overcome this training limitation. La-
+servingperplexitywhilesignificantlyreducingthe grangianrelaxationmethodshavebeenexploredin
+totalnumberofembeddingparameters. many NLP problems (Bastings et al., 2019; Mar-
+WedescribehowFLOPfitsnaturallywiththese tinsetal.,2011;Flaniganetal.,2014;Rushetal.,
+adaptivemethods,givingthemmorepotential. The 2010). WeusethefollowingLagrangianvariantfor
+coreideabehindtheadaptivemethodsistoapply ourtask–Lettbethetargetmodelsizeands(α)
+betheexpectedmodelsizedeterminedbytheHard
+1Itisalsoeasytoseethatinputfeaturepruningisaspecial
+Concreteparameterα. Notes(α)canbecomputed
+caseoflow-rankpruning: ByfixingP = W andQ = I,
+PGQ=WGI=WG. basedonEq(3)bymultiplyingE[z j > 0]withthe
+sizeofthej-thparameterblock. OurAugmented tuning. Specifically, we consider the following
+Lagrangianmethodimposesanequalityconstraint tasksetup.
+s(α) = tbyintroducingaviolationpenalty,
+1. Recurrent word-level language models on
+g(λ,α) = λ ·(s(α)−t)+λ ·(s(α)−t)2 the Wiki-103 dataset. We adopt SRU (Lei
+1 2
+etal.,2018)astherecurrentarchitectureand
+where λ 1,λ 2 ∈ R are two Lagrangian multipli- tied adaptive embedding and softmax lay-
+ers that will be jointly updated during training. ers(BaevskiandAuli,2019). Ourbasemodel
+The overall training optimization is an adversar- consistsof12recurrentlayers,100Mparame-
+ialgame, tersintotal. About50%oftheparametersare
+(cid:34) D (cid:35) usedfortheadaptivelayers.
+1 (cid:88)
+max min E L(x ,y ;θ˜) +g(λ,α).
+u i i 2. Recurrentcharacter-levellanguagemodelson
+λ1,λ2 θ,α D
+i=1 the Enwik8 dataset. We use the same SRU
+The updates of λ and λ would always increase architecture. Thebasemodeluses6recurrent
+1 2
+the training loss unless the equality constraint is layersand35Mparametersintotal.
+met,whichgivesusthedesiredmodelsize.
+3. Transformer-XLmodelontheEnwik8dataset.
+Wegraduallyincreasethetargetsizetatalinear
+We use the 12-layer base model from Dai
+rateduringtheprocessofpruningtraining. Thatis,
+etal.(2019)containing41Mparameters. We
+given the desired size t , we set the sparsity at
+max
+introducepruningforthematricesintheself-
+k-thpruningiterationas
+attention layers as well as those in the feed-
+k forwardlayers. Forfactorizationbasedprun-
+t = min(1, )·t
+k max
+m ing, we choose the starting rank r for each
+wheremisahyperparameterspecifyingthenum- matrix such that the number of parameters
+remainthesameastheunfactorizedmodel2.
+berofannealingsteps.
+Weperformjointgradientupdatesforthemodel
+4. BERT fine-tuning on several classification
+parametersθ,αaswellastheLagrangianmultipli-
+benchmarksbenchmark(Socheretal.,2013;
+ersλ ,λ . Foreachtrainingbatch,wesamplethe
+1 2 Dolan and Brockett, 2005; Cer et al., 2017;
+pruningmaskz = {z ,··· ,z }andshareitacross
+1 n Wangetal.,2019). Inthisexperiment,weuse
+thetrainingexampleswithinthebatch. Sincethe
+thepre-trainedRoBERTabasemodelbyLiu
+pruningmaskisshared,wecanselectparameters
+etal.(2019).
+thatareonlyactiveforthecurrentbatchandcom-
+We extend the implementation of Transformer,
+putesmallermatrixmultiplicationsinforwardand
+SRUandtheadaptiveembedding/softmaxlayers
+backwardpasses. Thisresultsintrainingspeedup
+tosupportfactorizationbasedpruning(andother
+whenzbecomessparse.
+baselines).
+4.4 Inference
+Baselines We compare with the following un-
+Duringtraining,theprunemaskisarandomvari-
+structured, structured and/or factorization based
+abledrawnfromtheHardConcretedistribution. At
+pruningbaselines.
+inferencetime,however,wemustuseadeterminis-
+• FACwhichtrainslow-rankfactorizedmodels
+tic,fixedmaskzforeachweightmatrixtoobtain
+fromscratchbyreducingalldimensionswith
+thecompressedfactorizationmatricesPandQ(by
+thesameratiotogetthedesiredcompression.
+keeping i-th low-rank component if z > 0). We
+i
+dosobycomputingtheexpectedvalueofeachz i • NP-l 0 (Louizosetal.,2018)whichadoptsl 0
+inzusingEq.(3)describedinSection3,andthen regularization and performs neuron pruning
+keeping the top values of {z 1,··· ,z n} and clip- (i.e. removinginputfeaturesandcolumnsof
+pingtheresttozero, astomatchthel 0 norm(i.e. weight matrices). No factorization is used
+thecompressionlevel). for this baseline. We add the Augmented
+LagrangianoptimizationsimilartoFLOPto
+5 ExperimentalSetup
+achievetheexactdesiredcompression.
+Tasks We evaluate the performance of our
+2Ineffect,wesetr =d d /(d +d ),whered ,d are
+1 2 1 2 1 2
+method on language modeling and BERT fine- thedimensionsoftheoriginalweightmatrix.
+• AGP (Zhu and Gupta, 2017) which gradu- Method Size Compress PPL
+allyprunesindividualparametersbasedonthe Trans. (Daietal.) 151M - 24.1
+weightmagnitude. AGPisoneofthestate-of- SRU(base) 100M - 24.5
+the-artunstructuredpruningmethods. Weuse FAC 50M 50% 28.2
+theimplementationprovidedintheNervana AGP 50M 50% 25.7
+Distillerlibrary(Zmoraetal.,2019). NP-l 51M 50% 26.7
+0
+FLOP-AGP 51M 50% 25.6
+• FLOP-AGP is a variant of our full method
+FLOP-l 50M 50% 25.3
+0
+that prunes low-rank components, but uses
+FAC 30M 70% 31.0
+magnitude-basedgradualpruningonthediag-
+AGP 30M 70% 28.4
+onal mask G instead. We also tune l regu-
+1 NP-l 31M 70% 31.3
+0
+larizationonthemaskstoencouragesparsity,
+FLOP-AGP 31M 70% 28.1
+similartoNarangetal.(2017b).
+FLOP-l 30M 70% 27.7
+0
+FAC 21M 80% 35.2
+These baselines serve as competitive pruning al-
+AGP 20M 80% 32.6
+ternatives, and also provide data points for us to
+NP-l 18M 80% 39.1
+isolatetheeffectivenessofsub-componentsofour 0
+FLOP-AGP 21M 80% 31.3
+method,suchaslow-rankfactorizationandl prun-
+0
+FLOP-l 21M 80% 31.9
+ing. All methods use the same training config- 0
+urations such as learning rate and dropout. We
+Table1: ComparisonofFLOPandallbaselinesonthe
+tune hyper-parameters related to pruning such as Wiki-103 dataset. We report test perplexity (PPL) at
+compression scheduling and the learning rate of three different compression levels. All methods use
+Table 1 Lagrangianvariablesforeachmethod. Moretrain- adaptiveembeddingandsoftmaxlayers.
+80% 70% 50% 50% 70% 80%
+ingandimplementationdetailsareprovidedinthe
+1024,166,256,167,6 [655, 120, 51, 42, [416, 92, 50, 26, 6,
+4,18appendix.28, 0] 0]
+80% 70% 50%
+775 508
+0 0 0 6 Results RNN
+29410590 12565008 8048320
+All Emb.
+Word-level Language Model Table 1 presents
+All Emb. 29410590 12565008 8048320 First 20k
+Emb. (most frequent) 14337120 9337200 6120384 theres1u19l0tsofFLOP775aswellas5t0h8ebaselin2e04m8 ethods.
+20k - 60k
+Emb. (less frequent) 9326304 2050464 1675648 The SR42U3 base mo9d3el (unprun76ed) achie5v1e2s a test
+Emb. (least frequent) 5747166 1177344 252288 82 28 6 128 60k - 267k
+perplexityof24.5,beingastrongstartingpointand
+49875000 29844000 20466000 com9p37e80t0i0tive wi2t00h310t0o0p-performing mo10d05e20l0s00such as 0m 9m 18m 26m 35m
+RNN 20447000 17278992 12417680 4861312 3168008 50999936
+Transformer(Daietal.,2019).
+Figure1: NumberofparametersusedintheRNNand
+All Emb. 29428000 12565008 8048320 4516688 16862992 49520064
+Emb. (most frequent) 14337120 9337200 6120384 Th 32e 168p 16runingr 49e 9s 99u 20ltsconformtoourexpectations adaptive embeddings at different compression levels.
+Emb. (less frequent) 9326304 2050464 1675648 that 3p74r8u16ning a7l2a75r8g40e model is consistently better We also show the number of parameters used for the
+Emb. (least frequent) 5747166 1177344 252288 than9 t2 r50 a5 i6 ninga4 s5 m6982 a2 llmodelfromscratch, andus- most,secondmos70 t% andleastfr8 e0 q% uentwords.
+80% 70% 50% ing lo8w0%-rank bas7e0%d pruning50y%ields better perfor- RNN
+RNN 12.41768 4.861312 3.168008 man12c41e768t0han rem486o13v12ing mat3r16i8x008colum1n00s520a00n0d input
+WeAlsl Ehmob.wtheoverallsizeofrecurrentencoderand
+All Emb. 8.04832 4.516688 16.862992 8048320 4516688 16862992 50999936
+features. FLOPexceedstheperformanceofFAC,
+First 20k 6.120384 3.216816 4.99992 6120384 3216816 4999920 49520064 adaFpirstt 2i0vkeembeddinglayersatthecompressionlev-
+20k - 60k 1.675648 0.374816 7.27584 NP-l16075a64n8dAGP3b74a8s16elinesa7t27a58l4l0compressionlevels
+els tested, and break down the use of parameters
+20k - 60k
+60k - Rest 0.252288 0.925056 4.569822 tested25.22T88heperfo92r5m056anceof45F69L822OP-AGP,especially
+withinthreewordclustersbasedontheirfrequency.
+in comparison with its unstructured counterpart 60k - Rest
+50 70 80 FLOPlearnstoprunethedimensionmoreaggres-
+0 13 25 38 50
+100520000 49875000 29844000 20466000 AGP,highlightstheeffectivenessoffactorization
+sivelyforless-frequentwords.
+50999936 20447000 11674000 10068000 based pruning. Moreover, we achieve a test per-
+49520064 29428000 18170000 10398000 Thisresultshowcasesthebenefitofadaptively
+plexity(PPL)of25.3withFLOP-l method,aloss
+24674304 14337120 13445568 7915536 0 reducingworddimensions.
+11288576 9326304 2028416 881920 of0.8perplexityscore,whileremoving50%ofthe
+13557184 5747166 2691072 1597824 modelparameters. Thisresultisimpressivesince Char-levelLanguageModel Table3showsthe
+our base model adopts the adaptive word embed- resultsofpruningcharacter-levellanguagemodels.
+50645000 70676000 80054000
+RNN 30552936 39325936 40931936 dingandsoftm3a0.5x529l3a6yers,whi8.c77h3 already1r.6e06ducethe Ourbasemodelachievesatestbits-per-character
+All Emb. 20092064 31350064 39122064 modelsizesign20i.0fi92c06a4ntly. 11.258 7.772 score (BPC) of 1.24, which is comparable with
+First 20k 10337184 11228736 16758768 10.337184 0.891552 5.530032
+Figure1illustrateshowourmethodadaptively previousreportedresultsofRNN-basedmodels.
+20k - 60k 1962272 9260160 10406656 1.962272 7.297888 1.146496
+60k - Rest 7810018 10866112 11959360 controls the siz7.e810o01f8 differ3e.0n56t09m4 odel 1c.0o93m248ponents. As shown in Table 3, we again see the benefit
+1
+Parameters Compression SST2 MRPC STS-B QNLI Average
+125M 0% 92.43 90.9 90.22 89.77 90.83
+80M 35% 92.09 88.61 88.18 89.05 89.48
+Table2: Compressionondownstreamfine-tuning
+Method Size Comp. BPC Transformer-XLmodelsontheEnwik8dataset. We
+LSTM(Wuetal.) 17M - 1.44 compareFAC,unstructuredAGP,FLOP-AGPand
+QRNN(Merityetal.) 26M - 1.33 FLOP-l at80%compressionlevel,andalsoreport
+0
+SRU(base) 35M - 1.24 theresultofFLOPvariantsat90%compression.
+FAC 11M 70% 1.33 FLOP-l outperformsothermethodsincompar-
+0
+AGP 11M 70% 1.27 ison. In addition, it is able to achieve 1.17 BPC
+NP-l 11M 70% 1.31 using4Mparameters,showcasingtheeffectiveness
+0
+FLOP-AGP 11M 70% 1.27 ofourmethodwhenappliedtoanotherneuralar-
+FLOP-l 11M 70% 1.25 chitecture.
+0
+FAC 8M 80% 1.38
+BERT on Classification Tasks Finally, we
+AGP 8M 80% 1.29
+demonstratethatourmethodcanalsobeappliedto
+NP-l 8M 80% 1.34
+0
+languagemodelfine-tuningondownstreamtasks.
+FLOP-AGP 8M 80% 1.29
+We use the RoBERTa base model in this exper-
+FLOP-l 8M 80% 1.27
+0
+iment. Since the model was pretrained without
+FAC 4M 90% 1.47
+matrixfactorization,wefirstcomputethesingular
+AGP 4M 90% 1.35
+value decomposition of each matrix and then in-
+NP-l 4M 90% 1.43
+0 troducethepruningmaskinbetweentheresulting
+FLOP-AGP 4M 90% 1.34
+factored matrices. Note that this procedure tem-
+FLOP-l 4M 90% 1.33
+0 porarilyincreasesthetotalnumberofparameters.
+Wecompareherethefinalnumberofparametersto
+Table3: ComparisonofFLOPandallbaselinesonthe
+Enwiki8 dataset. We report bits-per-character (BPC) theinitialnumberpre-factorization.
+on the test set. We also include previous reported re- OurresultsareshownininTable2. Weareable
+sults of recurrent language models on this dataset as toconservenearly99%oftheperformancewhile
+additionaldatapoints.
+reducing the number of parameters by 35%. Our
+targetcompressionlevelislimitedbythefactthat
+Method Size Compress BPC
+theembeddinglayersconsistofasignificantpor-
+Trans-XL(base) 41M - 1.08
+tionoftheremainingparameters. Asdemonstrated
+FAC 8M 80% 1.20
+inthepreviousexperimentonWiki-103,webelieve
+AGP 8M 80% 1.14
+thathigherlevelsofcompressioncouldbeobtained
+FLOP-AGP 8M 80% 1.17
+byfactorizingtheembeddinglayer,similartoLan
+FLOP-l 8M 80% 1.13
+0 etal.(2020).
+FLOP-AGP 4M 90% 1.25
+FLOP-l 4M 90% 1.17 7 Analysis
+0
+Table 4: Results of pruning Transformer-XL models Inthissection,weperformananalysisofseveral
+on the Enwiki8 dataset. We report bits-per-character aspectsofourmethod.
+(BPC)onthetestset.
+Factorization One of the key hypotheses out-
+lined in this paper is that pruning input dimen-
+of low-rank pruning, matching or improving on sions(equivalentlyrowsorcolumnsofweightma-
+unstructuredpruning. Furthermore,FLOP-l ob- trices) is a more restrictive form of pruning com-
+0
+tainsthebestperformanceacrossallpruninglevels. paredtoourfactorizationbasedstrategy. However,
+Notably, we achieve a perplexity of 1.25 at 70% onecouldalsoarguethatthefactorizationmethod
+compression,nearlymatchingtheun-compressed works better simply because the hidden size can
+modelat1.24. be initially set much larger than an unfactorized
+Table4presentstheresultsofpruning12-layer model,notbecauseofpruningitself. Forinstance,
+Variants Size 0% 70% 80% 85% 90%
+37M 1.30 1.31(-0.8%) 1.34(-3.2%) 1.37(-5.4%) 1.43(-10.0%)
+NP-l
+0
+66M 1.25 1.28(-2.4%) 1.31(-4.8%) 1.32(-5.6%) 1.37 (-9.6%)
+FLOP-l 35M 1.24 1.25(-0.8%) 1.27(-2.4%) 1.29(-4.0%) 1.33 (-7.3%)
+0
+Table5:Furthercomparisonbetweenfactorization-basedpruningFLOPandinputfeaturepruningNP-l (Louizos
+0
+etal.,2018)using6-layerSRUmodelsandtheEnwiki8dataset. WeshowBPCatdifferentcompressionlevelsand
+thelossofperformancerelativetotheun-compressedmodel. Factorizationresultsinlessdecreaseinrelativeand
+absoluteperformance.
+Figure2:HistogramsofHardConcreteparametersduringtraining.Weshowthechangesofhistogramsforthefirst
+SRUlayer(leftfigure)andthelastlayer(rightfigure). Wecomputethehistogramevery3,000trainingsteps.
+the SRU model used by the unfactorized NP-l Size Compress Time(s) Speedup
+0
+baselinehashiddensize1536,whilewithfactoriza- 35M 0% 0.39 1.0x
+tionotherbaselineswithasimilarparameterbudget 8M 80% 0.21 1.9x
+use a hidden size of 3056. To avoid potential un- 4M 90% 0.18 2.2x
+faircomparison,wealsotrainalargemodelwith 41M 0% 1.33 1.0x
+hiddensize2048containing90%moreparameters,
+8M 80% 0.87 1.5x
+andapplytheNP-l 0baseline. Thislargermodelob- 4M 90% 0.82 1.6x
+tains1.25BPCwhichisonparwiththefactorized
+basemodelusedinpreviousexperiments.
+Table 6: Inference timing measurements of character-
+Table 5 compares the pruning performance of level language model using SRU (top block) and
+FLOP and NP-l 0 at four compression levels. We Transformer-XL(bottomblock).
+showthetestBPCandthelossofperformancerel-
+ativetothemodelwithoutpruning. Theseresults
+furthersubstantiateourhypothesis–factorization
+basedpruningisabletoretainrelativemodelper-
+Learning dynamics Figure 2 demonstrates the
+formancemuchmoreeffectivelythaninputfeature
+trainingdynamicsoftheHardConcretedistribution.
+pruning.
+WeplotthehistogramofHardConcreteparameters
+Speed analysis Thanks to its structured nature, αaftereveryfewthousandsoftrainingiterations.
+FLOPcanachievesignificantcomputationspeedup. Anegativevalueofαindicatesthattheassociated
+As shown in Table 6, we achieve an inference parameter is likely to be pruned while a positive
+speeduprangingfrom1.5xto2.2xforthecompres- valueindicatestheopposite. Themagnitudeofthe
+sionlevelstested, usingCPUs. Similarspeedups valuereflectsthecertaintyofthepruningdecision.
+ofupto2.4xarealsoobservedusingGPUsduring As illustrated by the figure, the distribution of α
+training. Onthecontrary,thecomputationsofun- becomes bi-modal after initial exploration. Cer-
+structuredsparsematricesarehardertooptimize. tain parameters within each layer are completely
+FormodelsobtainedusingunstructuredAGP,we prunedwhileothersarekeptwith(almost)absolute
+experimentedwiththesparsematrixmultiplication certainty. In addition, the dynamics vary across
+routine provided in Pytorch (Paszke et al., 2017) differentlayers. Forinstance,forSRUthefirstre-
+andarecentlinearalgebracompiler(Kjolstadetal., current layer gets pruned more aggressively than
+2017),butwereunabletoachieveaspeedup. thelastlayer.
+8 Conclusion crosslingual focused evaluation. In Proceedings
+of the 11th International Workshop on Semantic
+Inthiswork,wepresentagenericstructuredprun- Evaluation(SemEval-2017),pages1–14,Vancouver,
+ingmethodbasedonadaptivelow-rankfactoriza- Canada.AssociationforComputationalLinguistics.
+tion. Wesystematicallyevaluatetheperformance
+Yew Ken Chia, Sam Witteveen, and Martin Andrews.
+ofthismethodonlargelanguagemodels. Weshow 2019. Transformer to cnn: Label-scarce distilla-
+thatourmethodcanprovidesignificantspeedups tion for efficient text classification. arXiv preprint
+andcompressionratesonlargemodelswhilelosing
+arXiv:1909.03508.
+minimalperformancecomparedtoothermethods,
+AndrewMDaiandQuocVLe.2015. Semi-supervised
+including unstructured magnitude pruning. This sequence learning. In C. Cortes, N. D. Lawrence,
+workcontributestoreducingthegrowingoverhead D. D. Lee, M. Sugiyama, and R. Garnett, editors,
+AdvancesinNeuralInformationProcessingSystems
+oflargelanguagemodels,andshinesalightonthe
+28,pages3079–3087.CurranAssociates,Inc.
+roleofmodelcapacityinlanguagemodeling.
+Zihang Dai, Zhilin Yang, Yiming Yang, Jaime Car-
+Acknowledgement bonell, Quoc Le, and Ruslan Salakhutdinov. 2019.
+Transformer-XL:Attentivelanguagemodelsbeyond
+WewouldliketothankASAPPInc. formakingthis a fixed-length context. In Proceedings of the 57th
+Annual Meeting of the Association for Computa-
+workpossible. WewouldalsoliketothankHugh
+tionalLinguistics,pages2978–2988,Florence,Italy.
+Perkins,SamBowman,NicholasMatthews,Josh
+AssociationforComputationalLinguistics.
+Shapiro and the other members of the Language
+TechnologyandResearchteamswhohelpedreview Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of
+thisworkandcontributedtheirthoughtsthrough-
+deep bidirectional transformers for language under-
+out the project. We would also like to thank the
+standing. In Proceedings of the 2019 Conference
+EMNLPreviewersandareachairfortheirhelpful of the North American Chapter of the Association
+comments. for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long and Short Papers),
+pages4171–4186,Minneapolis,Minnesota.Associ-
+ationforComputationalLinguistics.
+References
+WilliamB.DolanandChrisBrockett.2005. Automati-
+JimmyBaandRichCaruana.2014. Dodeepnetsreally
+callyconstructingacorpusofsententialparaphrases.
+need to be deep? In Z. Ghahramani, M. Welling,
+InProceedingsoftheThirdInternationalWorkshop
+C. Cortes, N. D. Lawrence, and K. Q. Weinberger,
+onParaphrasing(IWP2005).
+editors,AdvancesinNeuralInformationProcessing
+Systems 27, pages 2654–2662. Curran Associates,
+AngelaFan,EdouardGrave,andArmandJoulin.2020.
+Inc.
+Reducing transformer depth on demand with struc-
+tured dropout. In International Conference on
+Alexei Baevski and Michael Auli. 2019. Adaptive in-
+LearningRepresentations.
+putrepresentationsforneurallanguagemodeling. In
+International Conference on Learning Representa-
+Jeffrey Flanigan, Sam Thomson, Jaime Carbonell,
+tions.
+Chris Dyer, and Noah A. Smith. 2014. A discrim-
+inative graph-based parser for the Abstract Mean-
+Jasmijn Bastings, Wilker Aziz, and Ivan Titov. 2019.
+ingRepresentation. InProceedingsofthe52ndAn-
+Interpretable neural predictions with differentiable
+nual Meeting of the Association for Computational
+binaryvariables. InProceedingsofthe57thAnnual
+Linguistics (Volume 1: Long Papers), pages 1426–
+Meeting of the Association for Computational Lin-
+1436,Baltimore,Maryland.AssociationforCompu-
+guistics,pages2963–2977,Florence,Italy.Associa-
+tationalLinguistics.
+tionforComputationalLinguistics.
+Jonathan Frankle and Michael Carbin. 2019. The lot-
+ShijieCao,ChenZhang,ZhuliangYao,WencongXiao,
+terytickethypothesis: Findingsparse,trainableneu-
+LanshunNie, DechenZhan, YunxinLiu, MingWu,
+ralnetworks. InInternationalConferenceonLearn-
+and Lintao Zhang. 2019. Efficient and effective
+ingRepresentations.
+sparse lstm on fpga with bank-balanced sparsity.
+In Proceedings of the 2019 ACM/SIGDA Interna- TrevorGale,ErichElsen,andSaraHooker.2019. The
+tionalSymposiumonField-ProgrammableGateAr- state of sparsity in deep neural networks. arXiv
+rays, FPGA’19, page63–72, NewYork, NY,USA. preprintarXiv:1902.09574.
+AssociationforComputingMachinery.
+Yunchao Gong, Liu Liu, Ming Yang, and Lubomir
+Daniel Cer, Mona Diab, Eneko Agirre, In˜igo Lopez- Bourdev. 2014. Compressing deep convolutional
+Gazpio, and Lucia Specia. 2017. SemEval-2017 networks using vector quantization. arXiv preprint
+task1: Semantictextualsimilaritymultilingualand arXiv:1412.6115.
+Edouard Grave, Armand Joulin, Moustapha Cisse´, Thirty-SecondAAAIConferenceonArtificialIntelli-
+Herve´ Je´gou,etal.2017. Efficientsoftmaxapproxi- gence.
+mationforgpus. InProceedingsofthe34thInterna-
+tionalConferenceonMachineLearning-Volume70, Liyuan Liu, Xiang Ren, Jingbo Shang, Xiaotao Gu,
+pages1302–1310.JMLR.org. JianPeng,andJiaweiHan.2018. Efficientcontextu-
+alized representation: Language model pruning for
+Scott Gray, Alec Radford, and Diederik P Kingma. sequencelabeling. InEMNLP,pages1215–1225.
+2017. Gpukernelsforblock-sparseweights. arXiv
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+preprintarXiv:1711.09224.
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Song Han, Xingyu Liu, Huizi Mao, Jing Pu, Arda- Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+vanPedram,MarkAHorowitz,andWilliamJDally. Roberta: A robustly optimized bert pretraining ap-
+2016. Eie:efficientinferenceengineoncompressed proach. arXivpreprintarXiv:1907.11692.
+deep neural network. In 2016 ACM/IEEE 43rd An-
+Christos Louizos, Karen Ullrich, and Max Welling.
+nual International Symposium on Computer Archi-
+2017. Bayesian compression for deep learning. In
+tecture(ISCA),pages243–254.IEEE.
+I. Guyon, U. V. Luxburg, S. Bengio, H. Wallach,
+Song Han, Huizi Mao, and William J Dally. 2015a. R.Fergus,S.Vishwanathan,andR.Garnett,editors,
+Deep compression: Compressing deep neural net- AdvancesinNeuralInformationProcessingSystems
+works with pruning, trained quantization and huff- 30,pages3288–3298.CurranAssociates,Inc.
+mancoding. arXivpreprintarXiv:1510.00149.
+Christos Louizos, Max Welling, and Diederik P.
+Song Han, Jeff Pool, John Tran, and William Dally. Kingma. 2018. Learning sparse neural networks
+2015b. Learning both weights and connections through l 0 regularization. In International Confer-
+for efficient neural network. In C. Cortes, N. D.
+enceonLearningRepresentations.
+Lawrence, D. D. Lee, M. Sugiyama, and R. Gar-
+Andre´ F. T. Martins, Mario A. T. Figueiredo, Pedro
+nett, editors, Advances in Neural Information Pro-
+M. Q. Aguiar, Noah A. Smith, and Eric P. Xing.
+cessingSystems28,pages1135–1143.CurranAsso-
+2011. An augmented lagrangian approach to con-
+ciates,Inc.
+strainedmapinference. InICML,pages169–176.
+Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. 2015.
+Stephen Merity, Nitish Shirish Keskar, and Richard
+Distillingtheknowledgeinaneuralnetwork. arXiv
+Socher.2018. Ananalysisofneurallanguagemod-
+preprintarXiv:1503.02531.
+elingatmultiplescales. CoRR,abs/1803.08240.
+Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang,
+Dmitry Molchanov, Arsenii Ashukha, and Dmitry P.
+Xiao Chen, Linlin Li, Fang Wang, and Qun Liu.
+Vetrov. 2017. Variational dropout sparsifies deep
+2019. Tinybert: Distillingbertfornaturallanguage
+neuralnetworks. InICML,pages2498–2507.
+understanding. arXivpreprintarXiv:1909.10351.
+Sharan Narang, Erich Elsen, Gregory Diamos, and
+Yoon Kim and Alexander M. Rush. 2016. Sequence- Shubho Sengupta. 2017a. Exploring sparsity
+level knowledge distillation. In Proceedings of the in recurrent neural networks. arXiv preprint
+2016 Conference on Empirical Methods in Natu- arXiv:1704.05119.
+ralLanguageProcessing,pages1317–1327,Austin,
+Texas.AssociationforComputationalLinguistics. Sharan Narang, Eric Undersander, and Gregory Di-
+amos. 2017b. Block-sparse recurrent neural net-
+FredrikKjolstad,ShoaibKamil,StephenChou,David works. arXivpreprintarXiv:1711.02782.
+Lugato, and Saman Amarasinghe. 2017. The ten-
+sor algebra compiler. Proc. ACM Program. Lang., AdamPaszke, SamGross, SoumithChintala, Gregory
+1(OOPSLA). Chanan, Edward Yang, Zachary DeVito, Zeming
+Lin, Alban Desmaison, Luca Antiga, and Adam
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Lerer. 2017. Automatic differentiation in PyTorch.
+Kevin Gimpel, Piyush Sharma, and Radu Soricut. InNIPSAutodiffWorkshop.
+2020. Albert:Alitebertforself-supervisedlearning
+of language representations. In International Con- Matthew Peters, Mark Neumann, Mohit Iyyer, Matt
+ferenceonLearningRepresentations. Gardner, Christopher Clark, Kenton Lee, and Luke
+Zettlemoyer. 2018. Deep contextualized word rep-
+Tao Lei, Yu Zhang, Sida I. Wang, Hui Dai, and Yoav resentations. In Proceedings of the 2018 Confer-
+Artzi. 2018. Simple recurrent units for highly par- ence of the North American Chapter of the Associ-
+allelizable recurrence. In Proceedings of the 2018 ation for Computational Linguistics: Human Lan-
+Conference on Empirical Methods in Natural Lan- guageTechnologies,Volume1(LongPapers),pages
+guageProcessing, pages4470–4481, Brussels, Bel- 2227–2237, New Orleans, Louisiana. Association
+gium.AssociationforComputationalLinguistics. forComputationalLinguistics.
+Zhongliang Li, Raymond Kulhanek, Shaojun Wang, AlecRadford,KarthikNarasimhan,TimSalimans,and
+Yunxin Zhao, and Shuang Wu. 2018. Slim embed- Ilya Sutskever. 2018. Improving language under-
+dinglayersforrecurrentneurallanguagemodels. In standingbygenerativepre-training.
+Alexander M. Rush, David Sontag, Michael Collins, transducers. In ICASSP 2019-2019 IEEE Interna-
+andTommiJaakkola.2010. Ondualdecomposition tional Conference on Acoustics, Speech and Signal
+and linear programming relaxations for natural lan- Processing(ICASSP),pages7340–7344.IEEE.
+guageprocessing. InProceedingsofthe2010Con-
+ferenceonEmpiricalMethodsinNaturalLanguage Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Processing, pages 1–11, Cambridge, MA. Associa- Uszkoreit, Llion Jones, Aidan N Gomez, Ł ukasz
+tionforComputationalLinguistics. Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In I. Guyon, U. V. Luxburg, S. Bengio,
+Victor Sanh, Lysandre Debut, Julien Chaumond, and H.Wallach,R.Fergus,S.Vishwanathan,andR.Gar-
+Thomas Wolf. 2019. Distilbert, a distilled version nett, editors, Advances in Neural Information Pro-
+of bert: smaller, faster, cheaper and lighter. arXiv cessingSystems30,pages5998–6008.CurranAsso-
+preprintarXiv:1910.01108. ciates,Inc.
+Elena Voita, David Talbot, Fedor Moiseev, Rico Sen-
+Abigail See, Minh-Thang Luong, and Christopher D.
+nrich, and Ivan Titov. 2019. Analyzing multi-head
+Manning. 2016. Compression of neural machine
+self-attention: Specialized heads do the heavy lift-
+translation models via pruning. In Proceedings
+ing, the rest can be pruned. In Proceedings of the
+of The 20th SIGNLL Conference on Computational
+57th Annual Meeting of the Association for Com-
+NaturalLanguageLearning,pages291–301,Berlin,
+putational Linguistics, pages 5797–5808, Florence,
+Germany. Association for Computational Linguis-
+Italy.AssociationforComputationalLinguistics.
+tics.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+YuanShangguan,JianLi,LiangQiao,RazielAlvarez,
+Hill, Omer Levy, and Samuel R. Bowman. 2019.
+andIanMcGraw.2019. Optimizingspeechrecogni-
+GLUE: A multi-task benchmark and analysis plat-
+tionfortheedge. arXivpreprintarXiv:1909.12408.
+form for natural language understanding. In Inter-
+nationalConferenceonLearningRepresentations.
+ShengShen,ZhenDong,JiayuYe,LinjianMa,Zhewei
+Yao, Amir Gholami, Michael W Mahoney, and
+Wei Wen, Yuxiong He, Samyam Rajbhandari, Minjia
+Kurt Keutzer. 2019. Q-bert: Hessian based ultra
+Zhang, Wenhan Wang, Fang Liu, Bin Hu, Yiran
+low precision quantization of bert. arXiv preprint
+Chen, and Hai Li. 2018. Learning intrinsic sparse
+arXiv:1909.05840.
+structureswithinlongshort-termmemory. InInter-
+nationalConferenceonLearningRepresentations.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, ChristopherD.Manning, AndrewNg, and YuhuaiWu,SaizhengZhang,YingZhang,YoshuaBen-
+Christopher Potts. 2013. Recursive deep models gio, and Ruslan R Salakhutdinov. 2016. On multi-
+forsemanticcompositionalityoverasentimenttree- plicativeintegrationwithrecurrentneuralnetworks.
+bank. In Proceedings of the 2013 Conference on In Advances in Neural Information Processing Sys-
+EmpiricalMethodsinNaturalLanguageProcessing, tems.
+pages1631–1642,Seattle,Washington,USA.Asso-
+ciationforComputationalLinguistics. ZhuliangYao,ShijieCao,WencongXiao,ChenZhang,
+and Lanshun Nie. 2019. Balanced sparsity for ef-
+SiqiSun, YuCheng, ZheGan, andJingjingLiu.2019. ficient dnn inference on gpu. In Proceedings of
+PatientknowledgedistillationforBERTmodelcom- the AAAI Conference on Artificial Intelligence, vol-
+pression. InProceedingsofthe2019Conferenceon ume33,pages5676–5683.
+EmpiricalMethodsinNaturalLanguageProcessing
+andthe9thInternationalJointConferenceonNatu- Zhengyan Zhang, Xu Han, Zhiyuan Liu, Xin Jiang,
+ral Language Processing (EMNLP-IJCNLP). Asso- Maosong Sun, and Qun Liu. 2019. Ernie: En-
+ciationforComputationalLinguistics. hancedlanguagerepresentationwithinformativeen-
+tities. arXivpreprintarXiv:1905.07129.
+HenryTsai,JasonRiesa,MelvinJohnson,NaveenAri-
+Chenzhuo Zhu, Song Han, Huizi Mao, and William J.
+vazhagan, XinLi, andAmeliaArcher.2019. Small
+Dally. 2017. Trained ternary quantization. In 5th
+and practical BERT models for sequence labeling.
+International Conference on Learning Representa-
+In Proceedings of the 2019 Conference on Empiri-
+tionsICLR.
+cal Methods in Natural Language Processing and
+the 9th International Joint Conference on Natural
+MichaelZhuandSuyogGupta.2017. Toprune,ornot
+Language Processing (EMNLP-IJCNLP). Associa-
+toprune:exploringtheefficacyofpruningformodel
+tionforComputationalLinguistics.
+compression. arXivpreprintarXiv:1710.01878.
+IuliaTurc,Ming-WeiChang,KentonLee,andKristina
+Neta Zmora, Guy Jacob, Lev Zlotnik, Bar Elharar,
+Toutanova. 2019. Well-read students learn better:
+and Gal Novik. 2019. Neural network distiller: A
+The impact of student initialization on knowledge
+pythonpackagefordnncompressionresearch.
+distillation. arXivpreprintarXiv:1908.08962.
+Ehsan Variani, Ananda Theertha Suresh, and Mitchel
+Weintraub. 2019. West: Word encoded sequence
+A Appendix PQwithaninnerdimensionof512. Wetrainthe
+modelwithoutpruningfor30warmupepochs,and
+A.1 Optimizationdetails
+startpruningforamaximumof100epochs.
+Inourimplementation,FLOPtrainsthefactorized FortheWiki-103dataset,our12-layerSRUbase
+model for a number of warmup epochs and then modelusesahiddendimensionof2048andafac-
+starts pruning. Other pruning baselines use the torization dimension of 512 for weight matrices
+same warmup training process, except that FAC in SRU. Following Baevski and Auli (2019), the
+baseline directly trains smaller factorized model adaptive embedding layer uses 1024, 256 and 64
+from scratch. Recall our augmented Lagrangian dimensionsrespectivelyforthe20Kmostfrequent
+trainingobjectiveduringpruningis, words,40Klessfrequentwordsandtherestleast
+frequentwords. Wetrain50warm-upepochsand
+(cid:34) D (cid:35)
+max min E 1 (cid:88) L(x ,y ;θ˜) +g(λ,α), start the pruning process for an addition of 100
+u i i
+λ1,λ2 θ,α D epochs. We use a batch size of 64 or 96 and an
+i=1
+unrolllengthof256.
+g(λ,α) = λ ·(s(α)−t)+λ ·(s(α)−t)2.
+1 2
+For all SRU runs, we use inverse-square-root
+We gradually increase the target size t at a linear learningratescheduling(Vaswanietal.,2017)and
+rate. Thatis,giventhedesiredsizet ,wesetthe a learning rate of √l0 where d is the hidden size
+max d
+sparsityatk-thpruningiterationas and l 0 is the initial factor. We set l 0 ∈ {2,3} for
+modelparameters. ForAGPmethods,wetunethe
+k
+startandendepochofthecompressionscheduler.
+t = min(1, )·t
+k max
+m Forl regularization,wetunethelearningratel ∈
+0 0
+{3,··· ,6}forLagrangianmultipliers.
+wheremisahyperparameterspecifyingthenum-
+berofannealingsteps.
+Transformer-XL Following Dai et al. (2019),
+TheLagrangianmultipliersareinitializedtozero
+wetrainTransformer-XLbasemodelusingcosine
+atthestartoftraining. Weperformjointgradient
+learning rate scheduling. For the 12-layer base
+updatesfortheparametersandLagrangianmulti-
+model, we train a maximum of 200k iterations,
+pliersateveryiteration,butuseandtuneadiffer-
+a batch size of 48 and an initial learning rate of
+ent learning rate for Lagrangian multipliers. For
+0.0003 and use 8 GPUs in parallel. For pruning
+eachtrainingbatch,wesamplethepruningmask
+runs,wetrainupto300kiterationsusingalearning
+z = {z ,··· ,z }andshareitacrossthetraining
+1 n rate of 0.00025, a batch size of 32 and 4 GPUs
+exampleswithinthebatch. Sincethepruningmask
+inparallelforeachrun. Weusethesameinverse-
+is shared, we can select parameters that are only
+square-rootlearningrateschedulingforLagrangian
+active for the current batch and compute smaller
+multipliersandsetl ∈ {0.5,1.0,1.5}.
+0
+matrix multiplications in forward and backward
+passes. Thiscanresultintrainingspeedupwhenz
+becomessparse.
+A.2 ExperimentalDetails
+Our experiments are performed using the stan-
+dardtrain/dev/testsplitsofWiki-103,Enwik8and
+GLUEbenchmarks. Wedescribetrainingconfig-
+urationsinthefollowingparagraphs. Detailedex-
+perimentalsetupcanbefoundathttps://github.
+com/asappresearch/flop.
+SRU FollowingthepracticeofLeietal.(2018),
+for the Enwik8 dataset we train a 6-layer SRU
+modelusingabatchsizeof64andanunrolllength
+of256. Weuseahiddensizeof3056andsetthe
+initialfactorizationdimensionr oftheparameter
+matrices to 512. That is, we replace each weight
+matrix W in SRU using an explicit factorization

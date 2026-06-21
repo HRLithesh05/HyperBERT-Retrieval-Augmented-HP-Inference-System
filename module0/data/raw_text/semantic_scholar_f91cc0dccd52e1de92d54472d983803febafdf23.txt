@@ -1,0 +1,406 @@
+Exploring linguistic feature and model combination for speech recognition
+based automatic AD detection
+YiWang,TianziWang,ZiYe,LingweiMeng,ShoukangHu,XixinWu,XunyingLiu,HelenMeng
+TheChineseUniversityofHongKong,HongKongSAR,China
+{ywang,twang,zye,lmeng,skhu,wuxx,xyliu,hmmeng}@se.cuhk.edu.hk
+Abstract ants[13,20,25,29]toSVM,decisiontreesandfurthercombina-
+tionamongthese[30]. Recentresearcheshavewidelyreported
+Early diagnosis of Alzheimer’s disease (AD) is crucial in fa-
+state-of-the-artADdetectionaccuracyperformancecanbeob-
+cilitatingpreventivecareanddelayprogression. Speechbased
+tained using linguistic features [7,8,19,21,22,31,32]. Some
+automatic AD screening systems provide a non-intrusive and
+ofthemfurtherusedmodelensemblingmethodstoexploitlin-
+morescalablealternativetootherclinicalscreeningtechniques.
+guisticfeaturesandenhanceintegrationamonginner-modalin-
+Scarcity of such specialist data leads to uncertainty in both
+formation[8,19,21,32]. modelselectionandfeaturelearningwhendevelopingsuchsys-
+tems. Tothisend,thispaperinvestigatestheuseoffeatureand Onemajorchallengeconfrontingthedevelopmentofauto-
+modelcombinationapproachestoimprovetherobustnessofdo- maticspeech-basedADdetectionsystemsisthescarcityofthe
+mainfine-tuningofBERTandRobertapre-trainedtextencoders requiredspecialistdataduetothedifficultyincollectinglarge
+onlimiteddata,beforetheresultingembeddingfeaturesbeing quantitiesoftranscribedADassessmentspeechrecordingsand
+fed into an ensemble of backend classifiers to produce the fi- shortage of clinical professionals. The resulting “small data”
+nal AD detection decision via majority voting. Experiments learningtaskleadstomodeluncertaintyencounteredinmulti-
+conducted on the ADReSS20 Challenge dataset suggest con- plestagesofsystemdevelopment. Theseinclude,butnotlim-
+sistentperformanceimprovementswereobtainedusingmodel itedto,thefollowingconsideredinthispaper: a)cross-domain
+andfeaturecombinationinsystemdevelopment. State-of-the- transfer text embedding DNNs, for example, state-of-the-art
+art AD detection accuracies of 91.67% and 93.75% were ob- BERT[33]andRoberta[34]pre-trainedmodels,byparameter
+tained using manual and ASR speech transcripts respectively fine-tuningonlimitedin-domainADdetectiondata,leadingto
+ontheADReSS20testsetconsistingof48elderlyspeakers. over-confidentparameters; b)possibleerrorsinthetranscripts
+Index Terms: AD detection, speech recognition, uncertainty, producedbyASRsystems;andc)thesuitableformofback-end
+modelensemble,pre-trainedfeaturerepresentation classifierdesignandparameterestimation.
+Tothisend,featureandensembleapproachesareadoptedin
+1. Introduction
+thispaperasoverarchingsolutionstoaddresstheabovemodel
+Alzheimer’s disease (AD), the most common form of demen- uncertaintyissues. First,therobustnessofdomainfine-tuning
+tiaoftenfoundinagedpeople,ischaracterizedbyprogressive ofBERTandRobertapre-trainedtextencodersonlimitedAD
+degradation of the memory, cognition, and motor skills, and detection speech transcripts is improved using model averag-
+consequently decline in the speech and language skills of pa- ing. Second,theuncertaintyoverthesuitableformoftextem-
+tients[1,2].Currently,thereisnoeffectivecureforAD[3],but beddingfeaturesisaccountedforusingbothBERTandRoberta
+atimelyinterventionapproachcandelayitsprogressionandre- textembeddingrepresentationsforback-endclassifierconstruc-
+ducethenegativephysicalandmentalimpactonpatients[4].To tion.Third,theuncertaintyoverASRtranscript’squalityisfur-
+thisend,speech-basedautomaticADdiagnosishasadvantages therhandledusingtwo-passdecodingbasedspeechrecognition
+of being non-intrusive, more scalable and less costly, when systemcombination,orlaterfusionoftheirrespectiveADde-
+comparedwithconventionalapproachesbasedonclinicaltests. tectionoutputs. Lastly,theuncertaintyovertheback-endclas-
+Inrecentyearstherehasbeenaburgeoninginterestindevelop- sifierisaddressedusingdecisionvotingamonganensembleof
+ing such systems, notably represented by the recent ADReSS classifiers.
+challenges[5,6]. Experiments conducted on the ADReSS20 Challenge
+Current speech-based AD detection systems consist of datasetsuggestconsistentperformanceimprovementswereob-
+front-end feature extraction and back-end classification com- tainedusingmodelandfeaturecombinationinsystemdevelop-
+ponents. Commonlyusedformsofacousticfeaturesextracted ment. State-of-the-artADdetectionaccuraciesof91.67%and
+from the audio include, but not limited to, spectral features, 93.75%wereobtainedusingmanualandstate-of-the-arthybrid
+prosodicfeatures,vocalquality,andpre-traineddeepneuralnet- CNN-TDNNASRsystemproducedspeechtranscriptsrespec-
+work(DNN)embeddingfeatures[7–15]. Handcraftedlinguis- tivelyontheADReSS20testsetconsistingof48elderlyspeak-
+ticfeatures[7,10,16–18]capturinglexicalorsyntacticalcues, ers.
+orthosepre-trainedtextneuralembedding[7–9,19–21]canbe The main contributions of this paper are summarized be-
+extractedfromthetranscriptsofADassessmentspeechrecord- low. First, thispaperpresentsasystematicapplicationoffea-
+ings. To fully automate the AD detection process, ASR sys- tureandmodelcombinationapproachestoaddresstheinherent
+tems[12–15,17,18,21–25]havebeenincreasinglyoftenused data sparsity and model uncertainty issues in speech recogni-
+toproducespeechtranscripts,inplaceofgroundtruthmanual tion based AD detection systems. In contrast, prior research
+transcripts [7,8,16,19,22,26,27] that are costly to annotate primarilyinvestigatedmodelcombinationoverback-endclassi-
+inlargequantities. Inaddition,disfluencymeasuresofspeech fiers[8,10,19,21,27,32],whileitsapplicationtocross-domain
+were found useful for AD detection tasks [13,18,19,21,28]. fine-tuningofpre-trainedtextembeddingandASRsystemout-
+Diverse forms of back-end classifiers range from DNN vari- puts fusion remains limited. Second, this paper presents a
+2202
+guA
+8
+]GL.sc[
+2v85731.6022:viXra
+state-of-the-artADdetectionaccuracyof91.67%obtainedus- blocks,768hiddenlayers,and12attentionheadsperattention
+ingmanualtranscriptsandbestpublishedaccuracyof93.75% layer. Themax inputlengthis512. ThestandardBERTtok-
+using ASR speech transcripts respectively on the ADReSS20 enizer transforms input texts into tokens. This paper also ex-
+testset.Tothebestofourknowledge,theclosestpublishedac- plored the use of Roberta pre-trained text feature embedding
+curacyperformancetodateonthesametaskare91.67%[32] modelandtheaccompanyingtokenizer2.
+and87.50%[22]usingmanualandASRspeechtranscripts,re- Classifier:TheSVMclassifierusedSVCAPIfromtheSklearn
+spectively. package,withtheregularizationparameterCforsoftmarginset
+Therestofthispaperisorganizedasfollows. Section2.1 to1andlinearkernelasthekernelfunction.Theotherfourclas-
+introducestheADdetectiontaskandtheADReSS20[5]dataset sificationmodelsusedareLinearDiscriminantAnalysis(LDA),
+used in this work. Section 2.2 briefly describes the hybrid GaussianProcess(GP),MultilayerPerceptron(MLP)3,andex-
+CNN-TDNN and end-to-end Conformer ASR systems, BERT tremegradientboost(XGB)4.Eachclassifierisoptimizedwith
+andRobertatextembeddingmodels, andback-endclassifiers. the best hyper-parameters found via greedy search on cross-
+Section3suggestsanapproachtofine-tunethepre-trainedtext validationdatausingBERTderivedtextfeaturesofmanualtran-
+encoders. Section 4 presents AD detection systems with fea- scriptions. Thebest-performedclassifierhyper-parametersare
+turecombinationandclassifiercombinationmethodsonmanual adoptedandfixedinalltheexperimentsofthispaper.Weevalu-
+transcripts, followedbySection5showingADdetectionwith atedthesystemperformanceby10-foldcross-validation(CV)5
+thosemethodsusingASRsystemoutputs. Finally,theconclu- onthetrainingsetandtestedonthetestset.
+sionsaredrawn,andfutureworksarediscussedinSection6.
+3. Fine-tuningPre-trainedTextEncoder
+2. TaskDescription
+To reduce the mismatch between pre-trained BERT/Roberta
+This subsection describes the audio and text data used in this models built on general texts and elderly speech transcripts,
+paperandthebaselinesystemstructure. fine-tuning was performed on the 11591 words manual tran-
+2.1. Dataset scripts of the ADReSS training set. We fine-tuned the BERT
+or Roberta models with the Masked Language Modelling and
+Inthispaper,theADReSS20Challengedataset[5]isusedfor
+NextSentencePredictiontasksusedinpre-training.Tocircum-
+theADdetectionsystemtrainingandevaluation. Itisselected
+vent the risk of over-fitting, a selected set of three fine-tuned
+fromtheCookieTheftpicturedescriptionpartofthePittCorpus
+pre-trainedmodelsontheADReSStrainingdataobtainedatthe
+intheDementiaBankdatabase[35]withbalancedage,gender
+finalthreeupdateepochswereusedtoproduceseparatetextem-
+and AD label distribution among subjects. The data consists
+beddingfeaturesforSVMbasedADdetectionoutputsmajority
+of speech recordings, corresponding manual transcripts anno-
+voting, asisshowninFigure1(A).Ablationstudiesonalter-
+tatedbytheCHATcodingsystem[36]andbinaryADlabels.
+nativeupdateepochselectionschemes, forexample, basedon
+Boththeparticipantandtheinterviewerpartsareprovided. It
+random epoch sampling, larger or non-even inter-epoch inter-
+isdividedintothetrainingsetof2hours9minutesfrom108
+vals,suggesttheaboveprovidesthebestADdetectionperfor-
+subjectsandthetestsetof1hour6minutesfrom48subjects.
+manceinpractice.TheperformanceoftheircorrespondingAD
+2.2. BaselineSystem
+detectionaccuracyonthetrainingset10-foldCVandthetest
+A baseline tandem BERT text embedding and SVM classifier setareshowninTable1.Notably,duringtheevaluation,weag-
+basedsystemstructurewasused[22]toproduceADdetection gregatedthescoresfromtenrunsofCVbyperformingdecision
+resultswitheithergroundtruthmanualtranscriptsorASRsys- votingfrommodelstrainedintenruns, asitgeneratedhigher
+temgeneratedtranscripts. stabilityandreducedtheuncertaintyinmodelselection. Accu-
+ASRSystems: ThehybridCNN-TDNNsystemisbasedona racyscoresareprimarilyusedtoevaluatetaskperformance.
+recentlyproposedlattice-freeMMItrainedfactoredTDNNsys- SeveraltrendscanbefoundinTable1.First,irrespectiveof
+tem[37]withadditional2-dimensionalconvolutionallayersbe- the precise form of epoch selection being used prior to their
+ingemployedasthefirst6layers,andisfurtheroptimizedwith combination shown in Figure 1, a trend is that performance
+datare-segmentation,domainadaptation,andBayesianLHUC improvements were obtained over the non-fine-tuned baseline
+speaker adaptation [38]. The end-to-end ASR system used is BERTmodels,andthedirectlyfine-tunedmodelswithoutinter-
+a Conformer specially developed for elderly speech by train- epochcombination(Sys.3vs. Sys.1-2). Second, epochselec-
+ing with augmented elderly speech data, incorporating man- tionusingafixedstridewiththeoptimalepochselectionstride
+ualre-configurationofConformerhyper-parametersandcross- 1(Sys.3vs.Sys.4-5)outperformedtheothersselectionmethods
+domain adaptation. Two-pass decoding based system combi- (Sys.3vs.Sys.6-7).Morespecifically,thebestperformingfine-
+nation ASR outputs involving the CNN-TDNN ASR system tunedBERTmodelproducedfeatureswithmergingoverthelast
+to produce initial N-best recognition hypotheses before being threeupdateepochsoutperformedthebaselineBERTfeatures
+rescored using the Conformer system using a 2-way cross- withoutfine-tuningandmodelmergingby11.36%absoluteon
+systemscoreinterpolation[39,40]arealsoconsidered. theCVdata(Sys.3vs. Sys.1). Amorebalancedperformance
+BERTandRobertatextembedding: wecombineallpartici- acrosstheCVandtestsetswerealsoobtained. Similartrends
+pantspeechsegmentscorrespondingtoasinglepicturedescrip- of accuracy improvements were also found on the fine-tuned
+tionforextractingtextfeatures. Theprincipal768-dimensions Roberta features with model combination (Sys.9 vs. Sys.8).
+of the last hidden layer BERT or Roberta model output are Based on these results, BERT and Roberta text encoder fine-
+takenasthesinglevectorrepresentationforeachparticipant’s tuningwithmodelcombinationoverthelastupdatesnapshots
+ADclassification. Thisisthennormalizedbyremovingmean
+andscalingtounitvariancebeforebeingpassedintotheclassi- 2https://huggingface.co/roberta-base
+fiers.TheBERTpre-trainedmodelbert−base−uncasedis 3https://scikit-learn.org/stable/
+basedontheopen-sourcemodellibrary1,with12transformer 4https://xgboost.readthedocs.io/en/latest/python/index.html
+5InADReSS20dataset,eachparticipantonlyhasonerecording,so
+1https://huggingface.co/bert-base-uncased CVisconductedonparticipant-level
+Figure 1: Example of (A) an ensemble of 3 fine-tuned BERT/Roberta pre-trained models on the ADReSS training data obtained at
+differentupdateepochs(top, left)andbeingusedtoproduceseparatetextembeddingfeaturesforSVMbasedADdetectionoutputs
+majorityvoting(ingreen/yellow/red,bottom,left);and(B)ADdetectionsystempipelineusingmanual,oroneofthreeASRsystems
+(CNN-TDNN,Conformer,ortheircombinationviatwo-passrecognition[39])producedtranscripts(green)fortextembeddingfeatures
+extraction(blue)andback-endclassification(orange).Featurecombinationfeedsfine-tunedBERTandRobertatextembeddingof(A)
+intoasingleback-endSVMclassifierforoutputsvoting(topright). Classifierscombinationfeedsfine-tunedBERTorRobertatext
+featuresintofiveclassifiersforoutputsvoting(bottomright).
+Table1:ADdetectionperformanceevaluatedby10-foldCVon earlyfusionbyconcatenation(Sys.13vs. Sys.19,col.5-6,Ta-
+theADReSStrainingsetandtestsetusingBERT/Robertaasthe ble2). Lastly,decision-levelfusionamongBERTandRoberta
+textfeatureextractorw/omodelcombinationbasedfine-tuning featurebasedSVMclassifiersproducedthebestfeaturecombi-
+of Fig. 1(A) using SVM classifier. All BERT/Roberta models nationaccuracyof87.96%ontheCVdata,and87.50%onthe
+fine-tunedongroundtruthtranscript(GT).Allback-endclas- test(Sys.13vs.14-17,col.5-6,Table2).
+sifiers trained and evaluated on ground truth transcript (GT).
+4.2. ClassifiersCombination
+Sys.3-7andSys.9showtheeffectsofvariousupdateepochsse-
+lectionschemesformodelcombinationinSection3. Random Apart from the feature extractor stage, uncertainty could also
+result (Sys.6) is averaged from 10 random selections. Fine- manifest in architecture design and parameter estimation of
+tuningwithoutmergingresult(Sys.2)isaveragedfromperfor- back-endADdetectionmodelsonlimitedADdetectiontrain-
+mancesoftheselectedsinglesnapshotmodels. ingdata.Tothisend,weconductedclassifiercombinationwith
+majority voting over the binary AD detection decisions by a
+Fine-tuning Comb Epoch Epochs CV Test
+Sys. Feature Data -ination selection merged Acc.(%) Acc.(%) rangeofBERT(orRoberta)featurebasedback-endclassifiers,
+1 N/A × - - 74.75 87.50 as illustrated in Figure 1 (grey, bottom right). All possible
+2 × fixedstride(1) [28,29,30] 78.38 84.70
+3 fixedstride(1) [28,29,30] 86.11 85.42 feature-classifiercombinationsinvolvingboththefullset2×5
+4 BERT GT √ fixedstride(3) [24,27,30] 86.11 79.17 combination and its various subsets were examined to maxi-
+5 fixedstride(10) [10,20,30] 84.26 81.25
+6 random - 81.39 79.58 mize the diversity and complementarity among systems. The
+7 geo.interval [18,27,30] 82.41 83.33 bestperformingfeature-classifiercombinationconfigurationin-
+8
+9 Roberta
+N G/ TA √× fixedst-
+ride(1)
+[28,2-
+9,30]
+7 80 0. .7 59
+6
+7 80 5. .8 43
+2 volvesfine-tuned(withsnapshotlevelmodelvotingofSection
+3)BERTorRobertafeaturestrainedLDA,GPandMLPclassi-
+areusedinallthefollowingexperimentsofthispaper.
+fiers(Sys.18,col.5-6,Table2).
+4. FeatureandClassifierCombination The hyperparameters in the back-end classifiers are opti-
+mized by greedy search on CV, as mentioned in Section 2.2.
+Thissectioninvestigatesthefeaturecombinationoftwotexten-
+Morespecifically,weusedtheSVMsettingasinthebaseline,
+coders(BERTandRoberta),andtheback-endclassifierscom-
+LDAsolvedbySVD,GPwithkernel4.0∗RBF(5.0), XGB
+bination,withthemanualtranscriptionsasinputs.
+basedontreemodelswiththenumberofboostingroundsetas
+4.1. FeatureCombination 16, the maximum tree depth for base learners set as 2, learn-
+Thetwotypesoffine-tunedtextembeddingDNNs,BERTand ingrateη = 0.4,minimumlossreductionrequiredtomakea
+Roberta, can capture linguistic information with discrepancy. partitiononthetreeγ = 0.1, andMLPwithasinglehidden
+Tofurtherreducetheuncertaintyunderlyingtheresultingtext layerof256-dimension,L2penaltyparameterα=1e−5,op-
+embeddingfeatures,weexploitedalatefeaturefusionviama- timizedbylimitedmemoryBFGS.Allotherhyper-parameters
+jorityvotingoverdecisionsmadebyasingletypeofclassifier werekeptasdefaultsettings.
+basedoneitherBERTandRobertafeaturesrespectively(Fea- AsshowninTable2,thefirstgeneraltrendisthatclassifier
+turedecisionvoting,Table2),whichisshowninFigure1(B, combinationsystemconsistentlysurpasses,oratleastmatches,
+topright).Theeffectivenessoffeaturedecisionvotingwithdif- theperformanceofanysingleclassifiersystemacrosstheCV
+ferent types of back-end classifiers is examined. We also ex- andtestsets(Sys.6vs. Sys.1-5, Sys.12vs. Sys.7-11, col.5-6,
+plored alternative methods of fusing the two text embedding Table 2). Secondly, conducting classifier combination on the
+featuresbyconcatenationbeforefeedingthemintoSVMs. topoffeaturecombinationproducednofurtherimprovements
+Twotrendsareobservedfromthemanualtranscriptsbased overpurefeaturecombination(Sys.18vs. Sys.13,col.5-6,Ta-
+resultsinTable2(column5-6).First,themethodoffeaturefu- ble 2). This suggests further cross-system diversity and com-
+sionbydecision-levelmajorityvotingproducedimprovements plementarityneedtobeinjectedintoindividualback-endclas-
+using all 5 back-end classifiers on the CV data over the com- sifiers’ design and training when feature combination is used.
+parablebaselinesusingeitherBERTorRobertafeaturesalone
+(Sys.13-17 vs. Sys.1-5 & Sys.7-11). On the test set, sim- 5. ASROutputBasedADDetection
+ilar improvements were obtained for SVM and LDA classi-
+InthisSectionweapplythefeaturecombinationandclassifier
+fiers(Sys.13vs. Sys.1&7, Sys.14vs. Sys.2&8). Second, the
+combinationmethodsofSection4toADdetectionusingASR
+decision-levelfusionbymajorityvotingperformedbetterthan
+systemgeneratedtranscripts.
+Table2: AccuracyofADdetectionusingdifferentback-endclassifierswithorwithoutfeatureand/ormodelcombinationonmanual
+transcripts, or one of three ASR systems (CNN-TDNN, Conformer, or their two-pass decoding combination [39] “CNN-TDNN −→
+Conformer”) produced transcripts. “CNN-TDNN + Conformer” refers to separate AD detection using each ASR system’s specific
+transcripts before final decision voting combination. “LDA” stands for linear discriminant analysis, “GP” for Gaussian Process,
+“MLP”formultilayerperceptron,and“XGB”forextremegradientboosting.
+CNN-TDNN−→ CNN-TDNN+
+Manual CNN-TDNN Conformer
+Combination Conformer Conformer
+Sys. Feature Classifier WER0% WER30.69% WER26.70%
+Method WER26.50% WERN/A
+CVAcc.(%) TestAcc.(%) TestAcc.(%) TestAcc.(%) TestAcc.(%) TestAcc.(%)
+1 SVM 86.11 85.42 85.42 81.25 81.25 81.25
+2 LDA 86.11 79.17 72.92 72.92 81.25 72.92
+3 N/A GP 85.19 81.25 79.17 85.42 81.25 83.33
+4 BERT XGB 84.26 79.17 79.17 70.83 79.17 79.17
+5 MLP 84.26 81.25 79.17 79.17 81.25 83.33
+6 ClassifierBestSelection SVM+LDA+GP+XGB 87.04 85.42 79.17 81.25 81.25 83.33
+7 SVM 80.56 85.42 87.50 81.25 83.33 85.42
+8 LDA 82.41 85.42 81.25 75.00 81.25 81.25
+9 N/A GP 79.63 87.50 81.25 81.25 83.33 83.33
+10 Roberta XGB 81.48 85.42 83.33 85.42 77.08 87.50
+11 MLP 84.26 89.58 77.08 79.17 79.17 83.33
+12 ClassifierBestSelection LDA+XGB+MLP 84.26 91.67 81.25 79.17 83.33 81.25
+13 SVM 87.96 87.50 93.75 85.42 87.50 91.67
+14 Feature LDA 86.11 87.50 83.33 72.92 85.42 85.42
+15 decision GP 85.19 83.33 83.33 83.33 85.42 87.50
+Bert+
+16 voting XGB 86.11 81.25 85.42 83.33 87.50 87.50
+Roberta
+17 MLP 87.04 85.42 81.25 85.42 81.25 81.25
+18 Feature+Classifier. LDA+GP+MLP 87.96 85.42 79.17 83.33 81.25 83.33
+19 Featureconcat. SVM 86.11 81.25 83.33 79.17 87.50 81.25
+5.1. ADDetectionUsingSingleASRSystem’sOutput Table 3: Comparison of test results (rounded to one decimal
+place) against the SOTA based on different modality for the
+TheADdetectionperformanceusingvariousfeatureandclas-
+ADReSS20challenge.”Pre.”,”Rec.”and”F1”representspre-
+sifiercombinationconfigurationsforasingleASRsystempro-
+cision,recallandF1scoresregardingADastherelevantclass.
+ducedtranscriptsareshowninTable2(col.7-8).Severaltrends
+Test
+canbefound.First,consistentwiththeprevioustrendsonman- Study Modality
+Acc.(%) Pre.(%) Rec.(%) F1(%)
+ualspeechtranscriptsusingfeaturecombination(col.5-6,Table Syedetal.[32] Text(Manual) 91.7 - 91.7 -
+2), decision-level feature fusion by majority voting produced Lietal.[22] Text(ASR) 88.0 91.0 83.0 87.0
+Martincetal.[46] Audio+Text(Manual) 93.8 -
+improvements using all 5 back-end classifiers on the test data
+Audio+
+over the comparable baselines using either BERT or Roberta Laguartaetal.[47] pre-trainedbiomarkers6 93.8 -
+featuresalone(Sys.13-17vs. Sys.1-5&Sys.7-11,col.7-8,Ta- Ourwork Text(Manual) 91.7 91.7 91.7 91.7
+(Sys.13,Tab.2) Text(ASR) 93.8 92.0 95.8 93.9
+ble 2). Second, the BERT+Roberta feature combination ap-
+proachbasedSVMclassifier(Sys.13),amongallthecombina-
+However,usingneitherofthetwoASRsystemcombinedout-
+tionstrategiesbeingconsideredinthesametable,consistently
+puts led to improvements over using the hybrid CNN-TDNN
+producedthebestADdetectionaccuracyusingthetwosingle
+systemtranscriptsonly(Sys. 13,col.9-10vs. col.7). Thissug-
+ASR systems’ outputs (Sys.13 vs. Sys.1-12 & 14-19, col.7-
+gestsfurtherdiversityandcomplementaritymayberequiredin
+8,Table2). Inparticular,usingtheCNN-TDNNASRsystem
+ASRsystemcombinationandintegrationwiththedownstream
+producedspeechtranscripts,thisdecision-levelfeaturecombi-
+ADdetectioncomponent.Theperformanceofthebestperform-
+nationbasedSVMsystemproducedthebestpublishedspeech
+ing AD detection system in this paper (sys. 13, Table 2) are
+recognitionoutputsbasedADdetectionaccuracyof93.75%on
+furthercontrastedinTable3withthosethatareobtainedonthe
+thebenchmarkADReSStestset.
+sameADReSS20challengetaskandreportintherecentlitera-
+5.2. ADDetectionUsingMultipleASRSystems’Outputs turetodemonstratetheircompetitiveness.
+6. Conclusion
+Compared with ASR performance measured on non-aged,
+healthy speech [41,42], significantly higher speech recogni- Thedevelopmentofastate-of-the-artspeech-basedADdetec-
+tion error rates are often found on elderly speech data [2,15, tionsystemconstructedusingtheADReSS20challengedataset
+22,23,31,43–45]. Inordertomitigatetheimpactofpossible waspresentedinthispaper.ADdetectionwasperformedbased
+ASR transcript errors on the downstream AD detection task, oneithermanualorASRsystemtranscripts. Aseriesofmodel
+ASR system combination approaches are also investigated in ensemble approaches were used in fine-tuning of BERT and
+this paper to account for the uncertainty over of the quality Robertapre-trainedtextencoders, textembeddingfeatureand
+of speech recognition system outputs produced by the hybrid back-endclassifiercombination,aswellastheintegrationwith
+CNN-TDNNandend-to-endConformerASRsystemsconsid- front-endASRsystemtoaddressthemodelinguncertaintyis-
+eredinthispaper.Inthisregard,westudiedtheefficacyoftwo sueresultedfromthesparsityofADdetectiontrainingdata.Ex-
+approachestocombinethehybridCNN-TDNNandend-to-end perimentsconductedontheADReSS20Challengedatasetsug-
+ConformerASRsystems. Oneisdetectionbasedontheirtwo- gestconsistentperformanceimprovementswereobtainedusing
+passdecodingcombinedsystemproducedoutputs[39](”CNN- modelandfeaturecombinationinADdetectionsystemdevel-
+TDNN−→Conformer”,Table2),whiletheotherperformssep- opment. TighterintegrationbetweentheASRsystemandAD
+arateADdetectionusingeitherofthetwoASRsystem’sout- detectioncomponentswillbeinvestigatedinfutureresearch.
+puttranscriptsbeforefinaldecisionvotingcombination(”CNN-
+7. Acknowledgements
+TDNN+Conformer”,Table2).
+ThisresearchissupportedbyHongKongRGCGRFgrantNo.
+FromresultspresentedinTable2(col.9-10),wefirstcon-
+14200021,14200218,14200220,TRST45-407/19NandInno-
+firmedthatBERTplusRobertafeaturedecisionvotingsystem
+vation&TechnologyFundgrantNo.ITS/254/19.
+with the SVM classifier is again the best performing system
+among all (Sys.13 vs. Sys.1-12 & 14-19, col.9-10, Table 2), 6Theytransferredknowledgefrompre-traineddetectionsystemus-
+regardless of which ASR combination approach being used. ingbiomarkers(e.g.coughfeatures)developedwithnon-publicdata
+8. References
+[23] G.Gosztolyaetal.,“Identifyingmildcognitiveimpairmentand
+mildalzheimer’sdiseasebasedonspontaneousspeechusingasr
+[1] P.S.Sachdevetal., “Classifyingneurocognitivedisorders: the
+andlinguisticfeatures,”CSL,2019.
+dsm-5approach,”Nat.Rev.Neurol.,2014.
+[24] Y.Zhuetal., “Wavbert: Exploitingsemanticandnon-semantic
+[2] R.Vipperlaetal.,“Ageingvoices:Theeffectofchangesinvoice speechusingwav2vecandbertfordementiadetection,”INTER-
+parametersonasrperformance,”EurasipJ.AudioSpeechMusic SPEECH,2021.
+Process.,2010.
+[25] J.Chenetal.,“Anattention-basedhybridnetworkforautomatic
+[3] V.G.Yadav,“Thehuntforacureforalzheimer’sdiseasereceives detection of alzheimer’s disease from narrative speech.” in IN-
+atimelyboost.”Sci.Transl.Med.,2019. TERSPEECH,2019.
+[4] D. Roeck et al., “Brief cognitive screening instruments for [26] T. Searle et al., “Comparing natural language processing tech-
+early detection of alzheimer’s disease: a systematic review,” niques for alzheimer’s dementia prediction in spontaneous
+Alzheimer’sresearch&therapy,2019. speech,”INTERSPEECH,2020.
+[27] U.Sarawgietal.,“Multimodalinductivetransferlearningforde-
+[5] S.Luzetal.,“Alzheimer’sdementiarecognitionthroughsponta-
+tectionofalzheimer’sdementiaanditsseverity,”INTERSPEECH,
+neousspeech:Theadresschallenge,”INTERSPEECH,2020.
+2020.
+[6] S.Luzetal.,“Detectingcognitivedeclineusingspeechonly:The
+[28] R.Pappagarietal.,“Usingstateoftheartspeakerrecognitionand
+adressochallenge,”INTERSPEECH,2021.
+natural language processing technologies to detect alzheimer’s
+[7] A.Balagopalanetal.,“Tobertornottobert: comparingspeech diseaseandassessitsseverity.”inINTERSPEECH,2020.
+and language-based approaches for alzheimer’s disease detec- [29] N. Cummins et al., “A comparison of acoustic and linguistics
+tion,”INTERSPEECH,2020. methodologiesforalzheimer’sdementiarecognition,”inINTER-
+[8] M.S.S.Syedetal., “Automatedscreeningforalzheimer’sde-
+SPEECH,2020.
+mentiathroughspontaneousspeech.”inINTERSPEECH,2020. [30] S.delaFuenteGarciaetal.,“Artificialintelligence,speech,and
+language processing approaches to monitoring alzheimer’s dis-
+[9] E. Edwards et al., “Multiscale system for alzheimer’s demen-
+ease:asystematicreview,”JournalofAlzheimer’sDisease,2020.
+tiarecognitionthroughspontaneousspeech.”inINTERSPEECH,
+2020. [31] Z.Yeetal.,“Developmentofthecuhkelderlyspeechrecognition
+systemforneurocognitivedisorderdetectionusingthedementia-
+[10] M.Martincetal.,“Tacklingtheadresschallenge: Amultimodal bankcorpus,”inICASSP,2021.
+approachtotheautomatedrecognitionofalzheimer’sdementia.”
+[32] Z.S.Syedetal.,“Automatedrecognitionofalzheimer’sdementia
+inINTERSPEECH,2020.
+usingbag-of-deep-featuresandmodelensembling,”IEEEAccess,
+[11] J.Kooetal.,“Exploitingmulti-modalfeaturesfrompre-trained 2021.
+networksforalzheimer’sdementiarecognition,”INTERSPEECH, [33] J. Devlin et al., “Bert: Pre-training of deep bidirec-
+2020. tional transformers for language understanding,” arXiv preprint
+[12] Z.S.Syedetal.,“Tacklingtheadressochallenge2021:Themuet- arXiv:1810.04805,2018.
+rmit system for alzheimer’s dementia recognition from sponta- [34] Y.Liuetal.,“Roberta:Arobustlyoptimizedbertpretrainingap-
+neousspeech,”INTERSPEECH,2021. proach,”arXivpreprintarXiv:1907.11692,2019.
+[13] M. Rohanian et al., “Alzheimer’s dementia recognition using [35] J.T.Beckeretal., “Thenaturalhistoryofalzheimer’sdisease:
+acoustic,lexical,disfluencyandspeechpausefeaturesrobustto descriptionofstudycohortandaccuracyofdiagnosis,”Archives
+noisyinputs,”INTERSPEECH,2021. ofneurology,1994.
+[14] R. Pappagari et al., “Automatic detection and assessment of [36] B.MacWhinney,“Thechildesproject: Toolsforanalyzingtalk:
+alzheimerdiseaseusingspeechandlanguagetechnologiesinlow- Volume i: Transcription format and programs, volume ii: The
+resourcescenarios,”inINTERSPEECH,2021. database,”2000.
+[37] A.Gulatietal.,“Conformer:Convolution-augmentedtransformer
+[15] Y. Pan et al., “Using the outputs of different automatic speech
+forspeechrecognition,”INTERSPEECH,2020.
+recognition paradigms for acoustic-and bert-based alzheimer’s
+dementia detection through spontaneous speech,” in INTER- [38] X.Xieetal., “Blhuc: Bayesianlearningofhiddenunitcontri-
+SPEECH,2021. butionsfordeepneuralnetworkspeakeradaptation,”inICASSP,
+2019.
+[16] L.B.D.Santosetal.,“Enrichingcomplexnetworkswithword
+[39] T.Wangetal.,“Conformerbasedelderlyspeechrecognitionsys-
+embeddingsfordetectingmildcognitiveimpairmentfromspeech
+temforalzheimer’sdiseasedetection,”INTERSPEECH,2022.
+transcripts,”arXivpreprintarXiv:1704.08088,2017.
+[40] M.Cuietal.,“Two-passdecodingandcross-adaptationbasedsys-
+[17] R.B.Ammaretal.,“Speechprocessingforearlyalzheimerdis-
+temcombinationofend-to-endconformerandhybridtdnnasrsys-
+easediagnosis: machinelearningbasedapproach,” inAICCSA,
+tems,”INTERSPEECH,2022.
+2018.
+[41] C.Lu¨scheretal.,“Rwthasrsystemsforlibrispeech: Hybridvs
+[18] Y. Chien et al., “An assessment system for alzheimer’s disease attention,”INTERSPEECH,2019.
+basedonspeechusinganovelfeaturesequencedesignandrecur-
+[42] Z. Tu¨ske et al., “On the limit of english conversational speech
+rentneuralnetwork,”inSMC,2018.
+recognition,”INTERSPEECH,2021.
+[19] J.Yuanetal.,“Disfluenciesandfine-tuningpre-trainedlanguage [43] M.Gengetal.,“Speakeradaptationusingspectro-temporaldeep
+modelsfordetectionofalzheimer’sdisease.”inINTERSPEECH, featuresfordysarthricandelderlyspeechrecognition,”Insubmis-
+2020. siontoIEEETAUDIOSPEECH,2022.
+[20] A.Pompilietal.,“Theinesc-idmulti-modalsystemfortheadress [44] F.Rudziczetal.,“Speechrecognitioninalzheimer’sdiseasewith
+2020challenge,”INTERSPEECH,2020. personalassistiverobots,”inSLPAT,2014,pp.20–28.
+[21] Y.Qiaoetal.,“Alzheimer’sdiseasedetectionfromspontaneous [45] L.Zhouetal.,“Speechrecognitioninalzheimer’sdiseaseandin
+speech through combining linguistic complexity and (dis) flu- itsassessment.”inINTERSPEECH,2016.
+encyfeatureswithpretrainedlanguagemodels,”INTERSPEECH, [46] M.Martincetal., “Temporalintegrationoftexttranscriptsand
+2021. acousticfeaturesforalzheimer’sdiagnosisbasedonspontaneous
+speech,”FrontiersinAgingNeuroscience,2021.
+[22] J.Lietal.,“Acomparativestudyofacousticandlinguisticfea-
+turesclassificationforalzheimer’sdiseasedetection,”inICASSP, [47] J.Laguartaetal.,“Longitudinalspeechbiomarkersforautomated
+2021. alzheimer’sdetection,”FrontiersinComputerScience,2021.

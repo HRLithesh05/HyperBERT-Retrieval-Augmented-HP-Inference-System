@@ -1,0 +1,384 @@
+Context-Adaptive Requirements Defect Prediction through
+Human-LLM Collaboration
+MaxUnterbusch AndreasVogelsang
+paluno–TheRuhrInstituteforSoftwareTechnology paluno–TheRuhrInstituteforSoftwareTechnology
+UniversityofDuisburg-Essen UniversityofDuisburg-Essen
+Essen,Germany Essen,Germany
+max.unterbusch@uni-due.de andreas.vogelsang@uni-due.de
+Abstract [4, 8, 18] requiring complex, handcrafted heuristics, or ML/DL-
+Automated requirements assessment traditionally relies on uni- based approaches [2, 10, 19] which depend on annotated, suffi-
+versalpatternsasproxiesfordefectiveness,implementedthrough cientlylargedatasets—whicharescarce[9].Bothapproachesare
+rule-based heuristics or machine learning classifiers trained on costlytodevelopandinflexibleastheyareboundtospecifictypes
+largeannotateddatasets.However,whatconstitutesa“defect”is ofdefectsandnaturallanguages.Asidefromthesepracticallimita-
+inherentlycontext-dependentandvariesacrossprojects,domains, tions,existingapproachesarealsoconceptuallyflawedfromthe
+andstakeholderinterpretations.Inthispaper,weproposeaHuman- perspectiveofrequirementsqualityasquality-in-use:Whatcon-
+LLMCollaboration(HLC)approachthattreatsdefectprediction stitutes“good”or“bad”requirementsdependsonhowwellthey
+asanadaptiveprocessratherthanastaticclassificationtask.HLC supportdownstreamSEactivities[6],whichiscontext-dependent.
+leverages LLM Chain-of-Thought reasoning in a feedback loop: Our idea is to improve existing smell detection by adding a
+usersvalidatepredictionsalongsidetheirexplanations,andthese contextualizeddefectpredictionlayerthatleveragesHuman-LLM
+validatedexamplesadaptivelyguidefuturepredictionsthrough collaborationthroughacombinationofin-contextlearningand
+few-shotlearning.Weevaluatethisapproachusingtheweakword Chain-of-Thought(CoT)reasoninginanadaptivefeedbackloop.
+smellontheQuREbenchmarkof1,266annotatedMercedes-Benz TheLLMgeneratesreasoningsentencesforeachdefectprediction,
+requirements.OurresultsshowthatHLCeffectivelyadaptstothe which users can accept or reject alongside the prediction itself,
+provisionofvalidatedexamples,withrapidperformancegainsfrom creatingagrowingpoolofvalidatedexampleswiththeirassoci-
+asfewas20validatedexamples.Incorporatingvalidatedexplana- atedrationales.Throughsimilarity-basedshotselection,themost
+tions,notjustlabels,enablesHLCtosubstantiallyoutperformboth relevantpastexamplesguidefuturepredictions,enablingthesys-
+standardfew-shotpromptingandfine-tunedBERTmodelswhile temtocontinuouslyadapttoagivendevelopmentcontext.Dueto
+maintaininghighrecall.Theseresultshighlighthowthein-context LLMs’pre-trainedknowledge,thisprocesscouldstartwithzero-
+andChain-of-ThoughtlearningcapabilitiesofLLMsenableadap- shotlearningwhennoexamplesareavailable.
+tiveclassificationapproachesthatmovebeyondone-size-fits-all Toevaluatethisapproach,weconductedaninitialempirical
+models,creatingopportunitiesfortoolsthatlearncontinuously investigationonthecaseoftheweakwordsmellviatherecently
+fromstakeholderfeedback. releasedQuREbenchmark[5].Thedatasetcontainsrequirements
+fromautomotivemanufacturerMercedes-Benzwithweakwords,
+CCSConcepts annotatedasdefectornodefectbyinternaltestingengineers.The
+classificationofweakworddefectivenessischallengingbecauseit
+• Software and its engineering → Requirements analysis;
+requiressemanticunderstanding(seeTable1forexamples).Simulat-
+Softwaredefectanalysis.
+ingourapproachonagrowingshotpool,weinvestigatedwhether
+Keywords LLMscanadaptdefectpredictionstouser-feedback.
+Ouremergingresultsshowthattheapproacheffectivelyadapts
+LLM,RequirementsEngineering,Quality,Human-in-the-Loop
+tocontext-specificinterpretationsofdefectiveness,eveninseverely
+ACMReferenceFormat: low-dataregimes.Wefindthatincorporatingvalidatedexplanations
+MaxUnterbuschandAndreasVogelsang.2026.Context-AdaptiveRequire- alongsidelabelsiscritical:HLCwithonly20examplessubstantially
+mentsDefectPredictionthroughHuman-LLMCollaboration.In2026IEEE/ACM outperformsbothstandardfew-shotpromptingwithoutreasoning
+48thInternationalConferenceonSoftwareEngineering(ICSE-NIER’26),April
+andBERTmodelsfine-tunedon320examples.
+12–18,2026,RiodeJaneiro,Brazil.ACM,NewYork,NY,USA,5pages.
+Withthispaper,wesuggestaparadigmshift,movingbeyond
+rigid,one-size-fits-allapproaches,towardapproachesthatexplicitly
+1 Introduction
+incorporatecontextualfactorsandstakeholder-drivenjudgments.
+Unnoticeddefects,suchasambiguityinnaturallanguagerequire- We expect this Human-LLM collaboration process to extend to
+ments,cansurfaceascostlyproblemsindownstreamSEtasksand othercontext-dependenttasksintheSEfield,suchascodereviews,
+riskprojectsuccess[7].Addressingthisrisk,theRequirementsEn- where“correctness”oftendependsonstakeholderperspectiveand
+gineering(RE)communityhasdevelopedautomatedmethodsfor contextualfactors.Theparadigmchallengestheprevailingassump-
+detectingrequirementssmellsusinguniversalpatternsasproxies tionthatSEautomationtoolsrequirelargepre-annotateddatasets
+fordefectiveness.Thesemethodshingeonrule-basedapproaches withuniversallyagreedgroundtruths,insteaddemonstratingthat
+AcceptedatICSE-NIER’26,RiodeJaneiro,Brazil
+©2026TheAuthors.
+6202
+naJ
+5
+]ES.sc[
+1v25910.1062:viXra
+AcceptedatICSE-NIER’26,April12–18,2026,RiodeJaneiro,Brazil MaxUnterbuschandAndreasVogelsang
+effective quality assurance can emerge from incremental stake-
+holderfeedback.Thisopensavenuesforfutureresearchoncontext- Human-LLM Collaboration
+adaptiveSEtoolingthatlearnsandevolveswithorganizations. N REe Qw Ex. S sim eail ra cr hity
+Ex. Pool Correction
+Ex.
+2 Background&RelatedWork Pattern [If user [If user
+Detection [If available]
+accepts] rejects]
+Researchonrequirementsqualityassurancehasfollowedtwomain Defects
+Defect User
+directions:(i)theuseofcontrolledlanguagestopreventdefectsby
+Prediction Reasoning, Validation
+design,and(ii)verificationmethodsforunconstrainednaturallan- Label
+LLM
+guagerequirements[8].Inthelatterarea,authorsdefinedpatterns
+asuniversalproxiesforpotentialissuesfordownstreamSEtasks
+[4],so-calledrequirementssmells,andproposedmethodsfortheir
+Figure1:Human-LLMCollaborationApproach
+automateddetection.
+Rule-basedapproaches[4,8,18]targetedsuchsmellsusingPOS-
+tagging,dictionaries,andparsing.Whilebasicsmellssuchaspas- Differencetopriorwork:Sophisticateddefectpredictionap-
+sive voice and weak words are simple to implement, they typi- proachesrelyoncomplexrulesorML/DLmethods,whichassume
+callyover-approximatedefectiveness,asinpractice,mostcases universal ground truths and require handcrafted rules or large
+arecontextuallyharmless[11].Moresophisticatedsmellsusing annotateddatasetsbeforedeployingstaticclassifiers.Weinstead
+morenarrowlydefinedpatterns,suchasvaguepronounsandsub- leveragesimple,high-recallpatternsthattraditionallyyieldedex-
+jectivelanguage,aremorecomplexanddifficulttomaintainwith cessivefalsepositivesduetotheirgenerality.HLCresolvesthisby
+hand-craftedrules.SeveralstudiesemployedML/DLmethodsto distinguishingdefectivefrombenigncasesthroughflexible,context-
+targetmoreconcretedefecttypessuchasanaphoricorcoordination adaptiveHuman-LLMcollaboration.DifferenttostandardLLM-
+ambiguity[2,10,19].Thesestatisticalmethodscanbetteraccount basedfew-shotapproaches,HLCbuildsashotpoolfromscratch
+forcontextbuttheyareinflexibleandrequiresufficientlylarge withvalidatedexplanationsthatguidefuturepredictions,which
+annotateddatasets,whicharescarce[9]. areusuallynotavailableunlesscraftedmanually.
+RecentworkhasbegunexploringLLMsforrequirementsquality UnlikeActiveLearning(AL),whichstartswithannotateddata
+assessment,targetingabstractqualitydimensionssuchasunambi- anditerativelyqueriesexamplesforretraining,ourvalidationloop
+guity,consistency,orISO29148characteristics[12–14].However, istheoperatingmode:Everypredictionisvalidated,feedbackis
+thesestudiesgenerallypromptLLMstoprovideholisticjudgments, incorporatedviain-contextlearning,andCoTprovidesinherent
+oftenyieldingmixedresults[3,16]andofferingonlyminimalguid- explainability. Assuming sufficient recall, humans mainly filter
+ancefortheLLM.Closesttoourwork,Bashiretal.[1]experimented benigncasesbycorrectingpredictionswithminimaleffort.
+withfew-shotpromptingstrategiesforambiguitydetectionand Thenoveltyliesinshiftingfrompre-annotateddatasetstocontin-
+evaluatedhowwellLLMscanpost-hocexplaintheirpredictions uouslybuildingvalidatedexampleswithreasoningviaHuman–LLM
+topractitioners,findingthemeffectiveforprovidingexplanations. collaboration.WelaterextendthisideatootherSEautomationtasks
+Incontrast,ourapproachgeneratesreasoningsentencesbeforethe anddiscusshowtoolsandprocessintegrationcansupportit.
+verdict,usesthemasexplanationstogatheruserfeedback,and
+feedsthembackinthedemonstrationstoguidefuturepredictions. 4 StudyDesign
+Inthispreliminarystudy,ourgoalistoestimatehowwelltheHLC
+3 Human-LLMCollaborationApproach approachcanperforminasimulatedusagescenario.Wedrawon
+OurHuman-LLMcollaboration(HLC)approach(Figure1)opera- theinitialcaseofpredictingthedefectivenessofweakwordsto
+tionalizesdefectpredictionbybuildingonsimplepatternstopredict benchmarkperformance,consideringtheresearchquestion(RQ):
+theirdefectivenessin-context,avoidingthecoldstartproblemen- HoweffectiveisHLCindefectpredictionsofweakwords?
+tirely.Startingwithoutanyannotateddata,webeginwithzero-shot ToanswerthisRQ,wedrawonabenchmarkofindustryrequire-
+CoTprompting.Foranidentifiedpattern(e.g.,aweakword),the mentsfromMercedes-Benz,annotatedforweakworddefectiveness
+LLM generates a reasoning sentence before determining defect bytheirinternaltestingengineers.Inourexperimentalsetup,we
+prediction.Eachfindingisexplicitlyvalidatedbytheuser,with simulatethefeedbackloopbyusingthelabeleddataasstand-ins
+theCoTreasoningservingasanexplanation.Usersmaycorrect foruserfeedbackandtestincreasingpoolsizesofvalidatedexam-
+thereasoning,thelabel,orboth.Validatedexamples(requirement, ples.Asbaselines,wecompareourHLCapproachto(i)anLLM
+identifiedpattern,reasoning,label)arestoredinapool,enabling withoutCoTtoassesstheperformanceimpactofreasoning,and
+few-shotprompting.Usingallavailableexamplesasshotsisimprac- (ii)fine-tuningofaBERTmodeltorepresentthepreviousstatus
+ticalduetodiminishingreturnsfromredundantexamples,recency quooftrainingclassifiersinadvance.
+bias,andcontextwindowlimitations.Hence,foreveryinputre-
+4.1 StudyObjects
+quirement,shotsareretrievedindividuallyviaembeddingsimilarity
+toincreasethelikelihoodofpresentingrelevantexamples.This StudyData:WedrawontheQuREbenchmark[5],whichcom-
+allowstheLLMtoderiveitsdecisionfromsimilarhistoricalex- prises2,111uniqueMercedes-Benzrequirements(seeTable1for
+amples,togetherwiththeirexplicitrationales,toalignpredictions examples).Eachrequirementcontainsatleastoneof23weakwords
+withstakeholders’context-specificinterpretationsofquality. fromthecompany’scatalog.Thedatawasannotatedforweakword
+Context-AdaptiveRequirementsDefectPredictionthroughHuman-LLMCollaboration AcceptedatICSE-NIER’26,April12–18,2026,RiodeJaneiro,Brazil
+defectivenessbyuptothreecompany-internaltesters,negotiating 1.0
+labelsfordifficultcases.Whilewehavenoinformationaboutthe
+inter-annotatorreliability,thisdatasetallowsustoevaluatehow 0.9
+welltheapproachadaptstoQApracticesofMercedes-Benz.
+0.8
+DatasetPreparation:Wede-duplicatedrequirementsappear-
+ingwithmultipleweakwords.Ifarequirementcontainsboth,a 0.7
+defectandanon-defectweakword,wekeptthedefectiveinstance
+sincethedefectiveclassistheminority.Sincetheoriginaldistribu- 0.6
+tionofweakwordsanddefectsofthedatasetisunknown[5],we
+0.5
+undersampledthenon-defectiveclass,yieldingabalanceddataset 20 40 80 160 320
+Pool Size
+of1,266instances(633perclass).
+SamplingStrategy:Wedesignedanestedsamplingstrategy
+totrackhowperformancechangesasmoredataisaddedtothe
+sameshotpool.Thedatasetwasrandomlysplitintothreefolds(422
+instanceseach,stratifiedbylabel).Withineachfold,werecursively
+drewstratifiedsubsetsofsize320,160,80,40,and20,ensuringeach
+smallerpoolwascontainedinthenextlargerone.Eachpoolis
+evaluatedonaseparate,cross-assignedfold,sothatnoinstance
+fromashotpooleverappearsinitsevaluationset.Avisualization
+ofthissamplingstrategyispresentedinouronlinematerial2.
+LanguageModel:SinceacomparisonofLLMsisnotatthecore
+ofthispaper,weconductedallexperimentsusinggpt-4.1-mini(gpt-
+4.1-mini-2025-04-14).Wechosethismodelforitscost-efficiency
+andstrongMMLUperformance1,superiortothebest-performing
+LLMsinpriorREambiguitystudies[1].
+4.2 ApproachImplementation
+Wedefinethedefectpredictionofaweakwordasbinaryclassi-
+ficationtask,wherethemodelisgivenaninputtuple𝑋 =⟨𝑟,𝑤⟩,
+where𝑟 isanaturallanguagerequirementand𝑤 aweakword
+containedin𝑟,andtheobjectiveistoassignanominallabel𝑦 ∈
+𝑌 ={defect,notdefect}.
+Prompt&ShotIntegration:Thesystemprompt(seeonlinema-
+terial2)brieflydefinesweakwordsandtaskstheLLMwithdeciding
+whether𝑤makes𝑟ambiguous.Shotsareappendedasinput-output
+pairsofrequirement+weakwordandcorrespondingreasoning+
+label.IntheCoTvariant,theLLMisexplicitlyinstructedtopro-
+duceareasoningsentencebeforetheprediction.Newinstancesare
+providedasauserprompt,followingthesameinputstructure.
+ShotSelection:Wepre-embeddedallrequirementsusingthe
+text-embedding-3-smallmodel3byOpenAI.Weexperimentedwith
+𝑘 ∈ {0,12} shots:𝑘 = 0correspondstozero-shot(noexamples
+available),while𝑘 =12drawsthesixmostsimilardefectandnon-
+defectexamples,respectively,measuredbycosinesimilaritytothe
+targetrequirement.ToexploitLLMrecencybias,shotsareordered
+sothemostsimilarexampleappearslast[15].
+ReasoningExamples:Tosimulateapoolofuser-validatedrea-
+soning,wegeneratedreasoningsentencesforallexamplesinthe
+poolsofsize80andtheirsubsets.InlinewithHLC,explanations
+werefirstgeneratedbyanLLM;yetunlikeintheactualcollabo-
+rationapproach,weconditionedgenerationonthetruelabeland
+subsequentlyvettedeachexplanationourselves.Duringvetting,we
+ensuredthateachrationalewasconsistentwiththelabelandmade
+1https://openai.com/index/gpt-4-1/
+2https://doi.org/10.6084/m9.figshare.30244633
+3https://platform.openai.com/docs/models/text-embedding-3-small
+noisicerP
+BERT (threshold = 0.5)
+LLM (k = 12)
+LLM (k = 12, CoT)
+LLM (k = 0)
+LLM (k = 0, CoT)
+(a)Precision
+1.0
+0.9
+0.8
+0.7
+0.6
+0.5
+20 40 80 160 320
+Pool Size
+llaceR
+BERT (threshold = 0.5)
+LLM (k = 12)
+LLM (k = 12, CoT)
+LLM (k = 0)
+LLM (k = 0, CoT)
+(b)Recall
+Figure2:Classificationperformanceacrossincreasingpool
+sizes(95%CIobtainedbybootstrapresampling,N=10,000)
+smalleditswhereneeded.WhileinourHLCapproach,thereason-
+ing+labelarevettedbyactualstakeholders,wefoundplausible
+reasoningforall240requirements(seeTable1foranextract).
+Fine-Tuning:WecompareourLLM-basedapproachestofine-
+tuningasmallerencoder-onlymodel(BERT-base-cased),whichhas
+representedthestate-of-the-artforrequirementsclassification[17].
+ToensurefairnesswithLLMapproachesthathighlightweakwords,
+wemarkedweakwordboundarieswithspecialtokens.The[CLS]
+representationwasusedforbinaryclassificationviaafeedforward
+layerandsoftmaxactivation.Wefine-tunedseparatemodelson
+shotpools≥80,assmallerpoolsaretoolimitedtoachievereliable
+results.Fulldetailsaredocumentedinouronlinematerial2.
+5 StudyResults&Discussion
+Weevaluateperformanceusingprecision,recall,andF1,withde-
+fectsdenotingthepositivecase.Becausemissingatruedefectis
+morecostlythanflaggingabenigncase,recallisespeciallyim-
+portant; however, we report the unweighted F1 since the origi-
+naldatasetdistributionsareunknown[5].Table2andFigure2
+summarizetheresultsacrossallpoolsizes.Confidenceintervals
+wereobtainedviabootstrapresampling(10,000iterations)onthe
+concatenatedpredictions(1,266perconfiguration),capturingboth
+within-pooluncertaintyandbetween-poolvariability.
+Without any validated examples (𝑘 = 0), the LLM-based ap-
+proachesachievehighrecall(> 0.98),yetonlylimitedprecision
+(≈0.55−0.57).CoTreasoningdoesnotmeaningfullyimproveper-
+formanceinthissetting,butitprovidesexplanations—structurally
+AcceptedatICSE-NIER’26,April12–18,2026,RiodeJaneiro,Brazil MaxUnterbuschandAndreasVogelsang
+Table1:Examplerequirementsandreasoningexplanations(weakwordsaremarkedbold)
+ID Requirement Defect Explanation
+255 TheTCUisconnectedtotheORCredundantlyviaCANandLINtoexecute yes Theword’certain’isusedtodescribewhichcrashlevelstriggerautomaticemer-
+automaticemergencycallsoncertaincrashlevels. gencycalls,yetnospecificcrashlevelsaredefined,makingitunclearwhichcrash
+levelsshouldtriggeremergencycalls.
+92 IncaseofaRearSeatEntertainmentSystem(RSUorTabletPC),thesystem no Theword’appropriate’referstotheaudiooutputcorrespondingtotheselected
+shallplaythealarmandsendittotheappropriateaudiooutputofthe occupants,whichiscontextuallyclearasitrelatestothespecificoccupantselec-
+selectedoccupants. tionmentionedintherequirement.
+Table2:ExperimentResults automation.Ourresearchagendaspansthreecomplementarydi-
+rections:tooldevelopmentandevaluation,extensiontobroaderSE
+PoolSize Approach CoT 𝑘 Precision Recall F1 tasks,andrefinementoftheunderlyingapproach.
+GPT Yes 0 0.573 0.997 0.728 SinceHLCreliesonhuman-in-the-loopfeedback,practicaladop-
+–
+GPT No 0 0.553 0.986 0.709 tionrequirestoolsupportthatminimizesvalidationeffort.Tothis
+GPT Yes 12 0.679 0.972 0.799 end,wehavedevelopedRequirely,aprototypetoolwhosedesign
+20
+GPT No 12 0.634 0.902 0.745
+wasinformedbyourinitialfindings.Requirelyenablesusersto
+GPT Yes 12 0.686 0.967 0.803
+40 flexiblyconfigurecheckersbeyondweakwords,providescontext-
+GPT No 12 0.647 0.891 0.750
+adaptiverequirementdefectpredictionswithexplanations,and
+GPT Yes 12 0.685 0.968 0.802
+80 GPT No 12 0.655 0.910 0.761 offersautomaticallygeneratedimprovementsuggestionsinarich
+BERT – – 0.517 0.754 0.613 texteditor(watchademonstrationvideoinouronlinematerial2).
+160 GPT No 12 0.665 0.897 0.764 In-Context Evaluation: We plan to evaluate tools like Re-
+BERT – – 0.620 0.761 0.684
+quirelywithactualstakeholdersinrealisticdevelopmentcontexts
+GPT No 12 0.682 0.908 0.779
+320 toassessreal-worldperformance,identifywhichqualitydefectscan
+BERT – – 0.635 0.804 0.709
+andcannotbeeffectivelydetected,andunderstandtheorganiza-
+tionalimplicationsofintegratingHLC-basedtoolsintoSEprocesses.
+similartothosewegeneratedbeforehand.Thesehelpelicituser WewillalsoinvestigateuserperceptionsofHLCcomparedtostatic
+feedback,whichisanassetfortheenvisionedcollaborativeloop. classifiers,examiningusabilityandacceptance.
+Withonly20validatedexamples(10perclass),performance ExtensiontoOtherSETasks:WeexpecttheHLCparadigm
+improvesmarkedly.CoTfew-shotprompting(𝑘 =12)raisespreci- toextendbeyondrequirementsqualityassurancetoothercontext-
+sionto≈0.70whilemaintaininghighrecall(≈0.97),whereasthe dependentclassificationtasksinSE,wherestakeholder-drivenjudg-
+non-CoTvariantsuffersadropinrecall(≈0.90)alongsidelower mentsmaybemorefavorablethanone-size-fits-allsolutions.Specif-
+precision(≈0.63). ically,weplantoapplyHLCtocodereview,wherecodequalityis
+Expandingtheshotpoolbeyond20yieldsonlymodestprecision similarlystakeholder-specificandcontext-dependent.Similartore-
+gains(+4.8percentagepointsforthenon-CoTvariantfrom20to quirementsmells,codesmellscouldserveasactionableentrypoints
+320examples),whilerecallshowsnoimprovement.Thisindicates forHLC.Integrationintocodereviewworkflows(e.g.,GitHubpull
+diminishingreturnsfromaccumulatinglargerpools.Inpractice,a requests)couldenableHLCtoprogressivelyalignwithreviewer
+trade-offarises:forcingcontinuedreasoningcorrectionsimproves preferencesandteamstandards,speedinguproutinequalitychecks
+precisionslowlybutincreasesusereffort,whereascappingpool whilefreeinghumanexpertsforothertasks.
+growthreducesoverheadbutleavesmorefalsepositivestosort. ApproachRefinement:Ourcurrentstudyfocusesonbinary
+Fine-tuningBERTonupto320examplesresultsinbothlower classificationwithsimplepattern-basedentrypoints.Weplantoex-
+precision(≈0.64)andrecall(≈0.80)thantheHLCapproachwith plorewhetherHLCcanalsooperatedirectlyonunfilteredartifacts.
+only20shots.ItsF1isevenbelowzero-shotCoTprompting.While WewillalsoinvestigateextendingHLCfromclassificationtogen-
+thresholdadjustmentscouldbringthepracticallynecessaryrecall erationtasks,suchasproducingimprovementsuggestionsforre-
+improvement,precisionwoulddeteriorate. quirementsorcode.Byfeedingactuallyappliedimprovementsback
+AnswertoRQ.HLCeffectivelyadaptsdefectpredictionsof intotheshotpool,thesystemcouldlearntogenerateincreasingly
+weakwordsasittransitionsfromzero-shottofew-shotpredic- helpfulandcontextuallyappropriatesuggestions.Additionally,we
+tions,demonstratingrapidperformancegainswithonly20shots. willexaminemethodstotuneprecision-recalltradeoffs.
+Incorporatingvalidatedexplanationsintheshots,notjustlabels,
+enablesHLCtooutperformstandardpromptingapproachesthat
+lacksuchrationales.Theseresultsshouldnotbeoverinterpretedas
+end-to-endperformanceestimates,becausetheQuREbenchmark
+deliberatelyoversampleschallengingcases. Acknowledgments
+FundedbytheDeutscheForschungsgemeinschaft(DFG,German
+6 FuturePlans
+Research Foundation) – Project number: 566352773. We thank
+WeaimtoadvancetheHLCparadigmfromitscurrentproof-of- AlexanderKorn,MersedehSadeghi,andHenningFemmerfortheir
+concepttoacomprehensiveframeworkforcontext-adaptiveSE helpfulcomments.
+Context-AdaptiveRequirementsDefectPredictionthroughHuman-LLMCollaboration AcceptedatICSE-NIER’26,April12–18,2026,RiodeJaneiro,Brazil
+References
+[19] HuiYang,AlistairWillis,AnneDeRoeck,andBasharNuseibeh.2010.Automatic
+[1] SarmadBashir,AlessioFerrari,MuhammadAbbasKhan,PerErikStrandberg, DetectionofNocuousCoordinationAmbiguitiesinNaturalLanguageRequire-
+ZulqarnainHaider,MehrdadSaadatmand,andMarkusBohlin.2025. Require- ments.InProceedingsoftheIEEE/ACMInternationalConferenceonAutomatedSoft-
+mentsAmbiguityDetectionandExplanationwithLLMs:AnIndustrialStudy. wareEngineering.ACM,AntwerpBelgium,53–62. doi:10.1145/1858996.1859007
+In41stInternationalConferenceonSoftwareMaintenanceandEvolution.IEEE,
+Auckland,NewZealand,620–631. Received30September2025;accepted1December2025
+[2] SaadEzzini,SallamAbualhaija,ChetanArora,andMehrdadSabetzadeh.2022.
+AutomatedHandlingofAnaphoricAmbiguityinRequirements:AMulti-Solution
+Study.InProceedingsofthe44thInternationalConferenceonSoftwareEngineering.
+ACM,PittsburghPennsylvania,187–199. doi:10.1145/3510003.3510157
+[3] AlessandroFantechi,StefaniaGnesi,GiuseppeLami,andAlessandroMaccari.
+2003.ApplicationsofLinguisticTechniquesforUseCaseAnalysis.Requirements
+Engineering8,3(2003),161–170. doi:10.1007/s00766-003-0174-0
+[4] HenningFemmer,DanielMéndezFernández,StefanWagner,andSebastianEder.
+2017.RapidQualityAssurancewithRequirementsSmells.JournalofSystems
+andSoftware123(2017),190–213. doi:10.1016/j.jss.2016.02.047
+[5] HenningFemmer,FrankHoudek,MaxUnterbusch,andAndreasVogelsang.2025.
+DescriptionandComparativeAnalysisofQuRE:ANewIndustrialRequirements
+QualityDataset.In2025IEEE33rdInternationalRequirementsEngineeringConfer-
+enceWorkshops(REW).IEEE,Valencia,Spain,23–29.
+[6] HenningFemmerandAndreasVogelsang.2019.RequirementsQualityIsQuality
+inUse.IEEESoftware36,3(2019),83–91. doi:10.1109/MS.2018.110161823
+[7] DMéndezFernández,StefanWagner,MarcosKalinowski,MichaelFelderer,
+PriscillaMafra,AntonioVetrò,TayanaConte,M-TChristiansson,DesGreer,
+CasperLassenius,etal.2017. Namingthepaininrequirementsengineering:
+Contemporaryproblems,causes,andeffectsinpractice. EmpiricalSoftware
+Engineering22,5(Oct.2017),2298–2338. doi:10.1007/s10664-016-9451-7
+[8] AlessioFerrari,GloriaGori,BenedettaRosadini,IacopoTrotta,StefanoBacherini,
+AlessandroFantechi,andStefaniaGnesi.2018.DetectingRequirementsDefects
+withNLPPatterns:AnIndustrialExperienceintheRailwayDomain.Empirical
+SoftwareEngineering23,6(2018),3684–3733. doi:10.1007/s10664-018-9596-7
+[9] JulianFrattini,LloydMontgomery,JannikFischbach,MichaelUnterkalmsteiner,
+DanielMendez,andDavideFucci.2022.ALiveExtensibleOntologyofQuality
+FactorsforTextualRequirements.In2022IEEE30thInternationalRequirements
+EngineeringConference(RE).IEEE,Melbourne,Australia,274–280.doi:10.1109/
+RE54965.2022.00041
+[10] MohammadKasraHabib,StefanWagner,andDanielGraziotin.2021.Detecting
+RequirementsSmellsWithDeepLearning:Experiences,ChallengesandFuture
+Work.In2021IEEE29thInternationalRequirementsEngineeringConferenceWork-
+shops(REW).IEEE,NotreDame,IN,USA,153–156. doi:10.1109/REW53955.2021.
+00027
+[11] JenniferKrischandFrankHoudek.2015. TheMythofBadPassiveVoiceand
+WeakWordsanEmpiricalInvestigationintheAutomotiveIndustry.In2015IEEE
+23rdInternationalRequirementsEngineeringConference(RE).IEEE,Ottawa,ON,
+Canada,344–351. doi:10.1109/RE.2015.7320451
+[12] MadhavaKrishna,BhageshGaur,ArshVerma,andPankajJalote.2024.Using
+LLMsinSoftwareRequirementsSpecifications:AnEmpiricalEvaluation.In
+2024IEEE32ndInternationalRequirementsEngineeringConference(RE).IEEE,
+Reykjavik,Iceland,475–483. doi:10.1109/RE59067.2024.00056
+[13] SebastianLubos,AlexanderFelfernig,ThiNgocTrangTran,DamianGarber,
+MerfatElMansi,SedaPolatErdeniz,andViet-ManLe.2024.LeveragingLLMsfor
+theQualityAssuranceofSoftwareRequirements.In2024IEEE32ndInternational
+RequirementsEngineeringConference(RE).IEEE,Reykjavik,Iceland,389–397.
+doi:10.1109/RE59067.2024.00046
+[14] Taslim Mahbub, Dana Dghaym, Aadhith Shankarnarayanan, Taufiq Syed,
+SalsabeelShapsough,andImranZualkernan.2024. CanGPT-4AidinDetect-
+ingAmbiguities,Inconsistencies,andIncompletenessinRequirementsAnal-
+ysis?AComprehensiveCaseStudy. IEEEAccess12(2024),171972–171992.
+doi:10.1109/ACCESS.2024.3464242
+[15] AlexanderPeysakhovichandAdamLerer.2023. AttentionSortingCombats
+RecencyBiasInLongContextLanguageModels.arXiv:2310.01427[cs]doi:10.
+48550/arXiv.2310.01427
+[16] DanielSeifert,LisaJöckel,AdamTrendowicz,MarcusCiolkowski,Thorsten
+Honroth,andAndreasJedlitschka.2024.CanLargeLanguageModels(LLMs)
+CompetewithHumanRequirementsReviewers?–ReplicationofanInspection
+ExperimentonRequirementsDocuments.InProduct-FocusedSoftwareProcess
+Improvement,DietmarPfahl,JavierGonzalezHuerta,JilKlünder,andHinaAnwar
+(Eds.).Vol.15452.SpringerNatureSwitzerland,Cham,27–42.doi:10.1007/978-3-
+031-78386-9_3
+[17] MaxUnterbusch,MersedehSadeghi,JannikFischbach,MartinObaidi,and
+AndreasVogelsang.2023. ExplanationNeedsinAppReviews:Taxonomy
+andAutomatedDetection.In2023IEEE31stInternationalRequirementsEn-
+gineeringConferenceWorkshops(REW).IEEE,Hannover,Germany,102–111.
+doi:10.1109/REW57809.2023.00024
+[18] AlvaroVeizaga,SeungYeobShin,andLionelC.Briand.2024.AutomatedSmellDe-
+tectionandRecommendationinNaturalLanguageRequirements.IEEETransac-
+tionsonSoftwareEngineering50,4(2024),695–720.doi:10.1109/TSE.2024.3361033

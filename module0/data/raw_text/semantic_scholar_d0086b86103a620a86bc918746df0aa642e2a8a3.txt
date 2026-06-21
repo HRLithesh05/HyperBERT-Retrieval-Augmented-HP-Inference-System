@@ -1,0 +1,837 @@
+Language Models as Knowledge Bases?
+FabioPetroni1 TimRockta¨schel1,2 PatrickLewis1,2 AntonBakhtin1
+YuxiangWu1,2 AlexanderH.Miller1 SebastianRiedel1,2
+1FacebookAIResearch
+2UniversityCollegeLondon
+{fabiopetroni, rockt, plewis, yolo, yuxiangwu, ahm, sriedel}@fb.com
+Abstract Memory Query Answer
+(Dante,born-in,X)
+Recentprogressinpretraininglanguagemod-
+els on large textual corpora led to a surge SymbolicKB
+KB Dante MemoryAccess Florence
+of improvements for downstream NLP tasks.
+born-in
+Whilst learning linguistic knowledge, these
+Florence
+models may also be storing relational knowl-
+edge present in the training data, and may “Dantewasbornin[Mask].”
+be able to answer queries structured as “fill-
+NeuralLM
+in-the-blank” cloze statements. Language LM MemoryAccess Florence
+modelshavemanyadvantagesoverstructured
+e.g. ELMo/BERT
+knowledgebases: theyrequirenoschemaen-
+gineering, allow practitioners to query about
+Figure 1: Querying knowledge bases (KB) and lan-
+anopenclassofrelations,areeasytoextendto
+guagemodels(LM)forfactualknowledge.
+more data, and require no human supervision
+totrain. Wepresentanin-depthanalysisofthe
+relationalknowledgealreadypresent(without
+fine-tuning) in a wide range of state-of-the- vastamountsoflinguisticknowledge(Petersetal.,
+art pretrained language models. We find that 2018b; Goldberg, 2019; Tenney et al., 2019) use-
+(i) without fine-tuning, BERT contains rela- ful for downstream tasks. This knowledge is
+tional knowledge competitive with traditional
+usually accessed either by conditioning on latent
+NLP methods that have some access to ora-
+context representations produced by the original
+cle knowledge, (ii) BERT also does remark-
+model or by using the original model weights to
+ably well on open-domain question answer-
+initialize a task-specific model which is then fur-
+ingagainstasupervisedbaseline,and(iii)cer-
+tain types of factual knowledge are learned ther fine-tuned. This type of knowledge transfer
+muchmorereadilythanothersbystandardlan- is crucial for current state-of-the-art results on a
+guagemodelpretrainingapproaches. Thesur- widerangeoftasks.
+prisingly strong ability of these models to re-
+In contrast, knowledge bases are effective so-
+callfactualknowledgewithoutanyfine-tuning
+demonstrates their potential as unsupervised lutions for accessing annotated gold-standard re-
+open-domain QA systems. The code to re- lational data by enabling queries such as (Dante,
+produce our analysis is available at https: born-in,X). However,inpracticeweoftenneed
+//github.com/facebookresearch/LAMA. toextractrelationaldatafromtextorothermodal-
+ities to populate these knowledge bases. This
+1 Introduction
+requires complex NLP pipelines involving entity
+Recently,pretrainedhigh-capacitylanguagemod- extraction, coreference resolution, entity linking
+elssuchasELMo(Petersetal.,2018a)andBERT and relation extraction (Surdeanu and Ji, 2014)—
+(Devlin et al., 2018a) have become increasingly components that often need supervised data and
+important in NLP. They are optimised to either fixed schemas. Moreover, errors can easily prop-
+predict the next word in a sequence or some agateandaccumulatethroughoutthepipeline. In-
+masked word anywhere in a given sequence (e.g. stead, we could attempt to query neural language
+“Dante was born in [Mask] in the year 1265.”). modelsforrelationaldatabyaskingthemtofillin
+The parameters of these models appear to store maskedtokensinsequenceslike“Dantewasborn
+in [Mask]”, as illustrated in Figure 1. In this set- els, however, for some relations (particularly
+ting,languagemodelscomewithvariousattractive N-to-M relations) performance is very poor,
+properties: they require no schema engineering, (iii) BERT-large consistently outperforms other
+do not need human annotations, and they support language models in recovering factual and com-
+anopensetofqueries. monsense knowledge while at the same time
+being more robust to the phrasing of a query, and
+Giventheabovequalitiesoflanguagemodelsas
+(iv) BERT-large achieves remarkable results for
+potential representations of relational knowledge,
+open-domain QA, reaching 57.1% precision@10
+we are interested in the relational knowledge al-
+ready present in pretrained off-the-shelf language compared to 63.5% of a knowledge base con-
+structed using a task-specific supervised relation
+models such as ELMo and BERT. How much re-
+extractionsystem.
+lational knowledge do they store? How does this
+differ for different types of knowledge such as
+2 Background
+facts about entities, common sense, and general
+questionanswering? Howdoestheirperformance Inthissectionweprovidebackgroundonlanguage
+without fine-tuning compare to symbolic knowl- models. Statistics for the models that we include
+edge bases automatically extracted from text? inourinvestigationaresummarizedinTable1.
+Beyond gathering a better general understand-
+ing of these models, we believe that answers to 2.1 UnidirectionalLanguageModels
+thesequestionscanhelpusdesignbetterunsuper- Given an input sequence of tokens w =
+vised knowledge representations that could trans- [w ,w ,...,w ], unidirectional language models
+1 2 N
+fer factual and commonsense knowledge reliably commonly assign a probability p(w) to the se-
+to downstream tasks such as commonsense (vi- quencebyfactorizingitasfollows
+sual)questionanswering(Zellersetal.,2018;Tal-
+(cid:89)
+moretal.,2019)orreinforcementlearning(Brana- p(w) = p(w |w ,...,w ). (1)
+t t−1 1
+van et al., 2011; Chevalier-Boisvert et al., 2018; t
+Bahdanauetal.,2019;Luketinaetal.,2019).
+A common way to estimate this probability is us-
+For the purpose of answering the above ques- ing neural language models (Mikolov and Zweig,
+tions we introduce the LAMA (LAnguage Model 2012;Melisetal.,2017;Bengioetal.,2003)with
+Analysis) probe, consisting of a set of knowledge
+sources, each comprised of a set of facts. We p(w |w ,...,w ) = softmax(Wh +b) (2)
+t t−1 1 t
+define that a pretrained language model knows a
+fact (subject, relation, object) such as (Dante, whereh t ∈ Rk istheoutputvectorofaneuralnet-
+born-in, Florence) if it can successfully predict work at position t and W ∈ R|V|×k is a learned
+maskedobjectsinclozesentencessuchas“Dante parameter matrix that maps h t to unnormalized
+was born in ” expressing that fact. We test scores for every word in the vocabulary V. Var-
+for a variety of types of knowledge: relations be-
+iousneurallanguagemodelsthenmainlydifferin
+tween entities stored in Wikidata, common sense how they compute h t given the word history, e.g.,
+relationsbetweenconceptsfromConceptNet,and by using a multi-layer perceptron (Bengio et al.,
+knowledge necessary to answer natural language 2003; Mikolov and Zweig, 2012), convolutional
+questions in SQuAD. In the latter case we man- layers(Dauphinetal.,2017),recurrentneuralnet-
+ually map a subset of SQuAD questions to cloze works (Zaremba et al., 2014; Merity et al., 2016;
+sentences. Melis et al., 2017) or self-attention mechanisms
+(Radford et al., 2018; Dai et al., 2019; Radford
+Our investigation reveals that (i) the largest
+etal.,2019).
+BERT model from Devlin et al. (2018b)
+fairseq-fconv: Instead of commonly used recur-
+(BERT-large) captures (accurate) relational
+rent neural networks, Dauphin et al. (2017) use
+knowledge comparable to that of a knowledge
+multiple layers of gated convolutions. We use
+base extracted with an off-the-shelf relation
+the pretrained model in the fairseq1 library in our
+extractor and an oracle-based entity linker from
+study. IthasbeentrainedontheWikiText-103cor-
+a corpus known to express the relevant knowl-
+pusintroducedbyMerityetal.(2016).
+edge, (ii) factual knowledge can be recovered
+surprisingly well from pretrained language mod- 1https://github.com/pytorch/fairseq
+Model BaseModel #Parameters TrainingCorpus CorpusSize
+fairseq-fconv(Dauphinetal.,2017) ConvNet 324M WikiText-103 103MWords
+Transformer-XL(large)(Daietal.,2019) Transformer 257M WikiText-103 103MWords
+ELMo(original)(Petersetal.,2018a) BiLSTM 93.6M GoogleBillionWord 800MWords
+ELMo5.5B(Petersetal.,2018a) BiLSTM 93.6M Wikipedia(en)&WMT2008-2012 5.5BWords
+BERT(base)(Devlinetal.,2018a) Transformer 110M Wikipedia(en)&BookCorpus 3.3BWords
+BERT(large)(Devlinetal.,2018a) Transformer 340M Wikipedia(en)&BookCorpus 3.3BWords
+Table1: Languagemodelsconsideredinthisstudy.
+Transformer-XL: Dai et al. (2019) introduce a tiontothispseudolanguagemodelobjective,they
+large-scale language model based on the Trans- use an auxiliary binary classification objective to
+former (Vaswani et al., 2017). Transformer-XL predict whether a particular sentence follows the
+can take into account a longer history by caching givensequenceofwords.
+previous outputs and by using relative instead of
+absolute positional encoding. It achieves a test 3 RelatedWork
+perplexityof18.3ontheWikiText-103corpus.
+Many studies have investigated pretrained word
+2.2 Bidirectional“LanguageModels”2 representations,sentencerepresentations,andlan-
+So far, we have looked at language models that guage models. Existing work focuses on un-
+predict the next word given a history of words. derstanding linguistic and semantic properties of
+However, in many downstream applications we word representations or how well pretrained sen-
+mostlycareabouthavingaccesstocontextualrep- tence representations and language models trans-
+resentations of words, i.e., word representations fer linguistic knowledge to downstream tasks. In
+that are a function of the entire context of a unit contrast,ourinvestigationseekstoanswertowhat
+of text such as a sentence or paragraph, and not extent pretrained language models store factual
+only conditioned on previous words. Formally, andcommonsenseknowledgebycomparingthem
+given an input sequence w = [w ,w ,...,w ] with symbolic knowledge bases populated by tra-
+1 2 N
+and a position 1 ≤ i ≤ N, we want to esti- ditionalrelationextractionapproaches.
+matep(w i) = p(w i|w 1,...,w i−1,w i+1,...,w N)us- Baroni et al. (2014) present a systematic com-
+ingtheleftandrightcontextofthatword. parative analysis between neural word represen-
+ELMo: To estimate this probability, Peters et al. tation methods and more traditional count-based
+(2018a) propose running a forward and backward distributionalsemanticmethodsonlexicalseman-
+LSTM (Hochreiter and Schmidhuber, 1997), re- tics tasks like semantic relatedness and concept
+→− ←−
+categorization. They find that neural word rep-
+sultingin h and h whichconsequentlyareused
+i i
+resentationsoutperformcount-baseddistributional
+to calculate a forward and backward language
+methods on the majority of the considered tasks.
+model log-likelihood. Their model, ELMo, uses
+Hill et al. (2015) investigate to what degree word
+multiple layers of LSTMs and it has been pre-
+representationscapturesemanticmeaningasmea-
+trained on the Google Billion Word dataset. An-
+suredbysimilaritybetweenwordpairs.
+other version of the model, ELMo 5.5B, has been
+trainedontheEnglishWikipediaandmonolingual Marvin and Linzen (2018) assess the gram-
+newscrawldatafromWMT2008-2012. maticality of pretrained language models. Their
+BERT: Instead of a standard language model ob- datasetconsistsofsentencepairswithagrammat-
+jective, Devlin et al. (2018a) propose to sample icalandanungrammaticalsentence. Whileagood
+positions in the input sequence randomly and to language model should assign higher probability
+learn to fill the word at the masked position. To tothegrammaticalsentence,theyfindthatLSTMs
+this end, they employ a Transformer architecture donotlearnsyntaxwell.
+and train it on the BookCorpus (Zhu et al., 2015) Another line of work investigates the ability of
+as well as a crawl of English Wikipedia. In addi- pretrainedsentenceandlanguagemodelstotrans-
+ferknowledgetodownstreamnaturallanguageun-
+2Contextual representation models (Tenney et al., 2019)
+derstandingtasks(Wangetal.,2018). Whilesuch
+mightbeabettername, butwekeepcallingthemlanguage
+modelsforsimplicity. an analysis sheds light on the transfer-learning
+abilities of pretrained models for understanding 4 TheLAMAProbe
+short pieces of text, it provides little insight into
+We introducetheLAMA(LAnguage ModelAnal-
+whetherthesemodelscancompetewithtraditional
+ysis) probe to test the factual and commonsense
+approaches to representing knowledge like sym-
+knowledge in language models. It provides a set
+bolicknowledgebases.
+of knowledge sources which are composed of a
+corpus of facts. Facts are either subject-relation-
+More recently, McCoy et al. (2019) found that
+object triples or question-answer pairs. Each fact
+for natural language inference, a model based on
+isconvertedintoaclozestatementwhichisusedto
+BERT learns to rely heavily on fallible syntac-
+querythelanguagemodelforamissingtoken. We
+ticheuristicsinsteadofadeeperunderstandingof
+evaluateeachmodelbasedonhowhighlyitranks
+the natural language input. Peters et al. (2018b)
+the ground truth token against every other word
+foundthatlowerlayersinELMospecializeonlo-
+in a fixed candidate vocabulary. This is similar
+calsyntacticrelationships,whilehigherlayerscan
+toranking-basedmetricsfromtheknowledgebase
+learntomodellong-rangerelationships. Similarly,
+completion literature (Bordes et al., 2013; Nickel
+Goldberg (2019) found that BERT captures En-
+etal.,2016). Ourassumptionisthatmodelswhich
+glish syntactic phenomena remarkably well. Ten-
+rankgroundtruthtokenshighfortheseclozestate-
+ney et al. (2019) investigate to what extent lan-
+guagemodelsencodesentencestructurefordiffer- ments have more factual knowledge. We discuss
+eachstepindetailnextandprovideconsiderations
+ent syntactic and semantic phenomena and found
+ontheprobebelow.
+that they excel for the former but only provide
+smallimprovementsfortasksthatfallintothelat-
+4.1 KnowledgeSources
+ter category. While this provides insights into the
+linguistic knowledge of language models, it does To assess the different language models in Sec-
+not provide insights into their factual and com- tion 2, we cover a variety of sources of factual
+monsenseknowledge. and commonsense knowledge. For each source,
+wedescribetheoriginoffacttriples(orquestion-
+Radfordetal.(2018)introduceapretrainedlan- answer pairs), how we transform them into cloze
+guagemodelbasedontheTransformerwhichthey templates, and to what extent aligned texts exist
+termed generative pretraining (GPTv1). The first in Wikipedia that are known to express a partic-
+version of GPT (Radford et al., 2018) has been ular fact. We use the latter information in super-
+trainedontheBookCorpus(Zhuetal.,2015)con- visedbaselinesthatextractknowledgerepresenta-
+taining 7000 books. The closest to our investiga- tionsdirectlyfromthealignedtext.
+tion is the work by Radford et al. (2019) which
+4.1.1 Google-RE
+introducesGPTv2andinvestigateshowwelltheir
+languagemodeldoeszero-shottransfertoarange
+TheGoogle-REcorpus3contains∼60Kfactsman-
+of downstream tasks. They find that GPTv2 ually extracted from Wikipedia. It covers five re-
+achieves an F of 55 for answering questions in lationsbutweconsideronlythreeofthem,namely
+1
+CoQA(Reddyetal.,2018)and4.1%accuracyon “place of birth”, “date of birth” and “place of
+theNaturalQuestionsdataset(Kwiatkowskietal., death”. We exclude the other two because they
+2019), in both cases without making use of anno- contain mainly multi-tokens objects that are not
+tated question-answer pairs or an information re- supported in our evaluation. We manually define
+trieval step. While these results are encouraging a template for each considered relation, e.g., “[S]
+andhintattheabilityofverylargepretrainedlan- was born in [O]” for “place of birth”. Each fact
+guagemodelstomemorizefactualknowledge,the in the Google-RE dataset is, by design, manually
+largeGPTv2modelhasnotbeenmadepublicand alignedtoashortpieceofWikipediatextsupport-
+the publicly available small version achieves less ingit.
+than 1% on Natural Questions (5.3 times worse
+4.1.2 T-REx
+than the large model). Thus, we decided to not
+The T-REx knowledge source is a subset of
+include GPTv2 in our study. Similarly, we do not
+Wikidata triples. It is derived from the T-REx
+include GPTv1 in this study as it uses a limited
+lower-casedvocabulary,makingitincompatibleto
+3https://code.google.com/archive/p/
+thewayweassesstheotherlanguagemodels. relation-extraction-corpus/
+dataset (Elsahar et al., 2018) and is much larger Assumewewanttocomputethegenerationfor
+than Google-RE with a broader set of relations. thetokenatpositiont. Forunidirectionallanguage
+We consider 41 Wikidata relations and subsam- models, we use the network output (h ) just be-
+t−1
+ple at most 1000 facts per relation. As with the fore the token to produce the output layer soft-
+Google-RE corpus, we manually define a tem- max. For ELMo we consider the output just be-
+→−
+plate for each relation (see Table 3 for some ex- fore(h )fortheforwarddirectionandjustafter
+t−1
+←−
+amples). IncontrasttotheGoogle-REknowledge
+(h t+1) for the backward direction. Following the
+source,T-RExfactswereautomaticallyalignedto
+lossdefinitionin(Petersetal.,2018a),weaverage
+Wikipedia and hence this alignment can be noisy.
+forward and backward probabilities from the cor-
+However, Elsahar et al. (2018) report an accuracy
+responding softmax layers. For BERT, we mask
+of 97.8% for the alignment technique over a test
+thetokenatpositiont,andwefeedtheoutputvec-
+set.
+torcorrespondingtothemaskedtoken(h)intothe
+t
+softmax layer. To allow a fair comparison, we let
+4.1.3 ConceptNet
+models generate over a unified vocabulary, which
+ConceptNet (Speer and Havasi, 2012) is a multi-
+is the intersection of the vocabularies for all con-
+lingual knowledge base, initially built on top of
+sideredmodels(∼21Kcase-sensitivetokens).
+Open Mind Common Sense (OMCS) sentences.
+OMCSrepresentscommonsenserelationshipsbe-
+4.3 Baselines
+tween words and/or phrases. We consider facts
+from the English part of ConceptNet that have To compare language models to canonical ways
+single-token objects covering 16 relations. For of using off-the-shelf systems for extracting sym-
+these ConceptNet triples, we find the OMCS sen- bolic knowledge and answering questions, we
+tencethatcontainsboththesubjectandtheobject. considerthefollowingbaselines.
+We then mask the object within the sentence and Freq: Forasubjectandrelationpair,thisbaseline
+usethesentenceastemplateforqueryinglanguage ranks words based on how frequently they appear
+models. If there are several sentences for a triple, asobjectsforthegivenrelationinthetestdata. It
+we pick one at random. Note that for this knowl- indicatestheupperboundperformanceofamodel
+edgesourcethereisnoexplicitalignmentoffacts that always predicts the same objects for a partic-
+toWikipediasentences. ularrelation.
+RE:Fortherelation-basedknowledgesources,we
+4.1.4 SQuAD
+consider the pretrained Relation Extraction (RE)
+SQuAD(Rajpurkaretal.,2016)isapopularques- model of Sorokin and Gurevych (2017). This
+tion answering dataset. We select a subset of 305 model was trained on a subcorpus of Wikipedia
+context-insensitivequestionsfromtheSQuADde- annotatedwithWikidatarelations. Itextractsrela-
+velopmentsetwithsingletokenanswers. Weman- tiontriplesfromagivensentenceusinganLSTM-
+uallycreatecloze-stylequestionsfromtheseques- basedencoderandanattentionmechanism. Based
+tions,e.g.,rewriting“Whodevelopedthetheoryof onthealignmentinformationfromtheknowledge
+relativity?” as“Thetheoryofrelativitywasdevel- sources,weprovidetherelationextractorwiththe
+opedby ”. Foreachquestionandanswerpair, sentences known to express the test facts. Using
+we know that the corresponding fact is expressed these datasets, RE constructs a knowledge graph
+in Wikipedia since this is how SQuAD was cre- of triples. At test time, we query this graph by
+ated. finding the subject entity and then rank all ob-
+jects in the correct relation based on the confi-
+4.2 Models
+dencescoresreturnedbyRE.Weconsidertwover-
+We consider the following pretrained case- sions of this procedure that differ in how the en-
+sensitive language models in our study (see Ta- tity linking is implemented: RE makes use of a
+n
+ble 1): fairseq-fconv (Fs), Transformer-XL large na¨ıveentitylinkingsolutionbasedonexactstring
+(Txl), ELMo original (Eb), ELMo 5.5B (E5B), matching,whileRE usesanoracleforentitylink-
+o
+BERT-base(Bb)andBERT-large(Bl). Weusethe inginadditiontostringmatching. Inotherwords,
+natural way of generating tokens for each model assumewequeryfortheobjectoofatestsubject-
+by following the definition of the training objec- relation fact (s,r,o) expressed in a sentence x. If
+tivefunction. REhasextractedanytriple(s(cid:48),r,o(cid:48))fromthatsen-
+tence x, s(cid:48) will be linked to s and o(cid:48) to o. In be0.
+practice, this means RE can return the correct so-
+SingleToken Weonlyconsidersingletokenob-
+lution o if any relation instance of the right type
+jects as our prediction targets. The reason we in-
+wasextractedfrom x,regardlessofwhetherithas
+clude this limitation is that multi-token decoding
+awrongsubjectorobject.
+adds a number of additional tuneable parameters
+DrQA:Chenetal.(2017)introduceDrQA,apop-
+(beamsize,candidatescoringweights,lengthnor-
+ular system for open-domain question answering.
+malization, n-gram repetition penalties, etc.) that
+DrQA predicts answers to natural language ques-
+obscure the knowledge we are trying to measure.
+tions using a two step pipeline. First, a TF/IDF
+Moreover, well-calibrated multi-token generation
+information retrieval step is used to find rele-
+isstillanactiveresearcharea,particularlyforbidi-
+vantarticlesfromalargestoreofdocuments(e.g.
+rectionalmodels(seee.g. Wellecketal.(2019)).
+Wikipedia). Ontheretrievedtopk articles,aneu-
+ralreadingcomprehensionmodelthenextractsan- Object Slots We choose to only query object
+swers. To avoid giving the language models a slots in triples, as opposed to subject or rela-
+competitive advantage, we constrain the predic- tion slots. By including reverse relations (e.g.
+tionsofDrQAtosingle-tokenanswers. containsandcontained-by)wecanalsoquery
+subject slots. We do not query relation slots for
+4.4 Metrics
+two reasons. First, surface form realisations of
+We consider rank-based metrics and compute re- relations will span several tokens, and as we dis-
+sultsperrelationalongwithmeanvaluesacrossall cussedabove,thisposesatechnicalchallengethat
+relations. Toaccountformultiplevalidobjectsfor is not in the scope of this work. Second, even if
+asubject-relationpair(i.e.,forN-Mrelations),we we could easily predict multi-token phrases, rela-
+follow Bordes et al. (2013) and remove from the tions can generally be expressed with many dif-
+candidateswhenrankingattesttimeallothervalid ferent wordings, making it unclear what the gold
+objects in the training data other than the one we standardpatternforarelationshouldbe, andhow
+test. We use the mean precision at k (P@k). For tomeasureaccuracyinthiscontext.
+a given fact, this value is 1 if the object is ranked
+Intersection of Vocabularies The models that
+amongthetopkresults,and0otherwise.
+we considered are trained with different vocabu-
+4.5 Considerations laries. For instance, ELMo uses a list of ∼800K
+tokens while BERT considers only ∼30K tokens.
+There are several important design decisions we
+The size of the vocabulary can influence the per-
+made when creating the LAMA probe. Below
+formanceofamodelfortheLAMAprobe. Specif-
+we give more detailed justifications for these de-
+ically,thelargerthevocabularytheharderitwould
+cisions.
+be to rank the gold token at the top. For this rea-
+ManuallyDefinedTemplates Foreachrelation sonweconsideredacommonvocabularyof∼21K
+wemanuallydefineatemplatethatqueriesforthe case-sensitive tokens that are obtained from the
+object slot in that relation. One can expect that intersection of the vocabularies for all considered
+the choice of templates has an impact on the re- models. To allow a fair comparison, we let every
+sults, and this is indeed the case: for some rela- modelrankonlytokensinthisjointvocabulary.
+tionswefindbothworseandbetterwaystoquery
+5 Results
+for the same information (with respect to a given
+model) by using an alternate template. We argue
+We summarize the main results in Table 2, which
+that this means we are measuring a lower bound
+showsthemeanprecisionatone(P@1)forthedif-
+for what language models know. We make this
+ferentmodelsacrossthesetofcorporaconsidered.
+argument by analogy with traditional knowledge
+Intheremainderofthissection,wediscussthere-
+bases: they only have a single way of querying
+sultsforeachcorpusindetail.
+knowledge for a specific relation, namely by us-
+ing the relation id of that relation, and this way is Google-RE WequerytheLMsusingastandard
+used to measure their accuracy. For example, if cloze template for each relation. The base and
+therelationIDisworks-Forandtheuserasksfor large versions of BERT both outperform all other
+is-working-for, the accuracy of the KG would modelsbyasubstantialmargin. Furthermore,they
+Statistics Baselines KB LM
+Corpus Relation
+#Facts #Rel Freq DrQA RE RE Fs Txl Eb E5B Bb Bl
+n o
+birth-place 2937 1 4.6 - 3.5 13.8 4.4 2.7 5.5 7.5 14.9 16.1
+birth-date 1825 1 1.9 - 0.0 1.9 0.3 1.1 0.1 0.1 1.5 1.4
+Google-RE
+death-place 765 1 6.8 - 0.1 7.2 3.0 0.9 0.3 1.3 13.1 14.0
+Total 5527 3 4.4 - 1.2 7.6 2.6 1.6 2.0 3.0 9.8 10.5
+1-1 937 2 1.78 - 0.6 10.0 17.0 36.5 10.1 13.1 68.0 74.5
+N-1 20006 23 23.85 - 5.4 33.8 6.1 18.0 3.6 6.5 32.4 34.2
+T-REx
+N-M 13096 16 21.95 - 7.7 36.7 12.0 16.5 5.7 7.4 24.7 24.3
+Total 34039 41 22.03 - 6.1 33.8 8.9 18.3 4.7 7.1 31.1 32.3
+ConceptNet Total 11458 16 4.8 - - - 3.6 5.7 6.1 6.2 15.6 19.2
+SQuAD Total 305 - - 37.5 - - 3.6 3.9 1.6 4.3 14.1 17.4
+Table 2: Mean precision at one (P@1) for a frequency baseline (Freq), DrQA, a relation extraction with na¨ıve
+entitylinking(RE ), oracleentitylinking(RE ), fairseq-fconv(Fs), Transformer-XLlarge(Txl), ELMooriginal
+n o
+(Eb),ELMo5.5B(E5B),BERT-base(Bb)andBERT-large(Bl)acrossthesetofevaluationcorpora.
+obtain a 2.2 and 2.9 respective average accuracy
+80
+improvement over the oracle-based RE baseline.
+70
+This is particularly surprising given that with the
+60
+gold-aligned Google-RE source we know for cer-
+tain that the oracle RE baseline has seen at least 50
+one sentence expressing each test fact. Moreover, 40
+theREbaselinewasgivensubstantialhelpthrough 30
+anentitylinkingoracle. 20
+It is worth pointing out that while BERT-large 10
+does better, this does not mean it does so for the
+0
+right reasons. Although the aligned Google-RE
+100 101 102
+sentences are likely in its training set (as they
+are part of Wikipedia and BERT has been trained
+on Wikipedia), it might not “understand” them
+to produce these results. Instead, it could have
+learnedassociationsofobjectswithsubjectsfrom
+co-occurrencepatterns.
+T-REx The knowledge source derived from
+Google-RE contains relatively few facts and only
+three relations. Hence, we perform experiments
+on the larger set of facts and relations in T-REx.
+We find that results are generally consistent with
+Google-RE. Again, the performance of BERT in
+retrieving factual knowledge are close to the per-
+formance obtained by automatically building a
+knowledge base with an off-the-shelf relation ex-
+traction system and oracle-based entity linking.
+Brokendownbyrelationtype,theperformanceof
+BERTisveryhighfor 1-to-1relations(e.g., capi-
+talof)andlowforN-to-Mrelations.
+Note that a downstream model could learn to
+make use of knowledge in the output representa-
+tions of a language model even if the correct an-
+swerisnotrankedfirstbuthighenough(i.e. ahint
+k@P
+naem
+Fs E5B
+Txl Bb
+Eb Bl
+k
+Figure2:MeanP@kcurveforT-RExvaryingk. Base-
+10logscaleforXaxis.
+aboutthecorrectanswercanbeextractedfromthe
+output representation). Figure 2 shows the mean
+P@kcurvesfortheconsideredmodels. ForBERT,
+the correct object is ranked among the top ten in
+around60%ofthecasesandamongthetop100in
+80%ofthecases.
+TofurtherinvestigatewhyBERTachievessuch
+strongresults,wecomputethePearsoncorrelation
+coefficient between the P@1 and a set of metrics
+thatwereportinFigure3. Wenotice,forinstance,
+that the number of times an object is mentioned
+in the training data positively correlates with per-
+formance while the same is not true for the sub-
+ject of a relation. Furthermore, the log probabil-
+ityofapredictionisstronglypositivelycorrelated
+with P@1. Thus, when BERT has a high confi-
+dence in its prediction, it is often correct. Perfor-
+manceisalsopositivelycorrelatedwiththecosine
+similaritybetweensubjectandobjectvectors,and
+SM 350
+subject
+mentions
+300
+OM
+object -0.0048
+mentions
+250
+0.4
+LPFP
+log probability -0.075 0.074
+first prediction 0.2 200
+SOCS
+vs eu cb tj oe rc st co ob sje inc et 0.12 -0.051 0.2 0.0 150
+similarity
+0.2
+ST 100
+subject -0.18 0.042 0.052 0.11
+tokens
+0.4
+50
+SWP
+subject -0.23 0.04 0.056 -0.21 0.52
+word pieces
+0
+Fs Txl Eb E5B Bb Bl
+P@1 -0.05 0.2 0.42 0.31 0.12 0.035
+SM OM LPFP SOCS ST SWP
+Figure 3: Pearson correlation coefficient for the P@1
+of the BERT-large model on T-REx and a set of met-
+rics: SM and OM refer to the number of times a sub-
+jectandanobjectarementionedintheBERTtraining
+corpus4respectively; LPFPisthelogprobabilityscore
+associated with the first prediction; SOCS is the co-
+sinesimilaritybetweensubjectandobjectvectors(we
+usespaCy5);STandSWParethenumberoftokensin
+thesubjectwithastandardtokenizationandtheBERT
+WordPiecetokenizationrespectively.
+slightlywiththenumberoftokensinthesubject.
+Table 3 shows randomly picked examples for
+the generation of BERT-large for cloze template
+queries. We find that BERT-large generally pre-
+dicts objects of the correct type, even when the
+predictedobjectitselfisnotcorrect.
+To understand how the performance of a pre-
+trainedlanguagemodelvarieswithdifferentways
+of querying for a particular fact, we analyze a
+maximum of 100 random facts per relation for
+whichwerandomlyselect10alignedsentencesin
+WikipediafromT-REx.6 Ineachofthesentences,
+we mask the object of the fact, and ask the model
+to predict it. For several of our language models
+this also tests their ability to memorize and recall
+sentencesfromthetrainingdatasinceasthemod-
+elshavebeentrainedonWikipedia(seeTable1).
+Figure 4 shows the average distribution of the
+rankfortenqueriesperfact. ThetwoBERTmod-
+els and ELMo 5.5B exhibit the lowest variabil-
+ity while ranking the correct object close to the
+top on average. Surprisingly, the performance of
+ELMooriginalisnotfarfromBERT,eventhough
+this model did not see Wikipedia during train-
+ing. Fairseq-fconv and Transformer-XL experi-
+5Theoriginaltrainingcorpusisnotavailable,wecreated
+ourversionusingthesamesources.
+5https://spacy.io
+6Weexcludeallfactswithlessthan10alignments.
+knar
+Figure 4: Average rank distribution for 10 different
+mentions of 100 random facts per relation in T-REx.
+ELMo 5.5B and both variants of BERT are least sen-
+sitivetotheframingofthequerybutalsoarethemost
+likelytohaveseenthequerysentenceduringtraining.
+enceahighervariabilityintheirpredictions. Note
+that BERT and ELMo 5.5B have been trained on
+a larger portion of Wikipedia than fairseq-fconv
+andTransformer-XLandmayhaveseenmoresen-
+tencescontainingthetestqueriesduringtraining.
+ConceptNet TheresultsontheConceptNetcor-
+pus are in line with those reported for retriev-
+ing factual knowledge in Google-RE and T-REx.
+The BERT-large model consistently achieves the
+best performance, and it is able to retrieve com-
+monsense knowledge at a similar level to factual
+knowledge. ThelowerhalfofTable3showsgen-
+erationsbyBERT-largeforrandomlysampledex-
+amples. Some of the concepts generated by the
+languagemodelsaresurprisinglyreasonableinad-
+ditiontobeingsyntacticallycorrect.
+SQuAD Next we evaluate our system on open-
+domain cloze-style question answering and com-
+pare against the supervised DrQA model. Table
+2 shows a performance gap between BERT-large
+and the DrQA open-domain QA system on our
+clozeSQuADtask. Again,notethatthepretrained
+language model is completely unsupervised, it is
+not fine-tuned, and it has no access to a ded-
+icated information retrieval system. Moreover,
+when comparing DrQA and BERT-large in terms
+of P@10, we find that gap is remarkably small
+(57.1forBERT-largeand63.5forDrQA).
+6 DiscussionandConclusion
+We presented a systematic analysis of the factual
+and commonsense knowledge in publicly avail-
+able pretrained language models as is and found
+Relation Query Answer Generation
+xeR-T
+P19 FrancescoBartolomeoContiwasbornin . Florence Rome[-1.8],Florence [-1.8],Naples [-1.9],Milan [-2.4],Bologna [-2.5]
+P20 AdolpheAdamdiedin . Paris Paris [-0.5],London [-3.5],Vienna [-3.6],Berlin [-3.8],Brussels [-4.0]
+P279 Englishbulldogisasubclassof . dog dogs[-0.3],breeds [-2.2],dog [-2.4],cattle [-4.3],sheep [-4.5]
+P37 TheofficiallanguageofMauritiusis . English English [-0.6],French [-0.9],Arabic [-6.2],Tamil [-6.7],Malayalam [-7.0]
+P413 PatrickOboyaplaysin position. midfielder centre[-2.0],center[-2.2],midfielder [-2.4],forward [-2.4],midfield [-2.7]
+P138 HamburgAirportisnamedafter . Hamburg Hess[-7.0],Hermann [-7.1],Schmidt[-7.1],Hamburg [-7.5],Ludwig [-7.5]
+P364 TheoriginallanguageofMononcleBenjaminis . French French [-0.2],Breton [-3.3],English [-3.8],Dutch [-4.2],German [-4.9]
+P54 DaniAlvesplayswith . Barcelona Santos[-2.4],Porto [-2.5],Sporting [-3.1],Brazil [-3.3],Portugal [-3.7]
+P106 PaulTounguiisa byprofession. politician lawyer[-1.1],journalist [-2.4],teacher [-2.7],doctor[-3.0],physician [-3.7]
+P527 Sodiumsulfideconsistsof . sodium water[-1.2],sulfur [-1.7],sodium [-2.5],zinc [-2.8],salt [-2.9]
+P102 GordonScholesisamemberofthe politicalparty. Labor Labour[-1.3],Conservative [-1.6],Green [-2.4],Liberal [-2.9],Labor [-2.9]
+P530 Kenyamaintainsdiplomaticrelationswith . Uganda India[-3.0],Uganda [-3.2],Tanzania [-3.5],China [-3.6],Pakistan [-3.6]
+P176 iPodTouchisproducedby . Apple Apple [-1.6],Nokia [-1.7],Sony [-2.0],Samsung [-2.6],Intel [-3.1]
+P30 BaileyPeninsulaislocatedin . Antarctica Antarctica [-1.4],Bermuda [-2.2],Newfoundland [-2.5],Alaska [-2.7],Canada [-3.1]
+P178 JDKisdevelopedby . Oracle IBM[-2.0],Intel [-2.3],Microsoft [-2.5],HP[-3.4],Nokia [-3.5]
+P1412 CarlIIIusedtocommunicatein . Swedish German[-1.6],Latin [-1.9],French [-2.4],English [-3.0],Spanish [-3.0]
+P17 SunshineCoast,BritishColumbiaislocatedin . Canada Canada [-1.2],Alberta [-2.8],Yukon [-2.9],Labrador [-3.4],Victoria [-3.4]
+P39 PopeClementVIIhasthepositionof . pope cardinal[-2.4],Pope [-2.5],pope [-2.6],President [-3.1],Chancellor [-3.2]
+P264 JoeCockerisrepresentedbymusiclabel . Capitol EMI[-2.6],BMG [-2.6],Universal [-2.8],Capitol [-3.2],Columbia [-3.3]
+P276 LondonJazzFestivalislocatedin . London London [-0.3],Greenwich [-3.2],Chelsea [-4.0],Camden [-4.6],Stratford[-4.8]
+P127 BorderTVisownedby . ITV Sky[-3.1],ITV [-3.3],Global [-3.4],Frontier [-4.1],Disney [-4.3]
+P103 ThenativelanguageofMammoottyis . Malayalam Malayalam [-0.2],Tamil [-2.1],Telugu [-4.8],English [-5.2],Hindi [-5.6]
+P495 TheSharonCunetaShowwascreatedin . Philippines Manila[-3.2],Philippines[-3.6],February [-3.7],December [-3.8],Argentina [-4.0]
+teNtpecnoC
+AtLocation Youarelikelytofindaoverflowina . drain sewer[-3.1],canal [-3.2],toilet [-3.3],stream [-3.6],drain [-3.6]
+CapableOf Ravenscan . fly fly [-1.5],fight [-1.8],kill [-2.2],die[-3.2],hunt [-3.4]
+CausesDesire Jokewouldmakeyouwantto . laugh cry[-1.7],die[-1.7],laugh [-2.0],vomit [-2.6],scream [-2.6]
+Causes Sometimesviruscauses . infection disease[-1.2],cancer [-2.0],infection [-2.6],plague [-3.3],fever [-3.4]
+HasA Birdshave . feathers wings[-1.8],nests [-3.1],feathers [-3.2],died [-3.7],eggs [-3.9]
+HasPrerequisite Typingrequires . speed patience[-3.5],precision[-3.6],registration [-3.8],accuracy [-4.0],speed [-4.1]
+HasProperty Timeis . finite short[-1.7],passing [-1.8],precious [-2.9],irrelevant [-3.2],gone [-4.0]
+MotivatedByGoal Youwouldcelebratebecauseyouare . alive happy[-2.4],human [-3.3],alive [-3.3],young[-3.6],free [-3.9]
+ReceivesAction Skillscanbe . taught acquired[-2.5],useful[-2.5],learned [-2.8],combined [-3.9],varied [-3.9]
+UsedFor Apondisfor . fish swimming[-1.3],fishing [-1.4],bathing [-2.0],fish [-2.8],recreation [-3.1]
+Table3: ExamplesofgenerationforBERT-large. Thelastcolumnreportsthetopfivetokensgeneratedtogether
+withtheassociatedlogprobability(insquarebrackets).
+that BERT-large is able to recall such knowledge elstrainedonevergrowingcorporamightbecome
+better than its competitors and at a level remark- aviablealternativetotraditionalknowledgebases
+ably competitive with non-neural and supervised extractedfromtextinthefuture.
+alternatives. Note that we did not compare the Inadditiontotestingfuturepretrainedlanguage
+ability of the corresponding architectures and ob- models using the LAMA probe, we are interested
+jectives to capture knowledge in a given body of in quantifying the variance of recalling factual
+textbutratherfocusedontheknowledgepresentin knowledge with respect to varying natural lan-
+the weights of existing pretrained models that are guagetemplates. Moreover,assessingmulti-token
+beingusedasstartingpointsformanyresearchers’ answers remains an open challenge for our evalu-
+work. Understanding which aspects of data our ationsetup.
+commonly-used models and learning algorithms
+arecapturingisacrucialfieldofresearchandthis Acknowledgments
+paper complements the many studies focused on
+We would like to thank the reviewers for their
+thelearnedlinguisticpropertiesofthedata.
+thoughtful comments and efforts towards improv-
+Wefoundthatitisnon-trivialtoextractaknowl-
+ing our manuscript. In addition, we would like
+edge base from text that performs on par to di-
+to acknowledge three frameworks that were used
+rectly using pretrained BERT-large. This is de- in our experiments: AllenNLP7, Fairseq8 and the
+spite providing our relation extraction baseline HuggingFacePyTorch-Transformers9 library.
+withonlydatathatislikelyexpressingtargetfacts,
+thusreducingpotentialforfalsenegatives,aswell
+as using a generous entity-linking oracle. We References
+suspected BERT might have an advantage due to
+Dzmitry Bahdanau, Felix Hill, Jan Leike, Edward
+the larger amount of data it has processed, so we
+Hughes,PushmeetKohli,andEdwardGrefenstette.
+added Wikitext-103 as additional data to the re- 2019. Learningtounderstandgoalspecificationsby
+lation extraction system and observed no signif-
+icant change in performance. This suggests that 7https://github.com/allenai/allennlp
+8https://github.com/pytorch/fairseq
+while relation extraction performance might be
+9https://github.com/huggingface/
+difficulttoimprovewithmoredata,languagemod-
+pytorch-transformers
+modelling reward. In International Conference on Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+LearningRepresentations(ICLR). Kristina Toutanova. 2018b. BERT: Pre-training
+of Deep Bidirectional Transformers for Language
+Marco Baroni, Georgiana Dinu, and Germa´n Understanding. arXiv:1810.04805 [cs]. ArXiv:
+Kruszewski. 2014. Don’t count, predict! A 1810.04805.
+systematic comparison of context-counting vs.
+context-predictingsemanticvectors. InProceedings Hady Elsahar, Pavlos Vougiouklis, Arslen Remaci,
+of the 52nd Annual Meeting of the Association for Christophe Gravier, Jonathon Hare, Frederique
+Computational Linguistics, ACL 2014, June 22-27, Laforest, and Elena Simperl. 2018. T-rex: A large
+2014,Baltimore,MD,USA,Volume1:LongPapers, scalealignmentofnaturallanguagewithknowledge
+pages238–247. basetriples. InProceedingsoftheEleventhInterna-
+tionalConferenceonLanguageResourcesandEval-
+YoshuaBengio,Re´jeanDucharme,PascalVincent,and uation(LREC-2018).
+Christian Janvin. 2003. A neural probabilistic lan-
+guage model. Journal of Machine Learning Re- YoavGoldberg.2019. Assessingbert’ssyntacticabili-
+search,3:1137–1155. ties. CoRR,abs/1901.05287.
+Felix Hill, Roi Reichart, and Anna Korhonen. 2015.
+Antoine Bordes, Nicolas Usunier, Alberto Garc´ıa-
+Simlex-999: Evaluatingsemanticmodelswith(gen-
+Dura´n, Jason Weston, and Oksana Yakhnenko.
+uine)similarityestimation. ComputationalLinguis-
+2013. Translating embeddings for modeling multi-
+tics,41(4):665–695.
+relational data. In Advances in Neural Information
+ProcessingSystems26: 27thAnnualConferenceon
+Sepp Hochreiter and Ju¨rgen Schmidhuber. 1997.
+Neural Information Processing Systems 2013. Pro-
+Long short-term memory. Neural Computation,
+ceedings of a meeting held December 5-8, 2013,
+9(8):1735–1780.
+Lake Tahoe, Nevada, United States., pages 2787–
+2795.
+Tom Kwiatkowski, Jennimaria Palomaki, Olivia
+Rhinehart,MichaelCollins,AnkurParikh,ChrisAl-
+S. R. K. Branavan, David Silver, and Regina Barzi-
+berti, Danielle Epstein, Illia Polosukhin, Matthew
+lay.2011. Learningtowinbyreadingmanualsina
+Kelcey,JacobDevlin,etal.2019. Naturalquestions:
+monte-carlo framework. In The 49th Annual Meet-
+abenchmarkforquestionansweringresearch.
+ing of the Association for Computational Linguis-
+tics: Human Language Technologies, Proceedings
+Jelena Luketina, Nantas Nardelli, Gregory Farquhar,
+oftheConference,19-24June,2011,Portland,Ore-
+Jakob Foerster, Jacob Andreas, Edward Grefen-
+gon,USA,pages268–277.
+stette, Shimon Whiteson, and Tim Rockta¨schel.
+2019. A Survey of Reinforcement Learning In-
+DanqiChen, AdamFisch, JasonWeston, andAntoine
+formed by Natural Language. In Proceedings of
+Bordes. 2017. Reading wikipedia to answer open-
+the Twenty-Eighth International Joint Conference
+domainquestions. CoRR,abs/1704.00051.
+onArtificialIntelligence,IJCAI2019,August10-16
+2019,Macao,China.
+Maxime Chevalier-Boisvert, Dzmitry Bahdanau,
+Salem Lahlou, Lucas Willems, Chitwan Saharia,
+Rebecca Marvin and Tal Linzen. 2018. Targeted syn-
+Thien Huu Nguyen, and Yoshua Bengio. 2018.
+tactic evaluation of language models. In Proceed-
+Babyai: First steps towards grounded language
+ings of the 2018 Conference on Empirical Methods
+learning with a human in the loop. CoRR,
+inNaturalLanguageProcessing,Brussels,Belgium,
+abs/1810.08272.
+October31-November4,2018,pages1192–1202.
+Zihang Dai, Zhilin Yang, Yiming Yang, Jaime G. R. Thomas McCoy, Ellie Pavlick, and Tal Linzen.
+Carbonell, Quoc V. Le, and Ruslan Salakhutdi- 2019. Rightforthewrongreasons:Diagnosingsyn-
+nov. 2019. Transformer-xl: Attentive language tacticheuristicsinnaturallanguageinference.
+models beyond a fixed-length context. CoRR,
+abs/1901.02860.
+Ga´borMelis,ChrisDyer,andPhilBlunsom.2017. On
+the state of the art of evaluation in neural language
+Yann N. Dauphin, Angela Fan, Michael Auli, and models. CoRR,abs/1707.05589.
+David Grangier. 2017. Language modeling with
+gatedconvolutionalnetworks. InProceedingsofthe StephenMerity,CaimingXiong,JamesBradbury,and
+34th International Conference on Machine Learn- Richard Socher. 2016. Pointer sentinel mixture
+ing, ICML 2017, Sydney, NSW, Australia, 6-11 Au- models. CoRR,abs/1609.07843.
+gust2017,pages933–941.
+Tomas Mikolov and Geoffrey Zweig. 2012. Context
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and dependentrecurrentneuralnetworklanguagemodel.
+Kristina Toutanova. 2018a. BERT: pre-training of In 2012 IEEE Spoken Language Technology Work-
+deepbidirectionaltransformersforlanguageunder- shop(SLT),Miami, FL,USA,December2-5, 2012,
+standing. CoRR,abs/1810.04805. pages234–239.
+Maximilian Nickel, Kevin Murphy, Volker Tresp, and Ian Tenney, Patrick Xia, Berlin Chen, Alex Wang,
+Evgeniy Gabrilovich. 2016. A review of relational Adam Poliak, R Thomas McCoy, Najoung Kim,
+machine learning for knowledge graphs. Proceed- BenjaminVanDurme,SamBowman,DipanjanDas,
+ingsoftheIEEE,104(1):11–33. and Ellie Pavlick. 2019. What do you learn from
+context? probingforsentencestructureincontextu-
+MatthewE.Peters,MarkNeumann,MohitIyyer,Matt
+alized word representations. In International Con-
+Gardner, Christopher Clark, Kenton Lee, and Luke
+ferenceonLearningRepresentations.
+Zettlemoyer.2018a. Deepcontextualizedwordrep-
+resentations. In Proceedings of the 2018 Confer- Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+ence of the North American Chapter of the Associ- Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+ation for Computational Linguistics: Human Lan- Kaiser, and Illia Polosukhin. 2017. Attention is all
+guage Technologies, NAACL-HLT 2018, New Or- you need. In Advances in Neural Information Pro-
+leans, Louisiana, USA, June 1-6, 2018, Volume 1 cessing Systems 30: Annual Conference on Neural
+(LongPapers),pages2227–2237. Information Processing Systems 2017, 4-9 Decem-
+ber2017,LongBeach,CA,USA,pages6000–6010.
+MatthewE.Peters,MarkNeumann,LukeZettlemoyer,
+and Wen-tau Yih. 2018b. Dissecting contextual Alex Wang, Amanpreet Singh, Julian Michael, Fe-
+wordembeddings: Architectureandrepresentation. lix Hill, Omer Levy, and Samuel R. Bowman.
+InProceedingsofthe2018ConferenceonEmpirical 2018. GLUE: A multi-task benchmark and anal-
+MethodsinNaturalLanguageProcessing,Brussels, ysis platform for natural language understand-
+Belgium, October 31 - November 4, 2018, pages ing. In Proceedings of the Workshop: Analyz-
+1499–1509. ing and Interpreting Neural Networks for NLP,
+BlackboxNLP@EMNLP 2018, Brussels, Belgium,
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+November1,2018,pages353–355.
+Ilya Sutskever. 2018. Improving language under-
+standingbygenerativepre-training.
+Sean Welleck, Kiante´ Brantley, Hal Daume´ III, and
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan, Kyunghyun Cho. 2019. Non-monotonic sequential
+textgeneration. arXivpreprintarXiv:1902.02192.
+DarioAmodei,andIlyaSutskever.2019. Language
+modelsareunsupervisedmultitasklearners.
+Wojciech Zaremba, Ilya Sutskever, and Oriol Vinyals.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and 2014. Recurrent neural network regularization.
+Percy Liang. 2016. SQuAD: 100,000+ Questions CoRR,abs/1409.2329.
+for Machine Comprehension of Text. In Proceed-
+Rowan Zellers, Yonatan Bisk, Ali Farhadi, and Yejin
+ings of the 2016 Conference on Empirical Methods
+Choi. 2018. From recognition to cognition: Visual
+inNaturalLanguageProcessing,pages2383–2392,
+commonsensereasoning. CoRR,abs/1811.10830.
+Austin, Texas. Association for Computational Lin-
+guistics.
+Yukun Zhu, Ryan Kiros, Richard S. Zemel, Ruslan
+SivaReddy,DanqiChen,andChristopherD.Manning. Salakhutdinov, Raquel Urtasun, Antonio Torralba,
+2018. Coqa: A conversational question answering andSanjaFidler.2015. Aligningbooksandmovies:
+challenge. CoRR,abs/1808.07042. Towards story-like visual explanations by watching
+movies and reading books. In 2015 IEEE Interna-
+Daniil Sorokin and Iryna Gurevych. 2017. Context- tionalConferenceonComputerVision,ICCV2015,
+aware representations for knowledge base relation Santiago, Chile, December 7-13, 2015, pages 19–
+extraction. In Proceedings of the 2017 Confer- 27.
+ence on Empirical Methods in Natural Language
+Processing, EMNLP 2017, Copenhagen, Denmark,
+September9-11,2017,pages1784–1789.
+RobertSpeerandCatherineHavasi.2012. Represent-
+inggeneralrelationalknowledgeinconceptnet5. In
+LREC,pages3679–3686.
+Mihai Surdeanu and Heng Ji. 2014. Overview of the
+English Slot Filling Track at the TAC2014 Knowl-
+edgeBasePopulationEvaluation. page15.
+Alon Talmor, Jonathan Herzig, Nicholas Lourie, and
+Jonathan Berant. 2019. Commonsenseqa: A ques-
+tion answering challenge targeting commonsense
+knowledge. InProceedingsofthe2019Conference
+of the North American Chapter of the Association
+for Computational Linguistics: Human Language
+Technologies,NAACL-HLT2019,Minneapolis,MN,
+USA,June2-7,2019,Volume1(LongandShortPa-
+pers),pages4149–4158.

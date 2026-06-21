@@ -1,0 +1,1256 @@
+RoChBert: Towards Robust BERT Fine-tuning for Chinese
+ZihanZhang1∗ JinfengLi2∗ NingShi2,3 BoYuan2 XiangyuLiu2
+RongZhang2 HuiXue2 DonghongSun1 ChaoZhang1†
+1TsinghuaUniversity;BNRist;ZhongguancunLab 2AlibabaGroup
+3AlbertaMachineIntelligenceInstitute,Dept. ofComputingScience,UniversityofAlberta
+zhangzih19@tsinghua.org.cn, ning.shi@ualberta.ca
+{jinfengli.ljf, qiufu.yb, eason.lxy, stone.zhangr
+hui.xueh}@alibaba-inc.com,{chaoz, sundonghong}@tsinghua.edu.cn
+Abstract
+Online gambling, add me on WeChat k***2
+bócǎi wēi Spam
+线上博彩, 加我微信k***2
+Despite of the superb performance on a wide
+bōcài wēi
+range of tasks, pre-trained language models
+菠菜(spinach)薇(wei)
+(e.g., BERT) have been proved vulnerable to
+adversarial texts. In this paper, we present 线上菠菜, 加我薇信k***2
+Normal
+RoChBert, a framework to build more Ro-
+bust BERT-based models by utilizing a more Figure1: AnexampleofChineseadversarialtext. “博
+comprehensive adversarial graph to fuse Chi- 彩” and “菠菜” share the same pronunciation of "bo
+nese phonetic and glyph features into pre- cai". “微” and “薇” share the same pronunciation of
+trained representations during fine-tuning. In- "wei"andsimilarcomponentsof“微”.
+spiredbycurriculumlearning,wefurtherpro-
+pose to augment the training dataset with ad-
+versarial texts in combination with intermedi-
+drasticallyboostedtheirperformance. IntheChi-
+ate samples. Extensive experiments demon-
+nesedomain,awidevarietyofclassicalNLPtasks
+strate that RoChBert outperforms previous
+alsobenefitfromtheBERT-basedPLMs.
+methods in significant ways: (i) robust –
+RoChBert greatly improves the model ro- Despite the impressive performance, BERT-
+bustness without sacrificing accuracy on be- based models have been proved to be vulnerable
+nigntexts. Specifically,thedefenselowersthe
+tomaliciouslygeneratedadversarialtexts(Lietal.,
+success rates of unlimited and limited attacks
+2019; Garg and Ramakrishnan, 2020; Li et al.,
+by59.43%and39.33%respectively,whilere-
+2020). Meanwhile, in the real-world scenarios,
+maining accuracy of 93.30%; (ii) flexible –
+adversariesusuallygenerateobfuscatedtexts,i.e.,
+RoChBert can easily extend to various lan-
+guage models to solve different downstream manuallycraftedadversarialtextstobypassonline
+taskswithexcellentperformance;and(iii)effi- security-sensitivesystems,whichhasposedsevere
+cient – RoChBert can be directly applied to physical threats to the deployed systems. In con-
+the fine-tuning stage without pre-training lan- trasttothealphabetlanguagessuchasEnglish,the
+guage model from scratch, and the proposed
+meaning of individual Chinese character can be
+dataaugmentationmethodisalsolow-cost.1
+implied from its pronunciation and glyph. Thus,
+substitutingcharacterswithotherssimilarinchar-
+1 Introduction
+acteristics can hardly bring impact to the context
+understanding. Hence,unlikereplacingwordswith
+The emergence of pre-trained language models
+synonymstomisleadEnglishmodels,adversaries
+(PLMs) has revolutionized natural language pro-
+targetingChinesemodelsprefersubstitutingchar-
+cessing (NLP) to a new era. As a result, large-
+acterswithotherssharingsimilarpronunciationor
+scalePLMslikeBERT(Devlinetal.,2018)have
+glyph,asillustratedinFigure1.
+becomethemainstreammodelsforvariousdown-
+streamtasksincludingtextclassification(Sunetal., Several defense methods such as adversarial
+2019),questionanswering(Herzigetal.,2020)and training(AT)(Sietal.,2021)andadversarialdetec-
+machine translation (Zhu et al., 2020), and have tion(Baoetal.,2021)havebeenproposedrecently.
+However, mostofthemfocusonsolvingEnglish
+∗ Equalcontribution.
+adversarialtexts. BasedonChinesecharacteristics,
+† Correspondingauthor.
+someChinese-specificmethodsareproposed. For
+1Ourcodewillbeavailableathttps://github.com/
+zzh-z/RoChBERT. example, ChineseBERT (Sun et al., 2021) incor-
+2202
+tcO
+82
+]LC.sc[
+1v44951.0122:viXra
+poratesChinesepronunciationandglyphfeatures attackswithoutimpactingtheperformanceon
+intomodelpre-training,andithasachievedSOTA benign texts. In addition, RoChBert is flex-
+performanceonmanyChineseNLPtasks. ButChi- ible and efficient as it can be applied to most
+neseBERTneedstobepre-trainedfromscratchand pre-trainedmodelswithspecifieddownstream
+its number of parameters is quite large. It has to taskswhilebothfine-tuninganddataaugmenta-
+query the corresponding pinyin and glyph of in- tionarelow-cost.
+putcharactersateachinference,whichmakesthe
+2 RelatedWork
+trainingandpredictionveryslow.
+Pre-trained language model. The applications
+To solve the challenges above, we propose
+of PLMs have achieved great success on various
+RoChBert, a lightweight and flexible method
+downstream NLP tasks and avoid training a new
+tostrengthenrobustnessforChineseBERT-based
+model from scratch. BERT is first introduced
+models. Firstly,wegenerateanupdatedadversar-
+to learn universal language representations via
+ial graph based on AdvGraph (Li et al., 2021) to
+masked language model objective and next sen-
+capture the phonetic and glyph relationships be-
+tence prediction task, which is then improved in
+tweencharacters,whicharecommonlyexploited
+thefollowingworkssuchasRoBERTa(Liuetal.,
+by adversarial texts. As current AdvGraph only
+2019) and ALBERT (Lan et al., 2019). In the
+incorporates3,000commonlyusedcharactersand
+ChineseNLPdomain,Sunetal.(2021)proposed
+failstocapturecertainglyphrelationships,weup-
+ChinseBERT, which incorporates both the glyph
+date it to cover more characters and more glyph
+andpinyinfeaturesofChinesecharactersintolan-
+relationships. Then, we use adversarial graph to
+guagemodelpre-training, andalsogainedSOTA
+learntherepresentationofcharactersbasedonChi-
+performance on many Chinese NLP tasks. How-
+nese pronunciation and glyph. The graph mainly
+ever, these works mainly focus on improving the
+serves as embedding weights within RoChBert.
+modelperformanceonbenigntexts,andtheeffort
+Meanwhile,weleveragethetargetmodel’shidden
+ofenhancingmodelrobustnessisfairlylimited.
+states of last layer as pre-trained representation.
+Explorationonthemodelrobustness. Tofur-
+Thesetwokindsofembeddingwillthenbefused
+therexplorethevulnerabilitiesofNLPmodelsin
+in the fine-tuning of target model with specified
+therealadversarialscenarios,aplentyofblack-box
+downstream NLP tasks. Secondly, we design a
+attackshavebeenproposedunderthepracticalas-
+novel data augmentation method inspired by cur-
+sumptionthatadversaryonlyhasqueryaccessto
+riculum learning (Bengio et al., 2009) for better
+thetargetmodelswithoutanymodelknowledge(Li
+fusion, which is proved to be more efficient than
+etal.,2019;Renetal.,2019;GargandRamakrish-
+thetraditionalAT.Specifically,weaddbothinter-
+nan,2020). Todefendagainstsuchattacks,coun-
+mediateandadversarialtextsintotrainingdatasets,
+termeasureslikeATandadversarialdetectionhave
+whichisverycomputationallyefficientandwillnot
+beenproposedtomitigatetheinherentmodelvul-
+decrease the accuracy on benign texts compared
+nerability. Concretely,ATusuallyreferstoretrain-
+withtraditionalAT.Tothebestofourknowledge,
+ing the target model by mixing adversarial texts
+this is the first work to strengthen the robustness
+into the original training dataset, which could be
+ofpre-trainedChineseBERT-basedmodelsduring
+viewed as a kind of data augmentation (Si et al.,
+fine-tuning.
+2021;Ngetal.,2020). Adversarialdetectionisto
+Ourcontributionsaresummarizedasfollows:
+check whether the input contains spelling errors
+1. We present RoChBert, a plug-in method to or adversarial perturbation, and then restore it to
+strengthentherobustnessofBERT-basedmod- thebenigncounterparts(Zhangetal.,2020a;Bao
+elsduringfine-tuningbyincorporatingadversar- etal.,2021). Suchmethodsbothexhibitgreatef-
+ialknowledge. ficacy in the English NLP domain, but they are
+2. Weupdatetheadversarialgraphanddesignan hardtoextendtotheChinesedomaindirectlydue
+efficientdataaugmentationmethod,whichcon- tothelanguagedifferences. Hence,manystudies
+sidersintermediatesamplesformoreeffective havetriedtodesignspecificdefenseintermsofthe
+useofadversarialtexts. unique property of Chinese. For instance, Wang
+3. Extensive experiments show that RoChBert et al. (2018) and Cheng et al. (2020) improved
+can drastically improve the robustness of tar- theChinese-specificspellingcheckusingthepho-
+get models against both known and unknown neticandglyphinformation. Lietal.(2021)pro-
+ŷ
+Output
+Model Adversarial Text Generated
+Dataset
+True Data Augmentation
+NLP Task Classifier
+H 4 Success ? False Intermediate Text
+Multimodal Fusion Fusion Layer
+Language H1 H 3 Feature Model Attack
+Model Embedding
+H
+Feature Representation 2 Train
+Node
+Embedding Nomal Text
+Training
+Adversarial Graph Dataset
+Input x
+x H ŷ
+线上博彩，加我微信k***2 Logic Text Dataset
+(Online gambling, add me on WeChat k***2) Input Hidden State Output
+Figure2: OverviewofRoChBert. Theleftpartisthemodelarchitecture,andtherightpartisitsworkflow.
+posedAdvGraphthatinvolvesanundirectedgraph fusionmoduletofurtherfusetheinformationfrom
+to model the phonetic and glyph adversarial rela- twochannels. Finally,thefusedrepresentationcan
+tionshipsamongChinesecharactersandimproves beusedformostofthedownstreamtasks. More-
+the robustness of several traditional models. (Su over,tobetterenhancethefusionprocess,wehave
+et al., 2022) proposed RoCBERT to enhance the designed an efficient data augmentation method,
+robustnessbypre-trainingthemodelfromscratch whichmakesfulluseofadversarialtextsandhelps
+withadversarialtextscoveringcombinationsofvar- themodelfurtherunderstandwhichcharactersmay
+ious Chinese-specific attacks, which may not be besimilarinpronunciationandglyph.
+maintainedinthedownstreamtasks.
+3.1 AdversarialGraph
+3 Methodology
+Adversarial graph is first presented in (Li et al.,
+Givenabenigninputtextx ∈ X withtheground- 2021)asAdvGraphtoimproverobustnessofclas-
+truth label y ∈ Y, a classifier F has learned the sicdeeplearningmodel(e.g.,TextCNN,LSTM).In
+mappingf: X→Y,whichmapsxfromthefeature AdvGraph,eachnoderepresentsaChinesecharac-
+space X to the label space Y as F (x) = y. The terandeachedgerepresentsthephoneticorglyph
+f
+adversaryintendtoobtainanadversarialtextx∗ by relationshipbetweentwonodes.
+addingsomeperturbations∆xonxwith(cid:107)∆x(cid:107) < However, the aforementioned AdvGraph only
+p
+(cid:15),anddeceiveF intomakingawrongprediction covers 3,000 commonly used characters. More-
+on x∗, i.e., F (x∗) = yˆand y (cid:54)= yˆ. In this paper, over,theglyphrelationinAdvGraphisconstructed
+f
+we aim to improve the inherent robustness of F heavilyreliedonag-CNNmodelwhichfirstcon-
+sotogetamorerobustmodelF(cid:48) suchthatF(cid:48) can vertseachcharacterintoaimageandthenextracts
+resisttheadversarialtextx∗,i.e.,F(cid:48)(x∗) = y. thevisualfeatureasglyphrepresentation. Ithence
+f
+Overview. As illustrated in Figure 2, we first paysmoreattentiontocharacterswithsimilarstruc-
+generate an updated adversarial graph based on tures,whichwillaffecttherepresentationlearning
+phoneticandglyphrelationshipsbetweenallcom- ofthosecharacterswithdissimilarstructures. For
+monly used Chinese characters. Then, we adopt instance, “微” and “徵” is consideredto be closer
+node2vec (Grover and Leskovec, 2016) to learn byg-CNNsincetheyarebothleft-middle-rightrad-
+therepresentationofeachcharacterx ,whichwill ical structure, while “微” and “薇” is considered
+i
+thenbeusedasthenodeembedding. Forx intext dissimilarsince“薇”isup-downradicalstructure.
+i
+x,itsnodeembeddingisconcatenatedandpassed Thisisbecausewhenconvertingtoimages,differ-
+throughfeatureextractionmodule. Simultaneously, entradicalsmaycausethepositionofcharactersto
+xisalsofedintothetargetPLM.Weutilizethehid- shift,whichwillhaveagreatimpactonCNN.
+denstatesoflastlayerasthepre-trainedrepresenta- To tackle the above problem, we intend to ad-
+tionofx. Afterconcatenatingpre-trainedrepresen- vance the adversarial graph as follows. First, we
+tationandfeatureembedding,weuseamultimodal adoptthealgorithminArgot(Zhangetal.,2020b)
+togeneratesimilarcandidatesetsforeachcharac- benign and adversarial text, we introduce Trans-
+ter,withacombinationofcandidatesinAdvGraph formerEncoderlayerT tohelpmodelcapturethe
+1
+andStoneSkipping(Jiangetal.,2019). Next, we differences. Therestillexiststheout-of-vocabulary
+utilizestrokecodetocalculatesimilarityscorefor probleminthenodeembeddingthoughwehaveup-
+candidates. Strokereferstoalinethatiscontinu- datedtheoriginalAdvGraph,sinceifthecharacter
+ouslywrittenatatime,whichisthesmallestunit isnotsimilarwithanycharacteroritsfrequencyis
+ofChinesecharacters. Eachnumberinstrokecode toolow,itwillnotbeincludedinthegraph. Inaddi-
+represents a specific stroke, so it can be used to tion,nodeembeddingdoesn’tincorporateEnglish
+capture the same components between two char- letters,numbers,punctuation,andspecialsymbols,
+acters. Concretely, we calculate the longest com- itwillbehardtoalignwithpre-trainedembedding
+monsubstringbetweentwocodesasapartofour H anditmayevenbringnegativeeffects. Weuse
+1
+similarityscoreinadditiontothedistanceofrep- flattening to preserve its phonetic and glyph fea-
+resentationlearneding-CNN.Foreachcharacter turesandalleviatetheproblemthatsomefeatures
+incandidateset,oncethesimilarityscoreexceeds may be too sparse caused by out-of-vocabulary.
+thegiventhreshold,weassumethemasthesimilar Then we pass it into a linear layer with weights
+pair. Then,weaddanedgebetweentwocharacters W andbiasbtomapitintoavectorofsized as
+1
+foreachsimilarpair,indicatingtheysharesimilar sequencefeaturerepresentationH :
+3
+pronunciationorglyph.
+Finally,ouradversarialgraphincorporates7,707 H 3 = W(cid:62)(T 1(H 2))+b ∈ Rd1. (3)
+characters, and it has 109,706 edges, 32,894 of
+which is phonetic relationship, and the 81,108 is Inordertofacilitatethesubsequentconcatenation,
+glyphrelationship. NotethattheChinesepronun- werepeatthevectorltimestoobtainH 3(cid:48) ∈ Rl×d1
+ciation,glyphandtheirrelationshipsinouradver- asthefinalfeatureembedding.
+sarial graph are general knowledge. We model Wefirstfusethesetwokindsofembeddingby
+the adversarial relationship in advance so that concatenating H 1 and H 3(cid:48). To make them better
+RoChBertcanprotecttargetmodelsagainstboth interactwitheachotherduringtraining,weapply
+knownandunknownattacks. TransformerEncoderlayerT 2 forthefusion. The
+finalembeddingH ofinputxisgivenby:
+4
+3.2 MultimodalFusion
+InAdvGraph,graphembeddingandsemanticem- H 4 = T 2(H 1⊕H 3(cid:48)) ∈ Rl×d1. (4)
+beddingaresimplyconcatenatedtogeneratefused
+Finally, weflattenH andfeed itintoa classifier
+representation and there is almost no interaction 4
+togetoutputyˆ∈ Y.
+between these two kinds of feature. Hence, we
+designamultimodalfusionmoduletomakethem
+3.3 EfficientDataAugmentation
+morefullyintegratedduringtrainingprocess.
+WefirstfeedxoflengthlintoPLMwithhidden Ithasbeenreportedthatdataaugmentationcanim-
+sized toobtainpre-trainedpresentation. Assume provetherobustnessofmodels(Sietal.,2021;Ng
+1
+thetargetlanguagemodelasthefunctionF ,we etal.,2020). Theintuitivemethodistoretrainthe
+LM
+getthehiddenstatesH ofitslastlayer: targetmodelbymixingthegeneratedadversarial
+1
+texts into the original training dataset. However,
+H = F (x) ∈ Rl×d1. (1) mostoftheconventionalATmethodsareusually
+1 LM
+verycost-expensive. Forinstance,intheblack-box
+ThenwepassxintoNodeEmbeddingLayerF
+G attacks,itoftenrequiresanextremelylargeamount
+whoseweightsarelearnedfromadversarialgraph
+of queries for accessing the target models to de-
+togetH . WefreezetheweightsofF topreserve
+2 G terminetheattackdirectionineachiterationwhen
+theindependentphoneticandglyphfeatureswith-
+generatingjustoneadversarialtext.
+outbeingimpactedbysemanticinformationduring
+Conventional AT typically involves the entire
+training. ThesizeofthevectorH isd ,whichis
+2 2 dataset to conduct attacks while only collecting
+decidedbytheparameterofnode2vecalgorithm:
+successful adversarial samples for augmentation.
+H = F (x) ∈ Rl×d2. (2) Toefficientlyutilizethegeneratedtextsandobtain
+2 G
+moresamplesintheshortesttime,wehavemade
+Sincethefocusofmodelshouldbedifferentonthe someimprovementstothetraditionalAT.
+Algorithm1: Thedetailofdataaugmentation. thefollowingrelationship:
+Input: TrainingdatasetD,thetargetclassifierF withmap- size(D ag) ≤ l x∗ ×(cid:15) 1+l x∗ ×(cid:15) 2+...+l x∗ ×(cid:15) n,
+pingf. 1 2 n
+Output: NewtrainingdatasetD . s.t. (cid:15) ≤ (cid:15) ,i ∈ 1...n
+ag i max
+1: forx∈Ddo
+2: tmp←{} l x∗
+i
+denotesthelengthofadversarialtextx∗ i. n
+3: yˆ=F f(x) denotesthenumberofgeneratedadversarialtexts.
+4: ifyˆisnottheground-truthlabelthen
+Asthebaseofperturbationisword,wecanget:
+5: continue
+6: endif
+7: x∗ =x,yˆ∗ =yˆ size(D ag) ≤ (l x∗ 1 +l x∗ 2 +...+l x∗ n)×(cid:15) max (5)
+8: whileyˆ∗ ==yˆdo ≤ l ×n×(cid:15) .
+9: x∗ =x∗+∆x(cid:46)Accordingtoattackalgorithms avg max
+10: yˆ∗ =F (x∗) Thereforewehave:
+f
+11: tmp←tmp(cid:83) {x∗}
+size(D )
+12: ifallthewordsinxaremodifiedthen n ≥ ag . (6)
+13: break l avg ×(cid:15) max
+14: endif
+So n increases as l and (cid:15) decrease. In the
+15: endwhile avg max
+16: ifyˆ∗ (cid:54)=yˆand(cid:107)x∗−x(cid:107) <(cid:15) then augmentation stage, more used adversarial texts
+p max
+(cid:83)
+17: D ag ←D ag tmp (nisbigger)willresultinbettermodelrobustness,
+18: endif
+but the more computation is needed. If we set
+19: ifsize(D )>size(D)then
+ag
+20: D
+ag
+←D ag(cid:83) D small (cid:15) max, we will get high quality adversarial
+21: break texts. Theywillpromotethemodelrobustnesswith
+22: endif
+lessimpactonaccuracywhenaddedintotraining
+23: endfor
+24: returnD ; dataset. Onthecontrary,whenwesetbig(cid:15) ,the
+ag max
+adversarialtextsweneedtogeneratebecomefewer,
+whichreflectsthehighefficiencyofRoChBert.
+Sowhentheaccuracyofthetargetmodelisrela-
+Forgeneratingadversarialtextswithfewestper-
+tivelyhighandtheaveragelengthoftextsislong,
+turbations,therearevariousstrategiesdesignedin
+werecommendtousesmaller(cid:15) tomakenbig-
+theattackstodeterminetheaddedperturbationin max
+gerandimproverobustness. Iftheaveragelength
+eachiteration. Usually,thisperturbationcancause
+oftextsisshort,nwillincrease,soweurgetouse
+the most significant drop on the output probabil-
+bigger(cid:15) forefficiencyboosting. Andwhenthe
+ity of its original label, which is most hopeful to max
+model accuracy is not very high, we suggest to
+misleadthetargetmodelwithinthenextiterations
+use smaller (cid:15) to keep the accuracy as high as
+amongallthecandidategeneratedtexts. Therefore, max
+possible.
+duringtheattack,manyintermediatetextswillbe
+Ourmethodinheritsthemainideaofcurriculum
+generated before the final adversarial text is gen-
+training (Bengio et al., 2009), and the model can
+erated. Althoughthelabelsoftheseintermediate
+learnthefeaturesoftheadversarialtextatdifferent
+texts are still correct, their confidences have de-
+stages. Moreover, it canimprovemodel’s robust-
+clinedtovaryingdegrees. Hence,tosomeextend,
+nesswithoutcompromisingtheaccuracyonbenign
+in addition to adversarial texts, the intermediate
+texts,whichcanbeprovedinSection4.2.
+textscanalsohelpmodelsmakefirmdecisions.
+Wegenerateaugmenteddatabasedonthetrain- 4 Experiment
+ingdatasetD. ForeachxinD,weperturbitand
+4.1 ExperimentSettings
+collecttheintermediatetextstmp. Ifthegenerated
+x∗ candeceivethemodelF ,wewillincorporate Datasets. Weusethreedifferenttasks,sentiment
+f
+tmp (the final generated x∗ is also in tmp) into analysis,textclassificationandnaturallanguage
+newdatasetD . Specifically,toensurethequality inference to evaluate RoChBert. The datasets
+ag
+of texts, we will limit the modification rate (cid:15) are ChnSentiCorp2, DMSC3, THUCNews (Sun
+max
+duringthegenerationprocess. IfthesizeofD is etal.,2016)andOCNLI4.Thedetailsareshown
+ag
+largerthanthesizeofD,weassumewehavegot 2https://github.com/pengming617/bert_
+enoughtextsandearlystoptheprocess. Finally,we classification/tree/master/data
+addD intoD andD willbeournewtraining
+3https://www.kaggle.com/utmhikari/
+ag ag
+doubanmovieshortcomments/
+dataset. Thedetailsofthealgorithmarepresented
+4https://github.com/cluebenchmark/
+inAlgorithm1,inwhich(cid:15) maxandsize(D ag)have OCNLI
+Model Chnsenti. DMSC THUC. OCNLI treatingcorrectorandthemodelasawholepipeline.
+ChineseBERT 95.25 92.95 97.87 73.20 And(cid:15) indataaugmentationareshowninAp-
+max
+BERTbase 95.33 93.02 98.07 71.57 pendixA.3.
++SC 94.42 92.85 98.07 70.57
++RoChBert(PWWS) 95.58 93.05 97.87 67.76 Metrics. We utilize four metrics, i.e., accu-
++RoChBert(TextBugger) 95.83 92.75 98.00 67.34
++RoChBert(Random) 95.92 92.70 98.13 70.25 racy,modificationrate(MR),unlimitedattacksuc-
+BERTwwm 94.58 92.51 97.87 70.33 cess rate (UASR) and limited attack success rate
++SC 93.58 92.45 97.93 69.08
++RoChBert(PWWS) 94.92 92.70 97.93 67.23 (LASR),tocomprehensivelyevaluateRoChBert.
++RoChBert(TextBugger) 95.75 93.30 97.80 67.71
+Accuracyreflectsmodel’sgeneralizationonbenign
++RoChBert(Random) 95.25 91.45 98.00 70.09
+BERTwwm/ext 96.00 93.29 97.73 71.16 texts. MR reflects the average percentage of per-
++SC 95.00 93.20 97.80 70.68
+turbedcharactersinadversarialtextsunderunlim-
++RoChBert(PWWS) 95.58 94.00 97.80 68.31
++RoChBert(TextBugger) 95.42 93.30 97.87 68.65 ited attack setting. UASR means the percentage
++RoChBert(Random) 95.83 93.60 97.73 71.40
+oftextsthatcangenerateadversarialtextssuccess-
+RoBERTawwm/ext 95.58 92.89 98.00 71.29
++SC 94.50 92.95 97.87 70.88 fully without any limitations. To guarantee the
++RoChBert(PWWS) 95.58 93.10 98.13 68.31
++RoChBert(TextBugger) 95.83 93.56 97.93 69.09 qualityofadversarialtexts,themaximumMRwill
++RoChBert(Random) 95.50 93.45 98.07 72.45
+be0.2whencalculatingLASR.
+Table1: Modelperformancesonbenigntexts.
+4.2 ModelPerformance
+We first evaluate the model performances on be-
+in Appendix A.1. For OCNLI, we attack the
+nigntextssincedefenseshouldn’tcompromisethe
+twosentences,premiseandhypothesisseparately.
+naturalgeneralizationofmodels. Assummarized
+Here,weonlypresentthecorrespondingresultsof
+inTable1,SCreducestheaccuracyofmodelsdue
+premise,theotherpartisshowninAppendixA.4. to its own errors. It is observed that RoChBert
+Setup. AsthetargetmodelsareChineseBERT- achieves relatively high accuracy, which is com-
+based models and the perturbation strategies are parablewiththeoriginalBERT-basedmodelsand
+quite different from those for English, we can- ChineseBERT.Insomecases,modelsdefendedby
+notusethespecializedBERTattackmethodslike RoChBertevenoutperformthebaselines. Thisis
+BERT-ATTACK (Li et al., 2020). Hence, we uti- mainlybecausetheadditionalphoneticandglyph
+lize three widely used attacks, i.e., PWWS (Ren features can help model capture semantic infor-
+et al., 2019), TextBugger (Li et al., 2019) and mationinsomedegree,whichhasbeenprovedin
+random attack in the black-box setting to evalu- ChineseBERT.Inaddition,thegainsonaccuracy
+atetherobustnessofRoChBert. Thedetailsare alsoreflectthekeyimpactofdataaugmentation.
+showninAppendixA.2. Weleveragethecharac-
+ters with similar glyph or pronunciation to form 4.3 RobustnessAgainstAttack
+wordsandsubstitutetheoriginalonesafterlocat- Effectiveness. Then,weevaluatetheefficacyand
+ing the important parts by corresponding attack robustnessofRoChBert. Theresultsareshown
+algorithms. The attacks are conducted on 1,000 in Table 2. It is observed that the defend effect
+texts sampled from test set. We use base BERT of SC on the target model is not obvious, which
+(BERT base),BERTtrainedwithwholewordmask- means that when it is combined with the target
+ing strategy (BERT wwm) and with extended data model as a whole, the attacker regards them as a
+(BERT wwm/ext),andRoBERTa(RoBERTa wwm/ext) black-box model to conduct attack, and can still
+asthetargetmodels.5 WealsotakeChineseBERT easily generate adversarial texts. ChineseBERT
+which incorporates pronunciation and glyph fea- indeedenhancetherobustnesscomparedwithorig-
+tures into pre-training, as a baseline. In addition, inal models, but the improvement is very limited
+wecompareRoChBertwiththeChinesespelling whileRoChBertbringsnoticeablereductionon
+corrector (SC) 6 method. In SC-based defenses, both UASR and LASR. In the best case, UASR
+eachinputtextisfirstlyrestoredbyacorrectorto isdecreasedby75.75%whenRoChBertisfine-
+eliminateerrorsinthetextbeforebeingsentinto tuned on RoBERTa with THUCNews and
+wwm/ext
+thetargetmodel. Forfaircomparison,theadversar- attacked by TextBugger, and LASR is decreased
+ialtextsagainsttheSCbaselinearegeneratedby by42.86%whenitisfine-tunedonBERT with
+wwm
+DMSCandattackedbyTextBugger. Thisindicates
+5https://huggingface.co
+that RoChBert can significantly weaken the at-
+6https://github.com/shibing624/
+pycorrector tack and enhance robustness of models without
+PWWS TextBugger Random PWWS TextBugger Random
+Model
+UASR LASR MR UASR LASR MR UASR LASR MR UASR LASR MR UASR LASR MR UASR LASR MR
+ChnSetiCorp THUCNews
+ChineseBERT 79.73 40.97 27.22 93.25 42.67 23.64 54.91 3.38 51.23 71.55 23.44 44.82 69.80 36.23 23.63 78.40 1.13 64.68
+BERTbase 83.62 67.66 12.96 97.45 69.26 16.12 52.77 8.19 42.85 81.31 25.64 44.60 58.43 43.21 14.87 80.59 2.56 61.42
++SC 82.75 64.86 13.74 96.49 71.25 14.85 54.42 7.56 43.01 80.51 29.18 40.87 59.90 46.02 13.26 79.08 2.55 61.96
++RoChBert 65.18 31.63 29.49 64.45 34.92 20.35 39.49 10.98 37.48 66.35 5.11 63.71 9.66 9.10 8.05 51.17 0.81 66.57
+BERTwwm 87.53 56.56 19.86 98.28 64.73 16.89 48.27 6.45 44.91 73.77 36.27 35.17 78.28 46.93 21.07 74.90 2.67 58.81
++SC 84.62 57.42 18.75 97.63 68.60 15.95 50.54 5.59 45.62 76.66 30.19 38.37 72.26 45.45 17.96 73.49 2.97 58.68
++RoChBert 64.42 22.94 41.94 62.24 35.23 19.6 42.31 6.36 44.88 76.60 5.19 64.00 13.09 11.15 11.94 45.77 0.72 64.67
+BERTwwm/ext 72.04 42.93 22.21 92.93 53.27 20.16 56.96 5.80 40.44 79.63 21.29 48.05 86.39 29.99 31.85 78.81 1.74 60.79
++SC 75.00 50.53 18.19 90.93 57.59 17.47 57.07 5.91 41.04 82.72 21.98 46.59 79.04 33.54 26.08 79.24 2.76 60.04
++RoChBert 62.75 24.44 37.08 65.74 31.70 23.17 38.45 6.45 44.26 66.80 7.89 60.09 13.10 8.80 16.31 51.07 0.61 66.04
+RoBERTawwm/ext 76.46 44.11 23.25 99.78 54.19 21.49 57.58 5.83 44.14 72.58 17.02 50.12 81.24 30.27 28.46 79.51 1.22 62.27
++SC 80.47 52.23 19.62 98.20 59.66 18.26 55.94 6.90 44.00 81.51 19.41 48.52 77.22 35.55 24.33 79.57 1.23 62.43
++RoChBert 65.85 22.69 39.14 54.18 28.57 20.49 38.59 8.41 36.60 59.92 4.68 63.54 5.49 4.88 7.70 59.04 1.83 60.33
+DMSC OCNLI
+ChineseBERT 78.76 60.35 16.64 92.20 59.37 18.47 53.30 7.04 48.75 62.57 46.22 17.32 73.78 35.27 25.16 38.92 8.38 40.92
+BERTbase 76.70 61.06 15.74 78.75 60.19 13.79 56.31 7.66 46.69 58.68 42.29 17.39 65.84 35.95 22.96 40.08 10.06 38.59
++SC 83.24 63.24 17.87 82.49 63.24 13.54 57.51 6.38 47.25 56.50 42.38 15.81 65.73 36.08 21.87 38.88 8.81 38.82
++RoChBert 68.67 46.70 23.66 36.36 29.22 12.43 44.94 10.13 39.21 43.58 29.73 17.90 48.99 24.21 24.53 36.50 5.65 47.04
+BERTwwm 95.66 76.66 13.53 99.67 76.33 13.92 52.88 6.30 43.41 56.06 40.42 17.09 64.23 32.54 23.97 36.34 8.03 42.91
++SC 94.46 74.38 13.66 98.91 77.96 13.07 55.70 7.38 43.59 55.33 40.68 16.28 63.30 33.43 22.69 36.56 8.68 41.33
++RoChBert 64.94 50.00 14.00 44.85 33.47 15.94 46.78 11.91 40.22 50.00 30.18 20.79 50.36 20.32 27.54 39.21 7.05 46.48
+BERTwwm/ext 85.52 60.30 17.63 99.79 69.31 16.35 57.51 5.90 49.93 62.22 45.56 16.46 69.31 37.08 23.15 40.69 8.61 41.58
++SC 88.41 63.95 16.98 99.36 72.85 15.36 59.12 6.76 48.85 61.79 47.70 15.26 69.32 37.10 21.83 43.10 10.74 40.65
++RoChBert 75.40 46.31 22.37 40.36 29.98 14.65 37.38 6.87 47.99 51.75 32.75 21.27 54.69 20.23 28.24 39.52 7.45 45.33
+RoBERTawwm/ext 69.70 50.76 20.04 83.12 53.90 18.69 52.71 7.79 39.31 66.21 46.02 17.65 80.08 37.09 26.35 40.66 7.01 43.34
++SC 75.54 55.19 18.54 85.82 57.47 17.57 54.87 7.68 40.70 65.10 47.31 17.48 79.03 40.14 24.01 41.66 8.83 40.91
++RoChBert 55.15 28.06 34.80 59.25 35.27 19.52 44.86 7.92 43.98 60.14 35.11 22.33 51.43 21.57 27.31 36.86 7.70 42.60
+Table2: Modelperformanceagainstdifferentattacks.
+sacrificingtheirperformance. Simultaneously,MR Attack Dataset UASR LASR MR
+ofadversarialtextsgeneratedagainstRoChBert
+ChnSetiCorp 64.87 28.06 35.09
+ishigher,whichmeansthatattackersneedtomod- PWWS DMSC 63.20 27.27 39.72
+THUCNews 81.08 6.95 61.63
+ify more words to deceive RoChBert, and the
+OCNLI 43.80 30.55 19.79
+generated texts willbe harder to comprehend. In
+ChnSetiCorp 41.88 3.48 52.74
+some cases, MR is decreased, this is because the DMSC 51.51 7.03 45.53
+Random
+THUCNews 79.86 1.22 64.72
+UASRhasdroppedsignificantly,adversariesfailto
+OCNLI 27.81 8.93 39.42
+attackeveniftheymodifythetextsextensively.
+Table 3: Model performance against unknown attacks.
+Then,weanalyzetherelationbetweenMRand
+Target models are BERT and training sets are aug-
+base
+ASRbysettingthemaximumMRfrom0.1to0.5.
+mentedwithadversarialtextsgeneratedbyTextBugger.
+The results of TextBugger attack on THUCNews
+are shown in Figure 3. The other results are in
+AppendixA.6. Thedashed,dottedandsolidlines
+amongthethreeattacksasshowninTable2. And
+in the same color represent the target model, the
+we assume that using the strongest attack during
+model protected by SC and RoChBert respec-
+data augmentation can strengthen the robustness
+tively. ItprovesthatRoChBertretainsrobustness
+ofthemodelagainstunknownattacksasmuchas
+againstattackfacingwiththechangeofMR.Com-
+possible. AsshowninTable3,wecanseethatboth
+paredwithbaselines,ASRofmodelsprotectedby
+UASRandLASRhavedecreasedgreatlywhileMR
+RoChBertincreasesslightlyastheMRgrows,in-
+increases,indicatingthatwhenfacingunknownat-
+dicatingthatRoChBertcansignificantlyenhance
+tacks, RoChBert still has the ability to defend.
+modelrobustnesseveninadaptivesettings.
+Hence we can add defense to the target model in
+Theaboveexperimentshaveshowntherobust- advancewithoutknowingthespecificadversaries.
+nessofRoChBertagainstknownattacksasitwill Obviously,wecanleverageotherstrongerormulti-
+usethespecifiedattackalgorithmduringdataaug- pleattacksduringdataaugmentation.
+mentation. Hereweconductanotherexperimentto Generalizability. It is seen from Table 2 that
+demonstrateRoChBert’sperformanceagainstun- both the UASR and LASR against each models
+knownattack. WeleverageTextBuggertogenerate protectedbyRoChBerthaveadifferentdegreeof
+adversarialtextsandtheirimmediatetextssincewe decline. AllmodelsarecommonlyusedinChinese
+haveknownthatTextBuggeristhestrongestattack NLP tasks, indicating that RoChBert has good
+   
+   
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+ 5 6 $
+it with pre-trained representation and feed them
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 & intothemodel. Toevaluatetheeffectofdataaug-
+  6 &   5 R & K % ( 5 7 mentation,wedirectlyattackthetargetBERTvia
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+TextBugger and collect the the intermediate and
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7 adversarialtextsbytakingtheBERT base fine-tuned
+  5 R & K % ( 5 7 onDMSCasanexample. Theresultsareshownin
+Table4. Observethateitherusingadversarialgraph
+or data augmentation alone can still decrease the
+UASRandLASR.Then,weutilizebothadversar-
+ialgraphanddataaugmentationtodefendBERT
+againstattack,wecanseethatcomparedwithusing
+one module alone, UASR rises but LASR drops.
+WhenBERTisprotectedbyRoChBert, wecan
+obtaintheoptimalmodelingeneralsituationwith
+relativelowUASRandLASR.Sothetwomodules
+weproposedplayimportantroleinstrengthening
+robustnessofmodels. Inaddition,thedifferences
+between +graph+aug and +RoChBert demon-
+Figure3: RelationbetweenmaximumMRandASR. strate that the effect of simply concatenating fea-
+tureembeddingH andpre-trainedembeddingH
+1 2
+Model Acc. UASR LASR MR isrelativelylimited,whichisusedintheoriginal
+BERT base 93.02 78.75 60.19 13.79 AdvGraph. AndtransformerinRoChBertmakes
++graph 93.05 71.53 50.32 16.40
+two kinds of embedding fully interact with each
++aug. 93.85 68.01 48.01 17.56
++graph+aug. 94.15 73.16 19.36 40.69 otherandhelpslowertheUASRsignificantly.
++RoChBert 92.75 36.36 29.22 12.43
+Table4: Performanceofmodelsenhancedbydifferent
+modulesagainstTextBuggerattack.
+generalizabilityonotherPLMs,andcanbeapplied
+(a) (b)
+ondifferenttaskstodefendagainstvariousattack.
+Efficiency. WeassessefficiencyofRoChBert
+via comparing the samples used in data augmen-
+tation module with the traditional AT by taking
+the BERT fine-tuned on ChnSentiCorp as
+base
+anexample. ForAT,weconductattackagainstthe
+(c) (d)
+targetmodelwiththewholetrainingsetandcollect
+Figure 4: Representation Visualization. (a) is benign
+successful adversarial texts as the augmentation
+textsonBERT . (b)isadversarialtextsonBERT .
+data. RoChBertonlyuses25.40%,17.22%and base base
+(c)isadversarialtextsonChineseBERT.(d)isadversar-
+16.54% of the training dataset when performing ialtextsonBERT +RoChBert.
+base
+PWWS,TextBuggerandRandomattacksrespec-
+tively,andachievesmorerobustmodelsthanAT.It
+provesthatthedataaugmentationinRoChBertis 4.5 RepresentationVisualization
+efficientandeffective. Inaddition,italsoindicates Tofurtherexploretherobustnessofdifferentmod-
+thekeyimpactofmultimodalfusion. Thecomplete els,weprojectrepresentationvectorstotwodimen-
+resultsareshowninAppendixA.7. sional vectors through T-SNE. Taking BERT
+base
+on DMSC against TextBugger as an instance, we
+4.4 AblationStudy
+choosethesame500samples. InFigure4(a),the
+Thenwewilldiscusstheeffectsofdifferentmod- decisionboundaryforbenigntextsarequiteclear.
+ules,i.e.,adversarialgraphanddataaugmentation. However in Figure 4(b), with the addition of ad-
+Toobservethegainsonadversarialgraph,afterob- versarial texts, the representations are entangled
+tainingfeatureembedding,wesimplyconcatenate together,makingitdifficulttodistinguishbetween
+the two kinds of data. As shown in Figure 4(c), EthicsStatement
+ChineseBERTdoesnotsignificantlyimprovethis
+Inourexperiments,alladversarialtextsaregener-
+situation. After being protected by RoChBert,
+atedfromthepublicbenchmarkdatasetsviaopen-
+most of the adversarial texts are effectively sepa-
+sourceadversarialattackalgorithms. Thesegener-
+ratedinFigure4(d),whichprovesthatRoChBert
+atedadversarialtextsareusedonlyforthepurpose
+exhibitsimpressiverobustnessagainstattacks.
+ofenhancingtherobustnessoftargetmodelsand
+willnotbeusedforanyillegalpurposesorunsuit-
+5 Conclusion ableintentions. Wewillalsoopensourcethecode
+ofourRoChBertlatertoaidthoseusersandre-
+searchersinvolvedinpre-trainedlanguagemodels
+In this paper, we propose RoChBert, a
+in improving the robustness of their models and
+lightweight defense method to strengthen robust-
+thusmitigatethepotentialphysicalthreatsbrought
+ness for pre-trained Chinese BERT-based mod-
+byadversarialattacks.
+els. First,weupdatethecurrentadversarialgraph
+and learn the feature representation of characters
+Acknowledgements
+basedonChinesepronunciationandglyph. Then
+RoChBertfusesemanticandfeatureembeddings Thisworkwassupported,inpart,bytheNational
+tofine-tunethetargetmodelwithspecifieddown- KeyResearchandDevelopmentProgramofChina
+streamNLPtask,e.g.,classification. Toenhancefu- (2021YFB2701000), National Natural Science
+sion,wefurtherintroduceanaugmentationmethod FoundationofChina(61972224),BeijingNational
+inspired by curriculum learning. We evaluate ResearchCenterforInformationScienceandTech-
+RoChBertagainstseveralattackalgorithms,the nology(BNRist)underGrantBNR2022RC01006,
+results show that RoChBert greatly strengthen ShiningLabandAlibabaGroupthroughAlibaba
+themodelrobustnesswithoutcompromisingtheir ResearchInternProgram.
+normal generalization. In addition, RoChBert
+canbeusedtoimprovemostChineseBERT-based
+References
+modelsanditiscomputationallyefficient.
+Rongzhou Bao, Jiayi Wang, and Hai Zhao. 2021. De-
+fendingpre-trainedlanguagemodelsfromadversar-
+Limitations ialwordsubstitutionswithoutperformancesacrifice.
+arXivpreprintarXiv:2105.14553.
+RoChBert focusesonsolvingtheperturbations Yoshua Bengio, Jérôme Louradour, Ronan Collobert,
+thatsubstitutestargetcharacterwiththeonesshar- and Jason Weston. 2009. Curriculum learning. In
+ing similar pronunciation or glyph. In fact, there Proceedingsofthe26thannualinternationalconfer-
+enceonmachinelearning,pages41–48.
+are other perturbations such as substituting with
+synonyms,splittingChinesecharactersandinsert- Xingyi Cheng, Weidi Xu, Kunlong Chen, Shaohua
+ing special characters. In most of the Chinese Jiang, Feng Wang, Taifeng Wang, Wei Chu, and
+Yuan Qi. 2020. Spellgcn: Incorporating phono-
+BERT models, characters are often seen as the
+logical and visual similarities into language mod-
+basicunitofoperations. Socomparedwithword-
+els for chinese spelling check. arXiv preprint
+basedmodels,e.g.,TextCNNandLSTM,itwillbe arXiv:2004.14166.
+harderforadversariestoattackBERTmodelssuc-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+cessfullyonlybysynonymssubstitution. Besides,
+KristinaToutanova.2018. Bert:Pre-trainingofdeep
+suchkindofperturbationscanbeeasilydefended
+bidirectional transformers for language understand-
+byadversarialtraining. Andtheotherperturbations ing. arXivpreprintarXiv:1810.04805.
+arelimited,theycanbefilteredbyruleseasily. For
+Siddhant Garg and Goutham Ramakrishnan. 2020.
+completeness of the work, we will include these
+Bae: Bert-based adversarial examples for text clas-
+perturbationsintotheexperimentsinfuturework.
+sification. arXivpreprintarXiv:2004.01970.
+Inaddition,therearenotasmanytypesofChinese
+datasetsasEnglishones,andthequalityisuneven. Aditya Grover and Jure Leskovec. 2016. node2vec:
+Scalablefeaturelearningfornetworks. InProceed-
+WearetemporarilyunabletoverifyRoChBerton
+ings of the 22nd ACM SIGKDD international con-
+moretasks. Inthefuture,wewillconsiderapplying
+ference on Knowledge discovery and data mining,
+ourworkonothertasks. pages855–864.
+Jonathan Herzig, Paweł Krzysztof Nowak, Thomas HuiSu,WeiweiShi,XiaoyuShen,ZhouXiao,TuoJi,
+Müller, Francesco Piccinno, and Julian Martin Jiarui Fang, and Jie Zhou. 2022. Rocbert: Robust
+Eisenschlos. 2020. Tapas: Weakly supervised chinesebertwithmultimodalcontrastivepretraining.
+table parsing via pre-training. arXiv preprint In Proceedings of the 60th Annual Meeting of the
+arXiv:2004.02349. Association for Computational Linguistics (Volume
+1: LongPapers),pages921–931.
+ZhuorenJiang,ZheGao,GuoxiuHe,YangyangKang,
+Chi Sun, Xipeng Qiu, Yige Xu, and Xuanjing Huang.
+Changlong Sun, Qiong Zhang, Luo Si, and Xi-
+2019. How to fine-tune bert for text classification?
+aozhong Liu. 2019. Detect camouflaged spam con-
+InChinaNationalConferenceonChineseComputa-
+tentviastoneskipping: Graphandtextjointembed-
+tionalLinguistics,pages194–206.Springer.
+ding for chinese character variation representation.
+arXivpreprintarXiv:1908.11561.
+MaosongSun,XinxiongChen,KaixuZhang,Zhipeng
+Guo, and Zhiyuan Liu. 2016. Thulac: An efficient
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+lexicalanalyzerforchinese. Technicalreport,Tech-
+Kevin Gimpel, Piyush Sharma, and Radu Soricut.
+nicalReport.TechnicalReport.
+2019. Albert: A lite bert for self-supervised learn-
+ing of language representations. arXiv preprint Zijun Sun, Xiaoya Li, Xiaofei Sun, Yuxian Meng,
+arXiv:1909.11942.
+Xiang Ao, Qing He, Fei Wu, and Jiwei Li.
+2021. Chinesebert: Chinese pretraining enhanced
+Jinfeng Li, Tianyu Du, Xiangyu Liu, Rong Zhang, by glyph and pinyin information. arXiv preprint
+Hui Xue, and Shouling Ji. 2021. Enhancing model arXiv:2106.16038.
+robustness by incorporating adversarial knowledge
+into semantic representation. In ICASSP 2021- Dingmin Wang, Yan Song, Jing Li, Jialong Han, and
+2021 IEEE International Conference on Acoustics, Haisong Zhang. 2018. A hybrid approach to auto-
+Speech and Signal Processing (ICASSP), pages matic corpus generation for chinese spelling check.
+7708–7712.IEEE. In Proceedings of the 2018 Conference on Empiri-
+calMethodsinNaturalLanguageProcessing,pages
+Jinfeng Li, Shouling Ji, Tianyu Du, Bo Li, and Ting 2517–2527.
+Wang. 2019. Textbugger: Generating adversarial
+Liang Xu, Hai Hu, Xuanwei Zhang, Lu Li, Chenjie
+text against real-world applications. In 26th An-
+Cao, Yudong Li, Yechen Xu, Kai Sun, Dian Yu,
+nualNetworkandDistributedSystemSecuritySym-
+CongYu,etal.2020. Clue: Achineselanguageun-
+posium.
+derstanding evaluation benchmark. In Proceedings
+of the 28th International Conference on Computa-
+Linyang Li, Ruotian Ma, Qipeng Guo, Xiangyang
+tionalLinguistics,pages4762–4772.
+Xue, and Xipeng Qiu. 2020. Bert-attack: Adver-
+sarial attack against bert using bert. arXiv preprint
+ShaohuaZhang,HaoranHuang,JicongLiu,andHang
+arXiv:2004.09984.
+Li. 2020a. Spelling error correction with soft-
+maskedbert. arXivpreprintarXiv:2005.07421.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Zihan Zhang, Mingxuan Liu, Chao Zhang, Yiming
+Luke Zettlemoyer, and Veselin Stoyanov. 2019. Zhang,ZhouLi,QiLi,HaixinDuan,andDonghong
+Roberta: A robustly optimized bert pretraining ap- Sun.2020b. Argot: Generatingadversarialreadable
+proach. arXivpreprintarXiv:1907.11692. chinesetexts. InIJCAI,pages2533–2539.
+Nathan Ng, Kyunghyun Cho, and Marzyeh Ghassemi. Jinhua Zhu, Yingce Xia, Lijun Wu, Di He, Tao Qin,
+2020. Ssmba: Self-supervisedmanifold based data Wengang Zhou, Houqiang Li, and Tie-Yan Liu.
+augmentation for improving out-of-domain robust- 2020. Incorporatingbertintoneuralmachinetrans-
+ness. arXivpreprintarXiv:2009.10195. lation. arXivpreprintarXiv:2002.06823.
+ShuhuaiRen,YiheDeng,KunHe,andWanxiangChe.
+2019. Generating natural language adversarial ex-
+amplesthroughprobabilityweightedwordsaliency.
+InProceedingsofthe57thannualmeetingoftheas-
+sociationforcomputationallinguistics,pages1085–
+1097.
+Chenglei Si, Zhengyan Zhang, Fanchao Qi, Zhiyuan
+Liu, Yasheng Wang, Qun Liu, and Maosong Sun.
+2021. Better robustness by more coverage: Adver-
+sarial and mixup data augmentation for robust fine-
+tuning. InFindingsoftheAssociationforComputa-
+tionalLinguistics: ACL-IJCNLP2021,pages1569–
+1576.
+A Appendix shouldbereplacedpreferentially. Itstilluses
+confidence drop to evaluate the priority. In
+A.1 DetailsofDatasets
+ordertomakePWWSgenerateChineseadver-
+The datasets we used to evaluate RoChBert are sarialtexts,wechangedthecandidatewords
+showninTable5. fromtheoriginalsynonymsandnameentities
+tophrasescomposedofChinesephoneticand
+• ChnSentiCorp: a binary sentiment classifi-
+glyph-similarwords.
+cation dataset containing 9,600/1,200/1,200
+texts in train/dev/test datasets respectively. • TextBugger: It first segments the text into
+The content of these texts is the reviews of individualsentences, anditrankstheimpor-
+productandhotel. Andtheirlabelsareposi- tanceofthesentencesbyqueryingthetarget
+tiveornegative. modelwithsinglesentenceinturn. Thenthe
+words in the sentence are removed one by
+• DMSC: a Chinese movie review datasets
+one,andthedropsofconfidenceareusedto
+released by Kaggle. We follow Li et al.
+determine the importance of the words. In
+(2021) to sample the original datasets. In
+ordertomakeTextBuggergenerateChinese
+our datasets, there are 16,000/2,000/2,000
+adversarialtexts,weonlykeeponeofitsbug
+texts with positive or negative labels in
+generation methods, Word Substitution, and
+train/dev/testdatasets.
+thecandidatewordsarephrasescomposedof
+• THUCNews: a news multi-classification Chinesephoneticandglyph-similarwords.
+dataset with a total of fourteen categories.
+• Random Attack: It is the baseline method
+Like (Zhang et al., 2020b), we select five of
+comparedwithothertwoattackalgorithms. It
+them for experiments. In our dataset, there
+randomlyselectswordsinthetextandusethe
+are12,000/1,500/1,500textsintrain/dev/test
+candidatewordstosubstitutetheoriginalone.
+datasets.
+Ingeneral,weuseChinesecharacterswithsimilar
+• OCNLI:aChinesenaturallanguageinference
+glyph or pronunciation to form candidate words
+dataset from CLUE Benchmark (Xu et al.,
+(thereareatmost40candidatewords). Andafter
+2020). Each sample containstwosentences,
+locatingtheimportantpartsthroughthecorrespond-
+premise and hypothesis. We count the aver-
+ingattackalgorithm,weselectsuitablecandidate
+age length of the texts separately for these
+words to replace the original words. Specifically,
+two parts. And the label (Entailment, Con-
+weusethesameperturbationstrategiesinbothdata
+tradiction,orNeutral)representstherelation
+augmentationandrobustnessevaluations.
+between premise and hypothesis. There are
+9,985 and 2,950 samples in train and dev A.3 Detailsofepsilon
+max
+datasets. Asthesamplesintestdatasetsdon’t
+The details of (cid:15) we used in experiment are
+max
+havelabels,weusethedevdatasetstoconduct
+showninTable6.
+robustnessevaluation.
+A.4 ResultsofAttackingHypothesisin
+A.2 DetailsofAttackalgorithms
+OCNLI
+we utilize three widely used attacks, i.e.,
+A.4.1 ModelPerformance
+PWWS (Ren et al., 2019), TextBugger (Li et al.,
+The results are presented in Table 7. We can see
+2019)andrandomattackintheblack-boxsetting
+that ChineseBERT outperforms other models on
+toevaluatetherobustnessofRoChBert. Inorder
+OCNLI. The data augmentation does affects the
+toadapttheattackalgorithmstoChinesetext,we
+accuracyinsomedegree,especiallythemodelsus-
+havemadesomemodificationstothem.
+inghypothesisexamplesgeneratedbyPWWSand
+• PWWS:Itfirstgeneratesacandidatesetfor TextBuggeralgorithms. Butinsomecases,models
+eachword,includingthesynonymoftheword defendedbyRoChBertcanhelpmodelsimprove
+and a similar name entity, and then replaces accuracyonbenigntexts,whichisconsistentwith
+thewordstofindtheoptimalcandidateword theresultsofothertasksanddatasets. Inaddition,
+according to the confidence drop. The next SCreducestheaccuracyofmodelsduetoitsown
+step is to determine which word in the text errors.
+Dataset Task Label Train Dev Test Length
+ChnSentiCorp SentimentAnalysis 2 9,600 1,200 1,200 108
+DMSC SentimentAnalysis 2 16,000 2,000 2,000 64
+THUCNews TextClassification 5 12,000 1,500 1,500 189
+OCNLI NaturalLanguageInference 3 9,985 2,950 - 24/11
+Table5: Overviewofdatasets.
+AttackAlgorithm ant models protected by RoChBert in Figure 5.
+Dataset
+PWWS TextBugger Random We still use models trained on DMSC dataset
+ChnSentiCorp 0.45 0.45 0.45 against TextBugger attack and choose the same
+DMSC 0.45 0.45 0.45
+500 samples. Obviously, most of the adversar-
+THUCNews 0.3 0.3 0.3
+OCNLI 0.3 0.3 0.1 ial texts are effectively separated after being de-
+fended by RoChBert, which once again proves
+Table6: The(cid:15) maxweusedinexperiment. that RoChBert significantly strengthen models’
+robustness and can be easily exploited on other
+Model OCNLI pre-trainedlanguagemodels.
+ChineseBERT 73.20
+BERT 71.57
+base
++SC 70.57
++RoChBert(PWWS) 68.34
++RoChBert(TextBugger) 68.48
++RoChBert(Random) 70.52
+BERT wwm 70.33 (a) (b)
++SC 69.08
++RoChBert(PWWS) 69.41
++RoChBert(TextBugger) 67.87
++RoChBert(Random) 70.30
+BERT 71.16
+wwm/ext
++SC 70.68
++RoChBert(PWWS) 69.29
++RoChBert(TextBugger) 71.27 (c) (d)
++RoChBert(Random) 71.56
+RoBERTa 71.29
+wwm/ext
++SC 70.88
++RoChBert(PWWS) 70.07
++RoChBert(TextBugger) 70.30
++RoChBert(Random) 71.61
+(e) (f)
+Table7: Modelperformancesonbenigntexts.
+Figure 5: Representation with different models. (a)
+A.4.2 RobustnessAgainstAttack is adversarial texts on BERT . (b) is adver-
+wwm
+sarial texts on BERT +RoChBert. (c) is ad-
+TheresultsofattackinghypothesisinOCNLIare wwm
+versarial texts on BERT . (d) is adversarial
+shown in Table 8. It proves that RoChBert can wwm/ext
+texts on BERT +RoChBert. (e) is adversarial
+wwm/ext
+enhancetherobustnessofBERT-basedmodels. We
+texts on RoBERTa . (f) is adversarial texts on
+wwm/ext
+canseethatRoChBertisnotaseffectiveinattack- RoBERTa +RoChBert.
+wwm/ext
+inghypothesisasitisonothertasksanddatasets.
+Thismaybebecausethelengthofthehypothesis
+A.6 ImpactofModificationRate
+sentencesisveryshort,andmodifyingasmallnum-
+ber of characters will have a great impact on the In Figure 6, 7, 8 and 9 we list all the experi-
+originalembedding,soitiseasytoattacksuccess- mentresultsabouttheimpactofmodificationrate
+fully. with models trained on ChnSentiCorp, DMSC,
+THUCNewsandOCNLIagainstPWWS,TextBug-
+A.5 RepresentationVisualization
+gerandRandomattacks.
+We add the representation visualization results Wecanseethatastheallowedmodificationrate
+on other models and their corresponding vari- increases,ASRisgraduallygrowing. AndtheASR
+PWWS TextBugger Random
+Model
+UASR LASR Modi. UASR LASR Modi. UASR LASR Modi.
+OCNLI
+ChineseBERT 99.05 54.86 21.23 99.86 48.65 22.72 79.19 10.27 48.84
+BERT 94.77 52.34 20.64 98.76 47.52 22.71 70.80 11.98 41.21
+base
++SC 95.24 53.15 20.10 98.32 48.53 22.25 71.61 10.07 43.10
++RoChBert 97.83 47.39 24.07 97.95 36.40 26.56 70.00 10.97 46.05
+BERT 96.34 51.41 21.26 99.44 45.92 23.13 75.35 7.75 48.95
+wwm
++SC 97.30 55.62 20.33 99.72 49.36 22.47 76.81 11.81 46.00
++RoChBert 97.99 49.43 22.76 99.86 40.11 25.64 73.45 10.25 47.99
+BERT 97.36 51.11 22.09 99.86 45.14 23.44 78.47 8.75 50.52
+wwm/ext
++SC 97.07 54.95 21.06 99.58 49.09 21.73 79.78 8.65 48.14
++RoChBert 96.25 49.64 21.36 99.58 40.36 25.84 75.21 9.10 52.19
+RoBERTa 96.57 51.92 21.84 99.18 45.19 23.83 79.26 8.93 51.04
+wwm/ext
++SC 96.83 52.97 21.04 99.17 47.17 22.34 81.24 9.93 49.74
++RoChBert 96.03 52.19 22.30 99.17 40.33 25.77 71.91 13.16 42.64
+Table8: Modelperformanceagainstdifferentattacks.
+   
+   
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(a) PWWSAttackonChnSentiCorp
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+    
+    
+    
+    
+    
+    
+    
+    
+    
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(b) TextBugger Attack on
+ChnSentiCorp
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+(c) RandomAttackonChnSentiCorp
+Figure6: RelationofmodificationrateandASRonChnSentiCorp.
+   
+   
+   
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+   
+   
+   
+   
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(a) PWWSAttackonDMSC
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+    
+    
+    
+    
+    
+    
+    
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(b) TextBuggerAttackonDMSC
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+(c) RandomAttackonDMSC
+Figure7: RelationofmodificationrateandASRonDMSC.
+    
+    
+    
+    
+    
+    
+    
+    
+    
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+   
+   
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(a) PWWSAttackonTHUCNews
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+     
+     
+     
+     
+     
+     
+     
+     
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(b) TextBuggerAttackonTHUCNews
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+(c) RandomAttackonTHUCNews
+Figure8: RelationofmodificationrateandASRonTHUCNews.
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+   
+   
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(a) PWWSAttackonOCNLI-premise
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+    
+    
+    
+    
+    
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(b) TextBugger Attack on OCNLI-
+premise
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+(c) RandomAttackonOCNLI-premise
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(d) PWWSAttackonOCNLI-hypothesis
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+   
+   
+   
+   
+   
+                   
+ 0 D [ L P X P  0 R G L I L F D W L R Q  5 D W H
+(e) TextBugger Attack on OCNLI-
+hypothesis
+ 5 6 $
+ & K L Q H V H % ( 5 7  % ( 5 7   Z Z P  H [ W 
+ % ( 5 7   E D V H    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7  5 R % ( 5 7 D   Z Z P  H [ W 
+ % ( 5 7   Z Z P    6 &
+  6 &   5 R & K % ( 5 7
+  5 R & K % ( 5 7
+(f) RandomAttackonOCNLI-hypothesis
+Figure9: RelationofmodificationrateandASRonOCNLI.
+Models Attack UASR LASR MR UsedSamples Percentage
+PWWS 83.62 67.66 12.96 0 0%
+BERT TextBuuger 97.45 69.26 16.12 0 0%
+base
+Random 52.77 8.19 42.85 0 0%
+PWWS 70.67 50.27 19.02 9600 100%
++Adversarial
+TextBugger 96.36 64.09 16.69 9600 100%
+Training
+Random 36.18 16.24 30.08 9600 100%
+PWWS 65.18 31.63 29.49 2438 25.40%
++RoChBert TextBugger 64.45 34.92 20.35 1653 17.22%
+Random 39.49 10.98 37.48 1588 16.54%
+Table9: EfficiencyoftraditionaladversarialtrainingandRoChBert.
+ofthemodelswithRoChBerthavetheleastrise,
+which proves that even in different settings, the
+modelsdefendedbyRoChBertstillsignificantly
+outperformthebaselines.
+A.7 Efficiency
+ToassesstheefficiencyofRoChBert,wetakethe
+BERT fine-tunedonChnSentiCorpdataset
+base
+asanexampleandcompareRoChBertwiththe
+traditional adversarial training. For adversarial
+trainingmethod, weuseattackalgorithmsonthe
+targetmodelwithallthetrainingdatasetandcollect
+the successful ones as the augmentation dataset.
+The results are presented in Table 9. It shows
+that RoChBert only uses 25.40%, 17.22% and
+16.54% of the training dataset when conducting
+PWWS,TextBuggerandRandomattacksrespec-
+tively. Eventheadversarialtraininghasusedallthe
+trainingdataset,RoChBertstillachievesmorero-
+bustmodels. Itprovesthatthedataaugmentation
+methodusedinRoChBertisefficientandeffec-
+tive. Italsoindicatesthekeyimpactofmultimodal
+fusion.

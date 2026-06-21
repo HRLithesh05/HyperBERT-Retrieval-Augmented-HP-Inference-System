@@ -1,0 +1,686 @@
+Semi-Siamese Bi-encoder Neural Ranking Model Using
+Lightweight Fine-Tuning
+EunaJung∗ JaekeolChoi∗ WonjongRhee
+GSCST SeoulNationalUniversity GSCST,GSAI,AIIS
+SeoulNationalUniversity &NaverCorp. SeoulNationalUniversity
+Seoul,Korea Seoul,Korea Seoul,Korea
+xlpczv@snu.ac.kr jaekeol.choi@snu.ac.kr wrhee@snu.ac.kr
+ABSTRACT Table1:Queryanddocumentlengths-averageandstandard
+deviationofwordcountsareshownforthreeIRdatasets.
+ABERT-basedNeuralRankingModel(NRM)canbeeitheracross-
+encoderorabi-encoder.Betweenthetwo,bi-encoderishighly Dataset Querywordcount Documentwordcount
+efficientbecauseallthedocumentscanbepre-processedbefore Robust04 2.66(±0.69) 912(±2114)
+theactualquerytime.Inthiswork,weshowtwoapproachesfor ClueWeb09b 2.40(±0.98) 2346(±2128)
+improvingtheperformanceofBERT-basedbi-encoders.Thefirst MS-MARCO 6.00(±2.58) 2454(±4761)
+approachistoreplacethefullfine-tuningstepwithalightweight
+fine-tuning.Weexaminelightweightfine-tuningmethodsthatare Table2:Queryexamples-Robust04andClueWeb09bmainly
+adapter-based,prompt-based,andhybridofthetwo.Thesecond containshortandkeyword-basedqueries,butMS-MARCO
+approachistodevelopsemi-Siamesemodelswherequeriesanddoc- mainlycontainslonganddescriptivequeries.
+umentsarehandledwithalimitedamountofdifference.Thelimited Dataset Queryexamples
+differenceisrealizedbylearningtwolightweightfine-tuningmod-
+ules,wherethemainlanguagemodelofBERTiskeptcommonfor newfuelsources
+Robust04
+bothqueryanddocument.Weprovideextensiveexperimentresults mostdangerousvehicles
+formonoBERT,TwinBERT,andColBERTwherethreeperformance dinosaurs
+ClueWeb09b
+metricsareevaluatedoverRobust04,ClueWeb09b,andMS-MARCO airtravel
+datasets.Theresultsconfirmthatbothlightweightfine-tuningand
+VitaminDdeficiencyandskinlesions
+semi-SiameseareconsiderablyhelpfulforimprovingBERT-based MS-MARCO Whathappenswhenbloodgoesthroughthelungs?
+bi-encoders.Infact,lightweightfine-tuningishelpfulforcross-
+encoder,too.1
+1 INTRODUCTION
+CCSCONCEPTS Sincetheadventoflarge-scalelanguagemodels,BERT-basedNeural
+•Informationsystems→Languagemodels; RankingModels(NRMs)[8,16,19]havebeendevelopedandshown
+•Computingmethodologies→Neuralnetworks. toachievestate-of-the-artperformance.ABERT-basedNRMcan
+beclassifiedeitherasacross-encoderorasabi-encoder.Although
+KEYWORDS cross-encodersgenerallyoutperformbi-encoders,bi-encodersare
+superior in terms of computational efficiency because they al-
+Informationretrieval;neuralrankingmodel;bi-encoder;lightweight
+low one-time pre-processing of the long documents. Therefore,
+fine-tuning;prefix-tuning;LoRA;
+bi-encoderstendtoreceivemoreattentionfromindustrialpracti-
+ACMReferenceFormat: tioners.Forprocessingbothqueriesanddocuments,abi-encoder
+EunaJung,JaekeolChoi,andWonjongRhee.2022.Semi-SiameseBi-encoder usesacommonBERTmodelwithafixedsetofweightvalues.This
+NeuralRankingModelUsingLightweightFine-Tuning.InProceedingsofthe hasbeenconsideredtobeamandatoryrequirement,becausethe
+ACMWebConference2022(WWW’22),April25–29,2022,Lyon,France.ACM, underlyinglanguagemodelisdesiredtobethesameforhandling
+NewYork,NY,USA,10pages.https://doi.org/10.1145/3485447.3511978
+bothqueriesanddocumentsandbecauseheterogeneousmodels
+indeedshowverypoorperformance.Therefore,alloftheexisting
+∗Bothauthorscontributedequallytothisresearch.
+bi-encodermodelsareSiamesemodels.
+1Thecodeisavailableathttps://github.com/xlpczv/Semi_Siamese
+Learningarankingmodelisaspecialtaskbecauseoftheinvolve-
+mentofqueryanddocument.Inparticular,queryanddocument
+Permissiontomakedigitalorhardcopiesofallorpartofthisworkforpersonalor
+canhavedistinctcharacteristics.Table1summarizesthelength
+classroomuseisgrantedwithoutfeeprovidedthatcopiesarenotmadeordistributed
+forprofitorcommercialadvantageandthatcopiesbearthisnoticeandthefullcitation information of query and document for three popular Informa-
+onthefirstpage.CopyrightsforcomponentsofthisworkownedbyothersthanACM tionRetrieval(IR)datasets.Itcanbeimmediatelynoticedthatthe
+mustbehonored.Abstractingwithcreditispermitted.Tocopyotherwise,orrepublish,
+lengthdifferencebetweenqueryanddocumentisremarkablylarge.
+topostonserversortoredistributetolists,requirespriorspecificpermissionand/ora
+fee.Requestpermissionsfrompermissions@acm.org. Robust04andClueWeb09bcontainveryshortquerieswhileMS-
+WWW’22,April25–29,2022,Lyon,France. MARCOhasrelativelylongerqueries.Eventhoughnotshownin
+©2022AssociationforComputingMachinery.
+thetable,manyofClueWeb09bqueriesconsistofonlyoneword
+ACMISBN978-1-4503-9096-5/22/04...$15.00
+https://doi.org/10.1145/3485447.3511978 perquery.Ontheotherhand,adocumentusuallycontainsmore
+2202
+raM
+2
+]LC.sc[
+2v34941.0112:viXra
+WWW’22,April25–29,2022,Lyon,France. EunaJung,JaekeolChoi,&WonjongRhee
+than1,000wordsforallthreedatasets.Table2showsexamples neuralrankingmodels,avarietyofBERT-basedNRMshavebeen
+ofthequeries.ItcanbeseenthatRobust04andClueWeb09bhave developed.Forinstance,monoBERT[19]isoftenconsideredtobe
+keyword-basedquerieswhileMS-MARCOhasdescriptivequeries apowerfulbaselinethattakesapairofqueryanddocumentasthe
+infulloralmostfullsentenceformat.Becausethedocumentsof inputtotheBERTmodel.Suchcross-encodermodels,however,are
+the three datasets are usually in full sentence format, it can be computationallydemandingbecausetheBERT’soutputrepresen-
+concludedthatRobust04andClueWeb09bhavedifferentsentence tationneedstobecalculatedforeverycombinationofqueryand
+formatsforqueryanddocumentwhileMS-MARCOhasthesame document.Ifwehave𝑁 𝑞 queriestoevaluatefor𝑁 𝑑 documents,
+format.Inthiswork,wehypothesizethatahigh-performancebi- thismeansBERTrepresentationsneedtobeevaluated 𝑁 𝑞 ·𝑁 𝑑
+encodershouldprocessqueryanddocumentwithtwodifferent times.Incontrast,bi-encodermodelsarecomputationallyefficient
+networks,becausetheytendtohavedistinctcharacteristics. becausetheirBERTmodelsdonotjointlyprocesseachpairofquery
+Becauseheterogeneousnetworksdonotperformwell2,wepro- anddocument.Withabi-encoder,allofthe𝑁 𝑑 documentsarepre-
+poseSemi-Siamese(SS)bi-encoderneuralrankingmodelsthatcan processedonlyonce,andtheirBERTrepresentationsarepre-stored.
+properlyreflectthedifferentcharacteristicsofqueryanddocument. Foreachquery,thequery’sBERTrepresentationiscalculatedand
+Oursemi-Siamesenetworksarebasedonacommonpre-trained usedtogetherwitheachofthepre-stored𝑁 𝑑 documentrepresenta-
+BERTmodelthatisnotfine-tunedatall.Instead,amilddifferen- tionsfortherelevancescorecalculation.Becausethedocumentsare
+tiationbetweenthequerynetworkandthedocumentnetworkis muchlongerthanthequeries(seeTable1),thepre-processingof
+implementedthroughalightweightfine-tuningmethodincluding documentsmakesbi-encodersextremelyefficientwhencompared
+prompt-tuning[11],prefix-tuning[12],andLoRA[6].Theresulting tothecross-encoders.TwinBERT[16]andColBERT[8]aretwoof
+semi-Siamesenetworkshavelessthan1%differenceintermsofthe thepopularbi-encodermodels.TwinBERTaggregatesCLSvectors
+numberofparametersthataredifferent.WealsointroduceLoRA+ ofthequeryandthedocumentfortherelevancescoreestimation.
+thatallowsasmalladditionaldifferentiationandalsoconsidertwo ColBERTutilizestheinteractionbetweentheBERTrepresentations
+sequentialhybridsofprefix-tuningandLoRA. instead.
+While semi-Siamese learning for bi-encoders is our main fo-
+cus,wealsoinvestigatethebenefitsoflightweightfine-tuningfor 2.2 LightweightFine-Tuning(LFT)
+Siamesecross-encodersandSiamesebi-encoders.Withourbest
+Traditionally,fine-tuningreferstoupdatingallofthepre-trained
+knowledge,wearethefirsttoapplylightweightfine-tuningfor
+weightsofaneuralnetwork.Becausealltheweightsareupdated,
+improvingNRMs.Originally,lightweightfine-tuningmethodswere
+werefertoitasfullFine-Tuning (FT)inthiswork.AfullFTof
+developedtoreducetask-specificparametermemory/storageand
+BERTisnotalwaysnecessaryforachievingahighperformance.
+computationalcost.But,wewillshowthattheycanalsoprovideper-
+Instead,partialfine-tuningmethodscanbeadoptedforreducing
+formanceenhancementthroughtheirregularizingeffectofNRMs.
+task-specificparameterstorageandcomputationalcost.Leeetal.
+Comparedtoafullfine-tuning,alightweightfine-tuningofNRM
+[10]investigatedapartialfine-tuningstrategywhereonlythefinal
+allowsonlyalimitedamountofparameterstobemodifiedand
+layersarefine-tunedandshowedthatonlyafourthofthefinallay-
+weobtainperformanceimprovementsbychoosingadequatelight-
+ersneedtobefine-tunedtoachieve90%oftheoriginaldownstream
+weightfine-tuningmethods.Ourmethodimprovesbi-encodersthat
+taskquality.Radiya-DixitandWang[20]showedthatitsufficedto
+arepracticalintherealwebsearchenvironment.
+fine-tuneonlythemostcriticallayers.Similarresultscanbefound
+Ourcontributionscanbesummarizedasbelow.
+in[15,22].WhileapartialFTcanbeadvantageousoverafullFT,
+• Forcross-encoder,weshowthatadapter-basedlightweight theybothrequirethepre-trainedBERTtobemodified.Thisisnot
+fine-tuningmethods(LoRAandLoRA+)canimprovethe desirableespeciallywhenmultipledownstreamtasksneedtobe
+performanceby0.85%-5.29%. handled.Recently,anothertypeoffine-tuningcalledLightweight
+• Forbi-encoder,weshowthatprefix-tuningperformswell Fine-Tuning(LFT)hasemerged.WithanLFT,alloftheBERTpa-
+forRobust04andClueWeb09bthathaveshortqueries.The rametersarekeptfrozen.Toimplementtheeffectoffine-tuning,
+improvementcanbeverylargeforTwinBERT,andamodest LFTinsteadaugmentstheBERTmodelwithsmalltrainableele-
+gainof0.12%-3.90%isachievedforColBERT. ments.TwotypesofLFThavebeenshowntobeextremelyuseful.
+• Forbi-encoder,weshowthatsemi-Siameselearningiseffec- Inourwork,thefirsttypeisaddressedasadapter-basedLFT andit
+tivewheretheoverallgainof1.46%-16.23%isachievedfor augmentsalanguagemodellikeBERTwithsmallweightmodules.
+ColBERT. Thesecondtypeisaddressedasprompt-basedLFT anditaugments
+alanguagemodel’srepresentationvectorswithasmallnumber
+2 RELATEDWORKS ofinputembeddingvectorsormid-layeractivationvectors.With
+2.1 BERT-basedNRMs ourbestknowledge,LFThasneverbeenappliedtoneuralranking
+modelsbeforeandwearethefirsttodemonstrateitseffectiveness
+Withtheadventoflarge-scalelanguagemodelssuchasBERTand
+forNRMs.
+GPT,fine-tuningofsuchapre-trainedlanguagemodelhasbecome
+a standard approach for handling document ranking tasks. For 2.2.1 Adapter-basedLFT. Houlsbyetal.[5]proposedanalterna-
+tiveoffullFTwheretask-specificadapterswereinsertedbetween
+2We confirmed this by fine-tuning query and document models independently. thelayersofthepre-trainedlanguagemodel.Theadapter’seffec-
+Forexample,heterogeneousfullfine-tuningofColBERTonRobust04resultedin
+tivenesswasdemonstratedover26diversetextclassificationtasks,
+0.3233(P@20)whileSiamesefullfine-tuningresultedin0.3355(P@20)wherethe
+p-valuewas0.014. wherenearfullfine-tuningperformancewasachievedwithonly
+Semi-SiameseBi-encoderNeuralRankingModelUsingLightweightFine-Tuning WWW’22,April25–29,2022,Lyon,France.
+3.6%ofadditionalparameterspertask.Later,Heetal.[4]showed withdirecteddatawhichmakesthemsemi-Siamese.Intheprevious
+thattheadapterFTcouldmitigateforgettingissuesoffullFTbe- works,asemi-Siamesenetworkisutilizedwhenthereisaneed
+causeofthesmallerweightdeviations.LoRA[6]isanotherexample totraintwoslightlydifferentnetworks.Inourcaseofbi-encoder
+ofadapter-basedLFTwhereaugmentationisimplementedwitha NRMs, we focus on the different characteristics between query
+differentdesignofsmallweightmodules.Insteadofinsertinglay- anddocumentanddesignsemi-Siamesemodelstoenhancethe
+ers,LoRAexpandsthequeryandvalueprojectionweightmatrices performance.
+withlinearlow-rankresidualmatrices.Becauseofitssimplicity
+andsmallsize,weinvestigateonlyLoRAamongtheadapter-based 3 METHODOLOGY
+LFTs. 3.1 DocumentRe-ranking
+2.2.2 Prompt-basedLFT. GPT-3[1]isanenormouslylargemodel, Documentre-rankingistorankasetofpre-selecteddocumentsfor
+anditisknownforitscapabilityofperformingfew-shotorzero- agivenqueryaccordingtotherelevancescoreestimates,wherea
+shotlearningmerelywithtextprompts.Asurveyofprompt-based relevancescoreisestimatedforeachpairofqueryanddocument.
+learningcanbefoundin[14].Followingtheideaofprompt-based Let𝑄 beaqueryconsistingoftokens𝑞 1,𝑞 2,...,𝑞 |𝑄| andlet𝐷 be
+learning,Lesteretal.[11]introducedprompt-tuningwheresoft adocumentconsistingoftokens𝑑 1,𝑑 2,...,𝑑 |𝐷|.Apositivepairof
+promptswerelearnedthroughback-propagation.Softpromptsare aqueryandadocument𝑋 𝑝𝑜𝑠 iscomprisedofrelevant𝑄 and𝐷
+fine-tunedembeddings,andtheydonotcorrespondtodiscretetext whereas a negative pair 𝑋 𝑛𝑒𝑔 is comprised of irrelevant𝑄 and
+embeddings.LiandLiang[12]extendedtheconceptbeyondthe 𝐷.BERT-basedNRMsarecomposedoftwoparts,BERTandthe
+inputlayertointroduceprefix-tuning,whereitwasdifferentfrom ranker. BERT processes query and document pairs𝑋 to output
+prompt-tuninginthatitlearnedprefixactivationvectorsforallthe contextualizedrepresentationvectors𝑍.Therankerisafunction
+layersincludingtheinputlayer.Inourwork,weinvestigateboth 𝑓 :𝑍 ↦→𝑠 ∈Rthatestimatestherelevancescore𝑠usingtheBERT
+prompt-tuning and prefix-tuning for enhancing neural ranking output.𝑠 𝑝𝑜𝑠 and𝑠 𝑛𝑒𝑔indicatetherelevancescoresofpositivepair
+models. andnegativepair,respectively.NRMsaretrainedbyminimizing
+Adapter-basedLFTsarefundamentallydifferentfromprompt- thehingelossoftripletdata:
+basedLFTs.Adapter-basedLFTsdonotaugmenttherepresentations 𝑒𝑠𝑝𝑜𝑠
+atall,andprompt-basedLFTsdonotaugmentweightsatall.This 𝐽(𝑊)=E(1− 𝑒𝑠𝑝𝑜𝑠 +𝑒𝑠𝑛𝑒𝑔) (1)
+differencehasastrongimplicationtoNRMsaswewillshowinthe
+Tousetheknowledgelearnedfrompre-trainingtasks,weinitialize
+experimentsection.Despiteofthedifference,botharefine-tuning
+BERT with the pre-trained weights and randomly initialize the
+methods because their augmentations are task-specific, i.e. not
+ranker.Duringthetraining,weperformgradientupdatesonthe
+dependentoninputexamples,wherethetrainableaugmentation
+trainableparametersforreducingthelossabove.Whenperforming
+elementsarefine-tunedforaspecificdownstreamtask.
+afullfine-tuning,weupdatetheentiresetofBERTandranker
+weightsatthesametime.
+2.3 Semi-Siamese(SS)Models
+Alloftheexistingbi-encoderNRMsareSiamesemodelswherea 3.2 LightweightFine-Tuning(LFT)
+singleversionoffine-tunedBERTisusedforprocessingbothofthe Unlikethefullfine-tuningthattrainsalloftheBERTweightsfora
+queriesandthedocuments.Learningaheterogeneousbi-encoder down-streamtask,alightweightfine-tuningtrainsonlytheaug-
+modelisalsopossiblewheretwodifferentversionsoffine-tuned mentedelements.Whiletrainingonlyasmallportionofparameters
+BERTmodelscanbelearned,oneforprocessingqueriesandthe (1%orlessofBERTweights),someoftheLFTmethodshavebeen
+otherforprocessingdocuments.Suchaheterogeneousbi-encoder, proventoperformwell,especiallyforNLG(NaturalLanguageGen-
+however,isknowntosufferfromalargeperformancedegradation eration)tasks.Inthissection,weaddressprefix-tuningandLoRA
+duetothedeviationofthetwolanguagemodelsforhandlingqueries andexplainhowweapplytheseLFTmethodstoBERT-basedNRMs.
+anddocuments.Butwhenqueriesareshortorwhenquerieshave
+significantlydifferentcharacteristicscomparedtothedocuments, 3.2.1 Prefix-tuning. Prefix-tuning[12]trainsthenetworktogen-
+itmakessensetoallowacertaindegreeofdeviationtohandlethe erateprefixactivationvectorsthatareprependedtothenormalac-
+queriesbetter.ApossiblesolutionforlearningistointroduceSemi- tivationvectorsofthetransformers.Differentfromprompt-tuning
+Siamese(SS)models.Semi-Siamesemodelshaveneverbeenused that prepends prompts in front of the input word embeddings,
+forinformationretrievaltasks,buttheyhavebeenalreadyadopted prefix-tuninginsertsprefixestoalllayersincludingtheinputlayer.
+inimage,video,andrecommendationdomains.Duetal.[3]useda Wheretoprependtheprefixisadesignchoicethatcanaffectthe
+semi-Siamesemodeltopreventover-fittinginafacerecognition performance.LiandLiang[12]prependedtheprefixtothekeyand
+taskwithasmallnumberofdataexamples.Themodelhastwo valuerepresentations,butwechosetoprependtheprefixtothe
+structurallyidenticalnetworksthataretrainedsimultaneouslyus- representationsrightbeforetheself-attentionprojectionbecause
+ingdifferentinputs.ZhangandDuan[24]proposedasemi-Siamese weexperimentedwithbothoptionsandfoundthatourmodified
+CNNnetworkforvocalimitationsearch.Toencodevocalimitation approachprovidedabetterperformance.AsshowninFigure1(a),
+andrealsound,twoCNNnetworksareneededandtheysharelower prefixembeddingvectors𝑃 𝜃 thataregeneratedfromthesource
+layers.Lietal.[13]usedasemi-Siamesemodeltomakedirectional 𝑃 𝜃′ areprependedtothenormalactivationsofthelayers.Theacti-
+recommendations.First,twoidenticalnetworksaretrainedwith vationofan𝑖𝑡ℎ tokenℎ 𝑖 ineachlayerbecomes𝑃 𝜃[𝑖,:]if𝑖 ∈𝑃 𝑖𝑑𝑥
+undirecteddata,andthenthetwonetworksaretraineddifferently where𝑃 𝑖𝑑𝑥 denotesthesequenceofprefixindicesand𝑃 𝜃[𝑖,:] is
+WWW’22,April25–29,2022,Lyon,France. EunaJung,JaekeolChoi,&WonjongRhee
+(a)Prefix-tuning (b)LoRA
+Figure1:Prefix-tuningandLoRA.(a)Prefix-tuningaddsprefixembeddingstoeachlayer.Eachembeddingisgeneratedfrom
+thesamesourcethroughlayer-dependentMLPs.(b)LoRAaffects𝑊𝑞 and𝑊𝑣
+amongthethreeweightsinvolvedintheself-
+attentionmodulewhere𝑊𝑞
+=
+{𝐴𝑞,𝐵𝑞}and𝑊𝑣
+=
+{𝐴𝑣,𝐵𝑣}areLoRAweightsforqueryandvalue,respectively.Inadditionto
+thetwoweights,LoRA+alsoaffects𝑊𝑑 where𝑊𝑑 ={𝐴𝑑,𝐵𝑑}areLoRAweightsforthedenselayer.
+computedastheMLPoutputofthesourcevectors𝑃′[𝑖,:]inlow 3.2.4 Sequentialhybrid. WeadditionallyproposeanewLFTmethod
+𝜃
+dimension(forsimplicity,weomitlayerindexes): thatcombinesprefix-tuningandLoRA.Wedevisedourmethod
+ℎ 𝑖 =𝑃 𝜃[𝑖,:] =𝑀𝐿𝑃 𝜃(𝑃 𝜃′[𝑖,:])if𝑖 ∈𝑃 𝑖𝑑𝑥 (2) basedonthehypothesisthatprefix-tuningandLoRAcancomple-
+menteachother.Notethattheyareinvolvedindifferentpartsof
+Wetrainbothofthesource𝑃 𝜃′ andtheparametersof𝑀𝐿𝑃 𝜃 during BERT.Prefix-tuninginsertstask-specificinformationtothemodel
+theprefix-tuning.Wesetthelengthoftheprefixas10andthesource byprependingactivationvectors.Ontheotherhand,LoRAfine-
+dimensionas768.𝑀𝐿𝑃 𝜃consistsoftwolinearlayersbetweenwhich tunesthemodelbymodifyingprojectionweightsthroughresidual
+aReLUlayerexists.Thefirstlinearlayerdown-projectsthesource connections.Therearemanypossibilitiesforcombiningthetwo,
+vectorcorrespondingtoeachindex𝑃 𝜃′[𝑖,:] intothespaceof256 butwehavechosentosequentiallycombinethemsuchthattheir
+dimensionsandthesecondlinearlayerup-projectsthevectorsback learningdynamicsarenotmixed.Afterfine-tuningwithoneof
+intothespaceof768dimensions.Theinferenceoverheadinduced thetwoLFTmodulesfor𝑚epochs,wefreezethemodule.Then,
+bytheprefixislessthan0.5%. we train the other LFT module for𝑛 epochs. For robust04 and
+Whenapplyingprefix-tuningonSiameseNRMs,weprependthe ClueWeb09b,weused𝑚=30and𝑛=10.ForMS-MARCO,weused
+sameprefixestobothmodelsofqueryanddocument: 𝑚=10and𝑛=3.Dependingonwhichofprefix-tuningandLoRA
+ℎ 𝑞,𝑖 =ℎ 𝑑,𝑖 =𝑃 𝜃[𝑖,:] (3) isfirstfine-tuned,weendupwithtwodifferentsequentialhybrid
+LFTs.WepresentthePrefix-tuning→LoRAinAlgorithm1,and
+Forsemi-SiameseNRMs,ℎ 𝑞,𝑖 andℎ 𝑑,𝑖 arenotconstrainedtobethe
+LoRA→Prefix-tuningisthesameexceptfortheorder.
+same.
+3.2.2 LoRA. LoRAstandsforLow-RankAdaptation[6],anditis
+Algorithm1SequentialHybrid:Prefix-tuning→LoRA
+anLFTmethodthatfreezesthepre-trainedweights𝑊 0andtrains
+onlytherankdecompositionmatrixpartof△𝑊 =𝐵𝐴.Asshownin 1.Traintheprefix-tuningparametersfor𝑚epochsandsavethe
+Figure1(b),therepresentationℎiscomputedasℎ=(𝑊 0+△𝑊)𝑥 = prefixesfortheepochwiththebestvalidationperformance.
+(𝑊 0+𝐵𝐴)𝑥 where𝑥 isthepreviouslayer’srepresentationvector. 2.Freezetheprefixeswiththesavedprefixes.
+𝑊 0 ∈ R𝑑×𝑘 ,𝐵 ∈ R𝑑×𝑟 , and𝐴 ∈ R𝑟×𝑘 are the weight matrices, 3.TraintheLoRAparametersfor𝑛epochsandsavetheLoRA
+and𝑟 ≪𝑚𝑖𝑛(𝑑,𝑘).Because𝑟 ismuchsmallerthan𝑑 and𝑘,the weightsfortheepochwiththebestvalidationperformance.
+numberoflearnableparametersissignificantlyreducedfrom𝑑×𝑘 4.FreezetheLoRAweightswiththesavedLoRAweights.
+to𝑟(𝑑+𝑘)foreachprojectionprocess.BecauseLoRAisappliedonly
+toqueryandvaluematrices,thenumberoflearnableparameters
+isdecreasedevenfurther.Besides,wecansumuptheadditional
+3.3 Semi-SiameseNeuralRankingModel
+LoRAweightstotheoriginalweightsuponthecompletionofthe
+training,andthereforetheinferenceoverheadcanbeforcedtobe Weproposethreetypesofsemi-SiameseLFTforbi-encoderNRMs.
+zero.
+3.3.1 SSprefix-tuning. Toallowbi-encodermodelstoeffectively
+3.2.3 LoRA+. NRMisacomplicatedtask,anditcanbedesirable processquery-specificanddocument-specificinformation,wede-
+toincreasethenumberoftrainableparameters.Afterinvestigating vised semi-Siamese prefix-tuning. As shown in Figure 2(a), we
+severaloptions,wehavedesignedLoRA+thatisthesameasLoRA generateSSprefixesbysummingupcommonprefixeswithquery-
+exceptforadditionallyapplyingrankdecompositionmatrixtothe specificordocument-specificprefixes:
+d see ln f-s ae ttla ey ne tir o𝑊 n𝑑 la. yD ee rn is ne tl ra ay ne sr foh re mre er re s.fe Lr os Rto At +he all la oy we sr tf hol elo mw oin dg elt ah ne ℎ 𝑞,𝑖 =𝑃 𝜃[𝑖,:]+𝑃 𝜃𝑞[𝑖,:]𝑖𝑓 𝑖 ∈𝑃 𝑖𝑑𝑥 (4)
+additionalroomforfine-tuning. ℎ 𝑑,𝑖 =𝑃 𝜃[𝑖,:]+𝑃 𝜃𝑑[𝑖,:]𝑖𝑓 𝑖 ∈𝑃 𝑖𝑑𝑥 (5)
+Semi-SiameseBi-encoderNeuralRankingModelUsingLightweightFine-Tuning WWW’22,April25–29,2022,Lyon,France.
+(a)SSPrefix-tuning (b)SSLoRA
+Figure2:Thearchitecturesofsemi-Siameseprefix-tuningandsemi-SiameseLoRA.(a)SSprefix-tuningutilizesbothcommon
+prefixesandquery/documentspecificprefixes.(b)SSLoRAutilizesacommonqueryweight𝑊𝑞
+andquery/documentspecific
+valueweights𝑊 𝑞𝑣 and𝑊 𝑑𝑣 .
+where𝑃 𝜃[𝑖,:]meansthecommonprefix,𝑃 𝜃𝑞[𝑖,:]istheprefixfor MS-MARCO,weusedthepre-assigneddatasetsfortraining,valida-
+query,and𝑃 𝜃𝑑[𝑖,:]istheprefixfordocument.Withthismethod, tion,andtest.WeusedocumentcollectionsfromTRECdiscs4and
+prefixesofqueryanddocumentsharetheinformationthrough 54ofRobust04andfromClueWeb09b5ofWebTrack2009.Wealso
+commonprefixeswhilekeepingtheirowncharacteristicsinspecific useMS-MARCOdocumentcollections.6Forevaluationmetrics,we
+prefixes.𝑃 𝜃′,thesourceinputforMLP,issharedfor𝜃,𝜃 𝑞,and𝜃 𝑑. usedP@20,nDCG@5,andnDCG@20.
+WeexploredafewoptionsforSSprefix-tuning.Theyarediscussed
+4.1.2 Baselinemodels. WeimplementthreeBERT-basedNRMs,
+inAppendixA,andthebestperformingoptionispresentedhere.
+monoBERT[19],ColBERT[8],andTwinBERT[16].monoBERTisa
+3.3.2 SSLoRA. Wealsodevisedsemi-SiameseLoRAasillustrated cross-encodermodel,andtheothertwoarebi-encodermodels.We
+inFigure2(b).BecausetherearetwotypesofLoRAweights,one considerthefullfine-tuningperformanceofthesemodelsasthe
+forqueryandtheotherforvalue,wechosetousecommonLoRA baselineperformance.WecompareLFTandfullFTbyinspecting
+weightsforqueryprojectionandtouseheterogeneousLoRAweights theimprovementsofLFToverfullFT.
+wf qo uhr
+ee
+rv
+r
+ya el a𝑊u ne
+𝑞
+d𝑣p dar
+n
+oo cdje u𝑊c mt 𝑑i
+𝑣
+eo nn
+a
+tr.
+e
+rI en
+s se
+po
+l
+eft ch
+a
+te
+t
+itr
+ve
+enw lyto
+i
+,or and ns
+’
+ds,
+v
+𝑊w ae
+l
+𝑞ut
+e
+ir sa
+p
+ti rn
+ho
+e𝑊
+je
+q𝑞
+c
+u𝑣 t, eio𝑊 ryn𝑑𝑣 pm, raa otn
+jr
+ed
+i cx
+t𝑊
+if oo
+n𝑞
+r
+4 m.1 o. d3 elsT or nai dn oin wg na -sn td reo ap mti tm asi kza s,ti to hn e. cW onh ve en ntfi ion ne o-t fu tn rain ing inB gE oR nT ly-b ta hs re ed
+e
+epochswasshowntobeinsufficient[23].Wesetthemaximum
+matrixforbothqueryanddocument3.Wealsoexploredafew
+epochas30forRobust04andClueWeb09bandas10forMS-MARCO.
+optionsforSSLoRA.TheyarediscussedinAppendixB,andthe
+Weselectthecheckpointwhosevalidationscoreishighestamong
+bestperformingoptionispresentedhere.
+the checkpoints of all epochs. For all experiments, we used an
+3.3.3 SSsequentialhybrid. Thesequentialhybridcanbemodified Adam[9]optimizer.Foreachmethod,weusedappropriatelyse-
+forlearningsemi-Siamesenetworks.Becausewehavetwoindivid- lectedhyper-parameters.Forfine-tuning,wesetthelearningrate
+ualLFTsinthesequentialhybridmethod,wehavethreeoptionsfor
+(𝑙𝑟)fortherankeras1e-4and𝑙𝑟forBERTas2e-5.Forprefix-tuning,
+applyingsemi-Siamese:applysemi-Siamesetoprefix-tuningonly, weused𝑙𝑟 of1e-4forprefixparametersandrankerweights.For
+LoRAonly,orboth.Wehavelightlyinvestigatedallthreeoptions
+LoRA,weused𝑙𝑟of1e-4forbothLoRAweightsandrankerweights.
+withoutanytuningandhavefoundthattheyachievedcomparable Thedetailedsettingofhyper-parametersareshowedinTable8in
+performances.Inourexperimentsection,weshowtheresultsfor AppendixC.Werepeatedeachexperimentthreetimeswiththree
+applyingSStoLoRAonly.Therefore,evaluationresultsforSSLoRA different random seeds. The results in the tables are calculated
+→Prefix-tuningandPrefix-tuning→SSLoRA areprovided. byaveragingthetestscoresofallfoldsofthethreeexperiments.
+Forstatisticalanalysis,weperformedone-tailedt-testundertheas-
+4 EXPERIMENT sumptionofhomoscedasticity.Wecomparedthethreeperformance
+valuesofeachLFTmethodwiththethreeperformancevaluesof
+4.1 ExperimentalSetup
+thecorrespondingfullfine-tuning.
+4.1.1 Datasetsandmetrics. WeconductourexperimentsonRo-
+4.1.4 Implementation. Our experiments are implemented with
+bust04[21],WebTrack2009(ClueWeb09b)[2],andMS-MARCO[18]
+Python3andPyTorch1.Weuseapopulartransformerlibrary7for
+datasetsasin[17].FollowingHustonandCroft[7],wedivideeach
+ofRobust04andClueWeb09bintofivefoldsandusethreefolds
+4520Kdocuments,7.5Ktripletdatasamples,https://trec.nist.gov/data-disks.html
+fortraining,oneforvalidation,andtheremainingonefortest.For
+550Mwebpages,4.5Ktripletdatasamples,https://lemurproject.org/clueweb09/
+622Gdocuments,372Ktripletdatasamples,https://microsoft.github.io/msmarco/TREC-
+3qinthesuperscriptrepresentstheprojectionmatrixtypeofself-attention.Onthe Deep-Learning-2019
+otherhand,qinthesubscriptrepresentsthetypeofinputtoNRMs. 7https://github.com/huggingface/transformers
+WWW’22,April25–29,2022,Lyon,France. EunaJung,JaekeolChoi,&WonjongRhee
+Table3:Evaluationresultsoflightweightfine-tuning:Cross-encoder.Note:∗𝑝 ≤0.05,∗∗𝑝 ≤0.01(1-tailed).
+Fine-tuning #oftrainable Robust04 ClueWeb09b MS-MARCO
+Model
+method parameters P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20
+FullFT 110M 0.3966 0.5310 0.4646 0.3059 0.3101 0.2938 0.5725 0.6536 0.5785
+Prompt-tuning 8K 0.3548 0.4733 0.4161 0.2917 0.2715 0.2715 0.5155 0.5075 0.4937
+Prefix-tuning 0.1M 0.3936 0.5195 0.4602 0.3074 0.3040 0.2914 0.5531 0.5979 0.5435
+monoBERT LoRA 0.6M 0.3938 0.5296 0.4616 0.3150∗ 0.3256∗ 0.3054∗∗ 0.5756 0.6656 0.5835
+(cross) LoRA+ 0.9M 0.4012 0.5355 0.4691 0.3175∗ 0.3154 0.3029∗ 0.5826∗ 0.6662 0.5887∗
+Prefix-tuning→LoRA 0.7M 0.3980 0.5241 0.4636 0.3046 0.3043 0.2911 0.5570 0.6055 0.5478
+LoRA→Prefix-tuning 0.7M 0.3960 0.5286 0.4628 0.3163∗ 0.3265∗ 0.3070∗∗ 0.5748 0.6545 0.5809
+Improvement(%) - 1.16% 0.85% 0.97% 3.79% 5.29% 4.49% 1.76% 1.93% 1.76%
+thepre-trainedBERTmodel.Weused10RTX3090GPUseachof 4.3 LFTResultsforBi-encoders
+whichhas25.6Gmemory. Table4showstheevaluationresultsofLFTforbi-encoders,Twin-
+BERTandColBERT.TheeffectivenessofLFTmethodsexhibitsa
+4.2 LFTResultsforCross-encoder quitedifferentpatterncomparedtothecaseofcross-encoder,and
+theresultsandtheirexplanationsareprovidedbelow.
+Table3showstheevaluationresultsformonoBERT.Here,wecom-
+pare the performances of full fine-tuning and lightweight fine- 4.3.1 Prompt-tuningandPrefix-tuning. Asinthecross-encoder,
+tuning. We also show the number of fine-tuning parameters of prompt-tuningshowsdegenerateresultscomparedtothefullfine-
+eachfine-tuningmethod.Prompt-tuningtrainstheleastamountof tuningbaseline.TheonlyexceptionisthecaseofTwinBERTon
+parametersof8K,andLoRA+trainsthelargestamountof0.9M.All ClueWeb09b,butperhapsitisduetothepoorbaselineperformance.
+LFTmethodstrainlessthan1Mofparametersandthuslessthan Therefore,weconfirmthatprompt-tuningisnotadequateforthe
+1%oftheBERT’s110Mweightparameters. documentrankingtasksandweexcludeitfromtheSemi-Siamese
+experimentsinthenextsection.
+4.2.1 Prompt-tuningandPrefix-tuning. Prompt-tuningsimplyap- Incontrasttothecross-encoderresults,prefix-tuningachieves
+pendstheprefixtotheinputbytrainingonly8Kparameters,andthe significantimprovementsoverthefullfine-tuningforthedatasetsof
+performanceisinferiortothebaselineoffullfine-tuningbyabout Robust04andClueWeb09bthathaveshortqueries.Italsoachieves
+10%.Lesteretal.[11]showedthatprompt-tuningcouldachievea acomparableperformancetofullfine-tuningforMS-MARCO.We
+comparableperformancetofullfine-tuningonSuperGLUEtasks, firstfocusontheresultsofRobust04andClueWeb09bthatconsist
+butwecanobservethattrainingonlypromptsisnotsufficientfor ofshortandkeyword-basedqueries.Prefix-tuningshowsthebest
+NRMs.Asfortheprefix-tuning,itdegradestheperformanceoffull performanceformostofthecaseswithimprovementsoverfull
+fine-tuningbyabout3%forMS-MARCObutitachievescomparable fine-tuningbylargemarginsofupto76.65%.Prefix-tuningalso
+performancefortheothertwodatasets.Fromtheresults,wecan
+outperformsLoRAandLoRA+.Weattributethisbehaviortothe
+observethatprefix-tuningachievescomparableperformancetofull wayofbi-encoder’sencodingandthecharacteristicsofthedatasets.
+fine-tuningforRobust04andClueWeb09bthathaveshortqueries, AsshowninTable1,queriesinRobust04andClueWeb09barerela-
+butnotforMS-MARCO. tivelyshortandkeyword-based.Sincebi-encodermodelsencode
+queryanddocumentseparately,themodelneedstoextractthecon-
+textualinformationfromeitheraqueryoradocument.Forquery,
+4.2.2 LoRAandLoRA+. Forcross-encoder,LoRAandLoRA+per-
+however,itcanbeveryshortandthusBERTcanfailtoextractany
+formsignificantlybetterthanfullfine-tuningforallthreedatasets
+meaningfulcontextualinformation.Inthiscase,prefix-tuninghas
+withuptoa5%ofimprovement.Inparticular,LoRA+achievesthe
+theadvantageofaddingtask-specificandmeaningfulcontextual
+bestperformancefor7outof9evaluationcases.Wecanexplainthis
+informationintotherepresentationembeddings.Forthedatasetof
+resultwithtworeasons.First,becauseLoRAmethodsfreezethe
+MS-MARCO,however,queriesarerelativelylongandthebenefit
+pre-trainedBERTandtrainonlyasmallamountoftheaugmented
+ofprefix-tuningbecomessmaller.Wediscussthisresultfurtherin
+weights,theyactasaregularizerwithabettergeneralization.Sec-
+Section5.
+ond,wecaninferthatthenumberoftrainableparametersisnot
+largeenoughforLoRA.AswecanseeintheTable3,theperfor- 4.3.2 LoRAandLoRA+. Unlikeinthecaseofcross-encoder,LoRA
+mancetendstoincreaseasthenumberofparametersincreases. andLoRA+donotdominantlyoutperformtheothermethods.LoRA
+LoRAhasmoretrainableparametersthanprefix-tuningandLoRA+ andLoRA+showavaryingperformanceaccordingtothecharac-
+has1.5timesmoretrainableparametersthanLoRA. teristicsofdataset.Intheresultofthecross-encoder,LoRA+shows
+thebestperformanceforRobust04andClueWeb09b.Forbi-encoder,
+4.2.3 HybridLFT. Prefix-tuningandLoRAcanbeusedtogether however,theperformanceofLoRAandLoRA+isrelativelyinferior
+becausetheytrainparametersinrepresentationdimensionand whencomparedtoprefix-tuning.ForMS-MARCOthathaslong
+weightdimension,respectively.WecombinedthetwoLFTmethods queries,LoRAorLoRA+canperformbetterthanfullfine-tuning
+byadoptingasequentialaugmentationofBERT.Overall,hybrid andprefix-tuning.Interestingly,LoRA+performsbetterthanLoRA
+LFTmethodsshowbetterperformancethanprefix-tuning,butdo forcross-encoder,butLoRAperformsbetterthanLoRA+forbi-
+notoutperformLoRA+. encoders.LoRA+uses50%moreweightthanLoRAforlearning,
+Semi-SiameseBi-encoderNeuralRankingModelUsingLightweightFine-Tuning WWW’22,April25–29,2022,Lyon,France.
+Table4:Evaluationresultsoflightweightfine-tuning:Bi-encoders.Note:∗𝑝 ≤0.05,∗∗𝑝 ≤0.01(1-tailed).
+Fine-tuning #oftrainable Robust04 ClueWeb09b MS-MARCO
+Model
+method parameters P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20
+FullFT 110M 0.3059 0.3711 0.3468 0.1846 0.1169 0.1471 0.5217 0.5807 0.5141
+Prompt-tuning 8K 0.2562 0.2666 0.2756 0.1900 0.1248 0.1558 0.4419 0.3659 0.3797
+Prefix-tuning 0.1M 0.3117 0.3647 0.3496 0.2437∗∗ 0.2065∗∗ 0.2168∗∗ 0.5132 0.5630 0.5014
+TwinBERT LoRA 0.6M 0.3090 0.3639 0.3484 0.1851 0.1224 0.1530 0.5326 0.5458 0.5154
+(bi) LoRA+ 0.9M 0.3056 0.3656 0.3451 0.2028∗ 0.1740∗∗ 0.1814∗∗ 0.5318 0.5730 0.5207
+Prefix-tuning→LoRA 0.7M 0.3107 0.3667 0.3484 0.2447∗∗ 0.2155∗∗ 0.2192∗∗ 0.5221 0.5485 0.5048
+LoRA→Prefix-tuning 0.7M 0.3102 0.3685 0.3508 0.1964 0.1402∗∗ 0.1647∗ 0.5334 0.5515 0.5184
+Improvement(%) - 1.90% - 1.15% 32.56% 84.35% 49.01% 2.24% - 1.28%
+FullFT 110M 0.3335 0.3990 0.3760 0.2659 0.2507 0.2541 0.5566 0.6121 0.5484
+Prompt-tuning 8K 0.3077 0.3446 0.3404 0.2440 0.1965 0.2177 0.5275 0.4942 0.4965
+Prefix-tuning 0.1M 0.3429∗ 0.4084 0.3865∗∗ 0.2695 0.2571 0.2544 0.5577 0.6221 0.5556
+ColBERT LoRA 0.6M 0.3386 0.4021 0.3818 0.2644 0.2373 0.2498 0.5601 0.6360∗ 0.5566
+(bi) LoRA+ 0.9M 0.3385 0.3997 0.3804 0.2606 0.2453 0.2481 0.5574 0.6292∗ 0.5543
+Prefix-tuning→LoRA 0.7M 0.3411 0.4103 0.3855∗ 0.2675 0.2511 0.2512 0.5605 0.6200 0.5580
+LoRA→Prefix-tuning 0.7M 0.3360 0.4025 0.3803 0.2639 0.2436 0.2525 0.5620 0.6331 0.5595∗
+Improvement(%) - 2.82% 2.83% 2.79% 1.35% 2.55% 0.12% 0.97% 3.90% 2.02%
+Table5:Evaluationresultsofsemi-Siamese(SS)lightweightfine-tuning(LFT)forBi-encoders-semi-Siameseprovidespositive
+improvementsformostoftheevaluationcasesofRobust04andClueWeb09bdatasetswhosequeriesareshort.Thegainisvery
+largeforClueWeb09bwhosequeriesaretheshortestamongthethreedatasets.Note:∗𝑝 ≤0.05,∗∗𝑝 ≤0.01(1-tailed).
+Fine-tuning #oftrainable Robust04 ClueWeb09b MS-MARCO
+Model
+method parameters P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20
+FullFT 110M 0.3059 0.3711 0.3468 0.1846 0.1169 0.1471 0.5217 0.5807 0.5141
+LFT(best) ≤0.9M 0.3117 0.3685 0.3508 0.2447∗∗ 0.2155∗∗ 0.2192∗∗ 0.5334 0.5730 0.5207
+TwinBERT SSPrefix-tuning 0.1M 0.3109 0.3678 0.3492 0.2223∗∗ 0.1721∗∗ 0.1942∗∗ 0.5155 0.5229 0.4918
+(bi) SSLoRA 0.9M 0.3117 0.3713 0.3511 0.1926 0.1341∗ 0.1603 0.5240 0.5778 0.5129
+Prefix-tuning→SSLoRA 1M 0.3104 0.3637 0.3473 0.2464∗∗ 0.2170∗∗ 0.2197∗∗ 0.5140 0.5419 0.4983
+SSLoRA→Prefix-tuning 1M 0.3146 0.3809 0.3575∗ 0.2012∗ 0.1465∗∗ 0.1689∗ 0.5252 0.5685 0.5142
+Improvement(%) 2.84% 2.64% 3.09% 33.48% 85.63% 49.35% 2.24% - 1.28%
+FullFT 110M 0.3335 0.3990 0.3760 0.2659 0.2507 0.2541 0.5566 0.6121 0.5484
+LFT(best) ≤0.9M 0.3429∗ 0.4103 0.3865∗∗ 0.2695 0.2571 0.2544 0.5620 0.6360∗ 0.5595∗
+ColBERT SSPrefix-tuning 0.1M 0.3442∗ 0.4113 0.3883∗∗ 0.2950∗∗ 0.2914∗ 0.2835∗∗ 0.5554 0.6125 0.5526
+(bi) SSLoRA 0.9M 0.3406∗ 0.4042 0.3823 0.2615 0.2470 0.2500 0.5647 0.6289 0.5587
+Prefix-tuning→SSLoRA 1M 0.3417 0.4083 0.3850∗ 0.2679 0.2512 0.2514 0.5593 0.6251 0.5596
+SSLoRA→Prefix-tuning 1M 0.3420 0.4094 0.3845 0.2642 0.2474 0.2520 0.5577 0.6173 0.5545
+Improvement(%) 3.21% 3.08% 3.27% 10.94% 16.23% 11.57% 1.46% 3.90% 2.04%
+indicatingthatthisdifferenceworkedpositivelyforcross-encoder originalBERTwithoutanymodificationtoenableconsistentencod-
+andnegativelyforbi-encoders.Sincecross-encodermodelsdoself- ingoverqueryanddocument.Table5showsthatSSLFTmethods
+attentionbetweenqueryanddocument,learningislikelytobemore canimprovethebestperformingLFTorfullfine-tuninginmost
+complexthaninthebi-encodermodelsthatdonotuseself-attention cases.
+betweenqueryanddocument.Therefore,itcanbeassumedthat
+itisadvantageoustousemoreparametersforthecross-encoder 4.4.1 SSPrefix-tuning. SSprefix-tuningperformssignificantlybet-
+models. terthantheothermethodswhenadoptedforColBERTonRobust04
+andClueWeb09b,improvingLFT’sbestperformancefrom3.08%to
+4.3.3 HybridLFT. Sinceprefix-tuningshowsoutstandingperfor-
+16.23%.Alsoinothercases,SSprefix-tuningshowsthepossibilityof
+mance,andLoRAalsoperformsbetterthanfullfine-tuning,the
+improvingprefix-tuning.Wecansaythatsemi-Siamesenetworks
+combinationoftwoLFTmethodsmightleadtoanadditionalper-
+helpbi-encodermodelseffectivelyprocessinformationinquery
+formanceimprovement.InTable4,weincludedtheperformance
+anddocument.
+ofhybridLFTmethods.Theresultsshowthepossibilityofhybrid
+methodstoimprovetheperformanceofsingleLFTmethods. 4.4.2 SSLoRA. Asshowninthetable5,SSLoRAoutperforms
+LoRAinmostcases,indicatingthatsemi-Siamesenetworksallow
+4.4 Semi-SiameseLFTResultsforBi-encoders
+LoRAforbi-encodermodelstobetterestimaterelevancescores.We
+LFTmethodseasilyoutperformfullfine-tuningondocumentrank- inferthatusingdifferentLoRAweightsforthequeryanddocument
+ing.WefurtherimproveLFTmethodsbyapplyingsemi-Siamese representations induces a performance improvement by giving
+networks.SSLFTcanhandlequeryanddocumentslightlydiffer- queryanddocumentmorecapacitytofocusonquery-specificor
+entlytoreflecttheirdistinctcharacteristicswhilemaintainingthe document-specificinformation.
+WWW’22,April25–29,2022,Lyon,France. EunaJung,JaekeolChoi,&WonjongRhee
+Figure 3: For ClueWeb09b, the P@20 performance ratio Figure4:Comparisonofprefix-tuning,LoRA,pefix-tuning
+between ambiguous queries and non-ambiguous queries & LoRA (concurrent learning), and prefix-tuning → LoRA
+is shown. Semi-Siamese was not applied. For bi-encoders, (sequentiallearning).Itcanbeseenthatconcurrentlearning
+prefix-tuning clearly shows relatively better performance cancauseaperformancedegradationwhenthereisalarge
+forambiguousqueries. performancegapbetweenthetwoindividualmethods.
+4.4.3 SSHybridLFT. WehaveshownthatSSLoRAandSSPrefix- pywsdlibrary8.Weonlyincludedone-wordqueriesbecauseahigh-
+tuningcanimprovethedocumentrankingperformance.Wehave
+confidenceambiguityclassificationispossibleforone-wordqueries.
+also shown that prefix-tuning and LoRA can complement each
+TheresultsareshowninFigure3.Wecanseethatprefix-tuning
+other,increasingtheperformancewhenusedtogether.Therefore,
+iseffectiveforimprovingtheperformanceofambiguousqueries
+wecombinedprefix-tuningandSSLoRAbysequentiallytraining
+whilefullFTandLoRAarenoteffective.
+parametersofeachmethod.FromtheTable5,wecanseethatour
+hybridmethodsperformbestinmanycasesbringingupto85.63% 5.2 Hybrid:ConcurrentLearningvs.Sequential
+ofimprovementoverfullfine-tuning.SScouldhavebeenappliedto
+Learning
+prefix-tuningaswell,butwehavefoundthatSSLoRAissufficient
+WhencombiningtwoLFTmethodstocreateahybridmethod,we
+forhybridLFT.
+havechosentosequentiallytrainthetwoLFTmodules.Theother
+5 DISCUSSION optionistoconcurrentlytrainthetwoLFTmodules.Thereason
+forchoosingthesequentialtrainingcanbeexplainedwithFigure4.
+5.1 Cross-encodervs.Bi-encoder
+Intheexample,prefix-tuningperformswellandLoRAdoesnot
+Forthecross-encoderresultsshowninTable3,clearlyLoRAbased performwell.Ifwechooseconcurrentlearning,weendupwitha
+modelsoutperformprefix-tuningbasedmodels.Infact,LoRA+is performancethatisworsethatprefix-tuningonly.Thisindicates
+thedominantLFTmethodthatachievesthebestperformancefor7 thatconcurrentlearningcanhinderaproperlearningofindivid-
+outof9evaluations.Forthebi-encoderresultsshowninTable4and ualLFTs,especiallywhentheperformancegapbetweenthetwo
+Table5,however,wecanobservethatprefix-tuningbasedmodels individualmethodsislarge.Toavoidthisproblem,wehavechosen
+clearlyoutperformLoRAbasedmodelsatleastforRobust04and totraintheminasequentialway.Byconsideringthetwopossible
+ClueWeb09b.Infact,SSprefix-tuningisthebestperformingmodel ordersofsequentialtraining,wearelikelytopreservethelarger
+for6outof6casesforColBERTinTable5. gainofthetwoindividualgains.Wedidn’tnecessarilyobtainim-
+Weprovideapossibleexplanationforthephenomenon.First,we provedperformanceforallthecasesbyadoptingsequentialhybrid
+canconsiderthecross-encodercase.Forcross-encoder,queryand learning,butquiteoftenwewereabletoobtainimprovementsover
+documentareusedtogetherasasingleinputtotheBERT.Because theindividualapproachesinthecaseofbi-encoders.
+thepairisusedtogether,thedirectrelationshiporcontextualinfor-
+mationbetweenthequeryandthedocumentcanbeevaluatedby 6 CONCLUSION
+thelanguagemodel.Inthiscase,thevalueofprependingwithtask-
+We have shown the effectiveness of adopting lightweight fine-
+specificprefixescanbecomeinsignificant,andprobablyitsuffices
+tuningmethodssuchasprefix-tuningandLoRAtoreplacethefull
+tofine-tunetheweight-relatedparameterssuchasLoRAweights.
+fine-tuningoftheexistingbi-encoderNRMs.Wehavealsoshown
+Second,wecanconsiderthebi-encodercase.ForRobust04and
+howsemi-Siamesenetworkscanbeusedtoachieveasignificant
+ClueWeb09b,queriesareshort.Therefore,bi-encodermightnotbe
+performanceimprovementwhenthequeriesareveryshort.Our
+abletocreateeffectivecontextualrepresentationsforthequerypart.
+semi-Siamesearchitectureisalsoefficientintermsofstorageand
+NotethatnodocumentisvisibletoBERTwhenprocessingaquery.
+memoryrequirementsthankstotheuseoflightweightfine-tuning
+Then,itcanbemoreimportanttoprovidetask-specificinformation
+forcreatingtwoslightlydifferentnetworks.
+byprocessingtheentiretrainingdataset,suchthatatleasttaskin-
+formationcanbeusedforcreatingcontextualqueryrepresentation ACKNOWLEDGMENTS
+thatiseffective.Thiscanbeachievedwiththeprefixes.
+ThisworkwassupportedbyNavercorporation(Developmentofan
+Asafurtheranalysis,wehaveanalyzedClueWeb09bdataset.
+ImprovedNeuralRankingModel.),NationalResearchFoundation
+Wedividedone-wordqueriesofClueWeb09b,thathastheshortest
+queries,intoambiguousqueriesandnon-ambiguousqueriesusing 8https://pypi.org/project/pywsd/
+Semi-SiameseBi-encoderNeuralRankingModelUsingLightweightFine-Tuning WWW’22,April25–29,2022,Lyon,France.
+ofKorea(NRF)grantfundedbytheKoreagovernment(MSIT)(No. A VARIANTSOFSSPREFIX-TUNING
+NRF-2020R1A2C2007139),andIITPgrantfundedbytheKoreagov- WeexperimentedwiththreeSSPrefix-tuningmethodsandcom-
+ernment(No.2021-0-01343,ArtificialIntelligenceGraduateSchool paredthemwithSiamesePrefix-tuning.Asthefirstmethod,we
+Program(SeoulNationalUniversity)). generatedprefixesbysummingupcommonprefixeswithquery-
+specificordocument-specificprefixesasintheEquations4and5.
+REFERENCES ThismethodisSSPrefix-tuninginTable5.Asthesecondmethod,
+[1] TomBBrown,BenjaminMann,NickRyder,MelanieSubbiah,JaredKaplan,
+wegenerated𝑘commonprefixesforqueryanddocumentandcon-
+PrafullaDhariwal,ArvindNeelakantan,PranavShyam,GirishSastry,Amanda catenatethemwithquery-specificordocument-specificprefixes
+A ars Xk ie vl :l 2, 0e 0t 5.a 1l 4. 12 60 52 (0 2. 02L 0a ).nguagemodelsarefew-shotlearners. arXivpreprint asbelowequationswhere𝜃 𝑞 and𝜃 𝑑 indicateparametersforquery
+[2] JamieCallan,MarkHoy,ChangkukYoo,andLeZhao.2009.Clueweb09dataset. anddocumentrespectively,𝜃 istheparametercommontoboth
+[3] HangDu,HailinShi,YuchiLiu,JunWang,ZhenLei,DanZeng,andTaoMei. queryanddocument,and𝑘standsforthenumberofquery-specific
+2020.Semi-siamesetrainingforshallowfacelearning.InEuropeanConferenceon
+ComputerVision.Springer,36–53. anddocument-specificprefixes.
+[4] RuidanHe,LinlinLiu,HaiYe,QingyuTan,BoshengDing,LiyingCheng,Jia-Wei (cid:40)
+(L f 2oo 0rw 2P 1,L r ).eid tro an ig neB din Lg a, nan gd uaL gu eo MSi. o2 d0 e2 l1 A.O dn apth tae tiE off ne .ct aiv re Xn ie vss pro ef pA rid na tp ate rr X-b iva :s 2e 1d 06T .u 0n 31in 6g 4 ℎ 𝑞,𝑖 = 𝑃𝑃 𝜃𝜃𝑞 [𝑖[ ,𝑖 :, ]:] 𝑖𝑓𝑖𝑓 𝑖𝑖 >≤ 𝑘𝑘 𝑎𝑎 𝑛𝑛 𝑑𝑑 𝑖𝑖 ∈∈ 𝑃𝑃 𝑖𝑑𝑖𝑑 𝑥𝑥 (6)
+[5] NeilHoulsby,AndreiGiurgiu,StanislawJastrzebski,BrunaMorrone,Quentin (cid:40)
+D P Mae ar caL hma inr eo etu e Ls r e-s aeil rffih ne ic n, ie gA n .n t Pd Mtr re a La n RsG ,f 2ee 7rs 9m l 0e –u an 2r 7nd 9io n 9, g .M fo on ra NA Lt Pt .ar Iniya Inn t, ea rnn ad tiS oy nl av lai Cn onG fe el rl ey n. c2 e01 o9 n. ℎ 𝑑,𝑖 = 𝑃 𝑃𝜃 𝜃𝑑 [𝑖[ ,𝑖 :, ]:] 𝑖𝑓𝑖𝑓 𝑖𝑖 >≤ 𝑘𝑘 𝑎𝑎 𝑛𝑛 𝑑𝑑 𝑖𝑖 ∈∈ 𝑃𝑃 𝑖𝑑𝑖𝑑 𝑥𝑥 (7)
+[6] EdwardJHu,YelongShen,PhillipWallis,ZeyuanAllen-Zhu,YuanzhiLi,Shean Asthethirdmethod,wegeneratedprefixesthatdidnotsharein-
+Wang,andWeizhuChen.2021.LoRA:Low-RankAdaptationofLargeLanguage
+formationbetweenqueryanddocumentasinEquations8and9.
+Models.arXivpreprintarXiv:2106.09685(2021).
+[7] SamuelHustonandWBruceCroft.2014.Parameterslearnedinthecomparison Inthiscase,prefixesforqueryanddocumentaregeneratedusing
+ofretrievalmodelsusingtermdependencies. Ir,UniversityofMassachusetts differentweightparameterswhilesharingthesourcevectors.
+(2014).
+[8] O sem ara cr hK vh iaat cta ob nta en xd tuM ala it ze ei dZ la ah tear ii na t. e2 r0 a2 c0 ti. oC no olb ve er rt: bE effi rt.c Ii nen Pt ra on ced ee dff ine gc stiv ofe tp ha ess 4a 3g rde ℎ 𝑞,𝑖 =𝑃 𝜃𝑞[𝑖,:]𝑖𝑓 𝑖 ∈𝑃 𝑖𝑑𝑥 (8)
+InternationalACMSIGIRconferenceonresearchanddevelopmentinInformation ℎ 𝑑,𝑖 =𝑃 𝜃𝑑[𝑖,:]𝑖𝑓 𝑖 ∈𝑃 𝑖𝑑𝑥 (9)
+Retrieval.39–48.
+[9] DiederikPKingmaandJimmyBa.2015.Adam:AMethodforStochasticOpti- InTable6,wecomparetheperformanceofprefix-tuningvariants.
+mization.InICLR(Poster). Fromthisresult,weconfirmthatthesemi-Siamesemethodsper-
+[10] JaejunLee,RaphaelTang,andJimmyLin.2019.Whatwouldelsado?freezing
+formgenerallywellwhentheinformationisappropriatelyshared
+layersduringtransformerfine-tuning.arXivpreprintarXiv:1911.03090(2019).
+[11] BrianLester,RamiAl-Rfou,andNoahConstant.2021.Thepowerofscalefor betweenqueryanddocument.
+parameter-efficientprompttuning.arXivpreprintarXiv:2104.08691(2021).
+[12] XiangLisaLiandPercyLiang.2021. Prefix-tuning:Optimizingcontinuous B VARIANTSOFSSLORA
+promptsforgeneration.arXivpreprintarXiv:2101.00190(2021).
+[13] ZongxianLi,ShengLi,LantianXue,andYonghongTian.2019.Semi-SiameseNet- BecauseLoRAtrainstheLoRAweightsforqueryandvalue,𝑊𝑞
+w Syo mrk pofo sir uC mo on nte Cn it r- cB ua is tsed anV did Se yo stR emel sev (Ia Sn Cc Ae SP ).re IEd Eic Eti ,o 1n –. 5I .n2019IEEEInternational and𝑊𝑣
+,wedevisedthreeSSLoRAmethods.Asthefirstmethod,
+[14] PengfeiLiu,WeizheYuan,JinlanFu,ZhengbaoJiang,HiroakiHayashi,andGra- weusedheterogeneousLoRAqueryweightsforbothqueryand
+hamNeubig.2021.Pre-train,prompt,andpredict:Asystematicsurveyofprompt-
+document while using the same LoRA value weights for query
+(i 2n 0g 2m 1).ethodsinnaturallanguageprocessing. arXivpreprintarXiv:2107.13586 anddocument.Inotherwords,wetrained𝑊 𝑞𝑞 ,𝑊 𝑑𝑞 ,and𝑊𝑣 .This
+[15] YuhanLiu,SaurabhAgarwal,andShivaramVenkataraman.2021.AutoFreeze: methodiswrittenasSSLoRA(heteroquery)inTable7.Asthesec-
+AutomaticallyFreezingModelBlockstoAccelerateFine-tuning.arXivpreprint
+ondmethod,wetriedadifferentmethodwheretrainedcommon
+arXiv:2102.01386(2021).
+[16] WenhaoLu,JianJiao,andRuofeiZhang.2020.Twinbert:Distillingknowledgeto LoRAqueryweightsforqueryanddocumentwhiletraininghet-
+twin-structuredbertmodelsforefficientretrieval.arXivpreprintarXiv:2002.06275 erogeneousLoRAvalueweightsforqueryanddocument.Here,we
+[17] ( S2 e0 a2 n0 M). acAvaney,AndrewYates,ArmanCohan,andNazliGoharian.2019.CEDR: trained𝑊𝑞 ,𝑊 𝑞𝑣 ,and𝑊 𝑑𝑣 .ThismethodiswrittenasSSLoRA(hetero
+Contextualizedembeddingsfordocumentranking.InProceedingsofthe42nd value)inTable7.Asthethirdmethod,wetraineddifferentLoRA
+I Rn et te rr in eva ati lo .n 1a 1l 0A 1–C 1M 10S 4I .GIRConferenceonResearchandDevelopmentinInformation weightsforqueryanddocument,letting𝑊 𝑞𝑞 ,𝑊 𝑑𝑞 ,𝑊 𝑞𝑣 ,and𝑊 𝑑𝑣 be
+[18] TriNguyen,MirRosenberg,XiaSong,JianfengGao,SaurabhTiwary,Rangan trained.FromtheresultsinTable7,wecanobservethatSSLoRA
+Majumder,andLiDeng.2016.MSMARCO:Ahumangeneratedmachinereading variantsgenerallyperformwell.Weinferthatsharinginformation
+comprehensiondataset.InCoCo@NIPS.
+[19] RodrigoNogueira,KyunghyunCho,andCIFARAzrieliGlobalScholar.2019. betweenqueryanddocumentthroughLoRAweightsisimportant
+PASSAGERE-RANKINGWITHBERT.arXivpreprintarXiv:1901.04085(2019). forabetterperformance.WhencomparingSSLoRAvariants,the
+[20] EvaniRadiya-DixitandXinWang.2020.Howfinecanfine-tuningbe?learning
+methodthatsharesLoRAqueryweightsperformsslightlybetter.
+efficientlanguagemodels.InInternationalConferenceonArtificialIntelligence
+andStatistics.PMLR,2435–2443. We can infer that learning query-specific or document-specific
+[21] EllenMVoorheesetal.2004.OverviewofTREC2004..InTrec. valueweightsaremoreimportantinestimatingrelevancerather
+[22] EladBenZaken,ShauliRavfogel,andYoavGoldberg.2021. BitFit:Simple
+thanusingdifferentqueryweights.
+Parameter-efficientFine-tuningforTransformer-basedMaskedLanguage-models.
+arXivpreprintarXiv:2106.10199(2021).
+[23] TianyiZhang,FelixWu,ArzooKatiyar,KilianQWeinberger,andYoavArtzi. C HYPER-PARAMETERSETTING
+2020.Revisitingfew-sampleBERTfine-tuning.arXivpreprintarXiv:2006.05987
+(2020). Wehavelightlytunedthehyper-parametersofeachmethod,and
+[24] YichiZhangandZhiyaoDuan.2017.IMINET:Convolutionalsemi-Siamesenet- thevaluesareshowninTable8.AdditionalexplanationsonLoRA
+worksforsoundsearchbyvocalimitation.In2017IEEEWorkshoponApplications
+ofSignalProcessingtoAudioandAcoustics(WASPAA).IEEE,304–308. alphaandLoRAdropoutcanbefoundin[6].
+WWW’22,April25–29,2022,Lyon,France. EunaJung,JaekeolChoi,&WonjongRhee
+Table6:VariantsofSSprefix-tuning.Wecompareperformancesofprefix-tuningandthreeSSprefix-tuningmethods.Among
+SSprefix-tuningmethods,themethodthatsharesinformationbetweenqueryanddocumentbyaveragingcommonprefixes
+isoursuggestedmethodanditisusedforobtainingtheresultsinTable5.
+Prefixsharing Robust04 Clueweb09b MS-MARCO
+Model
+(query-document) P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20
+All 0.3117 0.3647 0.3496 0.2437 0.2065 0.2168 0.5132 0.5630 0.5014
+TwinBERT Average* 0.3109 0.3678 0.3492 0.2223 0.1721 0.1942 0.5155 0.5229 0.4918
+(bi) Concatenation 0.3101 0.3685 0.3505 0.2105 0.1638 0.1836 0.5174 0.5347 0.4970
+None 0.3085 0.3597 0.3453 0.2036 0.1554 0.1746 0.5015 0.4955 0.4716
+All 0.3429 0.4084 0.3865 0.2695 0.2571 0.2544 0.5577 0.6221 0.5556
+ColBERT Average* 0.3442 0.3472 0.3459 0.2950 0.2914 0.2835 0.5554 0.6125 0.5526
+(bi) Concatenation 0.3373 0.4071 0.3813 0.2807 0.2755 0.2694 0.5605 0.6221 0.5588
+None 0.3384 0.4057 0.3823 0.2774 0.2682 0.2663 0.5546 0.5920 0.5392
+Table7:VariantsofSSLoRA.WecompareperformancesofLoRAandthreeSSLoRAmethods.AmongtheSSLoRAmethods,
+themethodthatsharesLoRAweightsforthevalueprojectionwiththeasteroidmarkisoursuggestedmethodandusedfor
+obtainingtheresultsinTable5.
+LoRAweightsharing Robust04 Clueweb09b MS-MARCO
+Model
+(query-document) P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20 P@20 NDCG@5 NDCG@20
+All 0.3090 0.3639 0.3484 0.1851 0.1224 0.1530 0.5326 0.5458 0.5154
+TwinBERT Value(heteroquery) 0.3099 0.3666 0.3496 0.1882 0.1286 0.1543 0.5294 0.5816 0.5241
+(bi) Query(heterovalue)* 0.3117 0.3713 0.3511 0.1926 0.1341 0.1603 0.5240 0.5778 0.5129
+None 0.3116 0.3790 0.3535 0.1870 0.1309 0.1553 0.5310 0.5630 0.5127
+All 0.3386 0.4021 0.3818 0.2644 0.2373 0.2498 0.5601 0.6360 0.5566
+ColBERT Value(heteroquery) 0.3398 0.4071 0.3840 0.2611 0.2319 0.2455 0.5655 0.6263 0.5602
+(bi) Query(heterovalue)* 0.3406 0.4042 0.3823 0.2615 0.2470 0.2500 0.5647 0.6289 0.5587
+None 0.3404 0.3947 0.3791 0.2595 0.2347 0.2435 0.5566 0.5998 0.5461
+Table8:Hyper-parametersettingsofeachdatasetandfine-tuningmethods.
+Method Hyper-parameter MS-MARCO Robust04 Clueweb09b
+Optimizer Adam
+Common Ranker𝑙𝑟 0.0001
+HP Maxepoch 10 30 30
+Batchsize 16
+Weightdecay 0
+FullFine-tuning BERT𝑙𝑟 0.00001
+Prefixlength 10
+Prefix- Sourcedimension 256
+tuning Prefix𝑙𝑟 0.0001
+Commonprefixlength
+5
+(SSPrefix-tuning(concat))
+LoRArank 16
+LoRA LoRAalpha 32
+LoRAdropout 0.1
+LoRA𝑙𝑟 0.0001

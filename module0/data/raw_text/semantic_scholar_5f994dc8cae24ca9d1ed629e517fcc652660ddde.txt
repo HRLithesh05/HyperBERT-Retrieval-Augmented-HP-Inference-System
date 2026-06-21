@@ -1,0 +1,774 @@
+ERNIE: Enhanced Language Representation with Informative Entities
+ZhengyanZhang1,2,3∗,XuHan1,2,3∗,ZhiyuanLiu1,2,3†,XinJiang4,MaosongSun1,2,3,QunLiu4
+1DepartmentofComputerScienceandTechnology,TsinghuaUniversity,Beijing,China
+2InstituteforArtificialIntelligence,TsinghuaUniversity,Beijing,China
+3StateKeyLabonIntelligentTechnologyandSystems,TsinghuaUniversity,Beijing,China
+4HuaweiNoah’sArkLab
+{zhangzhengyan14,hanxu17}@mails.tsinghua.edu.cn
+Abstract
+is_a is_a
+N aseu Br Eal Rl Tan pg ru ea -g tre air ne ep dre ose nnt la at ri go en -sm cao lede cls ors pu oc rh
+a
+Blowin’ in the wind
+composerSong Book author VC oh luro mn eic Ole ns e:
+can well capture rich semantic patterns from is_a is_a
+plaintext,andbefine-tunedtoconsistentlyim-
+Songwriter Bob Dylan Writer
+prove the performance of various NLP tasks.
+However, the existing pre-trained language
+Bob Dylan wrote Blowin’ in the Wind in 1962, and wrote Chronicles: Volume One in 2004.
+models rarely consider incorporating knowl-
+edge graphs (KGs), which can provide rich Figure 1: An example of incorporating extra
+structuredknowledgefactsforbetterlanguage knowledge information for language understand-
+understanding. Wearguethatinformativeen- ing. The solid lines present the existing knowl-
+tities in KGs can enhance language represen- edge facts. The red dotted lines present the facts
+tation with external knowledge. In this pa-
+extractedfromthesentenceinred. Thegreendot-
+per, we utilize both large-scale textual cor-
+dashlinespresentthefactsextractedfromthesen-
+pora and KGs to train an enhanced language
+tenceingreen.
+representation model (ERNIE), which can
+take full advantage of lexical, syntactic, and
+answering (Rajpurkar et al., 2016; Zellers et al.,
+knowledge information simultaneously. The
+2018),naturallanguageinference(Bowmanetal.,
+experimental results have demonstrated that
+2015),andtextclassification(Wangetal.,2018).
+ERNIE achieves significant improvements on
+Although pre-trained language representation
+various knowledge-driven tasks, and mean-
+while is comparable with the state-of-the-art models have achieved promising results and
+model BERT on other common NLP tasks. worked as a routine component in many NLP
+The source code and experiment details of tasks, they neglect to incorporate knowledge in-
+this paper can be obtained from https:// formation for language understanding. As shown
+github.com/thunlp/ERNIE.
+inFigure1,withoutknowingBlowin’intheWind
+and Chronicles: Volume One are song and book
+1 Introduction
+respectively,itisdifficulttorecognizethetwooc-
+Pre-trained language representation models, in- cupations of Bob Dylan, i.e., songwriter and
+cluding feature-based (Mikolov et al., 2013; Pen- writer, on the entity typing task. Furthermore,
+ningtonetal.,2014;Petersetal.,2017,2018)and it is nearly impossible to extract the fine-grained
+fine-tuning(DaiandLe,2015;HowardandRuder, relations, such as composer and author on
+2018; Radford et al., 2018; Devlin et al., 2019) the relation classification task. For the existing
+approaches, can capture rich language informa- pre-trained language representation models, these
+tion from text and then benefit many NLP appli- two sentences are syntactically ambiguous, like
+cations. BERT(Devlinetal.,2019), asoneofthe “UNK wrote UNK in UNK”. Hence, considering
+most recently proposed models, obtains the state- richknowledgeinformationcanleadtobetterlan-
+of-the-art results on various NLP applications by guageunderstandingandaccordinglybenefitsvar-
+simple fine-tuning, including named entity recog- ious knowledge-driven applications, e.g. entity
+nition (Sang and De Meulder, 2003), question typingandrelationclassification.
+∗indicatesequalcontribution For incorporating external knowledge into lan-
+†Correspondingauthor:Z.Liu(liuzy@tsinghua.edu.cn) guage representation models, there are two main
+challenges. (1) Structured Knowledge Encod- 2 RelatedWork
+ing: regardingtothegiventext,howtoeffectively
+Many efforts are devoted to pre-training lan-
+extract and encode its related informative facts in
+guage representation models for capturing lan-
+KGsforlanguagerepresentationmodelsisanim-
+guage information from text and then utilizing
+portantproblem;(2)HeterogeneousInformation
+the information for specific NLP tasks. These
+Fusion: the pre-training procedure for language
+pre-training approaches can be divided into two
+representation is quite different from the knowl-
+classes, i.e., feature-based approaches and fine-
+edge representation procedure, leading to two in-
+tuningapproaches.
+dividual vector spaces. How to design a special
+The early work (Collobert and Weston, 2008;
+pre-training objective to fuse lexical, syntactic,
+Mikolov et al., 2013; Pennington et al., 2014)
+andknowledgeinformationisanotherchallenge.
+focuses on adopting feature-based approaches to
+To overcome the challenges mentioned above,
+transform words into distributed representations.
+we propose Enhanced Language RepresentatioN
+As these pre-trained word representations capture
+with Informative Entities (ERNIE), which pre-
+syntactic and semantic information in textual cor-
+trains a language representation model on both
+pora,theyareoftenusedasinputembeddingsand
+large-scaletextualcorporaandKGs:
+initialization parameters for various NLP mod-
+(1) For extracting and encoding knowledge in-
+els, and offer significant improvements over ran-
+formation,wefirstlyrecognizenamedentitymen-
+dominitializationparameters(Turianetal.,2010).
+tionsintextandthenalignthesementionstotheir
+Since these word-level models often suffer from
+corresponding entities in KGs. Instead of directly
+the word polysemy, Peters et al. (2018) further
+usingthegraph-basedfactsinKGs,weencodethe
+adoptthesequence-levelmodel(ELMo)tocapture
+graph structure of KGs with knowledge embed-
+complex word features across different linguistic
+dingalgorithmslikeTransE(Bordesetal.,2013),
+contextsanduseELMotogeneratecontext-aware
+and then take the informative entity embeddings
+wordembeddings.
+as input for ERNIE. Based on the alignments be-
+Different from the above-mentioned feature-
+tweentextandKGs, ERNIEintegratesentityrep-
+based language approaches only using the pre-
+resentationsintheknowledgemoduleintotheun-
+trainedlanguagerepresentationsasinputfeatures,
+derlyinglayersofthesemanticmodule.
+Dai and Le (2015) train auto-encoders on unla-
+(2) Similar to BERT, we adopt the masked lan- beled text, and then use the pre-trained model
+guage model and the next sentence prediction as architecture and parameters as a starting point
+the pre-training objectives. Besides, for the bet- for other specific NLP models. Inspired by Dai
+ter fusion of textual and knowledge features, we and Le (2015), more pre-trained language repre-
+design a new pre-training objective by randomly sentation models for fine-tuning have been pro-
+masking some of the named entity alignments in posed. Howard and Ruder (2018) present AWD-
+the input text and asking the model to select ap- LSTM (Merity et al., 2018) to build a univer-
+propriateentitiesfromKGstocompletethealign- sal language model (ULMFiT). Radford et al.
+ments. Unlike the existing pre-trained language (2018) propose a generative pre-trained Trans-
+representation models only utilizing local context former (Vaswani et al., 2017) (GPT) to learn lan-
+to predict tokens, our objectives require models guage representations. Devlin et al. (2019) pro-
+toaggregatebothcontextandknowledgefactsfor pose a deep bidirectional model with multiple-
+predicting both tokens and entities, and lead to a layer Transformers (BERT), which achieves the
+knowledgeablelanguagerepresentationmodel. state-of-the-artresultsforvariousNLPtasks.
+We conduct experiments on two knowledge- Thoughbothfeature-basedandfine-tuninglan-
+driven NLP tasks, i.e., entity typing and relation guage representation models have achieved great
+classification. The experimental results show that success, they ignore the incorporation of knowl-
+ERNIE significantly outperforms the state-of-the- edge information. As demonstrated in recent
+artmodelBERTontheseknowledge-driventasks, work, injecting extra knowledge information can
+by taking full advantage of lexical, syntactic, and significantly enhance original models, such as
+knowledge information. We also evaluate ERNIE reading comprehension (Mihaylov and Frank,
+on other common NLP tasks, and ERNIE still 2018; Zhong et al., 2018), machine transla-
+achievescomparableresults. tion (Zaremoodi et al., 2018), natural language
+Token Output Entity Output
+e( 1i) e( 2i)
+Aggregator
+Token Output w1(i) w2(i) w3(i) w4(i) ··· wn(i) e( 1i) e( 2i) Entity Output
+Information
+Fusion Aggregator
+K-Encoder Mx Information Fusion
+Multi-Head Multi-Head
+Attention Attention
+e˜(i) e˜(i)
+1 2
+Transformer
+w˜1(i) w˜2(i) w˜3(i) w˜4(i) ··· w˜n(i) e˜( 1i) e˜( 2i)
+Feed Entity Input
+Forward Multi-Head Attention Multi-Head Attention
+T-Encoder Nx
+Multi-Head
+Attention
+Token Input w 1(i  1) w 2(i  1) w 3(i  1) w 4(i  1) ··· w n(i  1) e( 1i 1) e( 2i 1) Entity Input
+bob dylan wrote blow 1962 Bob Dylan Blowin’ in the Wind
+Token Input Bob Dylan wrote Blowin’ in the Wind in 1962
+(a) Model Achitecture (b) Aggregator
+Figure 2: The left part is the architecture of ERNIE. The right part is the aggregator for the mutual
+integrationoftheinputoftokensandentities. Informationfusionlayertakestwokindsofinput: oneisthe
+tokenembedding,andtheotheroneistheconcatenationofthetokenembeddingandentityembedding.
+Afterinformationfusion,itoutputsnewtokenembeddingsandentityembeddingsforthenextlayer.
+inference (Chen et al., 2018), knowledge ac- 3.1 Notations
+quisition (Han et al., 2018a), and dialog sys-
+We denote a token sequence as {w ,...,w } 2,
+1 n
+tems(Madottoetal.,2018). Hence,wearguethat
+where n is the length of the token sequence.
+extra knowledge information can effectively ben-
+Meanwhile, we denote the entity sequence align-
+efit existing pre-training models. In fact, some
+ing to the given tokens as {e ,...,e }, where m
+1 m
+work has attempted to joint representation learn-
+is the length of the entity sequence. Note that m
+ing of words and entities for effectively lever-
+is not equal to n in most cases, as not every to-
+aging external KGs and achieved promising re-
+ken can be aligned to an entity in KGs. Further-
+sults (Wang et al., 2014; Toutanova et al., 2015;
+more,wedenotethewholevocabularycontaining
+Han et al., 2016; Yamada et al., 2016; Cao et al.,
+all tokens as V, and the entity list containing all
+2017,2018). Sunetal.(2019)proposetheknowl-
+entitiesinKGsasE. Ifatokenw ∈ V hasacorre-
+edgemaskingstrategyformaskedlanguagemodel
+sponding entity e ∈ E, their alignment is defined
+to enhance language representation by knowl-
+as f(w) = e. In this paper, we align an entity to
+edge 1. In this paper, we further utilize both cor-
+thefirsttokeninitsnamedentityphrase,asshown
+pora and KGs to train an enhanced language rep-
+inFigure2.
+resentationmodelbasedonBERT.
+3.2 ModelArchitecture
+3 Methodology
+As shown in Figure 2, the whole model architec-
+In this section, we present the overall framework ture of ERNIE consists of two stacked modules:
+ofERNIEanditsdetailedimplementation,includ-
+(1)theunderlyingtextualencoder(T-Encoder)
+ingthemodelarchitectureinSection3.2,thenovel responsible to capture basic lexical and syntac-
+pre-training task designed for encoding informa- tic information from the input tokens, and (2) the
+tiveentitiesandfusingheterogeneousinformation upper knowledgeable encoder (K-Encoder) re-
+in Section 3.4, and the details of the fine-tuning sponsibletointegrateextratoken-orientedknowl-
+procedureinSection3.5. edgeinformationintotextualinformationfromthe
+underlying layer, so that we can represent hetero-
+1It is a coincidence that both Sun et al. (2019) and we geneous information of tokens and entities into a
+choseERNIEasthemodelnames, whichfollowstheinter-
+unitedfeaturespace. Besides,wedenotethenum-
+estingnaminghabitslikeELMoandBERT.Sunetal.(2019)
+releasedtheircodeonMarch16thandsubmittedtheirpaper
+ber of T-Encoder layers as N, and the number
+toArxivonApril19thwhilewesubmittedourpapertoACL
+whosedeadlineisMarch4th. 2Inthispaper,tokensareatthesubwordlevel.
+ofK-EncoderlayersasM. Then,thei-thaggregatoradoptsaninformation
+To be specific, given a token sequence fusionlayerforthemutualintegrationofthetoken
+{w ,...,w } and its corresponding entity se- andentitysequence,andcomputestheoutputem-
+1 n
+quence {e ,...,e }, the textual encoder firstly beddingforeachtokenandentity. Foratokenw
+1 m j
+sums the token embedding, segment embedding, anditsalignedentitye = f(w ),theinformation
+k j
+positional embedding for each token to compute fusionprocessisasfollows,
+its input embedding, and then computes lexical
+and syntactic features {w 1,...,w n} as follows, h j =σ(W˜ t(i)w˜ j(i)+W˜ e(i)e˜( ki)+˜b(i)),
+w(i) =σ(W(i)h +b(i)), (4)
+j t j t
+e(i) =σ(W(i)h +b(i)).
+{w 1,...,w n}=T-Encoder({w 1,...,w n}), (1) k e j e
+where h is the inner hidden state integrating the
+where T-Encoder(·) is a multi-layer bidirec- j
+information of both the token and the entity. σ(·)
+tionalTransformerencoder. AsT-Encoder(·)is
+is the non-linear activation function, which usu-
+identicaltoitsimplementationinBERTandBERT
+ally is the GELU function (Hendrycks and Gim-
+isprevalent,weexcludeacomprehensivedescrip-
+pel, 2016). For the tokens without corresponding
+tion of this module and refer readers to Devlin
+entities,theinformationfusionlayercomputesthe
+etal.(2019)andVaswanietal.(2017).
+outputembeddingswithoutintegrationasfollows,
+Aftercomputing{w ,...,w },ERNIEadopts
+1 n
+a knowledgeable encoder K-Encoder to in-
+h =σ(W˜ (i)w˜(i)+˜b(i)),
+ject the knowledge information into language j t j (5)
+w(i) =σ(W(i)h +b(i)).
+representation. To be specific, we repre- j t j t
+sent {e 1,...,e m} with their entity embeddings For simplicity, the i-th aggregator operation is
+{e 1,...,e m}, which are pre-trained by the effec- denotedasfollows,
+tive knowledge embedding model TransE (Bor-
+des et al., 2013). Then, both {w ,...,w } and {w(i),...,w(i)},{e(i),...,e(i)}=Aggregator(
+1 n 1 n 1 m (6)
+{e 1,...,e m} are fed into K-Encoder for fus- {w(i−1),...,w(i−1)},{e(i−1),...,e(i−1)}).
+1 n 1 m
+ing heterogeneous information and computing fi-
+naloutputembeddings, Theoutputembeddingsofbothtokensandentities
+computed by the top aggregator will be used as
+{w 1o,...,w no},{eo 1,...,eo n}=K-Encoder(
+(2)
+thefinaloutputembeddingsoftheknowledgeable
+{w 1,...,w n},{e 1,...,e m}). encoderK-Encoder.
+{wo,...,wo} and {eo,...,eo} will be used as
+1 n 1 n 3.4 Pre-trainingforInjectingKnowledge
+features for specific tasks. More details of the
+In order to inject knowledge into language rep-
+knowledgeable encoder K-Encoder will be in-
+resentation by informative entities, we propose a
+troducedinSection3.3.
+newpre-trainingtaskforERNIE,whichrandomly
+3.3 KnowledgeableEncoder masks some token-entity alignments and then re-
+quires the system to predict all corresponding en-
+As shown in Figure 2, the knowledgeable en-
+tities based on aligned tokens. As our task is
+coder K-Encoder consists of stacked aggrega-
+similar to training a denoising auto-encoder (Vin-
+tors, which are designed for encoding both to-
+cent et al., 2008), we refer to this procedure as
+kens and entities as well as fusing their hetero-
+a denoising entity auto-encoder (dEA). Consider-
+geneous features. In the i-th aggregator, the in-
+(i−1) (i−1) ing that the size of E is quite large for the soft-
+put token embeddings {w ,...,w } and
+1 n maxlayer,wethusonlyrequirethesystemtopre-
+(i−1) (i−1)
+entity embeddings {e ,...,e } from the
+1 m dictentitiesbasedonthegivenentitysequencein-
+preceding aggregator are fed into two multi-head
+stead of all entities in KGs. Given the token se-
+self-attentions (MH-ATTs) (Vaswani et al., 2017)
+quence{w ,...,w }anditscorrespondingentity
+1 n
+respectively,
+sequence {e ,...,e }, we define the aligned en-
+1 m
+titydistributionforthetokenw asfollows,
+{w˜(i),...,w˜(i)}=MH-ATT({w(i−1),...,w(i−1)}), i
+1 n 1 n
+{e˜(i),...,e˜(i)}=MH-ATT({e(i−1),...,e(i−1)}). exp(linear(wo)·e )
+1 m 1 m (3) p(e j|w i)= (cid:80)m exp(lineari (wo)j ·e ), (7)
+k=1 i k
+Mark Twain wrote The Million Pound Bank Note in 1893.
+Input for Common NLP tasks:
+[CLS] mark twain wrote the million pound bank note in 1893 . [SEP]
+Input for Entity Typing:
+[CLS] [ENT] mark twain [ENT] wrote the million pound bank note in 1893 . [SEP]
+Input for Relation Classification:
+[CLS] [HD] mark twain [HD] wrote [TL] the million pound bank note [TL] in 1893 . [SEP]
+Figure3: Modifying the input sequence for the specific tasks. To align tokens among different types of
+input,weusedottedrectanglesasplaceholder. Thecolorfulrectanglespresentthespecificmarktokens.
+where linear(·) is a linear layer. Eq. 7 will be to fine-tune ERNIE for relation classification is
+used to compute the cross-entropy loss function to apply the pooling layer to the final output em-
+fordEA. beddings of the given entity mentions, and repre-
+Consideringthattherearesomeerrorsintoken- sent the given entity pair with the concatenation
+entityalignments,weperformthefollowingoper- of their mention embeddings for classification. In
+ations for dEA: (1) In 5% of the time, for a given thispaper,wedesignanothermethod,whichmod-
+token-entityalignment,wereplacetheentitywith ifiestheinputtokensequencebyaddingtwomark
+another random entity, which aims to train our tokens to highlight entity mentions. These extra
+modeltocorrecttheerrorsthatthetokenisaligned mark tokens play a similar role like position em-
+with a wrong entity; (2) In 15% of the time, we beddingsintheconventionalrelationclassification
+masktoken-entityalignments,whichaimstotrain models(Zengetal.,2015). Then,wealsotakethe
+ourmodeltocorrecttheerrorsthattheentityalign- [CLS] token embedding for classification. Note
+ment system does not extract all existing align- thatwedesigndifferenttokens[HD]and[TL]for
+ments; (3) In the rest of the time, we keep token- headentitiesandtailentitiesrespectively.
+entity alignments unchanged, which aims to en- The specific fine-tuning procedure for entity
+courageourmodeltointegratetheentityinforma- typingisasimplifiedversionofrelationclassifica-
+tionintotokenrepresentationsforbetterlanguage tion. As previous typing models make full use of
+understanding. both context embeddings and entity mention em-
+Similar to BERT, ERNIE also adopts the beddings (Shimaoka et al., 2016; Yaghoobzadeh
+maskedlanguagemodel(MLM)andthenextsen- and Schu¨tze, 2017; Xin et al., 2018), we argue
+tenceprediction(NSP)aspre-trainingtaskstoen- thatthemodifiedinputsequencewiththemention
+ableERNIEtocapturelexicalandsyntacticinfor- mark token [ENT] can guide ERNIE to combine
+mation from tokens in text. More details of these bothcontextinformationandentitymentioninfor-
+pre-training tasks can be found from Devlin et al. mationattentively.
+(2019). Theoverallpre-traininglossisthesumof
+4 Experiments
+thedEA,MLMandNSPloss.
+In this section, we present the details of pre-
+3.5 Fine-tuningforSpecificTasks
+training ERNIE and the fine-tuning results on
+As shown in Figure 3, for various common NLP
+fiveNLPdatasets,whichcontainbothknowledge-
+tasks,ERNIEcanadoptthefine-tuningprocedure
+driventasksandthecommonNLPtasks.
+similartoBERT.Wecantakethefinaloutputem-
+bedding of the first token, which corresponds to 4.1 Pre-trainingDataset
+the special [CLS] token, as the representation of
+Thepre-trainingprocedureprimarilyactsinaccor-
+the input sequence for specific tasks. For some
+dance with the existing literature on pre-training
+knowledge-driven tasks (e.g., relation classifica-
+language models. For the large cost of training
+tion and entity typing), we design special fine-
+ERNIE from scratch, we adopt the parameters of
+tuningprocedure:
+BERTreleasedbyGoogle3 toinitializetheTrans-
+Forrelationclassification,thetaskrequiressys-
+former blocks for encoding tokens. Since pre-
+temstoclassifyrelationlabelsofgivenentitypairs
+based on context. The most straightforward way 3https://github.com/google-research/bert
+training is a multi-task procedure consisting of Dataset Train Develop Test Type
+NSP, MLM, and dEA, we use English Wikipedia FIGER 2,000,000 10,000 563 113
+OpenEntity 2,000 2,000 2,000 6
+as our pre-training corpus and align text to Wiki-
+data. After converting the corpus into the format-
+Table 1: The statistics of the entity typing datasets
+ted data for pre-training, the annotated input has FIGERandOpenEntity.
+nearly 4,500M subwords and 140M entities, and
+discardsthesentenceshavinglessthan3entities. Model Acc. Macro Micro
+Before pre-training ERNIE, we adopt the NFGEC(Attentive) 54.53 74.76 71.58
+knowledge embeddings trained on Wikidata4 by NFGEC(LSTM) 55.60 75.15 71.73
+BERT 52.04 75.16 71.63
+TransE as the input embeddings for entities. To
+ERNIE 57.19 76.51 73.39
+be specific, we sample part of Wikidata which
+contains 5,040,986 entities and 24,267,796 fact Table2: ResultsofvariousmodelsonFIGER(%).
+triples. The entity embeddings are fixed during
+ingepochstoavoidoverfitting,andkeeptherange
+trainingandtheparametersoftheentityencoding
+of learning rate unchanged, i.e., batch size: 2048,
+modulesareallinitializedrandomly.
+numberofepochs: 2,3.
+4.2 ParameterSettingsandTrainingDetails Asmostdatasetsdonothaveentityannotations,
+we use TAGME (Ferragina and Scaiella, 2010) to
+In this work, we denote the hidden dimension of
+extract the entity mentions in the sentences and
+token embeddings and entity embeddings as H ,
+w
+linkthemtotheircorrespondingentitiesinKGs.
+H respectively, and the number of self-attention
+e
+heads as A w, A e respectively. In detail, we have 4.3 EntityTyping
+the following model size: N = 6,M = 6,H =
+w
+Givenanentitymentionanditscontext,entitytyp-
+768,H = 100,A = 12,A = 4. The total
+e w e
+ing requires systems to label the entity mention
+parametersareabout114M.
+with its respective semantic types. To evaluate
+The total amount of parameters of BERT
+BASE performance on this task, we fine-tune ERNIE on
+is about 110M, which means the knowledgeable
+two well-established datasets FIGER (Ling et al.,
+module of ERNIE is much smaller than the lan-
+2015) and Open Entity (Choi et al., 2018). The
+guagemoduleandhaslittleimpactontherun-time
+training set of FIGER is labeled with distant su-
+performance. And, we only pre-train ERNIE on
+pervision, and its test set is annotated by human.
+theannotatedcorpusforoneepoch. Toaccelerate
+Open Entity is a completely manually-annotated
+the training process, we reduce the max sequence
+dataset. The statistics of these two datasets are
+lengthfrom512to256asthecomputationofself-
+shown in Table 1. We compare our model with
+attention is a quadratic function of the length. To
+thefollowingbaselinemodelsforentitytyping:
+keep the number of tokens in a batch as same as
+BERT, we double the batch size to 512. Except NFGEC. NFGEC is a hybrid model proposed
+for setting the learning rate as 5e−5, we largely by Shimaoka et al. (2016). NFGEC combines the
+follow the pre-training hyper-parameters used in representations of entity mention, context and ex-
+BERT.Forfine-tuning,mosthyper-parametersare tra hand-craft features as input, and is the state-
+the same as pre-training, except batch size, learn- of-the-artmodelonFIGER.Asthispaperfocuses
+ing rate, and number of training epochs. We find oncomparingthegenerallanguagerepresentation
+thefollowingrangesofpossiblevaluesworkwell abilities of various neural models, we thus do not
+onthetrainingdatasetswithgoldannotations,i.e., usethehand-craftfeaturesinthiswork.
+batchsize: 32, learningrate(Adam): 5e−5, 3e−5,
+UFET. For Open Entity, we add a new hybrid
+2e−5,numberofepochsrangingfrom3to10.
+model UFET (Choi et al., 2018) for comparison.
+WealsoevaluateERNIEonthedistantlysuper-
+UFET is proposed with the Open Entity dataset,
+vised dataset, i.e., FIGER (Ling et al., 2015). As
+which uses a Bi-LSTM for context representation
+the powerful expression ability of deeply stacked
+insteadoftwoBi-LSTMsseparatedbyentitymen-
+Transformer blocks, we found small batch size
+tionsinNFGEC.
+would lead the model to overfit the training data.
+Besides NFGEC and UFET, we also report the
+Hence, we use a larger batch size and less train-
+result of fine-tuning BERT with the same input
+4https://www.wikidata.org/ format introduced in Section 3.5 for fair com-
+Model P R F1 FewRel TACRED
+Model
+P R F1 P R F1
+NFGEC(LSTM) 68.80 53.30 60.10
+UFET 77.40 60.60 68.00 CNN 69.51 69.64 69.35 70.30 54.20 61.20
+BERT 76.37 70.96 73.56 PA-LSTM - - - 65.70 64.50 65.10
+C-GCN - - - 69.90 63.30 66.40
+ERNIE 78.42 72.90 75.56 BERT 85.05 85.11 84.89 67.23 64.81 66.00
+ERNIE 88.49 88.44 88.32 69.97 66.08 67.97
+Table3:ResultsofvariousmodelsonOpenEntity(%).
+Table5: ResultsofvariousmodelsonFewRelandTA-
+Dataset Train Develop Test Relation CRED(%).
+FewRel 8,000 16,000 16,000 80
+TACRED 68,124 22,631 15,509 42
+4.4 RelationClassification
+Table 4: The statistics of the relation classification
+Relation classification aims to determine the cor-
+datasetsFewRelandTACRED.
+rect relation between two entities in a given sen-
+tence, which is an important knowledge-driven
+parison. Following the same evaluation criteria NLP task. To evaluate performance on this
+used in the previous work, we compare NFGEC, task,wefine-tuneERNIEontwowell-established
+BERT, ERNIE on FIGER, and adopt strict accu- datasets FewRel (Han et al., 2018c) and TA-
+racy, loose macro, loose micro scores for evalua- CRED(Zhangetal.,2017). Thestatisticsofthese
+tion. WecompareNFGEC,BERT,UFET,ERNIE two datasets are shown in Table 4. As the orig-
+onOpenEntity,andadoptprecision,recall,micro- inal experimental setting of FewRel is few-shot
+F1scoresforevaluation. learning, we rearrange the FewRel dataset for the
+common relation classification setting. Specifi-
+The results on FIGER are shown in Table 2.
+cally,wesample100instancesfromeachclassfor
+From the results, we observe that: (1) BERT
+the training set, and sample 200 instances for the
+achieves comparable results with NFGEC on the
+development and test respectively. There are 80
+macro and micro metrics. However, BERT has
+classes in FewRel, and there are 42 classes (in-
+lower accuracy than the best NFGEC model. As
+cluding a special relation “no relation”) in TA-
+strictaccuracyistheratioofinstanceswhosepre-
+CRED.Wecompareourmodelwiththefollowing
+dictions are identical to human annotations, it il-
+baselinemodelsforrelationclassification:
+lustrates some wrong labels from distant super-
+vision are learned by BERT due to its powerful
+CNN. With a convolution layer, a max-pooling
+fitting ability. (2) Compared with BERT, ERNIE
+layer, and a non-linear activation layer, CNN gets
+significantlyimprovesthestrictaccuracy, indicat-
+the output sentence embedding, and then feeds it
+ing the external knowledge regularizes ERNIE to
+intoarelationclassifier. Tobettercapturetheposi-
+avoidfittingthenoisylabelsandaccordinglyben-
+tionofheadandtailentities,positionembeddings
+efitsentitytyping.
+are introduced into CNN (Zeng et al., 2015; Lin
+The results on Open Entity are shown in Ta- etal.,2016;Wuetal.,2017;Hanetal.,2018b).
+ble 3. From the table, we observe that: (1) BERT
+PA-LSTM. Zhang et al. (2017) propose PA-
+andERNIEachievemuchhigherrecallscoresthan
+LSTM introducing a position-aware attention
+the previous entity typing models, which means
+mechanism over an LSTM network, which eval-
+pre-training language models make full use of
+uatestherelativecontributionof each wordinthe
+both the unsupervised pre-training and manually-
+sequenceforthefinalsentencerepresentation.
+annotatedtrainingdataforbetterentitytyping. (2)
+Compared to BERT, ERNIE improves the preci-
+C-GCN. Zhang et al. (2018) adopt the graph
+sionby2%andtherecallby2%,whichmeansthe
+convolutionoperationstomodeldependencytrees
+informativeentitieshelpERNIEpredictthelabels
+for relation classification. To encode the word
+moreprecisely.
+order and reduce the side effect of errors in de-
+In summary, ERNIE effectively reduces the pendencyparsing,ContextualizedGCN(C-GCN)
+noisy label challenge in FIGER, which is a firstly uses Bi-LSTM to generate contextualized
+widely-used distantly supervised entity typing representationsasinputforGCNmodels.
+dataset,byinjectingtheinformationfromKGs. Inadditiontothesethreebaselines,wealsofine-
+Besides,ERNIEalsooutperformsthebaselineson tuneBERTwiththesameinputformatintroduced
+OpenEntitywhichhasgoldannotations. inSection3.5forfaircomparison.
+Model MNLI-(m/mm) QQP QNLI SST-2 Model P R F1
+392k 363k 104k 67k
+BERT 85.05 85.11 84.89
+BERTBASE 84.6/83.4 71.2 - 93.5
+ERNIE 88.49 88.44 88.32
+ERNIE 84.0/83.2 71.2 91.3 93.5 w/oentities 85.89 85.89 85.79
+w/odEA 85.85 85.75 85.62
+Model CoLA STS-B MRPC RTE
+8.5k 5.7k 3.5k 2.5k
+Table7: AblationstudyonFewRel(%).
+BERTBASE 52.1 85.8 88.9 66.4
+ERNIE 52.3 83.2 88.2 68.8
+training set. It demonstrates extra knowledge
+helpsthemodelmakefulluseofsmalltraining
+Table6:ResultsofBERTandERNIEondifferenttasks
+ofGLUE(%). data,whichisimportantformostNLPtasksas
+large-scaleannotateddataisunavailable.
+As FewRel does not have any null instance
+4.5 GLUE
+where there is not any relation between entities,
+we adopt macro averaged metrics to present the The General Language Understanding Evaluation
+model performances. Since FewRel is built by (GLUE) benchmark (Wang et al., 2018) is a col-
+checking whether the sentences contain facts in lection of diverse natural language understanding
+Wikidata, we drop the related facts in KGs be- tasks (Warstadt et al., 2018; Socher et al., 2013;
+fore pre-training for fair comparison. From Ta- Dolan and Brockett, 2005; Agirre et al., 2007;
+ble5, wehavetwoobservations: (1)Asthetrain- Williams et al., 2018; Rajpurkar et al., 2016; Da-
+ing data does not have enough instances to train gan et al., 2006; Levesque et al., 2011), which is
+theCNNencoderfromscratch,CNNjustachieves the main benchmark used in Devlin et al. (2019).
+anF1scoreof69.35%. However,thepre-training To explore whether our knowledgeable module
+models including BERT and ERNIE increase the degenerates the performance on common NLP
+F1 score by at least 15%. (2) ERNIE achieves an tasks, we evaluateERNIEon8datasetsof GLUE
+absolute F1 increase of 3.4% over BERT, which andcompareitwithBERT.
+meansfusingexternalknowledgeisveryeffective. In Table 6, we report the results of our eval-
+In TACRED, there are nearly 80% null uation submissions and those of BERT from the
+instances so that we follow the previous leaderboard. We notice that ERNIE is consistent
+work (Zhang et al., 2017) to adopt micro with BERT on big datasets like MNLI, QQP,
+BASE
+averaged metrics to represent the model per- QNLI,andSST-2. Theresultsbecomemoreunsta-
+formances instead of the macro. The results of ble on small datasets, that is, ERNIE is better on
+CNN, PA-LSTM, and C-GCN come from the CoLAandRTE,butworseonSTS-BandMRPC.
+paper by Zhang et al. (2018), which are the best In short, ERNIE achieves comparable results
+results of CNN, RNN, and GCN respectively. with BERT on GLUE. On the one hand, it
+BASE
+From Table 5, we observe that: (1) The C-GCN meansGLUEdoesnotrequireexternalknowledge
+model outperforms the strong BERT model by for language representation. On the other hand, it
+an F1 increase of 0.4%, as C-GCN utilizes the illustrates ERNIE does not lose the textual infor-
+dependency trees and the entity mask strategy. mationafterheterogeneousinformationfusion.
+The entity mask strategy refers to replacing each
+4.6 AblationStudy
+subject(andobjectsimilarly)entitywithaspecial
+NER token, which is similar to our proposed In this subsection, we explore the effects of the
+pre-training task dEA. (2) ERNIE achieves the informative entities and the knowledgeable pre-
+best recall and F1 scores, and increases the F1 training task (dEA) for ERNIE using FewRel
+of BERT by nearly 2.0%, which proves the dataset. w/o entities and w/o dEA refer to fine-
+effectiveness of the knowledgeable module for tuning ERNIE without entity sequence input and
+relationclassification. the pre-training task dEA respectively. As shown
+In conclusion, we find that the pre-trained lan- in Table 7, we have the following observations:
+guage models can provide more information for (1) Without entity sequence input, dEA still in-
+relation classification than the vanilla encoder jects knowledge information into language repre-
+CNN and RNN. And ERNIE outperforms BERT sentation during pre-training, which increases the
+on both of the relation classification datasets, es- F1 score of BERT by 0.9%. (2) Although the in-
+peciallyontheFewRelwhichhasamuchsmaller formativeentitiesbringmuchknowledgeinforma-
+tion which intuitively benefits relation classifica- Jointrepresentationlearningofcross-lingualwords
+tion,ERNIEwithoutdEAtakeslittleadvantageof andentitiesviaattentivedistantsupervision. InPro-
+ceedingsofEMNLP,pages227–237.
+this,leadingtotheF1increaseof0.7%.
+YixinCao,LifuHuang,HengJi,XuChen,andJuanzi
+5 Conclusion
+Li. 2017. Bridge text and knowledge by learning
+multi-prototypeentitymentionembedding. InPro-
+In this paper, we propose ERNIE to incorporate
+ceedingsofACL,pages1623–1633.
+knowledge information into language representa-
+tion models. Accordingly, we propose the knowl- Qian Chen, Xiaodan Zhu, Zhen-Hua Ling, Diana
+Inkpen, andSiWei.2018. Neuralnaturallanguage
+edgeableaggregatorandthepre-trainingtaskdEA
+inference models enhanced with external knowl-
+for better fusion of heterogeneous information edge. InProceedingsofACL,pages2406–2417.
+from both text and KGs. The experimental re-
+EunsolChoi,OmerLevy,YejinChoi,andLukeZettle-
+sults demonstrate that ERNIE has better abilities
+moyer. 2018. Ultra-fine entity typing. In Proceed-
+of both denoising distantly supervised data and
+ingsofACL,pages87–96.
+fine-tuning on limited data than BERT. There are
+three important directions remain for future re- Ronan Collobert and Jason Weston. 2008. A unified
+architecture for natural language processing: Deep
+search: (1) inject knowledge into feature-based
+neural networks with multitask learning. In Pro-
+pre-training models such as ELMo (Peters et al., ceedingsofICML,pages160–167.
+2018);(2)introducediversestructuredknowledge
+Ido Dagan, Oren Glickman, and Bernardo Magnini.
+intolanguagerepresentationmodelssuchasCon-
+2006. ThePASCALrecognisingtextualentailment
+ceptNet(SpeerandHavasi,2012)whichisdiffer-
+challenge. In Proceedings of MLCW, pages 177–
+entfromtheworldknowledgedatabaseWikidata; 190.
+(3)annotatemorereal-worldcorporaheuristically
+AndrewMDaiandQuocVLe.2015. Semi-supervised
+for building larger pre-training data. These direc-
+sequence learning. In Proceedings of NIPS, pages
+tions may lead to more general and effective lan-
+3079–3087.
+guageunderstanding.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Acknowledgement KristinaToutanova.2019. Bert:Pre-trainingofdeep
+bidirectional transformers for language understand-
+ThisworkisfundedbytheNaturalScienceFoun- ing. InProceedingsofNAACL-HLT.
+dation of China (NSFC) and the German Re-
+WilliamBDolanandChrisBrockett.2005. Automati-
+search Foundation (DFG) in Project Crossmodal callyconstructingacorpusofsententialparaphrases.
+Learning, NSFC 61621136008 / DFG TRR-169, InProceedingsofIWP.
+theNationalNaturalScienceFoundationofChina
+Paolo Ferragina and Ugo Scaiella. 2010. Tagme:
+(NSFCNo. 61572273)andChinaAssociationfor
+on-the-fly annotation of short text fragments (by
+ScienceandTechnology(2016QNRC001). wikipediaentities). InProceedingsofCIKM,pages
+1625–1628.
+Xu Han, Zhiyuan Liu, and Maosong Sun. 2016.
+References
+Jointrepresentationlearningoftextandknowledge
+Eneko Agirre, Llu’is M‘arquez, and Richard Wicen- for knowledge graph completion. arXiv preprint
+towski. 2007. Proceedings of the fourth interna- arXiv:1611.04125.
+tional workshop on semantic evaluations (semeval-
+2007). InProceedingsofSemEval-2007. XuHan,ZhiyuanLiu,andMaosongSun.2018a. Neu-
+ral knowledge acquisition via mutual attention be-
+Antoine Bordes, Nicolas Usunier, Alberto Garcia- tweenknowledgegraphandtext. InProceedingsof
+Duran, Jason Weston, and Oksana Yakhnenko. AAAI.
+2013. Translating embeddings for modeling multi-
+relational data. In Proceedings of NIPS, pages XuHan, PengfeiYu, ZhiyuanLiu, MaosongSun, and
+2787–2795. Peng Li. 2018b. Hierarchical relation extraction
+with coarse-to-fine grained attention. In Proceed-
+Samuel R Bowman, Gabor Angeli, Christopher Potts, ingsofEMNLP,pages2236–2245.
+and Christopher D Manning. 2015. A large anno-
+tatedcorpusforlearningnaturallanguageinference. XuHan,HaoZhu,PengfeiYu,ZiyunWang,YuanYao,
+InProceedingsofEMNLP,pages632–642. ZhiyuanLiu, andMaosongSun.2018c. Fewrel: A
+large-scale supervised few-shot relation classifica-
+Yixin Cao, Lei Hou, Juanzi Li, Zhiyuan Liu, tiondatasetwithstate-of-the-artevaluation. InPro-
+Chengjiang Li, Xu Chen, and Tiansi Dong. 2018. ceedingsofEMNLP,pages4803–4809.
+Dan Hendrycks and Kevin Gimpel. 2016. Gaus- Erik F Tjong Kim Sang and Fien De Meulder.
+sian error linear units (gelus). arXiv preprint 2003. Introduction to the conll-2003 shared task:
+arXiv:1606.08415. Language-independentnamedentityrecognition. In
+ProceedingsofNAACL-HLT,pages142–147.
+JeremyHowardandSebastianRuder.2018. Universal
+languagemodelfine-tuningfortextclassification. In Sonse Shimaoka, Pontus Stenetorp, Kentaro Inui, and
+ProceedingsofACL,pages328–339. Sebastian Riedel. 2016. An attentive neural archi-
+tectureforfine-grainedentitytypeclassification. In
+Hector J Levesque, Ernest Davis, and Leora Morgen- ProceedingsofAKBC,pages69–74.
+stern. 2011. The Winograd schema challenge. In
+AAAISpringSymposium: LogicalFormalizationsof Richard Socher, Alex Perelygin, Jean Wu, Jason
+CommonsenseReasoning,volume46,page47. Chuang, Christopher D Manning, Andrew Ng, and
+Christopher Potts. 2013. Recursive deep models
+Yankai Lin, Shiqi Shen, Zhiyuan Liu, Huanbo Luan, forsemanticcompositionalityoverasentimenttree-
+andMaosongSun.2016. Neuralrelationextraction bank. InProceedingsofEMNLP,pages1631–1642.
+withselectiveattentionoverinstances. InProceed-
+ingsofACL,volume1,pages2124–2133. RobertSpeerandCatherineHavasi.2012. Represent-
+inggeneralrelationalknowledgeinconceptnet5. In
+Xiao Ling, Sameer Singh, and Daniel S Weld. 2015. ProceedingsofLREC,pages3679–3686.
+Designchallengesforentitylinking. TACL,3:315–
+328. YuSun,ShuohuanWang,YukunLi,ShikunFeng,Xuyi
+Chen, Han Zhang, Xin Tian, Danxiang Zhu, Hao
+AndreaMadotto,Chien-ShengWu,andPascaleFung. Tian, and Hua Wu. 2019. Ernie: Enhanced repre-
+2018. Mem2seq: Effectively incorporating knowl- sentationthroughknowledgeintegration.
+edgebasesintoend-to-endtask-orienteddialogsys-
+tems. InProceedingsofACL,pages1468–1478. Kristina Toutanova, Danqi Chen, Patrick Pantel, Hoi-
+fungPoon,PallaviChoudhury,andMichaelGamon.
+Stephen Merity, Nitish Shirish Keskar, and Richard 2015. Representingtextforjointembeddingoftext
+Socher.2018. Regularizingandoptimizinglstmlan- and knowledge bases. In Proceedings of EMNLP,
+guagemodels. InProceedingsofICLR. pages1499–1509.
+TodorMihaylovandAnetteFrank.2018. Knowledge- JosephTurian,LevRatinov,andYoshuaBengio.2010.
+ablereader: Enhancingcloze-stylereadingcompre- Wordrepresentations: asimpleandgeneralmethod
+hensionwithexternalcommonsenseknowledge. In for semi-supervised learning. In Proceedings of
+ProceedingsofACL,pages821–832. ACL,pages384–394.
+TomasMikolov,IlyaSutskever,KaiChen,GregSCor- Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+rado, and Jeff Dean. 2013. Distributed representa- Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+tionsofwordsandphrasesandtheircompositional- Kaiser, and Illia Polosukhin. 2017. Attention is all
+ity. InProceedingsofNIPS,pages3111–3119. you need. In Proceedings of NIPS, pages 5998–
+6008.
+Jeffrey Pennington, Richard Socher, and Christopher
+Manning. 2014. Glove: Global vectors for word PascalVincent,HugoLarochelle,YoshuaBengio,and
+representation. In Proceedings of EMNLP, pages Pierre-Antoine Manzagol. 2008. Extracting and
+1532–1543. composing robust features with denoising autoen-
+coders. InProceedingsofICML,pages1096–1103.
+Matthew Peters, Waleed Ammar, Chandra Bhagavat-
+ula, and Russell Power. 2017. Semi-supervised se- Alex Wang, Amapreet Singh, Julian Michael, Felix
+quencetaggingwithbidirectionallanguagemodels. Hill, Omer Levy, and Samuel R Bowman. 2018.
+InProceedingsofACL,pages1756–1765. Glue:Amulti-taskbenchmarkandanalysisplatform
+fornaturallanguageunderstanding. InProceedings
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt ofEMNLP,pages353–355.
+Gardner, Christopher Clark, Kenton Lee, and Luke
+Zettlemoyer. 2018. Deep contextualized word rep- Zhen Wang, Jianwen Zhang, Jianlin Feng, and Zheng
+resentations. InProceedingsofNAACL-HLT,pages Chen.2014. Knowledgegraphandtextjointlyem-
+2227–2237. bedding. In Proceedings of EMNLP, pages 1591–
+1601.
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+Ilya Sutskever. 2018. Improving language under- AlexWarstadt,AmanpreetSingh,andSamuelR.Bow-
+standingbygenerativepre-training. InProceedings man. 2018. Neural network acceptability judg-
+ofTechnicalreport,OpenAI. ments. arXivpreprint1805.12471.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and Adina Williams, Nikita Nangia, and Samuel R. Bow-
+Percy Liang. 2016. Squad: 100,000+ questions for man.2018. Abroad-coveragechallengecorpusfor
+machine comprehension of text. In Proceedings of sentence understanding through inference. In Pro-
+EMNLP,pages2383–2392. ceedingsofNAACL-HLT,pages1112–1122.
+YiWu,DavidBamman,andStuartRussell.2017. Ad-
+versarialtrainingforrelationextraction. InProceed-
+ingsofEMNLP,pages1778–1783.
+JiXin, HaoZhu, XuHan, ZhiyuanLiu, andMaosong
+Sun.2018. Putitback: Entitytypingwithlanguage
+model enhancement. In Proceedings of EMNLPs,
+pages993–998.
+Yadollah Yaghoobzadeh and Hinrich Schu¨tze. 2017.
+Multi-level representations for fine-grained typing
+of knowledge base entities. In Proceedings of
+EACL,pages578–589.
+IkuyaYamada,HiroyukiShindo,HideakiTakeda,and
+YoshiyasuTakefuji.2016. Jointlearningoftheem-
+beddingofwordsandentitiesfornamedentitydis-
+ambiguation. InProceedingsofCoNLL,pages250–
+259.
+Poorya Zaremoodi, Wray Buntine, and Gholamreza
+Haffari. 2018. Adaptive knowledge sharing in
+multi-tasklearning: Improvinglow-resourceneural
+machine translation. In Proceedings of ACL, pages
+656–661.
+RowanZellers,YonatanBisk,RoySchwartz,andYejin
+Choi.2018. Swag: Alarge-scaleadversarialdataset
+for grounded commonsense inference. In Proceed-
+ingsofEMNLP,pages93–104.
+Daojian Zeng, Kang Liu, Yubo Chen, and Jun Zhao.
+2015. Distantsupervisionforrelationextractionvia
+piecewise convolutional neural networks. In Pro-
+ceedingsofEMNLP,pages1753–1762.
+Yuhao Zhang, Peng Qi, and Christopher D Manning.
+2018. Graph convolution over pruned dependency
+trees improves relation extraction. In Proceedings
+ofEMNLP,pages2205–2215.
+Yuhao Zhang, Victor Zhong, Danqi Chen, Gabor An-
+geli, and Christopher D Manning. 2017. Position-
+awareattentionandsuperviseddataimproveslotfill-
+ing. InProceedingsofEMNLP,pages35–45.
+Wanjun Zhong, Duyu Tang, Nan Duan, Ming Zhou,
+Jiahai Wang, and Jian Yin. 2018. Improving ques-
+tionansweringbycommonsense-basedpre-training.
+arXivpreprintarXiv:1809.03568.

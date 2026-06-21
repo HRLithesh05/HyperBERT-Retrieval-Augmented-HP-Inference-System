@@ -1,0 +1,472 @@
+XplaiNLP at CheckThat! 2025: Multilingual Subjectivity
+Detection with Finetuned Transformers and Prompt-Based
+Inference with Large Language Models
+NotebookfortheCheckThat! LabatCLEF2025
+ArianaSahitaj1,2,*, JiaaoLi1,2, PiaWenzelNeves1,2, FedorSplitt1,2, PremtimSahitaj1,2,
+CharlottJakob1,2, VeronikaSolopova1,2 and VeraSchmitt1,2
+1QualityandUsabilityLab,TechnischeUniversitätBerlin,Berlin,Germany
+2GermanResearchCenterforArtificialIntelligence(DFKI),Berlin,Germany
+Abstract
+ThisnotebookreportstheXplaiNLPsubmissiontotheCheckThat!2025sharedtask[1]onmultilingualsubjectivity
+detection.Weevaluatetwoapproaches:(1)supervisedfine-tuningoftransformerencoders,EuroBERT,XLM-
+RoBERTa,andGerman-BERT,onmonolingualandmachine-translatedtrainingdata;and(2)zero-shotprompting
+usingtwoLLMs: forAnnotation(rule-basedlabelling)and forDoubleDown(contrastive
+o3-mini gpt-4.1-mini
+rewriting)andPerspective(comparativereasoning).TheAnnotationApproachachieves1stplaceintheItalian
+monolingualsubtaskwithanF scoreof0.8104,outperformingthebaselineof0.6941.IntheRomanianzero-shot
+1
+setting,thefine-tunedXLM-RoBERTamodelobtainsanF scoreof0.7917,ranking3rdandexceedingthebaseline
+1
+of0.6461.ThesamemodelalsoperformsreliablyinthemultilingualtaskandimprovesoverthebaselineinGreek.
+ForGerman,aGerman-BERTmodelfine-tunedontranslatedtrainingdatafromtypologicallyrelatedlanguages
+yieldscompetitiveperformanceoverthebaseline.Incontrast,performanceintheUkrainianandPolishzero-shot
+settingsfallsslightlybelowtherespectivebaselines,reflectingthechallengeofgeneralizationinlow-resource
+cross-lingualscenarios.
+Keywords
+SubjectivityDetection,MultilingualNLP,Zero-ShotLearning,Prompt-BasedInference
+1. Introduction
+Understandingwhetherasentenceexpressesapersonalopinionorpresentsinformationinaneutral
+andthereforeobjectivewayisimportantinmanynaturallanguageprocessingtasks[2]. Thisdistinction
+isparticularlyrelevantinthecontextofnewsreporting,whereobjectivityistraditionallyconsidereda
+coreprinciple. Yet,subjectiveorevaluativelanguageisoftenembeddedinnewstextsthroughstylistic
+choicesandsubtledialogicelementsthatinfluencehowreadersinterpretinformation. [3]Thiseffect
+isespeciallystrongwhenopinionatedlanguageispresentedinthestyleoffactualreporting,causing
+evaluativestatementstoappearasobjectiveobservations[4]. Aprecisedistinctionbetweensubjective
+and objective language is important for tasks such as sentiment analysis [5], stance detection [6],
+automatedfact-checking[7,8],propagandadetection[9],argumentmining[10],andbiasidentification
+[11]. These applications rely on the ability to detect whether a statement reflects personal opinion,
+emotionallanguage,orevaluativeframing,orwhetheritisintendedtoconveyfactualcontent. Subjec-
+tivesentencescommonlyincludeemotionalterms, valuejudgments, orrhetoricalelementssuchas
+ironyorexaggeration[12]. However,evenforhumanreaders,itisnotalwayssimpletodecidewhether
+asentenceissubjectiveornot. Interpretationsoftendependoncontextandbackgroundknowledge,
+CLEF2025WorkingNotes,September9–12September2025,Madrid,Spain
+*Correspondingauthor.
+$ariana.sahitaj@campus.tu-berlin.de(A.Sahitaj);jiaao.li@campus.tu-berlin.de(J.Li);p.wenzel.2@campus.tu-berlin.de
+(P.WenzelNeves);splitt@campus.tu-berlin.de(F.Splitt);sahitaj@tu-berlin.de(P.Sahitaj);c.jakob@tu-berlin.de(C.Jakob);
+veronika.solopova@tu-berlin.de(V.Solopova);vera.schmitt@tu-berlin.de(V.Schmitt)
+(cid:26)0009-0002-0096-9383(A.Sahitaj);0009-0001-8340-0215(P.WenzelNeves);0000-0003-3908-5681(P.Sahitaj);
+0009-0002-6262-9018(C.Jakob);0000-0003-0183-9433(V.Solopova);0000-0002-9735-6956(V.Schmitt)
+©2025Copyrightforthispaperbyitsauthors.UsepermittedunderCreativeCommonsLicenseAttribution4.0International(CCBY4.0).
+makingcriticalthinkingessentialfordistinguishingbetweenevaluativelanguageandfactualreporting
+[13, 14]. This issue becomes more apparent in multilingual settings, as different languages signal
+subjectivityindiverseways,throughverbforms,wordorder,lexicalchoices,orstylisticconventions
+[15]. At the same time, many languages lack annotated resources for subjectivity detection, which
+posesanadditionalchallengefortrainingreliablemodels[16].
+ThisnotebookdescribesoursubmissiontotheCheckThat! LabatCLEF2025[17],whichfocusedon
+sentence-levelsubjectivitydetectionacrossmultiplelanguages. Ourapproachinvestigatestwocomple-
+mentaryapproaches: (1)supervisedfine-tuningofmultilingualandmonolingualtransformer-based
+encodersonannotateddatasets,and(2)zero-shotpromptingwithLLMsusingnaturallanguageinfer-
+enceguidedbyexplicitinstructions. Whilethefirstapproachreliesonparameter-efficientadaptationof
+pretrainedmodels,thesecondusesthecontextualreasoningcapabilitiesofLLMstoclassifysubjectivity
+withoutadditionaltraining.
+The paper is structured as follows: In Section 2 we review related work on subjectivity detection.
+Section3introducesthedatasetusedinthesharedtask. Section4detailsourmodelingapproaches,
+includingfine-tunedtransformermodelsandzero-shotpromptingstrategies. Section5presentsour
+evaluationresultsbeforewefinallysummarizeourfindingsinSection6andoutlinedirectionsforfuture
+work.
+2. Related Work
+Theaimofsubjectivitydetectionistodistinguishlanguagethatconveysprivatestates,suchasopinions,
+fromlanguagethatpresentsinformationinawaythatseemfactualorinaneutralmanner,regardless
+ofwhethertheinformationisactuallytrue[18]. YuandHatzivassiloglouproposedoneoftheearliest
+computationalmodelsforsentence-levelsubjectivitydetection,usingBayesianclassification. Riloff
+andWiebeandRiloffetal.exploredhowsubjectivitydetectioncanimproveinformationextraction
+byreducingfalsepositives,especiallyinmetaphoricaloremotionalcontexts. Thesestudiesmarked
+ashifttowardintegratingsubjectivityclassificationintopracticalNLPpipelines. In2006Esulietal.
+introduced SentiWordNet, a lexical resource assigning polarity and objectivity scores to WordNet
+synsets. Whileprimarilyintendedforpolaritydetection,italsoprovidesobjectivitymeasures,implicitly
+supportingsubjectivitydetectiontasks. Baneaetal.addressedthescarcityofresourcesinnon-English
+languagesbydevelopingabootstrappingapproachtobuildsubjectivitylexiconsusingonlyseedlists
+andabasiccorpus. Thismethodmadesubjectivityanalysisfeasibleforlow-resourcesettings. Later,
+Chaturvedietal.providedacomprehensivesurveyofbothrule-basedandautomaticmodels. They
+emphasized that subjectivity detection is a important preprocessing step for sentiment analysis, as
+polarityclassifiersmayotherwiseincorrectlylabelneutralstatementsasemotionalcontent. Antici
+etal.introducedNewsSD-ENG,asentence-leveldatasetwithhuman-annotationsubjectivitylabels.
+Their experiments showed that multilingual transformer models (M-BERT and M-SBERT) clearly
+outperformedtraditionalclassifiers(SVMandLR),withmultilingualtrainingimprovingperformance
+andenablingrobustcross-lingualsubjectivitydetection. SavinovaandDelPradoreframedsubjectivity
+detectionasaregressiontaskandfine-tunedaRoBERTamodeltopredictdegreesofsubjectivityinnews
+texts. Theirmodelalignedcloselywithhumanjudgmentsandsignificantlyoutperformedawidelyused
+rule-basedregressorbasedonlexicalpatterns. RecentworkbyShokrietal.evaluatedlargelanguage
+modelslikeGPT-3.5,GPT-4,andGeminiforsentence-levelsubjectivitydetectioninEnglishnews. They
+showed that while fine-tuned models perform well in-distribution, zero-shot and chain-of-thought
+promptingyieldmorerobustgeneralizationacrossdiversedatasets. Also,Suwailehetal.introduced
+ThatiAR,thefirstlarge-scaledatasetforsentence-levelsubjectivitydetectioninArabicnews. They
+demonstrated that GPT-4, especially in few-shot settings, outperformed traditional and fine-tuned
+Arabic language models, highlighting the potential of LLMs in morphologically-rich and culturally
+diversecontexts.
+3. Dataset
+Thedatasetemployedinthisstudyoriginatesfromthesharedtaskonsubjectivitydetectionfromthe
+CheckThat! Lab2025.1 Itisdesignedtoevaluatetheabilityofcomputationalsystemstoclassifywhether
+asentenceorshortparagraphextractedfromanewsarticleexpressesasubjective(SUBJ)orobjective
+opinion(OBJ).Thedatasetcomprisestextualinstancesdrawnfromnewssourcesinfivelanguages:
+English,Italian,German,Bulgarian,andArabic. Foreachlanguage,thedataisdividedintofoursubsets:
+training,development,development-test,andtest(withtestlabelswithheldforevaluationpurposes).
+Table1
+Sentenceandlabeldistributionperlanguageanddatasetsplit.Eachsplitshowstotalnumberofsentencesand
+classdistribution.
+Language Train Dev Dev-Test
+Total SUBJ OBJ Total SUBJ OBJ Total SUBJ OBJ
+English 830 298 532 462 240 222 484 122 362
+Italian 1613 382 1231 667 177 490 513 136 377
+German 800 308 492 491 174 317 337 111 226
+Bulgarian 729 323 406 467 292 175 250 107 143
+Arabic 2446 1055 1391 742 476 266 748 323 425
+Table 1 provides a detailed overview of the sentence and label distribution across languages and
+datasetsplits. Amongthefivelanguages,Arabicstandsoutwiththelargesttrainingset(2,446instances),
+whiletheremaininglanguages,Italian(1,613),English(830),German(800),andBulgarian(729),are
+comparativelybalancedinsize.Thesedifferenceslikelyreflectvariationinsourceavailability,annotation
+resources,anddatacurationpriorities. Thedistributionoflabelsalsovariesbylanguageandsplit: In
+theEnglishtrainingset,64.10%ofsentencesarelabeledasobjective,whiletheremainderaresubjective.
+TheItaliandataexhibitsastrongbiastowardsobjectivityacrossallsplits,withover73%ofsentences
+labeledasOBJ.Bycontrast,theBulgariandevelopmentsetfeaturesahigherproportionofsubjective
+content,highlightingpotentialculturaloreditorialdifferencesinreportingstyles.
+Table2
+Tokenstatisticsforeachlanguageonthetestset.
+TestSet
+Language Total Avg.Length Min Max Median
+English 300 28.79 2 114 28.0
+Italian 299 28.34 2 113 23.0
+German 347 31.46 8 117 28.0
+Arabic 1036 42.39 5 175 38.0
+Zero-ShotRomanian 206 34.56 2 151 30.0
+Zero-ShotUkrainian 297 28.17 2 114 26.0
+Zero-ShotGreek 284 40.88 1 141 36.0
+Zero-ShotPolish 351 29.43 4 97 26.0
+Token-level statistics for the test set are summarized in Table 2, using the
+xlm-roberta-base
+tokenizer[26]. ArabicandGreektestsetshavethelongestsequencesonaverage,whileEnglish,Italian,
+andPolisharemoreconcise. Thesedifferencesmayimpactmodelrobustnessacrosslanguages. During
+preprocessing,weidentifiedseveralanomalouscases,particularlyintheBulgarian,German,andItalian
+splits, where open-ended quotation marks led to excessively long token sequences (often over 500
+tokens). These likely stemmed from the tokenizer’s handling of unmatched punctuation and were
+manuallycorrectedtoavoiddistortionsinlengthstatistics.
+1https://checkthat.gitlab.io/clef2025/task1/
+3.1. AmbiguitiesandHard-to-TranslateCases
+Tobetterunderstandcommonsourcesoflabelingdisagreement,wemanuallyexamined20sentences
+withannotationconflictsintheEnglishdevelopmentset. Fiverecurringthemesemerged,eachhigh-
+lightinglinguisticorcontextualfeaturesthatchallengebinarysubjectivityclassification:
+• ImmigrationDiscourse: Statementssuchas“Mr. Buchanan’scriticismofimmigration” may
+appearfactualbutareoftenideologicallycharged,subtlyframingthetopicinwaysthatevoke
+subjectiveinterpretation.
+• RaceandSocialCommentary:Sentencesreferencingphrasessuchas“CRTanti-whitecurricula”
+or“diversity,equity,andinclusion” arelexicallyneutralbutsemanticallycharged. Theunderlying
+ideological associations can trigger differing interpretations, often reflecting the annotator’s
+sociopoliticalcontext.
+• MediaandPoliticalRhetoric: Labelssuchas“Lügenpresse” or“TreasonLobby” embedexplicit
+biasorcontemptwithindeclarativesyntax,complicatingdetectionbysurface-levelclassifiers.
+• SarcasmandPragmaticDevices: Utteranceslike“Whatcouldpossiblygowrong?” relyonirony
+orcontext-basedinference. Lackingovertopinionmarkers,theyremaindifficulttodetectusing
+standardlexicalcues.
+• FraminginEconomicandEnvironmentalTopics: Sentencessuchas“bribedbyaglobalist
+billionaire” combine factual assertions with emotionally charged language, blurring the line
+betweenreportingandcommentary.
+4. Approach
+We explore two complementary approaches to multilingual subjectivity detection: supervised fine-
+tuningoftransformer-basedclassifiersandzero-shotpromptingwithLLMs. Theformertrainstask-
+specificclassifiersonavailableannotateddata,whilethelatterusesinstruction-followingcapabilities
+of LLMs to perform inference without parameter updates. This section details the setup, training
+procedures,andreasoningstrategiesemployedinbothdirections.
+4.1. Fine-TunedTransformers
+Fine-tuningGerman-BERTwithTranslatedTrainingData TheideawastoenlargetheGerman
+training dataset by translating the other provided training datasets into German and fine-tuning a
+BERT model [27]. We ordered the languages from most to least similar to German, assuming that
+usingthetranslationoftrainingdataofmoresimilarlanguageswillyieldbetterresults. FirstEnglish
+(West Germanic, Indo-European), then Italian (Romance, Indo-European), Bulgarian (South Slavic,
+Indo-European) and Arabic (Semitic, Non-Indo-European) [28]. Even though Italian and Bulgarian
+are both Indo-European languages, Bulgarian is more distant from German than Italian in terms of
+Levenshtein distance [29]. By gradually adding more translated training data we monitored which
+additionsimprovedtheperformanceofthemodelasshownintable3.
+Inalltrainingsettingsforthefine-tuningprocess,trainingdatawasshuffled,weightdecaywasset
+to0.01,batchsizewas32andimprovedtruncationandpaddingwasapplied. Thenumberofepochs
+and the learning rate were adjusted to the size of the dataset, namely the amount of sentences. All
+experimentswereconductedonaremoteserverequippedwithanNVIDIATeslaT4GPUwith66GB
+ofRAM.Tokenizeranddataloaderusedfortestingwerethesameonesthatwereusedduringtraining.
+Thedifferentfine-tunedmodelswerecomparedregardingtheirmacroF1-scores. Theadditionofthe
+English,Italian,andBulgariantranslatedtrainingdataincreasedtheF1-score,butwhenincludingthe
+Arabicdata,itdropped. TheF1-scoresofthede-en-it-modelandde-en-it-bg-modelwereveryclose,
+soweranthosefine-tunedmodelsalsoonthedev-testdataset,showingaclearpreferencetoinclude
+Bulgarian.
+Table3
+TrainingConfigurationandPerformanceAcrossLanguages
+Languages Sentences Epochs LearningRate DEVmacro-F1 DEV-TESTmacro-F1
+de 800 4 0.001 0.7253 -
+de,en 1630 4 0.001 0.7405 -
+de,en,it 3243 5 0.001 0.7651 0.7712
+de,en,it,bg 3972 5 0.001 0.7692 0.8172
+de,en,it,bg,ar 6418 5 0.004 0.7275 -
+MonolingualFine-tuningEuroBERTandXLM-RoBERTa-base Toidentifyaneffectivearchitec-
+tureformonolingualsubjectivitydetection,wefine-tunedtwotransformer-basedmodels: EuroBERT
+[30]andXLM-RoBERTa-base[31]. Bothmodelsarewell-suitedforsentence-levelclassificationtasks,
+capableofcapturingnuancedsemanticandsyntacticpatterns. EuroBERT,arecentlyreleasedmultilin-
+gualmodel,ispre-trainedprimarilyonEuropeanlanguages,aligningwellwiththelinguisticcoverage
+ofourdatasets[30]. XLM-RoBERTa-basewasalsoselectedforcomparisonduetoitsconsistentcross-
+lingualperformanceanddemonstratedeffectivenessinpriorsentence-levelclassificationtasks[31,32].
+Experiments in monolingual setting were conducted on a remote server equipped with an NVIDIA
+H100GPUwith80GBofmemory. Ontheprovideddatasets(excludingArabic),wefine-tunedboth
+modelsusingabatchsizeof16,alearningrateof2e-5,and15trainingepochs. Inthemeantime,we
+employedearlystoppingwithapatiencevalueof3basedonthemacro-F1scoreonthedevelopment
+setandappliedtemperaturescalingpost-trainingtocalibratepredictionconfidence[33]. Weusedthe
+AdamW optimizer with a weight decay of 0.01 and employed Focal Loss [34] with class weighting
+toaddresslabelimbalance. Toimprovetrainingefficiencyandstability,weadoptedmixed-precision
+trainingusingPyTorch’sAMPframeworkandappliedgradientclippingwithamaximumnormof1.0
+topreventexplodinggradients. Aftertraining,weevaluatedbothmodelsonthedev-testdatasetsusing
+astructuredinferencepipeline. Inputsentencesweretokenizedusingthesameconfigurationasduring
+trainingandpassedthroughthemodeltoobtainrawlogits. Theselogitswereoptionallycalibrated
+usingtemperaturescalingandthenconvertedtoclassprobabilitiesviathesoftmaxfunction. Dueto
+theobservedclassimbalanceinthetrainingdataacrossalllanguages,wheretheSUBJclassoccupies
+onlyaround37%ofinstancesonaverageandisconsistentlyunder-representedcomparedtoOBJ,we
+thusappliedareducedclassificationthresholdof0.45(insteadofthestandard0.5)forpredictingthe
+SUBJlabel. Finalpredictionsweremappedtotheircorrespondinglabels( or )andcompared
+OBJ SUBJ
+togold-standardlabelstocomputeaccuracyandmacro-F1,asspecifiedbythesharedtaskorganizers.
+4.2. LLM-BasedInferenceStrategies
+Inadditiontoourfine-tunedclassifiers,weimplementthreezero-shotpromptingstrategiesusingLLMs.
+Eachstrategyframessubjectivitydetectionasaninference-onlytaskandgeneratesnatural-language
+responsesfromoneormorepromptspersentence. Thethreemethodsdifferinreasoningstylebut
+operatedirectlyontheinputtextwithouttask-specifictraining,asseenintheoverviewinFigure1.
+4.2.1. AnnotationApproach
+In this inference strategy, each sentence is classified with a single API call to the OpenAI
+o3-mini
+model. [35] We supply the model with the full set of 14 decision rules [22], which define linguistic
+andrhetoricalcues,todifferentiatesubjectivefromobjectivelanguage. Uponreceivingthemodel’s
+natural-languageresponse,weextractboth,theverdictandthesupportingexplanation,intwostages:
+first,byparsingtheresponseasJSONandreadingthe and fields;and,ifJSON
+verdict explanation
+parsingfails,byperformingasimplekeywordmatchfor“subjective”or“objective”withintherawtext.
+In all cases, we archive both the generated explanation and the final label. The following example
+illustrateshoweachofourpromptingstrategiesprocessesthesameinputsentence.
+Figure1:Overviewofthethreepromptingstrategiesforsubjectivitydetection.Inthe(1)Annotationapproach,
+theLLMclassifiestheinputsentencebasedonexplicitguidelinesprovidedintheprompt.(2)DoubleDown
+rewritesthesentenceinbothsubjectiveandobjectivestylesandinfersthelabelbycomparingwhichversion
+betterpreservestheoriginalmeaning.(3)Perspectivegeneratesexplanationsforbothpossibleinterpretations
+andselectsthelabelbasedonthemoreconvincingreasoning.
+InputSentence: "BlancoestablishedhimselfearlierinhiscareerworkingforDr. Luke’sKasz
+MoneyProductions."
+Explanation:ThesentenceprovidesfactualinformationaboutBlanco’scareerandhisaffiliation
+withaproductioncompany. Itdoesnotincludeanyindicationsofpersonalopinion,sarcastic
+remarks,orevaluativelanguagebytheauthor. Instead,itmerelystatesahistoricalfact,which
+alignswiththecriteriaforanobjectivesentence. Label: OBJ
+4.2.2. DoubleDownApproach
+TheDoubleDownapproachreframesclassificationasatwo-waycomparisoninsteadofadirectlabel.
+Ratherthanaskingthemodeltojudgetheoriginalsentenceoutright,itfirstgeneratestworewrites,
+onethatleansintoasubjectivestyle(opinion,personalevaluationoremotionallanguage)andasecond
+thatadoptsamoreobjectivetone(factualcontent,neutralphrasing). Bothrewritescomefromseparate
+prompts. [36]Inthefinalstep,theoriginalsentenceplusbothrewritesaresubmitted
+gpt-4.1-mini
+toathirdprompt,whichdetermineswhichversionbestpreservestheoriginalmeaning,andonthat
+basisclassifiestheinputassubjectiveorobjective. Below,youcanseehowthesentenceisreformulated
+inbothitssubjectiveandobjectiveversions.
+Subjective rewrite: In my view, Blanco really made a name for himself early on thanks to
+hisworkwithDr. Luke’sKaszMoneyProductionscollaborationthat,tome,markedacrucial
+turningpointinhiscareer.
+Objectiverewrite: BlancoworkedearlierinhiscareeratDr. Luke’sKaszMoneyProductions.
+Sincetheobjectiverewritemorecloselyreflectstheoriginalsentenceandpresentsitasafactual
+careerstatementwithonlyminorevaluativeelements,themodelclassifiesitasOBJ.
+4.2.3. PerspectiveApproach
+ThePerspectiveapproachframestheclassificationtaskasastepwiseevaluationofcontrastinginter-
+pretations. Ratherthandirectlypredictingalabel,themodelispromptedtoanalyzetheinputfrom
+twodistinctangles,subjectiveandobjective,beforemakingadecision. Allpromptsinthisapproach
+arehandledby . [36]Theprocessisdividedintothreesteps. First,themodelreceives
+gpt-4.1-mini
+apromptaskingittoexplainwhythesentencemightbeconsideredsubjective,focusingonaspects
+suchasevaluativelanguageorpersonaljudgment. Inthesecondstep,thesamesentenceisanalyzed
+fromanobjectiveperspective,highlightingfeatureslikefactuality,neutrality,orverifiability. These
+twopromptsareissuedseparatelytoensurethattheanalysesareindependentlyreasoned. Inthethird
+step,theoutputsfromthepreviouspromptsareprovidedasinputtoafinalclassificationprompt. The
+modelisaskedtocomparebothanalysesanddeterminewhichinterpretationismoreconvincing. It
+thenoutputsaclassificationalongwithajustification. Thisapproachprioritizesanalyticalcomparison
+overgenerativerewritinglikeintheDoubleDownapproach,asseenbelow.
+Explanation: The statement contains elements that can be viewed both subjectively and
+objectively. Thesubjectiveanalysispointsoutthatthephrase"establishedhimself"isopento
+interpretation,aswhatqualifiesas"established"canvarybyindividualperception,makingita
+somewhatevaluativejudgment. Theobjectiveanalysishighlightsthatthestatementreferstoa
+verifiablefact: BlancoworkedforDr. Luke’sKaszMoneyProductionsearlierinhiscareer. This
+partcanbeindependentlyconfirmed. However,thekeyphrase"establishedhimself"goesbeyond
+merely stating a fact about employment; it implies a level of success, recognition, or impact,
+which is inherently subjective because these concepts differ across perspectives. Therefore,
+whilethestatementcontainsafactualcomponent,theprimaryassertioninvolvesasubjective
+judgment. Giventhis,thesubjectiveanalysisismoreconvincingbecausethecoreclaimrevolves
+aroundtheideaof"establishingoneself",whichisnotastrictlyobjectivemeasure. Label: SUBJ
+5. Experiments and Results
+Table 4 summarizes the official evaluation results of our submitted systems on the final test set, as
+providedbythesharedtaskorganizers. Wesubmittedonesystempersubtask,usingacombination
+of zero-shot prompting and fine-tuned transformer models. The approach and model were chosen
+individuallyforeachlanguage,basedonpreliminarydevelopmentsetresultsandpracticalobservations.
+IntheItalianmonolingualsubtask,oursystemreachedthehighestmacro-F scoreontheleaderboard
+1
+(0.8104) using the Annotation Approach with the o3-mini model. This suggests that prompt-based
+classificationcanworkwellwhentheinputdatacloselyfollowsthestructureoftherulesdescribed
+intheprompt. ForRomanian,weusedafine-tunedXLM-RoBERTamodelandachievedanF1score
+of 0.7917. This result placed us third overall and indicates that the model was able to generalize
+reasonablywell,eventhoughlabeledsubjectivitydatainRomanianwasnotpartofourfine-tuning. In
+themultilingualsetting,weagainusedafine-tunedXLM-RoBERTa,whichreached0.7186macro-F ,
+1
+clearlyoutperformingthebaseline. Themodelshowedstableresultsacrossseverallanguages,including
+GreekandPolish. ForGerman,wefine-tunedaGerman-BERT modelusingtranslatedtrainingdatafrom
+relatedlanguages.Thisapproachledtosolidperformance(F =0.7269)andconfirmsthataddingtraining
+1
+datafromsimilarlanguagescanbehelpfulwhenworkingwithlimitedresources,asalsoobservedby
+Solopovaet al.for germanlanguage. In English, we used theAnnotation Approach, which achieved
+0.7228andoutperformedthebaseline. Thisresultsupportstheideathatrule-basedpromptingcanbe
+effectiveinhigh-resourcesettingswheretheclassificationcuesarewellcapturedbytheguidelines.
+Performanceinthezero-shotsubtasksvaried. InUkrainian,oursystemscored0.6124,slightlybelowthe
+baseline. InGreek,itreached0.4750,showingamoderateimprovementoverthebaseline. ForPolish,the
+modelscored0.5665,whichwasslightlybelowthebaseline(0.5719). Theseresultssuggestthatzero-shot
+performance depends not only on the model itself, but also on the similarity between the training
+and test languages, and the phrasing patterns in the input data. Due to the shared task submission
+protocol, only one system could be submitted per language. This restriction limited our ability to
+systematicallycomparemultipleapproachesacrossalllanguages. Consequently,theselectedsystem
+foreachsubtaskreflectsapragmaticdecisionbasedondevelopmentperformanceandinformaltesting,
+ratherthanagloballyoptimalconfiguration. Thiswasespeciallyrelevantforzero-shotsettings,where
+generalizationisinfluencedbyacombinationoflinguisticsimilarity,domaincoverage,andhowwell
+taskframingalignswiththemodel’strainingdata. Amongtheprompt-basedmethods,theAnnotation
+strategyprovedmorerobustthanthemorecomplexcomparativepromptingvariants. XLM-RoBERTa
+consistently outperformed EuroBERT across all settings tested during development, particularly in
+multilingualandcross-lingualtasks.
+Table4
+Evaluationresultsforourapproachacrosssubtasks,comparedtothebaselinesandtop-rankedscores.
+RowsaresortedbyhowcloseourF scoreistothetopresult. BoldvaluesinOurF indicatescores
+1 1
+abovethebaseline.
+Subtask BaselineF OurF TopScoreF Approach
+1 1 1
+MonolingualItalian 0.6941 0.8104 0.8104 Annotation
+Zero-ShotRomanian 0.6461 0.7917 0.8126 XLM-RoBERTa
+MultilingualSubjectivity 0.6390 0.7186 0.7550 XLM-RoBERTa
+Zero-ShotUkrainian 0.6296 0.6124 0.6424 XLM-RoBERTa
+Zero-ShotGreek 0.4159 0.4750 0.5067 XLM-RoBERTa
+MonolingualEnglish 0.5370 0.7228 0.8052 Annotation
+MonolingualGerman 0.6960 0.7269 0.8520 German-BERT
+Zero-ShotPolish 0.5719 0.5665 0.6922 XLM-RoBERTa
+6. Conclusion and Future Work
+Wepresentedamultilingualsystemforsubjectivitydetectionusingtwomainapproaches: fine-tuned
+transformermodelsandzero-shotpromptingwithLLMs. OurresultsintheCheckThat! 2025shared
+taskshowthatbothdirectionscanbeeffective,dependingonlanguageandresourceavailability. For
+fine-tunedmodels,XLM-RoBERTadeliveredthemostconsistentperformanceandwasusedinseveral
+subtasks,includingmultilingualandzero-shotsettings. ForGerman,weobservedthatfine-tuninga
+German-BERTmodelwithtranslatedtrainingdataledtocompetitiveresults. Onthepromptingside,
+theAnnotationApproachwiththeo3-minimodelperformedwellinhigh-resourcelanguages,suchas
+ItalianandEnglish,whereclassificationruleswereclearlyreflectedinthedata. Duetothesubmission
+constraintofonlyonesystemperlanguage,wecouldnottestallcombinationsofmodelsandapproaches
+systematically. Ourchoiceswerebasedonlimiteddevelopmentsetresultsandinformalcomparisons.
+Thisaffectedourabilitytofullyexplorethestrengthsandweaknessesofeachapproachacrosslanguages,
+especiallyforzero-shotcases. Anotherimportantlimitationwasthelackofbroadercontextforeach
+sentence.Sincethetaskinvolvedclassifyingisolatedsentences,itwasoftendifficulttojudgesubjectivity
+accuratelywithoutcontext. Thismadethetaskespeciallychallengingwhensubjectivelanguagerelied
+onsurroundingsentences. Anotherissueistheimbalanceoflabeldistributionsacrosslanguages,thatis
+mostnotablyintheBulgariandevelopmentset,wheresubjectivesentencesdominate. Theseimbalances
+canleadmodelstointernalizeandamplifymisleadingassociations,potentiallyreinforcingbiasesand
+over-predicting subjectivity in certain languages or cultural contexts. For future work, it would be
+valuabletosystematicallycomparepromptingandfine-tunedapproachesacrosslanguagesandsubtasks
+undercontrolledconditions. Inparticular,weaimtobetterunderstandwhichtypesoftasksorlinguistic
+features favor instruction-based inference over supervised training. Additionally, exploring more
+flexiblecombinationsofpromptingandfine-tuning,e.g.,viamodelensemblingorfallbackstrategies
+suchasfew-shotpromptingorconfidence-basedmodelswitching,couldhelpimproveperformance,
+especiallyinlow-resourceorzero-shotsettings.
+Acknowledgments
+ThisresearchisfundedbytheFederalMinistryofResearch,TechnologyandSpace(BMFTR,reference:
+03RU2U151C)inthescopeoftheresearchprojectnews-polygraph.
+References
+[1] F.Alam,J.M.Struß,T.Chakraborty,S.Dietze,S.Hafid,K.Korre,A.Muti,P.Nakov,F.Ruggeri,
+S.Schellhammer,V.Setty,M.Sundriyal,K.Todorov,V.V.,Theclef-2025checkthat!lab:Subjectivity,
+fact-checking,claimnormalization,andretrieval, in: C.Hauff,C.Macdonald,D.Jannach,G.Kazai,
+F. M. Nardini, F. Pinelli, F. Silvestri, N. Tonellotto (Eds.), Advances in Information Retrieval,
+SpringerNatureSwitzerland,Cham,2025,pp.467–478.
+[2] H.Yu,V.Hatzivassiloglou, Towardsansweringopinionquestions: Separatingfactsfromopinions
+and identifying the polarity of opinion sentences, in: Proceedings of the 2003 conference on
+Empiricalmethodsinnaturallanguageprocessing,2003,pp.129–136.
+[3] J. Ruotsalainen, J. Hujanen, M. Villi, A future of journalism beyond the objectivity–dialogue
+divide? hybridityinthenewsofentrepreneurialjournalists, Journalism22(2021)2240–2258.
+[4] F.-J.Rodrigo-Ginés,J.Carrillo-deAlbornoz,L.Plaza, Asystematicreviewonmediabiasdetection:
+Whatismediabias,howitisexpressed,andhowtodetectit, ExpertSystemswithApplications
+237(2024)121641.
+[5] I.Chaturvedi,E.Cambria,R.E.Welsch,F.Herrera, Distinguishingbetweenfactsandopinionsfor
+sentimentanalysis: Surveyandchallenges, InformationFusion44(2018)65–77.
+[6] P.Kasnesis,L.Toumanidis,C.Z.Patrikakis,Combatingfakenewswithtransformers:acomparative
+analysisofstancedetectionandsubjectivityanalysis, Information12(2021)409.
+[7] Z.Guo,M.Schlichtkrull,A.Vlachos, Asurveyonautomatedfact-checking, Transactionsofthe
+AssociationforComputationalLinguistics10(2022)178–206.
+[8] P. Sahitaj, I. Maab, J. Yamagishi, J. Kolanowski, S. Möller, V. Schmitt, Towards automated fact-
+checking of real-world claims: Exploring task formulation and assessment with llms, arXiv
+preprintarXiv:2502.08909(2025).
+[9] T.Scheffler,V.Solopova,M.Popa-Wyatt, Thetelegramchroniclesofonlineharm, JournalofOpen
+HumanitiesData7(2021).
+[10] P. Sahitaj, R. Ruiz-Dolz, A. Sahitaj, A. Nizamoglu, V. Schmitt, S. Mohtaj, S. Möller, From con-
+structiontoapplication: Advancingargumentminingwiththelarge-scalekialoprimedataset, in:
+ComputationalModelsofArgument,IOSPress,2024,pp.229–240.
+[11] E.Riloff,J.Wiebe, Learningextractionpatternsforsubjectiveexpressions, in: Proceedingsofthe
+2003conferenceonEmpiricalmethodsinnaturallanguageprocessing,2003,pp.105–112.
+[12] G.Palshikar,M.Apte,D.Pandita,V.Singh, Learningtoidentifysubjectivesentences, in: Proceed-
+ingsofthe13thInternationalConferenceonNaturalLanguageProcessing,2016,pp.239–248.
+[13] B.Liu,etal., Sentimentanalysisandsubjectivity., Handbookofnaturallanguageprocessing2
+(2010)627–666.
+[14] A.Sahitaj,P.Sahitaj,S.Mohtaj,S.Möller,V.Schmitt, Towardsacomputationalframeworkfor
+distinguishingcriticalandconspiratorialtextsbyelaboratingonthecontextandargumentation
+withllms, WorkingNotesofCLEF(2024).
+[15] F. M. S. Eid, M. S. A. Mutahar, Bridging rhetorical differences: Arabic textual metaphors in
+academicwritingandtranslation, EuropeanJournalofArts,HumanitiesandSocialSciences2
+(2025)183–201.
+[16] J.Kocoń,M.Gruza,J.Bielaniewicz,D.Grimling,K.Kanclerz,P.Miłkowski,P.Kazienko, Learning
+personalhumanbiasesandrepresentationsforsubjectivetasksinnaturallanguageprocessing, in:
+2021IEEEinternationalconferenceondatamining(ICDM),IEEE,2021,pp.1168–1173.
+[17] F.Ruggeri,A.Muti,K.Korre,J.Struß,M.Siegel,M.Wiegand,F.Alam,R.Biswas,W.Zaghouani,
+M.Nawrocka,etal., Overviewoftheclef-2025checkthat! labtask1onsubjectivityinnewsarticle,
+WorkingNotesofCLEF(2025).
+[18] J.Wiebe,T.Wilson,R.Bruce,M.Bell,M.Martin, Learningsubjectivelanguage, Computational
+linguistics30(2004)277–308.
+[19] E. Riloff, J. Wiebe, W. Phillips, Exploiting subjectivity classification to improve information
+extraction, in: AAAI,2005,pp.1106–1111.
+[20] A. Esuli, F. Sebastiani, et al., Sentiwordnet: A publicly available lexical resource for opinion
+mining., in: LREC,volume6,2006,pp.417–422.
+[21] C.Banea,R.Mihalcea,J.Wiebe, Abootstrappingmethodforbuildingsubjectivitylexiconsfor
+languageswithscarceresources., in: LREC,volume8,2008,pp.2–764.
+[22] F. Antici, A. Galassi, F. Ruggeri, K. Korre, A. Muti, A. Bardi, A. Fedotova, A. Barrón-Cedeño,
+A corpus for sentence-level subjectivity detection on english news articles, arXiv preprint
+arXiv:2305.18034(2023).
+[23] E.Savinova,F.M.DelPrado,Analyzingsubjectivityusingatransformer-basedregressortrainedon
+naïvespeakers’judgements, in: Proceedingsofthe13thWorkshoponComputationalApproaches
+toSubjectivity,Sentiment,&SocialMediaAnalysis,2023,pp.305–314.
+[24] M.Shokri,V.Sharma,E.Filatova,S.Jain,S.Levitan, Subjectivitydetectioninenglishnewsusing
+largelanguagemodels, in: Proceedingsofthe14thWorkshoponComputationalApproachesto
+Subjectivity,Sentiment,&SocialMediaAnalysis,2024,pp.215–226.
+[25] R.Suwaileh,M.Hasanain,F.Hubail,W.Zaghouani,F.Alam, Thatiar: subjectivitydetectionin
+arabicnewssentences, arXivpreprintarXiv:2406.05559(2024).
+[26] A.Conneau,K.Khandelwal,N.Goyal,V.Chaudhary,G.Wenzek,F.Guzmán,E.Grave,M.Ott,
+L.Zettlemoyer,V.Stoyanov, Unsupervisedcross-lingualrepresentationlearningatscale, CoRR
+abs/1911.02116(2019).URL:http://arxiv.org/abs/1911.02116. .
+arXiv:1911.02116
+[27] B.Chan,T.Möller,M.Pietsch,T.Soni,Bertbasegermancased,2020.URL:https://huggingface.co/
+google-bert/bert-base-german-cased.
+[28] L.Campbell,Historicallinguistics,EdinburghUniversityPress,2013.
+[29] M. Serva, F. Petroni, Indo-european languages tree by levenshtein distance, EPL (Euro-
+physicsLetters)81(2008)68005.URL:http://dx.doi.org/10.1209/0295-5075/81/68005.doi:
+10.1209/
+.
+0295-5075/81/68005
+[30] N. Boizard, H. Gisserot-Boukhlef, D. M. Alves, A. Martins, A. Hammal, C. Corro, C. Hudelot,
+E.Malherbe,E.Malaboeuf,F.Jourdan,G.Hautreux,J.Alves,K.El-Haddad,M.Faysse,M.Peyrard,
+N.M.Guerreiro, P.Fernandes, R.Rei, P.Colombo, Eurobert: Scalingmultilingualencodersfor
+europeanlanguages,2025.URL:https://arxiv.org/abs/2503.05500. .
+arXiv:2503.05500
+[31] A.Conneau,K.Khandelwal,N.Goyal,V.Chaudhary,G.Wenzek,F.Guzmán,E.Grave,M.Ott,
+L.Zettlemoyer,V.Stoyanov, Unsupervisedcross-lingualrepresentationlearningatscale, CoRR
+abs/1911.02116(2019).URL:http://arxiv.org/abs/1911.02116. .
+arXiv:1911.02116
+[32] J.M.Struß,F.Ruggeri,A.Barrón-Cedeño,F.Alam,D.Dimitrov,A.Galassi,G.Pachov,I.Koychev,
+P.Nakov,M.Siegel,M.Wiegand,M.Hasanain,R.Suwaileh,W.Zaghouani, Overviewoftheclef-
+2024checkthat! labtask2onsubjectivityinnewsarticles, in: G.Faggioli,N.Ferro,P.Galuščáková,
+A.G.S.deHerrera(Eds.),CLEF2024WorkingNotes: WorkingNotesoftheConferenceandLabs
+oftheEvaluationForum(CLEF2024),NotebookfortheCheckThat! LabatCLEF2024,2024,pp.
+287–298.URL:https://ceur-ws.org/Vol-3740/paper-25.pdf.
+[33] A. S. Mozafari, H. S. Gomes, W. Leão, S. Janny, C. Gagné, Attended temperature scaling: A
+practicalapproachforcalibratingdeepneuralnetworks, 2019.URL:https://arxiv.org/abs/1810.
+11586. .
+arXiv:1810.11586
+[34] T.-Y.Lin,P.Goyal,R.Girshick,K.He,P.Dollár,Focallossfordenseobjectdetection,2018.URL:
+https://arxiv.org/abs/1708.02002. .
+arXiv:1708.02002
+[35] OpenAI,Openaio3-mini,2025.URL:https://openai.com/index/openai-o3-mini/,accessed: 2025-
+05-28.
+[36] OpenAI,Gpt-4.1,2024.URL:https://openai.com/index/gpt-4-1/,accessed: 2025-05-28.
+[37] V.Solopova,V.Herman,C.Benzmüller,T.Landgraf, Checknewsinoneclick: Nlp-empowered
+pro-kremlinpropagandadetection, arXivpreprintarXiv:2401.15717(2024).

@@ -1,0 +1,471 @@
+In-domain SSL pre-training and streaming ASR:
+Application to Air Traffic Control
+Communications
+Jarod Duret1, Salima Mdhaffar1, Gaëlle Laperrière1, Ryan Whetten1,
+Audrey Galametz2, Catherine Kobus2, Marion-Cécile Martin2, Jo Oleiwan2,
+and Yannick Estève1
+1 Avignon Université - LIA, France
+2 AIRBUS
+Abstract. In this study, we investigate the benefits of domain-specific
+self-supervised pre-training for both offline and streaming ASR in Air
+TrafficControl(ATC)environments.WetrainBEST-RQmodelson4.5k
+hours of unlabeled ATC data, then fine-tune on a smaller supervised
+ATC set. To enable real-time processing, we propose using chunked at-
+tention and dynamic convolutions, ensuring low-latency inference. We
+compare these in-domain SSL models against state-of-the-art, general-
+purpose speech encoders such as w2v-BERT 2.0 and HuBERT. Results
+show that domain-adapted pre-training substantially improves perfor-
+mance on standard ATC benchmarks, significantly reducing word error
+rates when compared to models trained on broad speech corpora. Fur-
+thermore,theproposedstreamingapproachfurtherimprovesworderror
+rateundertighterlatencyconstraints,makingitparticularlysuitablefor
+safety-criticalaviationapplications.Thesefindingshighlightthatspecial-
+izing SSL representations for ATC data is a practical path toward more
+accurate and efficient ASR systems in real-world operational settings.
+Keywords: speech recognition, self-supervised learning, streaming, air
+traffic control
+1 First Introduction
+Automaticspeechrecognition(ASR)hasbecomeanessentialtechnologyinvar-
+ious fields, including aviation, where precise and real-time transcription of spo-
+ken communication could become crucial [9]. Air Traffic Control (ATC) com-
+munications represent a particularly challenging domain for ASR due to their
+constrained but highly specialized vocabulary, strict grammar structures, and
+wide range of speaker accents. These factors, combined with the presence of
+background noise, make ATC a specific and demanding application for speech
+recognitionsystems,especiallywhenreal-timeprocessingistargeted.WhileSSL-
+pre-trainedmodelssuchaswav2vec2.0[2]andHuBERT[11]havedemonstrated
+strong performance across various ASR benchmarks, their adaptation to highly
+specialized domains like ATC presents unique challenges that require further
+5202
+peS
+51
+]LC.sc[
+1v10121.9052:viXra
+2 J. Duret et al.
+investigation [20]. A key consideration for existing SSL models is that they are
+often pre-trained on diverse but predominantly general-purpose speech data,
+which may not fully align with the linguistic and acoustic characteristics of spe-
+cialized domains like ATC.
+In this work, we explore the impact of in-domain SSL pre-training for of-
+fline and streaming ASR dedicated to ATC communications. To evaluate our
+approach, we conduct experiments on both proprietary and publicly available
+ATC datasets. This paper is organized as follows: first, we discuss related work
+and the characteristics of ATC communications and datasets. Next, we describe
+the pre-training process of our SSL models and compare their performance for
+offlineASR.Wethenintroduceamethodforpre-trainingamodelforstreaming
+ASR and present experimental results.
+2 Related work
+The application of self-supervised learning (SSL) models to ATC speech pro-
+cessing has gained significant attention in recent years. In [20], the authors
+investigated the suitability of pre-trained SSL wav2vec 2.0 models, for tran-
+scribing ATC speech and detecting key information, demonstrating that these
+models can benefit from domain adaptation techniques to improve recognition
+performance in this specialized setting. In addition to improving accuracy, re-
+centresearchhasalsofocusedonoptimizingSSLmodelsforreal-timestreaming
+applications[12],whichiscrucialforATCscenarioswherelatencyshouldbemin-
+imizedforgroundedscenarios.AnotherkeydevelopmentinSSL-basedstreaming
+ASR is the BEST-RQ model [5], which introduces quantization techniques for
+improvedrepresentationlearning.Originallydesignedtoenhanceefficientlyself-
+supervisedlearningwithdiscretelatentrepresentations,BEST-RQhasalsobeen
+explored for its potential in streaming speech recognition [5].
+3 ATC datasets used in this study
+The Airbus-ATC corpus is the dataset released for the Airbus ATC Speech
+Recognition 2018 Challenge [14]. A software-defined radio receiver connected to
+an aeronautical antenna and set to capture local airport ATC communications
+has been used to record the audio at 16kHz [7]. Since the collected audios origi-
+nate from French airports, the French accent is predominant. The Airbus-ATC
+corpus contains approximately 50 hours of recorded communications gathered
+from multiple French airports, split into 3 datasets: about 40h for supervised
+training, 5h for validation, and 5h for evaluation.
+The ATCO2 corpus [8] contains also real-world ATC voice recordings. It
+brings together thousands of unlabelled hours of communications between air-
+traffic controllers and pilots, drawn from publicly available sources such as
+LiveATC, and a small part (1h for the free version, 4h for the purchased ver-
+sion) of manually transcribed speech recording. These recordings vary widely in
+audio quality, airport environments, and speaker accents, capturing the realities
+In-domain SSL pre-training and streaming ASR 3
+ofhigh-stakesaviationdialogue.WhiletheAirbus-ATCcorpusismainlyFrench
+accented,theATCO2corpuscontainsseveralaccents,mainlyCzech,SwissGer-
+man, and also Swiss French and Australian English.
+In the context of ATC, messages can be categorized into three main types.
+First, communications from the air traffic controller serve as authoritative in-
+structions or clearances directed to pilots. Second, pilot transmissions function
+as responses or requests for clarification, position reports, or emergency decla-
+rations, facilitating coordination with air traffic controllers and ensuring adher-
+encetogiveninstructions.Thesetwokindsofmessages,fromcontrolagentsand
+pilots, are present in both the Airbus-ATC and ATCO2 corpora. Finally, the
+Automatic Terminal Information Service (ATIS) provides continuous updates
+on meteorological conditions, runway availability, and operational notices rele-
+vant to a specific airport. ATIS is characterised by utterances of about 30s in
+average, longer than regular exchanges between pilot and the ATC, which have
+an average duration of 4.5s. ATIS messages are present in Airbus-ATC, but not
+in the ATCO2 corpus.
+Inourstudy,weusedaround4,500hoursofATCO2unlabelledaudiorecord-
+ings in English for SSL pre-training, the official distribution of the Airbus-ATC
+2018 challenge for ASR supervised fine-tuning (40h) and evaluation, the freely
+available ATCO2-test-1h3 and the licensed ATCO2-test-4h for evaluation only.
+4 In-domain and out-domain SSL models
+4.1 Self-supervised learning of in-domain models
+To pre-train in-domain models via self-supervision, we selected the BEST-RQ
+framework.Thisdecisionwasinfluencedbyitsopen-sourceavailabilitywithinthe
+Speechbrainproject[16]anditsefficiency—2.5timesfasterthanwav2vec2.0[18].
+Inaddition,itdemonstratesperformancecomparabletothewidelyusedwav2vec
+2.0 approach [5,18]. BEST-RQ is a self-supervised learning approach that uses
+a random-projection quantizer to turn speech signals into discrete labels, then
+trains a speech encoder to predict those labels for masked parts of the input.
+Because the quantizer is fixed and untrained, it places fewer constraints on the
+encoderarchitecture—allowingbothstreamingandnon-streamingmodels—and
+avoids the added complexity of jointly learning a representation [5].
+For pre-training, we rely on the SpeechBrain recipe4 applied to 4,500 hours
+of unlabelled ATCO2 English audio. We trained a Large model of 300M pa-
+rameters with 848 dimensions for hidden representations and 24 encoder layers.
+This model is pre-trained for 300K iterations by employing sixteen H100 GPUs.
+We select the batch size to optimize GPU memory usage, resulting in 2 hours
+of audio per batch. Training this Large BEST-RQ model for 300K iterations
+requires approximately two days. The masking strategy uses segments of four
+3 https://huggingface.co/datasets/Jzuluaga/atco2_corpus_1h
+4 https://github.com/speechbrain/speechbrain/tree/develop/recipes/
+LibriSpeech/self-supervised-learning/BEST-RQ
+4 J. Duret et al.
+frameswithaprobabilityof0.15,meaningthat15%ofsegmentsaremasked(i.e
+60% of speech).
+This model is called BRQ-ATCO2 .
+Large
+4.2 Out-domain existing SSL models
+In order to compare our in-domain SSL models to existing out-domain models
+on the ASR task applied to ATC data, we made some experiments (described
+in section 5) by using several of the most popular ones: wav2vec2.0 models
+(XLSR-128 [1] and LS960 [2]), MMS-1B [15], wavLM [4], HuBERT [11], and
+w2v-BERT 2.0 [6,3]. In this paper, we focus on the two speech encoders that
+deliveredthebestresultsonourpreliminaryexperimentsastheothermodelshad
+a significantly higher word error rate (WER). The two models we kept for this
+paper are HuBERT [11] and w2v-BERT 2.0 [6,3]. The HuBERT Large model
+used in this study has been pre-trained on 60,000 hours of unlabelled English
+speech from the Libri-Light dataset while w2v-BERT 2.0 has been pre-trained
+on 4.5 million hours of speech in 143 languages from diverse public datasets.
+Table 1: ASR results of the two best out-domain speech encoders compared to
+our in-domain speech encoder on the Airbus-ATC dev and test corpora, and on
+the two ATCO2 test corpora.
+SSL model Pre-train #Par. LM A-dev A-test AT2-1h AT2-4h
+w2v-BERT 2.0 4.5M 600M 4-gram 6.74 6.21 23.12 29.30
+HuBERT 60k 300M 4-gram 7.70 7.25 33.33 39.26
+BRQ-ATCO2 4.5k 300M 4-gram 7.90 7.40 19.70 28.70
+Large
+w2v-BERT 2.0 4.5M 600M – 7.36 7.01 25.98 31.74
+HuBERT 60k 300M – 8.93 8.50 37.55 43.39
+BRQ-ATCO2 4.5k 300M – 10.67 10.01 24.27 30.73
+Large
+5 Offline ASR on the ATC data
+To compare the in-domain BRQ-ATCO2 model described in section 4.1
+Large
+withpopularout-domainSSLmodels,wefine-tunethesemodelsforASRapplied
+to ATC data. As mentioned in section 3, we use the 40 hours of the labelled
+Airbus-ATC training data for these fine-tunings, in addition to the 5 hours for
+development purposes.
+5.1 Offline ASR fine-tuning setup
+For the fine-tuning phase, we adopt as a downstream probe a straightforward
+architectureconsistingofa3-layersDNNfollowedbyalinearlayerandasoftmax
+In-domain SSL pre-training and streaming ASR 5
+activationfunction.ThetrainingisperformedusingtheConnectionistTemporal
+Classification (CTC) loss. The probe’s hidden layers have a dimension of 1024,
+with a dropout rate of 0.15.
+We use different learning rates and optimizers for the pre-trained encoder
+and the probe. We fine-tune the BEST-RQ encoder using a learning rate of
+10−4 while the probe is trained with a higher learning rate of 8×10−4. w2v-
+BERT is fine-tuned using a learning rate of 1×10−5 with a probe learning rate
+of 1.5. HuBERT is fine-tuned using a learning rate of 1 × 10−4with a probe
+learning rate of 1.0. The batch size is adjusted according to the encoder size
+to fit within an A100 80GB GPU, resulting in approximately 450 seconds of
+audio per batch for Large BEST-RQ and HuBERT models and 40 seconds for
+w2v-BERT. We fine-tune the entire model for 30 epochs with BEST-RQ and 80
+epochswithHuBERTandw2v-BERTonAirbus-ATCtrainingset,selectingthe
+best checkpoint based on the WER obtained on Airbus-ATC development set.
+A 4-gram language model (LM) was trained on the Airbus-ATC training data,
+ATCOSIM [10] and UWB_ATCC [17] datasets. We report on results with and
+without this 4-gram LM. When the LM is used we use beam search decoding
+with a beam size of 1000. When no LM is applied, the model defaults to greedy
+decoding.
+5.2 Experimental results
+Table 1 presents the word error rate (WER) obtained on the Airbus-ATC and
+ATCO2testsetsbyusingthetwoexistingout-domainSSLmodelsweselectedin
+regardswiththeirperformanceandourin-domainSSLmodel,withandwithout
+language model integration. w2v-BERT 2.0, with 600M parameters and signif-
+icant pre-training on 4.5 millions hours of multilingual speech, demonstrates
+superior performance on Airbus datasets. It achieves a WER of 6.21% on the
+Airbus-ATC test set and 23.12% on the ATCO2-1h subset when using a 4-gram
+language model. The HuBERT model, with its smaller architecture of 300M
+parameters pre-trained on 60k hours of English speech, shows competitive but
+slightly inferior performance, achieving 7.25% and 33.33% WER on the same
+subsetsrespectively.Interestingly,BRQ-ATCO2 ,despiteitsarchitectureof
+Large
+300M parameters and limited pre-training on 4.5k hours of ATCO2 unlabelled
+data, achieves the best performance on the ATCO2-1h and ATCO2-4h subsets
+with 19.7% and 8.7% WER, significantly outperforming both w2v-BERT 2.0
+and HuBERT. While both Airbus-ATC and ATCO2 datasets contain air traf-
+fic control communications, they present distinct acoustic characteristics. The
+ATCO2 corpus was collected through a network of very-high frequency (VHF)
+radioreceiversoperatedbyvolunteers,resultinginspecificacousticconditionsin-
+fluenced by factors such as equipment quality (various antenna types and SDR
+receivers), signal reception, and environmental variables. Additionally,as men-
+tioned in section 3, Airbus-ATC and ATCO2 do not contain the same accents.
+BRQ-ATCO2 , being pre-trained specifically on this type of data, demon-
+Large
+strates particularly strong performance on the ATCO2 corpus, highlighting the
+6 J. Duret et al.
+importanceofdomain-specificpre-trainingforhandlingspecializedacousticcon-
+ditions.
+We observe that the integration of a language model consistently improves
+performances across all models. This improvement is even more pronounced
+for BRQ-ATCO2 , particularly on the ATCO2-1h corpus, where the WER
+Large
+decreases by 4.57 points (from 24.27% to 19.70%). These results suggest that
+whileextensivepre-trainingcanbebeneficialforrobustness,asdemonstratedby
+w2v-BERT2.0performanceonAirbusdata,ourin-domainpre-trainingapproach
+with BEST-RQ is effective for specific ATC contexts, despite using significantly
+fewer hours.
+6 Streaming ASR for ATC
+6.1 Streaming self-supervised learning
+To implement a streamable version of BEST-RQ, we replace classical attention
+mechanisms in the Conformer blocks by chunked attention [19]. This approach
+divides the input sequence into chunks that group a given amount of frames.
+Within each chunk, frames can attend to all other frames in the same chunk.
+Additionally,chunkscanattendtoalimitednumberofpreviouschunks.Wealso
+integrate Dynamic Chunk Convolutions (DCConv) [13] instead of conventional
+convolutionlayersintheConformerblocksandreusethesamechunkboundaries
+we used for chunked attention. Unlike conventional convolutions, which create a
+mismatchbetweentrainingandinferenceduetoaccesstofuturecontextbeyond
+chunk boundaries, DCConv restricts the convolution operation to within-chunk
+frames.
+With the purpose of developing a model that can flexibly adapt to differ-
+ent streaming requirements at inference time, we implement a mixed training
+strategy: 40% of batches are trained with full context, without any chunking
+constraints, and 60% of batches use dynamic chunking. Chunk size is randomly
+sampled between 8 and 32 frames, and 75% of chunks have restricted left con-
+text (2-32 chunks), while 25% maintain full left context. This mixed training
+approach results in a model that can operate across different latency require-
+ments at inference time, from low-latency streaming to full-context processing.
+WetraintwoBEST-RQmodelswithourstreamingapproach:aLargeversion
+with the same size as the one trained in classical offline mode, called Stream-
+ATCO2 ,andaBaseonewith92Mparameters,calledStream-ATCO2 .
+Large Base
+To move from Large to Base, we decrease the dimension of hidden representa-
+tions from 848 to 576 and reduce the number of encoder layers from 24 to 12.
+Bothmodelsarepre-trainedwith300kiterations.TheBasemodelistrainedon
+four H100 GPUs with 1.6 hours of audio per batch while the Large keeps the
+same settings as for its offline version.
+6.2 Streaming ASR fine-tuning setup
+For the fine-tuning phase in streaming mode, we reuse the probe architecture
+described in section 5. We modify the supervised learning strategy by applying
+In-domain SSL pre-training and streaming ASR 7
+30
+25
+20
+15
+10
+320 480 640 960 1280
+)%(
+REW
+Left Chunk = 1* Left Chunk = 4 Left Chunk = 16 Left Chunk = full
+30 30 30
+25 25 25
+BESTRQ-Streaming-L
+20 20 20 BESTRQ-Offline-L
+BESTRQ-Streaming-B
+15 15 15
+10 10 10
+320 480 640 960 1280 320 480 640 960 1280 320 480 640 960 1280
+50
+45
+40
+35
+30
+25
+320 480 640 960 1280
+Latency (ms)
+)%(
+REW
+50 50 50
+45 45 45
+40 40 40
+35 35 35
+30 30 30
+25 25 25
+320 480 640 960 1280 320 480 640 960 1280 320 480 640 960 1280
+Latency (ms) Latency (ms) Latency (ms)
+Fig.1: Performances of BEST-RQ encoders fine-tuned on the streaming ASR
+task. (top) Results on the Airbus-ATC test data. (bottom) Results on the
+ATC02-1h test data. Different left contexts and (right) chunk sizes are inves-
+tigated.
+dynamicchunkingto100%ofthebatches,ratherthanthemixedapproachused
+during the SSL pre-training.
+6.3 Experimental results on streaming ASR
+The streaming capabilities of our BEST-RQ streaming models on both Airbus-
+ATC and ATCO2 test sets are shown in Figure 1. We compare three variants
+of SSL models: Stream-ATCO2 , BRQ-ATCO2 (pre-trained without
+Large Large
+streaming strategy), and Stream-ATCO2 models. Figure 1 presents the
+Base
+WER results across different left context sizes and chunk sizes, which corre-
+spond to controlled model’s latency. No language model was integrated. On the
+Airbus-ATC test set, Stream-ATCO2 achieves the best performance across
+Large
+all configurations, ranging from 10.6% to 20.55% depending on streaming set-
+tings. With full left context, it reaches a WER of 10.6% at a 1280ms latency,
+showing minimal degradation compared to the offline model (10.6%).With ag-
+gressive streaming constraints (left chunk = 1), which has not been seen during
+training, the model achieves 20.55% WER at 320ms of latency, demonstrating
+the robustness of the model in low-latency scenarios. The impact of streaming
+adaptation is evident on the ATCO2 dataset, where the streaming fine-tuning
+shows substantial improvements. The Stream-ATCO2 model outperforms
+Large
+its offline counterpart by a fair margin, achieving 25.07% WER versus 27.6%
+WER at 1280ms of latency with full left context. The performance gap between
+the two models is even bigger at lower latencies. For both datasets, larger left
+context sizes improve performance, but improvements become minimal beyond
+8 J. Duret et al.
+16 chunks. Finally, the Stream-ATCO2 model shows competitive perfor-
+Base
+mance, particularly on the ATCO2 dataset when compared to the offline BRQ-
+ATCO2 modelfine-tunedforstreamingASR.Theseresulthighlightthevi-
+Large
+ability of the Base architecture for applications where computational resources
+are limited, and show that our streaming SSL and fine-tuning strategies effec-
+tivelyadapttheBEST-RQmodelsforreal-timeASRapplicationsforATCdata,
+particularly for strict latency constraints.
+6.4 SSL streaming models applied to offline ASR
+Wealsotestedtheperformanceofourmodelspre-trainedthroughourstreaming
+SSL approach but used for ASR in offline mode, without latency constraints.
+In this case, we fine-tuned the models following the offline mode described in
+section 5.1.
+Despiterestrictingthecontextinpre-training,wecanobservethattheLarge
+model pre-trained in streaming mode outperforms in WER the offline BRQ-
+ATCO2 model pre-trained in a conventional way in all the test datasets
+Large
+(Table 2), even outperforming the HuBERT model (see Table 1).
+Table 2: WER of the different BEST-RQ models and the Airbus-ATC and
+ATCO2 test datasets for offline ASR with the a 4-gram language model. Pre-
+training in a streaming fashion by restricting context, proved to be helpful even
+in an offline (non-streaming) ASR setting.
+SSL model Airbus ATC02-1h ATC02-4h
+BRQ-ATCO2 7.40 19.70 28.70
+Large
+Stream-ATCO2 7.18 19.30 26.59
+Large
+Stream-ATCO2 8.09 24.58 29.47
+Base
+TofurtheranalyzetheperformanceofthestreamingSSLmodelontheoffline
+ASRtask,wecomputedtheWERbasedonthetypeofmessages(seesection3).
+Table3presentstheWERforcontroller,pilot,andATISmessagesintheAirbus-
+ATC test corpus. An improvement is observed for each type of message, with
+the smallest occurring in ATIS messages (-1.37% relative)and the largest inthe
+noisiest category, pilot messages (-3.46% relative). These results suggest that
+the mixed SSL training approach using both full context samples and dynamic
+chunking is particularly useful to process noisy recordings.
+7 Discussion
+In this work, we investigated how in-domain SSL pre-training impacts both of-
+fline and streaming ASR for Air Traffic Control (ATC) communications. We
+found that while large-scale, general-purpose models (e.g., w2v-BERT 2.0 with
+In-domain SSL pre-training and streaming ASR 9
+Table 3: WER according to speaker role (C:controller, P:pilot, A:ATIS) on the
+Airbus-ATC test corpus for offline ASR with a 4-gram language model.
+SSL model C P A
+BRQ-ATCO2 4.84 10.41 5.84
+Large
+Stream-ATCO2 4.73 10.05 5.76
+Large
+4.5M hours) excel at broad tasks, our BEST-RQ model—which uses only 4.5k
+hours of domain-specific data—outperforms them on the ATCO2 corpus. This
+shows that targeted in-domain pre-training can be more effective than large-
+scale general-purpose training for the unique acoustic conditions of VHF radio
+communications.Wealsodemonstratedthatourstreamingstrategy—combining
+chunked attention, dynamic convolutions, and a mixed training approach using
+both full context samples and dynamic chunking—is highly effective for real-
+time ATC speech recognition. Notably, this approach also proves beneficial for
+offline ASR. Our BEST-RQ Large model pre-trained in streaming mode retains
+strong performance across different latency settings, with only minimal degra-
+dation compared to its offline counterpart. Even under strict latency limits, the
+model remains practical. This model also achieves better offline ASR perfor-
+mance than its counterpart pretrained using a conventional offline approach.
+Overall, these results highlight the value of specialized SSL pre-training com-
+bined with a streaming approach for focused speech recognition tasks. Future
+work could involve integrating these models into operational ATC systems and
+examining their robustness to the diverse accents and noise conditions common
+in ATC communications.
+10 J. Duret et al.
+Acknowledgments. ThisworkusedHPCresourcesfromGENCI-IDRIS:grantsAD011012551R3,
+AD011015051R1, AD011012108R3, AD011014814R1, and AD011015509.
+References
+1. Babu, A., Wang, C., Tjandra, A., Lakhotia, K., Xu, Q., Goyal, N., Singh, K.,
+VonPlaten,P.,Saraf,Y.,Pino,J.,etal.:Xls-r:Self-supervisedcross-lingualspeech
+representation learning at scale. arXiv preprint arXiv:2111.09296 (2021)
+2. Baevski, A., Zhou, Y., Mohamed, A., Auli, M.: wav2vec 2.0: A framework for
+self-supervised learning of speech representations. Advances in neural information
+processing systems 33, 12449–12460 (2020)
+3. Barrault, L., Chung, Y.A., Meglioli, M.C., Dale, D., Dong, N., Duppenthaler, M.,
+Duquenne, P.A., Ellis, B., Elsahar, H., Haaheim, J., et al.: Seamless: Multilin-
+gualexpressiveandstreamingspeechtranslation.arXivpreprintarXiv:2312.05187
+(2023)
+4. Chen,S.,Wang,C.,Chen,Z.,Wu,Y.,Liu,S.,Chen,Z.,Li,J.,Kanda,N.,Yoshioka,
+T., Xiao, X., et al.: Wavlm: Large-scale self-supervised pre-training for full stack
+speech processing. IEEE Journal of Selected Topics in Signal Processing 16(6),
+1505–1518 (2022)
+5. Chiu, C.C., Qin, J., Zhang, Y., Yu, J., Wu, Y.: Self-supervised learning with
+random-projection quantizer for speech recognition. In: International Conference
+on Machine Learning. pp. 3915–3924. PMLR (2022)
+6. Chung, Y.A., Zhang, Y., Han, W., Chiu, C.C., Qin, J., Pang, R., Wu, Y.: W2v-
+BERT: Combining contrastive learning and masked language modeling for self-
+supervisedspeechpre-training.In:2021IEEEAutomaticSpeechRecognitionand
+Understanding Workshop (ASRU). pp. 244–250. IEEE (2021)
+7. Delpech, E., Laignelet, M., Pimm, C., Raynal, C., Trzos, M., Arnold, A., Pronto,
+D.: A real-life, French-accented corpus of air traffic control communications. In:
+ProceedingsoftheEleventhInternationalConferenceonLanguageResourcesand
+Evaluation (LREC 2018). European Language Resources Association (ELRA),
+Miyazaki, Japan (May 2018), https://aclanthology.org/L18-1453/
+8. Gomez,J.P.Z.,Vesely`,K.,Szöke,I.,Blatt,A.,Motlicek,P.,Kocour,M.,Choukri,
+K., Nigmatulina, I., Cevenini, C., Tart, A., et al.: ATCO2 corpus: A large-scale
+datasetforresearchonautomaticspeechrecognitionandnaturallanguageunder-
+standing of Air Traffic Control communications. Journal of Data-centric Machine
+Learning Research (2024)
+9. Helmke, H., Ohneiser, O., Mühlhausen, T., Wies, M.: Reducing controller work-
+loadwithautomaticspeechrecognition.In:2016IEEE/AIAA35thdigitalavionics
+systems conference (DASC). pp. 1–10. IEEE (2016)
+10. Hofbauer, K., Petrik, S., Hering, H.: The atcosim corpus of non-prompted clean
+air traffic control speech. In: LREC. Citeseer (2008)
+11. Hsu,W.N.,Bolte,B.,Tsai,Y.H.H.,Lakhotia,K.,Salakhutdinov,R.,Mohamed,A.:
+HuBERT: Self-supervised speech representation learning by masked prediction of
+hidden units. IEEE/ACM transactions on audio, speech, and language processing
+29, 3451–3460 (2021)
+12. Kanagawa,H.,Ijima,Y.:Knowledgedistillationfromself-supervisedrepresentation
+learning model with discrete speech units for any-to-any streaming voice conver-
+sion. In: Proc. Interspeech 2024. pp. 4393–4397 (2024)
+In-domain SSL pre-training and streaming ASR 11
+13. Li, X., Huybrechts, G., Ronanki, S., Farris, J., Bodapati, S.: Dynamic chunk con-
+volutionforunifiedstreamingandnon-streamingconformerasr.In:ICASSP2023-
+2023 IEEE International Conference on Acoustics, Speech and Signal Processing
+(ICASSP). pp. 1–5. IEEE (2023)
+14. Pellegrini,T.,Farinas,J.,Delpech,E.,Lancelot,F.:TheAirbusAirTrafficControl
+speech recognition 2018 challenge: towards ATC automatic transcription and call
+signdetection.In:20thAnnualConferenceoftheInternationalSpeechCommuni-
+cation Association (INTERSPEECH 2019). pp. 2993–2997 (2019)
+15. Pratap, V., Tjandra, A., Shi, B., Tomasello, P., Babu, A., Kundu, S., Elkahky,
+A., Ni, Z., Vyas, A., Fazel-Zarandi, M., Baevski, A., Adi, Y., Zhang, X., Hsu,
+W.N.,Conneau,A.,Auli,M.:Scalingspeechtechnologyto1,000+languages.arXiv
+(2023)
+16. Ravanelli, M., Parcollet, T., Moumen, A., de Langen, S., Subakan, C., Plantinga,
+P., Wang, Y., Mousavi, P., Della Libera, L., Ploujnikov, A., et al.: Open-source
+conversational AI with Speechbrain 1.0. Journal of Machine Learning Research
+25(333), 1–11 (2024)
+17. Šmídl, L., Švec, J., Tihelka, D., Matoušek, J., Romportl, J., Ircing, P.: Air traffic
+control communication (atcc) speech corpora and their use for asr and tts devel-
+opment. Language Resources and Evaluation 53, 449–464 (2019)
+18. Whetten, R., Kennington, C.: Open implementation and study of BEST-RQ for
+speechprocessing.In:IEEEICASSP2024workshoponSelf-supervisioninAudio,
+Speech and Beyond (SASB 2024) (2024)
+19. Zhang, B., Wu, D., Yao, Z., Wang, X., Yu, F., Yang, C., Guo, L., Hu, Y., Xie,
+L., Lei, X.: Unified streaming and non-streaming two-pass end-to-end model for
+speech recognition. arXiv preprint arXiv:2012.05481 (2020)
+20. Zuluaga-Gomez,J.,Prasad,A.,Nigmatulina,I.,Sarfjoo,S.S.,Motlicek,P.,Klein-
+ert, M., Helmke, H., Ohneiser, O., Zhan, Q.: How does pre-trained wav2vec 2.0
+perform on domain-shifted ASR? an extensive benchmark on Air Traffic Control
+communications. In: 2022 IEEE Spoken Language Technology Workshop (SLT).
+pp. 205–212. IEEE (2023)

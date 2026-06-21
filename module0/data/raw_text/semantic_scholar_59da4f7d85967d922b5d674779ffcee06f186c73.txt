@@ -1,0 +1,533 @@
+Investigation of BERT Model on Biomedical
+Relation Extraction Based on Revised Fine-tuning
+Mechanism
+Peng Su K. Vijay-Shanker
+Department of Computer and Information Science Department of Computer and Information Science
+University of Delaware University of Delaware
+Newark, Delaware, USA Newark, Delaware, USA
+psu@udel.edu vijay@udel.edu
+Abstract—With the explosive growth of biomedical literature, [7], a language representation model based on bidirectional
+designing automatic tools to extract information from the lit- Transformer [9], to solve the relation extraction problem. In
+erature has great significance in biomedical research. Recently,
+the pre-training stage, BERT learns general language repre-
+transformer-based BERT models adapted to the biomedical
+sentation for both the words and the text sequence through
+domain have produced leading results. However, all the existing
+BERT models for relation classification only utilize partial two unsupervised tasks. This task-agnostic representation is
+knowledge from the last layer. In this paper, we will investigate applied for the specific tasks via supervised learning on task-
+themethodofutilizingtheentirelayerinthefine-tuningprocess specific datasets in the fine-tuning stage.
+ofBERTmodel.Tothebestofourknowledge,wearethefirstto
+Since the development of BERT [7], previous works on re-
+explore thismethod. The experimental results illustratethat our
+lationextractionandotherclassificationtaskshaveallutilized
+methodimprovestheBERTmodelperformanceandoutperforms
+the state-of-the-art methods on three benchmark datasets for the suggested approach of using a special token called the
+different relation extraction tasks. In addition, further analysis classification token (CLS) in the topmost layer. Thus, during
+indicates that the key knowledge about the relations can be fine-tuning for classification tasks, all information is funneled
+learned from the last layer of BERT model.
+through a part of the top layer during back-propagation. In
+IndexTerms—DeepLearning,BERT,Transformer,Biomedical
+this work, we will explore the potential of utilizing all the
+Text Mining, Relation Extraction
+information in the last layer to improve model performance
+on relation extraction tasks.
+I. INTRODUCTION
+Our work is partly driven by an observation in [10], where
+In the past few decades, biomedical literature has been the nature of information represented in various layers was
+growing explosively and its interdisciplinary nature makes studied. The authors found that BERT models appeared to
+biomedical text mining a unique part of modern biomedical mimic traditional NLP approaches where low-level morpho-
+research. Among text mining tasks, relation extraction (RE) logical and syntactic aspects are represented in lower layers
+plays a crucial role in extracting the structure of the text. The andhigherlevelandmoresemanticnatureoftextislearnedin
+task of relation extraction in biomedical domain is to identify higher layers of BERT model. Since relation extraction task
+semantic relationships between biomedical entities mentioned is clearly semantic in nature, we hypothesize that important
+in the text. For example, protein-protein interaction is a RE information for this task will reside in top layers of the
+taskthatinvolvestheextractionoftheinteractingproteinsfrom BERT model. We therefore wish to investigate whether all
+the literature. RE allows information available in unstructured the information in the top layer of the BERT model could be
+form in the literature to be stored in a structured form that fruitfully used to improve the performance of RE models.
+can be used in many downstream applications like database To test our hypothesis, we employ two different methods
+curation, question answering system, text summarization etc. to summarize the information in the last layer: Long Short
+Many different methods have been proposed to solve the Term Memory (LSTM) model [11] and attention mechanism
+RE problem [1]–[4]. Recently, utilizing neural pre-trained [12], and then include the summarized knowledge in a new
+language models has been shown to be an effective way to fine-tuning process. We test these methods on three widely
+improve model performance of natural language processing studied RE tasks in biomedical domain: the protein-protein
+(NLP) tasks including RE [5]–[8]. These methods can make interaction (PPI) [13], the drug-drug interaction (DDI) [14],
+best use of a large amount of unlabeled data in an unsu- and the chemical-protein interaction (ChemProt) [15]. Our
+pervised pre-training phase to build language representation. results show that utilizing all the information from the last
+Thisphasecanbefollowedbysupervisedfine-tuningontask- layer boosts the model performance on all three tasks and
+specific datasets. In this work, we will employ the BERT furthermore,wenowachievethestate-of-the-artresultsonthe
+0202
+voN
+1
+]LC.sc[
+1v89300.1102:viXra
+three benchmark datasets. problem and ignore other outputs, which contains useful in-
+The rest of this manuscript is organized as follows. We formation. In the work [27], the authors explored the methods
+discuss some related works and background in Section 2. ofextractingknowledgefromtheintermediatelayersinBERT
+In Section 3, we describe the details of methodology and and demonstrated the advancement on aspect based sentiment
+experimental settings, followed by the evaluation results and analysis and natural language inference tasks. Since residual
+discussion in Section 4. We conclude in the last section. connections are employed in the Transformer, all important
+informationinintermediatelayersshouldbetransmittedtothe
+II. RELATEDWORKANDBACKGROUND
+last layer of BERT model during training. We will compare
+Wefirstpresentsomerelatedworksinthissection.Thenwe this method with our approach of utilizing all the information
+brieflyintroduceBERTmodel,itspre-trainingandfine-tuning from the last layer in BERT model.
+process. In addition, the work [10] found that the BERT model
+represents the steps of the traditional NLP pipeline in a
+A. Related Work
+sequential way, which means the BERT model captures the
+Extracting various of relations in BioNLP domain has linguisticinformationinthesequenceofpart-of-speech(POS)
+attracted considerable attentions in recent years with deep tagging, parsing, NER (Named Entity Recognition), semantic
+learning methods and high-quality word representation (word roles,thencoreference.Theirexperimentsalsoshowedthatthe
+embedding)showingadvancements inperformance[16]–[18]. representation for relation classification continues to improve
+Both convolutional neural networks (CNN) and recurrent up to the highest layer of the BERT model, indicating that
+neural networks (RNN) [3], [19], [20] have achieved notable the last layer contains important information for the relation
+results on relation extraction tasks based on word embedding extraction tasks.
+in this field before the emerging of utilizing language model. Our method evaluation will be conducted on three relation
+An advantage of language model methods is that they extraction tasks: PPI [13], DDI [14], and ChemProt [15].
+can leverage a large amount of unlabeled data to learn the For PPI, it is probably the most widely studied relation
+context-dependent and universal language representation. The extraction task in biomedical domain because its key role
+pre-trained language model can be applied on downstream in understanding biological processes. Extracting relation of
+tasks through fine-tuning and many language models have DDIwillhelppreventadverseeffectsfromdrugcombinations.
+been proposed such as ELMo [6], GPT [21] and BERT [7]. ChemProt relation extraction will benefit precision medicine
+Peters et al. proposed a contextualized word representation byfindingtheaffectedproteinsbyaspecificchemical.Dozens
+from a pre-trained language model (ELMo) and significantly ofsystemshavebeendesignedforthesetaskslikerule/kernel-
+improvedtheperformanceonsixtasksofquestionanswering, based methods [28]–[30], neural network methods [3], [31],
+textual entailment and sentiment analysis [6]. The Generative [32], language representation model methods [22], [24]. As
+Pre-trained Transformer (GPT) [21] was based on a uni- far as we know, the state-of-the-art system on AIMed corpus
+directional language model and has shown its effectiveness for PPI task is based on deep residual convolutional neural
+on benchmarks for natural language understanding. BERT network[3]whilethebestresultsonDDIandChemProttasks
+(Bidirectional Encoder Representations from Transformers) are obtained using the BERT model [22], [24].
+model [7] was designed to learn language representation in
+B. Background
+bidirectional way and was demonstrated to obtain state-of-
+the-art performance on tasks such as question answering and BERT [7] is a bidirectional Transformer model [9] for
+language inference. language representation. Using a ”masked language model”,
+Usually, pre-trained BERT model for general domain gen- BERT is able to learn bidirectional representation (both left
+eralizes poorly in a specific domain like biomedical domain. and right context) of a word. The application of BERT usu-
+In order to facilitate the biomedical research, several BERT ally includes two steps: utilizing pre-training to gain general
+models have been adapted for the biomedical domain such as knowledge and employing fine-tuning to acquire task-specific
+BioBERT[22],SciBERT[23],BlueBERT[24].Thesemodels knowledge of a task.
+are pre-trained on different types of biomedical corpora and Pre-training of BERT: BERT is pre-trained using two
+have been shown to achieve state-of-the-art results on various unsupervised tasks: masked language model (MLM) and next
+biomedical tasks. BioBERT [22] was pre-trained on PubMed sentenceprediction(NSP).Thepre-trainingprocedureusually
+abstracts and PMC full-length articles, BlueBERT [24] used involves a large amount of unlabeled data. Originally, BERT
+PubMedabstractandMIMIC-IIIclinicalnotes[25]asthepre- was designed for general purpose and it was pretrained on
+training data, and a sample of 1.14M papers from Semantic English Wikipedia and BooksCorpus. However, each domain
+Scholar [26] were used in SciBERT model [23]. In this work, has its specific knowledge and sometime it is impossible for
+we will first select the best BERT model on our relation the general BERT to gain such knowledge. For example, in
+extraction tasks and then employ that model in the following biomedical domain, the biomedical entity names can not be
+experiments. represented well based on the general BERT model since its
+However, most of previous works only use the output of pre-training corpora are short of such names. In this paper,
+classification token ([CLS]) in BERT model for classification we will consider three BERT models that are adapted to
+B. New fine-tuning process of BERT model
+As mentioned above, a BERT model for classification
+problem is usually based on the [CLS] token of the last layer
+and other outputs of the last layer are abandoned. So this
+method might discard some useful information from the last
+layer. The [CLS] token is used to predict the next sentence
+(NSPtask)duringthepre-training,whichusuallyinvolvestwo
+or more sentences, but the input of our relation extraction
+tasks only contain one sentence. This indicates that the [CLS]
+output might ignore important information about the entities
+and their interaction because it is not trained to capture this
+kind of information. The fine-tuning step on task-specific
+datasets compensates this information loss on relations to a
+certainextent,bututilizingallinformationmightyieldabetter
+representation than the use of partial information (only the
+Fig. 1: Original BERT model architecture on relation extrac-
+[CLS]output).Asitisalsoshownin[10],higherlayeroutputs
+tion.
+yield better representations for the relation classification task.
+In this paper, we will design a mechanism to utilize all the
+information in the last layer during the fine-tuning of BERT
+the biomedical domain (BioBERT [22], SciBERT [23] and
+model.
+BlueBERT [24]) and select the best one for the experiments
+To include the information from other outputs of the last
+on the new fine-tuning process.
+layer, we propose to add an new module to summarize these
+Fine-tuningofBERT:Thepre-trainedBERTmodelcanbe
+outputsandthenconcatenatethesummarizedinformationwith
+fine-tunedforvariousdownstreamtasks.Givenatask,wejust
+the[CLS]outputastheextrastepforfine-tuning.Specifically,
+need toappend an additionaloutput layeron top ofthe BERT
+we explore two methods of summarizing the information in
+output and then feed the task-specific inputs and outputs into
+the last layer: Long Short Term Memory (LSTM) model and
+BERT model and fine-tune the BERT parameters like regular
+attention mechanism. The model architectures of these two
+model training. For classification problems, a classifier can be
+methods are illustrated in Fig 2.
+built by putting a Softmax layer on the [CLS] token output
+Formally, given the hidden states (with dimension of H) of
+of pre-trained BERT model. The [CLS] token is designed
+the last layer (L-th layer)
+for classification purpose in BERT model and every input
+sequence will always start with this special token. The model hL ={hL , hL, hL, ..., hL, hL },
+all CLS 1 2 N SEP
+architecture of fine-tuning based on [CLS] token is shown in
+only hL is used for classification in the original BERT
+Fig 1. CLS
+model. Here we will try to add the summarized infor-
+III. METHODOLOGY mation from the sequence of other outputs, a.k.a., hL =
+{hL, hL, ..., hL} (We ignore hL since it is a separation
+In this section, we first define the relation extraction prob- 1 2 N SEP
+tokenfordifferentsentences)andtwodifferentapproachesare
+lem.Then,weproposethemethodofaddinganewmoduleto
+employed: LSTM sequence model and attention mechanism.
+summarizetheoutputinformationinthelastlayerduringfine-
+1) A natural idea to model the sequence of the last layer
+tuning. The evaluation datasets and metrics, the fine-tuning
+is to use recurrent neural network and LSTM model is
+parameters and pre-processing of data for BERT model are
+our first choice since its advantages on long sequence.
+also given in this section.
+The output of last LSTM cell will be seen as the
+A. Relation extraction representation of our sequence. Formally,
+Relation extraction task can be seen as a classification O =LSTM(hL) i=1,...,N
+i
+problem. For example, for the DDI relation extraction task,
+a sentence instance with two marked drug mentions is con- 2) Another choice of summarizing sequence data is the at-
+sidered one of the four relations (ADVICE, EFFECT, INT, tention mechanism. Specifically, we can utilize additive
+MECHANISM) if the sentence expresses drug interaction attentiontocombinethesequencebyassigningaweight
+between the two drug occurrences, otherwise it will be seen for each output.
+as negative. Formally, for a relation R and its label set L, [α ]=softmax(hLK)
+i
+our model needs to predict the probability of each label
+P(L|Tok 1, Tok 2, ...,Tok n,Et 1,Et 2)basedonthesentence
+O
+=(cid:88)N
+α hL
+text S = Tok Tok ...Tok and two entities Et , Et in i i
+1 2 n 1 2
+the sentence. BERT model can be applied on this relation i=1
+extraction classification problem. where KH×1 are learnable parameters.
+(a) LSTM on the last layer (b) Attention mechanism on the last layer
+Fig. 2: Model architectures of including all outputs in the last layer.
+Corpus Instance#(Total) Train Dev Test is no standard training and test set for this dataset, we will
+PPI(AIMed) 5,834 - - -
+employ 10-fold cross-validation on it.
+DDI 48,223 19,460 11,820 16,943
+ChemProt 31,784 18,779 7,244 5,761 The corpus for ChemProt task contains a training set of
+1,020 abstracts, a development set of 612 abstracts and a test
+TABLE I: Statistics of datasets for PPI, DDI and ChemProt.
+set of 800 abstracts from PubMed [15]. We will use the stan-
+dard training and test set to evaluate the model performance.
+For the DDI corpus, it has 792 documents from DrugBank
+We then concatenate the output of LSTM/attention mech-
+database and 233 abstracts from Medline [14]. Similar to
+anism with the [CLS] output to form the final representation
+ChemProt, we will use the standard split of this dataset for
+of our input
+evaluation (624 documents for training, 210 for development
+h=[hL ;O].
+CLS and 191 for test).
+Finally, we feed this representation to a softmax layer to As for the evaluation metrics, PPI is a binary classifi-
+predict the label: cation problem, so we will use precision, recall and F1-
+score to measure the performance of the models. However,
+p=softmax(W fh+b f) the ChemProt and DDI tasks are multi-class classification
+problem. The ChemProt corpus is labeled with six classes:
+where WC×H, bC×1 are also learnable parameters and C is
+f f CPR:3 (upregulator, activator, indirect upregulator), CPR:4
+the number of classes (categories) in the classification task.
+(downregulator,inhibitor,indirect downregulator),CPR:5(ag-
+Meanwhile, the contribution of [CLS] token for the clas-
+onist,agonist-activator,agonist-inhibitor),CPR:6(antagonist),
+sification task needs to be explored. So we experiment with
+CPR:9 (substrate, product of, substrate product of) and neg-
+another fine-tuning process without [CLS] token. Formally,
+ative. In DDI corpus, there are five labels for the instances:
+we only take h = [O] as the final representation of the input
+ADVICE, EFFECT, INT, MECHANISM and negative. For
+and utilize the same softmax layer p=softmax(W h+b )
+f f ChemProt and DDI tasks, we evaluate the model utilizing
+for prediction. The performance of these two new fine-tuning
+micro(i.e.,withweightedmean)precision,recallandF1score
+processes can shed light on the roles of the two parts (the
+onthenon-negativeclassesasotherpeoplereporttheirresults
+[CLS] token and sentence outputs) of the last layer for
+in the same way.
+classification problem.
+D. Fine-tuning hyper-parameters
+C. Datasets and evaluation metrics
+Duringthefine-tuningofthemodels,weuselearningrateof
+To measure the effectiveness of the new fine-tuning mecha-
+2e-5,batchsizeof32,trainingepochof10andmaxsequence
+nism, we will evaluate it on three benchmark datasets. Table I
+length of 128.
+shows the statistics of these datasets. For PPI task, we will
+utilize the most well-known PPI relation corpus: AIMed [33].
+E. Data pre-processing
+It is obtained by annotating 750 abstracts from Medline and
+it contains 1,000 positive (interacting protein pairs) and 4,834 In relation extraction tasks, the input for the BERT model
+negative (non-interacting protein pairs) instances. Since there contains two parts: the text and the entities in it. In order for
+Task Label Sentenceexamples
+Positive Wehavecharacterizedthephysicalandfunctionalinteractionsbetween@PROTEIN$and@PROTEIN$.
+PPI
+Negative pRB,@PROTEIN$,@PROTEIN$(INK4d)andp27(KIP1)decreaseinbothcelltypes.
+MECHANISM @DRUG$decreasestheeliminationof@DRUG$causinganincreaseinoverallexposure.
+DDI
+EFFECT Anticoagulants@DRUG$mayincreasesensitivitytooral@DRUG$.
+CPR:4 @CHEMICAL$potentlyattenuatedgeneexpressionsinvolvedininflammation,suchasiNOS,COX-2and@GENE$.
+ChemProt TheysuggestthatTRPML1worksinconcertwith@CHEMICAL$toregulate@GENE$translocationbetween
+CPR:9
+thecytoplasmandlysosomes.
+TABLE II: Examples after pre-processing from the three tasks.
+PPI DDI ChemProt
+Model
+Precision Recall F1Score Precision Recall F1Score Precision Recall F1Score
+SOTA 79.0 76.8 77.6 79.3 80.5 79.9 77.0 75.9 76.5
+BioBERT 79.0 83.3 81.0 77.4 79.4 78.4 74.6 76.8 75.7
+BioBERT+LSTM LL 80.2 84.0 82.0 79.4 78.0 78.7 75.7 77.4 76.5
+BioBERT+Att LL 80.7 84.4 82.5 81.3 80.1 80.7 76.5 77.1 76.8
+TABLE III: Model performance on PPI, DDI and ChemProt tasks. SOTA: state-of-the-art results for each
+task; BioBERT+LSTM LL: model of applying LSTM on the outputs of last layer; BioBERT+Att LL:
+model of applying attention mechanism on the outputs of last layer. To the best of our knowledge, the
+state-of-the-art systems on the three tasks are: [3] for PPI; [22] for ChemProt; [24] for DDI.
+BERT model to recognize the entities in the sentence, we fol- in the first two rows of Table III. As shown in the table, the
+lowthestandardpre-processingwayforrelationextractionby BioBERT model outperforms the state-of-the-art method on
+replacingtheseentitynameswithpredefinedtags.Specifically, PPItask,butitisnotuptoparwiththecurrentSOTAmethods
+we replace all the protein names with @PROTEIN$, drug on DDI and ChemProt tasks.
+names with @DRUG$, and chemical names with @CHEM- In the last two rows of Table III, the model performance of
+ICAL$. In Table II, we show some examples from the three includingtheknowledgeofthelastlayerisillustrated.Clearly,
+tasks, in which the entities are replaced with the special tags. the use of information in the last layer leads to improvement
+In order to alleviate the out-of-vocabulary problem, BERT forallthreetasks.Themodelofutilizingattentionmechanism
+uses WordPiece embedding [34] and each input word will be on the last layer achieves the best performance on all the
+split into subwords from WordPiece vocabulary. In addition, tasks, with 1.5%, 2.3% and 1.1% F1 score improvement on
+following the original BERT input representation, we add PPI, DDI and ChemProt respectively. We also see that the
+the segment and position information of the tokens in the use of attention mechanism outperforms the LSTM method
+input sentence through the segment embedding and position on summarizing the information of last layer.
+embedding. Furthermore, we achieve the state-of-the-art performance
+on all three tasks after adding the attention mechanism on
+IV. RESULTSANDDISCUSSION
+the last layer. Specifically, our method leads to 4.9%, 0.8%
+Inthissection,wefirstdiscussthemodelselectionfromthe and 0.3% F1 score improvement on PPI, DDI and ChemProt
+threeBERTmodelsforbiomedicaldomain.Next,theresultsof respectively.
+newfine-tuningprocessareprovided.Atlast,morediscussions
+onattentionweightsaregiventohelpusbetterunderstandthe
+B. Other fine-tuning mechanisms
+information summarization in attention mechanism.
+Asmentionedearlier,therearethreeadaptedBERTmodels Theresultsofnewfine-tuningofBERTmodelthatincludes
+for biomedical domain: BioBERT, SciBERT and BlueBERT. outputinformationfromboth[CLS]tokenandtheothertokens
+The difference between the three models adapted to the of the last layer have shown that this method achieves better
+biomedical domain is the text used for the pre-training. Af- performance than original fine-tuning mechanism. In this
+ter fine-tuning on the corpora of the three tasks, BioBERT work,wealsoexperimentwiththemethodoffine-tuningwith-
+generally obtains good results (Please refer to Table VI in out[CLS]outputtoexplorethecontributionof[CLS]token.In
+the Appendix for the details of the performance of the three Table IV, the two rows in the middle (BioBERT+LSTM LL*
+models). Therefore, we will report our experimental results of and BioBERT+Att LL*) illustrate the model performance of
+new fine-tuning process based on BioBERT. utilizing the outputs of last layer without [CLS] token. The
+first two rows are only repetitions of the results from Table
+A. Model performance after utilizing all the information from
+III and provide the context for the new results. We can see
+the last layer
+thatthefine-tuningwithout[CLS]achievesbetterperformance
+To provides context for the performance of the proposed with small margin on PPI task, but it lags behind the previous
+method, we first report the state-of-the-art (SOTA) results and methods on the other two tasks. The results indicate that the
+theperformanceoforiginalBioBERTmodelonthethreetasks [CLS] token contains key information for our classification
+PPI DDI ChemProt
+Model
+Precision Recall F1Score Precision Recall F1Score Precision Recall F1Score
+BioBERT 79.0 83.3 81.0 77.4 79.4 78.4 74.6 76.8 75.7
+BioBERT+Att LL 80.7 84.4 82.5 81.3 80.1 80.7 76.5 77.1 76.8
+BioBERT+LSTM LL* 79.6 82.0 80.8 79.7 76.5 78.1 75.7 74.5 75.1
+BioBERT+Att LL* 82.3 83.5 82.8 79.7 77.6 78.6 76.4 74.5 75.4
+BioBERT+LSTM CLS[27] 79.0 82.3 80.6 77.6 80.4 79.0 73.8 76.4 75.1
+BioBERT+Att CLS[27] 79.9 83.6 81.7 78.6 77.8 78.2 73.2 75.3 74.2
+TABLE IV: Model performance without [CLS] token and utilizing [CLS] from intermedi-
+ate layers. BioBERT+LSTM LL*/BioBERT+Att LL*: models of fine-tuning without [CLS] token;
+BioBERT+LSTM CLS: model of applying LSTM on the [CLS] tokens of intermediate layers;
+BioBERT+Att CLS: model of applying attention mechanism on the [CLS] tokens of intermediate layers.
+(a) Example from PPI corpus (Label: Positive).
+(b) Example from DDI corpus (Label: EFFECT).
+(c) Example from ChemProt corpus (Label: CPR:3).
+Fig. 3: Attention weights visualization.
+tasks. Thus, utilizing all the outputs from the last layer sentence (Fig 3a), the words of entity token (@PROTEIN$)
+generally gives us better results. and the word ”activates” (trigger word of PPI) have larger
+In addition, we also compare our method with the mech- weights than other words. Similarly, the trigger words ”in-
+anism of utilizing the [CLS] outputs from the intermediate hibit” and ”mediate” have larger attention weights in the DDI
+layers. The last two rows in Table IV show the performance and ChemProt examples respectively. Recall these sentences
+of BioBERT model after adding the information from the were not correctly predicted when attention was not used to
+[CLS] outputs of all intermediate layers. As it is shown, highlight the information from the “trigger word”, which also
+our method of using information from the last layer achieves demonstrates the importance of the information from the last
+better performance than the mechanism of summarizing the layer.
+[CLS] outputs from the intermediate layers. Compared with
+D. More analysis of attention weights
+theoriginalBioBERT model,weevenobservethe dropinthe
+performance after including the [CLS] outputs from the in- After providing some examples of attention weight distri-
+termediate layers in some cases (e.g., BioBERT+LSTM CLS bution in the sentences, it is useful to conduct an analysis
+on PPI task). Those results imply that [CLS] outputs in the on the attention weights and investigate the overall weight
+intermediate layers cannot provide enough useful information distribution on the words in the corpora.
+for our relation extraction tasks. Previously, we have shown that the attention mechanism
+will learn relatively larger weights on trigger word of the
+C. Visualization of attention weights
+relations using three examples. In order to understand the
+The information acquired by attention mechanism from the attentionweightespeciallyontriggerwordsinamoregeneral
+last layer has been shown to improve the model performance. way, we need to consider all the words in the corpora. Given
+In this section, we will visualize the attention weight distri- the fact that the trigger words usually appear near the entities
+bution on the words of sentences and examine the words the of the relation, we collect all the weights of three words
+model is paying more attention to. around the entities in the positive instances and take the
+We select an example from each of the three tasks that average of the weights to acquire the global attention for
+were misclassified by the original BioBERT model but are each word. Considering the different forms of the words, we
+correctly predicted by the new method. In Fig 3, we visualize utilize Porter’s stemmer [35] to remove the morphological
+the weights based on the darkness of the color, with words in affixes from each word and only use the word stem for the
+darker color having larger weights. global attention weight calculation. For instance, the stem for
+We can see that the attention mechanism is giving large the word ”activate” is ”activ”, and many other words like
+weights on the important words that indicate the relation ”activates” and ”activation” have the same word stem.
+betweentheentities.Typically,thewordthatisusedtoexpress In Table V, we show the top 10 words that have large
+the relation in a sentence is called ”trigger word” of the learned weight from the attention mechanism for the dataset
+relation. The attention mechanism is gaining the knowledge of each task. Among the top words, we can see that most of
+of ”trigger word” in our tasks. For example, in the PPI them are ”trigger words” of the relations, which indicates that
+Task WordStem In the future, We will continue our investigation on extraction
+activ(ate),complex,associ(ate),interact,human
+PPI of other relations between biomedical entities. We will also
+protein,bind,domain,specif(y),receptor
+concomitantli,combin(e),concomit(ant),increas(e),use investigatehowourmethodcanhelpothertasksinbiomedical
+DDI
+concurr(ent),decreas(e),inhibit,receiv(e),administ(er) domain.
+phosphoryl(ate),attenu(ate),stimul(ate),deriv(e),regul(ate)
+ChemProt
+novel,metabol(ize),reduc(e),induc(e),inhibit
+REFERENCES
+TABLE V: Top words with large attention weight from
+[1] G. Sierra, R. Alarco´n, C. Aguilar, and C. Bach, “Definitional verbal
+corpora of PPI, DDI and ChemProt tasks. patterns for semantic relation extraction,” Terminology. International
+Journal of Theoretical and Applied Issues in Specialized Communica-
+tion,vol.14,no.1,pp.74–98,2008.
+[2] A. Culotta and J. Sorensen, “Dependency tree kernels for relation ex-
+traction,”inProceedingsofthe42ndAnnualMeetingoftheAssociation
+forComputationalLinguistics(ACL-04),2004,pp.423–429.
+[3] H. Zhang, R. Guan, F. Zhou, Y. Liang, Z.-H. Zhan, L. Huang, and
+X.Feng,“Deepresidualconvolutionalneuralnetworkforprotein-protein
+interactionextraction,”IEEEAccess,vol.7,pp.89354–89365,2019.
+[4] S. K. Sahu and A. Anand, “Drug-drug interaction extraction from
+biomedical texts using long short-term memory network,” Journal of
+biomedicalinformatics,vol.86,pp.15–24,2018.
+[5] A. M. Dai and Q. V. Le, “Semi-supervised sequence learning,” in
+Advances in neural information processing systems, 2015, pp. 3079–
+3087.
+[6] M. E. Peters, M. Neumann, M. Iyyer, M. Gardner, C. Clark, K. Lee,
+andL.Zettlemoyer,“Deepcontextualizedwordrepresentations,”arXiv
+preprintarXiv:1802.05365,2018.
+[7] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,“Bert:Pre-training
+of deep bidirectional transformers for language understanding,” arXiv
+Fig. 4: Comparison of trigger word weights in positive and preprintarXiv:1810.04805,2018.
+negativeinstances.Thefirsttwowords(associateandinteract) [8] A. Radford, J. Wu, R. Child, D. Luan, D. Amodei, and I. Sutskever,
+“Language models are unsupervised multitask learners,” OpenAI Blog,
+arefromPPItask,themiddletwowords(decreaseandinhibit)
+vol.1,no.8,p.9,2019.
+are from DDI task and the last two words (stimulate and [9] A.Vaswani,N.Shazeer,N.Parmar,J.Uszkoreit,L.Jones,A.N.Gomez,
+regulate) are from ChemProt task. Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” in Advances
+inneuralinformationprocessingsystems,2017,pp.5998–6008.
+[10] I. Tenney, D. Das, and E. Pavlick, “Bert rediscovers the classical nlp
+pipeline,”arXivpreprintarXiv:1905.05950,2019.
+theattentionmechanismislearningtheknowledgeofrelations [11] S. Hochreiter and J. Schmidhuber, “Long short-term memory,” Neural
+computation,vol.9,no.8,pp.1735–1780,1997.
+from the last layer of BERT model.
+[12] D. Bahdanau, K. Cho, and Y. Bengio, “Neural machine translation by
+jointlylearningtoalignandtranslate,”arXivpreprintarXiv:1409.0473,
+E. Trigger word weight comparison between positive and 2014.
+negative instances [13] M. Krallinger, F. Leitner, C. Rodriguez-Penagos, and A. Valencia,
+“Overview of the protein-protein interaction annotation extraction task
+We have seen that the attention mechanism is giving rela- ofbiocreativeii,”Genomebiology,vol.9,no.2,p.S4,2008.
+tively large weights on trigger words of relations on positive [14] M.Herrero-Zazo,I.Segura-Bedmar,P.Mart´ınez,andT.Declerck,“The
+ddicorpus:fanannotatedcorpuswithpharmacologicalsubstancesand
+instances. For the negative instances, small weights should be
+drug–drug interactions,” Journal of biomedical informatics, vol. 46,
+learnedontriggerwordssincethereisnorelationshipbetween no.5,pp.914–920,2013.
+the entities. Therefore, we compare the trigger word weights [15] M. Krallinger, O. Rabal, S. A. Akhondi et al., “Overview of the
+biocreativevichemical-proteininteractiontrack,”inProceedingsofthe
+betweenpositiveandnegativeinstancesandgivesixexamples
+sixthBioCreativechallengeevaluationworkshop,vol.1,2017,pp.141–
+in Fig 4 from the three tasks. We can see that the learned 146.
+triggerwordweightsinpositiveinstancesaremuchlargerthan [16] T. Mikolov, I. Sutskever, K. Chen, G. S. Corrado, and J. Dean,
+“Distributed representations of words and phrases and their composi-
+the weights in the negative instances. This demonstrates that
+tionality,”inAdvancesinneuralinformationprocessingsystems,2013,
+theattentionmechanismcanautomaticallylearnthedifference pp.3111–3119.
+between positive and negative instances. [17] J. Pennington, R. Socher, and C. D. Manning, “Glove: Global vectors
+for word representation,” in Proceedings of the 2014 conference on
+empiricalmethodsinnaturallanguageprocessing(EMNLP),2014,pp.
+V. CONCLUSION
+1532–1543.
+In this paper, we propose a new fine-tune process for [18] B. Chiu, G. Crichton, A. Korhonen, and S. Pyysalo, “How to train
+goodwordembeddingsforbiomedicalnlp,”inProceedingsofthe15th
+BERT model to utilize all the outputs from the last layer.
+workshop on biomedical natural language processing, 2016, pp. 166–
+We verify the effectiveness of the method on three relation 174.
+extraction tasks: PPI, DDI and ChemProt. The experimental [19] Y.-L. Hsieh, Y.-C. Chang, N.-W. Chang, and W.-L. Hsu, “Identifying
+protein-proteininteractionsinbiomedicalliteratureusingrecurrentneu-
+results illustrate that the proposed method achieves state-of-
+ralnetworkswithlongshort-termmemory,”inProceedingsoftheeighth
+the-art performance on all three tasks. Also, the visualization international joint conference on natural language processing (volume
+and analysis of the weights in attention mechanism also 2:shortpapers),vol.2,2017,pp.240–245.
+[20] P.Su,G.Li,C.Wu,andK.Vijay-Shanker,“Usingdistantsupervision
+demonstrates that our method is learning the key knowledge
+toaugmentmanuallyannotateddataforrelationextraction,”BioRxiv,p.
+of the relations in the sentence to help the relation extraction. 626226,2019.
+[21] A.Radford,K.Narasimhan,T.Salimans,andI.Sutskever,“Improving
+language understanding with unsupervised learning,” Technical report,
+OpenAI,2018.
+[22] J. Lee, W. Yoon, S. Kim, D. Kim, S. Kim, C. H. So, and J. Kang,
+“Biobert: a pre-trained biomedical language representation model for
+biomedicaltextmining,”Bioinformatics,vol.36,no.4,pp.1234–1240,
+2020.
+[23] I. Beltagy, A. Cohan, and K. Lo, “Scibert: Pretrained contextualized
+embeddingsforscientifictext,”arXivpreprintarXiv:1903.10676,2019.
+[24] Y.Peng,S.Yan,andZ.Lu,“Transferlearninginbiomedicalnaturallan-
+guageprocessing:Anevaluationofbertandelmoontenbenchmarking
+datasets,”arXivpreprintarXiv:1906.05474,2019.
+[25] A.E.Johnson,T.J.Pollard,L.Shen,H.L.Li-wei,M.Feng,M.Ghas-
+semi,B.Moody,P.Szolovits,L.A.Celi,andR.G.Mark,“Mimic-iii,a
+freelyaccessiblecriticalcaredatabase,”Scientificdata,vol.3,p.160035,
+2016.
+[26] W. Ammar, D. Groeneveld, C. Bhagavatula, I. Beltagy, M. Crawford,
+D. Downey, J. Dunkelberger, A. Elgohary, S. Feldman, V. Ha et al.,
+“Constructionoftheliteraturegraphinsemanticscholar,”arXivpreprint
+arXiv:1805.02262,2018.
+[27] Y. Song, J. Wang, Z. Liang, Z. Liu, and T. Jiang, “Utilizing bert
+intermediate layers for aspect based sentiment analysis and natural
+languageinference,”arXivpreprintarXiv:2002.04815,2020.
+[28] A.Airola,S.Pyysalo,J.Bjo¨rne,T.Pahikkala,F.Ginter,andT.Salakoski,
+“All-paths graph kernel for protein-protein interaction extraction with
+evaluation of cross-corpus learning,” BMC bioinformatics, vol. 9, no.
+S11,p.S2,2008.
+[29] S. Kim, H. Liu, L. Yeganova, and W. J. Wilbur, “Extracting drug–
+druginteractionsfromliteratureusingarichfeature-basedlinearkernel
+approach,”Journalofbiomedicalinformatics,vol.55,pp.23–30,2015.
+[30] N. Warikoo125, Y.-C. Chang, P.-T. Lai45, and W.-L. Hsu, “Ctcpi–
+convolution tree kernel-based chemical-protein interaction detection,”
+2017.
+[31] Y.PengandZ.Lu,“Deeplearningforextractingprotein-proteininter-
+actions from biomedical literature,” arXiv preprint arXiv:1706.01556,
+2017.
+[32] S. Liu, B. Tang, Q. Chen, and X. Wang, “Drug-drug interaction
+extractionviaconvolutionalneuralnetworks,”Computationalandmath-
+ematicalmethodsinmedicine,vol.2016,2016.
+[33] R. Bunescu, R. Ge, R. J. Kate, E. M. Marcotte, R. J. Mooney,
+A.K.Ramani,andY.W.Wong,“Comparativeexperimentsonlearning
+information extractors for proteins and their interactions,” Artificial
+intelligenceinmedicine,vol.33,no.2,pp.139–155,2005.
+[34] Y. Wu, M. Schuster, Z. Chen, Q. V. Le, M. Norouzi, W. Macherey,
+M. Krikun, Y. Cao, Q. Gao, K. Macherey et al., “Google’s neural
+machine translation system: Bridging the gap between human and
+machinetranslation,”arXivpreprintarXiv:1609.08144,2016.
+[35] M.F.Porteretal.,“Analgorithmforsuffixstripping.”Program,vol.14,
+no.3,pp.130–137,1980.
+APPENDIX
+COMPARISONOFBERTMODELSINBIOMEDICALDOMAIN
+We provide the performance of BioBERT, SciBERT and
+BlueBERT in biomedical domain on the PPI, DDI and
+ChemProt tasks. The best result on each metric is highlighted
+with bond font in Table VI.
+Task Metrics BioBERT SciBERT BlueBERT
+Precision 79.0 78.4 69.3
+PPI Recall 83.3 79.5 75.0
+Fscore 81.0 78.8 71.9
+Precision 77.4 80.1 77.7
+DDI Recall 79.4 78.1 75.4
+Fscore 78.4 79.1 76.5
+Precision 74.6 74.3 70.8
+ChemProt Recall 76.8 73.2 64.8
+Fscore 75.7 74.0 67.7
+TABLE VI: Performance of three BERT models in
+biomedical domain on PPI, DDI and ChemProt tasks.

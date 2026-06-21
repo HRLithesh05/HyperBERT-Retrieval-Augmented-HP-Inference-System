@@ -1,0 +1,964 @@
+Beyond Metadata: Multimodal, Policy-Aware Detection of YouTube Scam Videos
+UmmayKulsum,AafaqSabir,AbhinayaS.B.,AnupamDas
+NorthCarolinaStateUniversity,Raleigh,NC,USA
+ukulsum@ncsu.edu,asabir2@ncsu.edu,asrivid@ncsu.edu,anupam.das@ncsu.edu
+Abstract and Reaves 2021; Tripathi, Ghosh, and Bharti 2022; Vak-
+ilinia 2022; Chu et al. 2022; Bouma-Sims et al. 2025).
+YouTube is a major platform for information and entertain- For example, Bouma-Sims et al. (Bouma-Sims and Reaves
+ment, but its wide accessibility also makes it attractive for
+2021) examined giveaway scams offering fake incentives
+scammers to upload deceptive or malicious content. Prior
+such as gift cards or free premium access, while Tripathi
+detection approaches rely largely on textual or statistical
+etal.(Tripathi,Ghosh,andBharti2022)studiedfraudulent
+metadata, such as titles, descriptions, view counts, or likes,
+apps promising quick financial rewards. These scams often
+whichareeffectiveinmanycasesbutcanbeevadedthrough
+benign-looking text, manipulated statistics, or other obfus- redirect users to external websites or applications to com-
+cation strategies (e.g., ‘Leetspeak’), while ignoring visual pletesurveys,downloadsoftware,orperformtasksthatlead
+cues.Inthisstudy,wesystematicallyinvestigatemultimodal to privacy breaches or malware installation (Bouma-Sims
+approaches for detecting YouTube scams. Our dataset con- et al. 2025). More recently, cryptocurrency scams—such
+solidates established scam categories and augments them as arbitrage bot schemes exploiting flawed smart con-
+with full-length videos and policy-grounded reasoning an- tracts—have caused substantial financial losses (Li, Guan,
+notations. Experiments show that a text-only model using
+and Lee 2023; Vakilinia 2022). The growing diversity and
+titles and descriptions (fine-tuned BERT) achieves moder-
+sophisticationofsuchscamsunderscoretheneedforrobust
+ateperformance(76.61%F1score),improvingslightlywith
+and scalable detection mechanisms to safeguard users and
+audio transcripts (77.98% F1 score). Visual analysis with
+preservetheplatform’sintegrity.
+a fine-tuned LLaVA-Video model performs better (79.61%
+F1 score), while a multimodal framework combining titles, Although prior studies have investigated scams and of-
+descriptions, and video frames achieves the highest perfor- fered important insights into scam typologies, existing de-
+mance(82.96%F1score).Moreover,themultimodalframe- tectionapproacheslargelydependonunimodalcues,partic-
+workshowedgreaterrobustnesstoadversarialperturbations, ularly textual metadata (e.g., titles, descriptions) or statisti-
+withaccuracydroppingonly1–3%,comparedto12–38%for
+calmetrics(e.g.,view,like,andcommentcounts).However,
+modality-specificmodels.Beyondaccuracy,themultimodal
+as Chu et al. (Chu et al. 2022) note, these signals can be
+framework provides interpretable, policy-grounded reason-
+easily manipulated using fake engagement tactics, render-
+ing,enhancingtransparencyandpracticalutilityinautomated
+ingthemunreliableforscamdetection.Moreover,scammers
+moderation.Usingthisapproach,weanalyzed6,374in-the-
+wildYouTubevideosanddetected1,864scamswithexplicit oftenevadetext-basedmodelsbycraftingbenign-lookingti-
+reasoning,providingavaluableresourceforfutureresearch. tles and descriptions that conceal fraudulent intent. In con-
+trast, the visual content of videos often contains richer and
+more distinctive cues, such as demonstrations of malicious
+Code—https://github.com/ummay-kulsum18/VidScamNet
+QR codes, fake cryptocurrency dashboards, or misleading
+Dataset—https://tinyurl.com/VidScam
+giveawaybanners,whichcanserveasstrongerindicatorsof
+deception. This gap underscores the need for multi-modal
+1 Introduction analysiscombiningvisualandtextualsignalstoimprovethe
+robustnessandaccuracyofYouTubescamdetection.
+Videohasemergedasadominantmediumfordisseminating
+With the advent of multimodal large language models
+information and engaging audiences on social media (Pol-
+(MLLMs) capable of understanding and linking semantics
+skii2025).YouTube,thesecondmostpopularsocialmedia
+across different modalities, it is timely to explore their po-
+platformandsearchengine,exemplifiesthistrend,withover
+tentialfordetectingvideo-basedscams.Furthermore,exist-
+500 hours of content uploaded every minute (Team 2025).
+ing detection systems primarily produce a likelihood score
+However,itsvastreachandaccessibilityhavealsomadeita
+without grounding their decisions in explicit policy guide-
+hotspot for deceptive and malicious content. Prior research
+lines. However, MLLMs offer the opportunity to incorpo-
+hasanalyzeddiversescamtypesonYouTube(Bouma-Sims
+ratepolicygrounding,enablingmoretransparentandinter-
+pretablescamdetection.
+Copyright©2026,AssociationfortheAdvancementofArtificial
+Intelligence(www.aaai.org).Allrightsreserved. Towarddevelopingamultimodalvideo-basedscamdetec-
+6202
+rpA
+1
+]RC.sc[
+2v81432.9052:viXra
+tionsystem,weaimtoaddressthefollowingresearchques- forms.Mostoftheworkfocusedonstudyingaspecificscam
+tions:RQ1:Howdovideoscamsmanifestacrosstext,au- type such as technical support scam (Gupta et al. 2019;
+dio,andvisualmodalities?Thisquestionexploreswhether Larson et al. 2018; Miramirkhani, Starov, and Nikiforakis
+scam videos can be reliably detected using only textual 2016;Srinivasanetal.2018),onlinesurveyscam(Kharraz,
+metadata(e.g.,titlesanddescriptions)orifaudioandvisual Robertson,andKirda2018),gamehackscam(Badawietal.
+componentsprovidedistinctiveandcomplementarycues.To 2019),romancescam(Al-Rousanetal.2020;Suarez-Tangil
+investigate,weperformadetailedhumananalysisonasub- et al. 2019), Pig-Butchering scam (Oak and Shafiq 2025;
+set of YouTube scam videos, examining modality-specific Burton and Moore 2024), cryptocurrency scam (Acharya
+characteristics and their relevance for automated detection. et al. 2024; Liu et al. 2024; Li, Guan, and Lee 2023; Li,
+RQ2:Howcanwedesignamultimodalautomatedpipeline Yepuri, and Nikiforakis 2023) and SMS scam (Agarwal
+forvideoscamdetectionthatincorporatespolicy-grounded et al. 2025; Mishra and Soni 2020). In addition to this
+reasoning for greater transparency and interpretability? domain-specific analysis, Kolupuri et al. (Kolupuri et al.
+This question highlights the need to combine multimodal 2025)methodologicallyevaluatedthefeasibilityofMachine
+understanding with policy-aware reasoning. By jointly an- Learning(ML)andDeepLearning(DL)approachesforde-
+alyzingtext,audio,andvisualcues,thesystemcancapture tectingandpreventingthesefraudulentactivities.Kotziaset
+richer evidence of deception. We fine-tune a MLLM with al.(Kotziasetal.2025)studieduserexposure,showingthat
+policy-aligned scam criteria to enable robust cross-modal end users most frequently encounter scam domains by fol-
+detection and generate interpretable, policy-consistent ex- lowinglinkssharedonsocialmedia.Ourworkextendsthis
+planations.RQ3:Howeffectiveisthemultimodalapproach literaturebyfocusingonscamsfacilitatedthroughYouTube.
+indetectingscamsfromin-the-wildYouTubevideos?This
+question assesses the real-world applicability of the pro- Video-based Scam/Spam. Prior research has investigated
+posed approach by evaluating its performance on large- the automated detection of targeted spam and clickbait by
+scale, naturally occurring YouTube videos, measuring both analyzing video titles, comments, thumbnails, and meta-
+detection accuracy and the quality of policy-grounded ex- data (Alberto, Lochter, and Almeida 2015; Chaudhary and
+planations.Insummary,thisstudymakesthefollowingcon- Sureka 2013; Zannettou et al. 2018). In a related direction,
+tributions: Chu et al. (Chu et al. 2022) examined various tactics used
+• Comprehensive multimodal YouTube scam video by creators to monetize content through deceptive means.
+dataset: We curate a new YouTube scam video dataset, Llavendhan et al. (Ilavendhan, Janani et al. 2024) focused
+VidScam, covering monetary, giveaway, and cryptocur- on detecting spam within YouTube comments and do not
+rencyscams.Unlikepriordatasetsthatincludeonlyvideo analyze the video content itself, making their work funda-
+IDs and metadata, VidScam provides full video content mentally different from ours. Several studies have explic-
+alongwithpolicy-alignedreasoningcriteriaderivedfrom itly focused on detecting YouTube scam videos. Bouma-
+YouTube’scontentguidelines. Sims et al. (Bouma-Sims and Reaves 2021) conducted an
+• Systematic evaluation across modalities: We per- exploratory analysis using organic searches and found that
+form extensive experiments using text, audio, and vi- basicmetadata,suchasvideoage,viewcount,andchannel
+sual models to assess modality-specific performance. A size, alone were insufficient for reliably identifying scams.
+text-only BERT model achieves 76.61% F1 score us- Tripathietal.(Tripathi,Ghosh,andBharti2022)compared
+ing titles and descriptions, while a visual-only model textual features, like titles and descriptions, with statistical
+(LLaVA-Video-7B) reaches 79.61% F1 score on video metadata (e.g., view count, likes, video length, comments)
+frames—establishing strong baselines for future multi- and found that text-based features were more effective for
+modalresearch. detectingmonetaryscams.Similarly,Lietal.(Li,Guan,and
+• Multimodal scam detector with interpretable reason- Lee 2023) demonstrated that classifiers trained on textual
+ing: We propose VidScamNet, a multimodal framework metadatacouldsuccessfullydetectcryptocurrencyarbitrage
+thatfusestextualandvisualfeaturesforimproveddetec- botscams,highlightingthepredictivevalueoftextualinfor-
+tion. Beyond classification, VidScamNet generates inter- mationinthisdomain.
+pretable, policy-grounded explanations for its decisions,
+achievinganF1scoreof82.96%. DistinctionfromPriorWork. Ourstudydiffersfromprior
+• Large-scale in-the-wild validation: We evaluate Vid- efforts in three key ways. First, unlike existing approaches
+ScamNet on 6,374 wild videos collected using scam- that rely primarily on textual or statistical metadata, we
+related keywords. VidScamNet identifies 1,864 scam incorporate the video modality, enabling multimodal de-
+videos and produces YouTube policy–aligned reasoning tection of scam videos on YouTube, which is more resis-
+foreachdetection,demonstratingitsscalabilityandreal- tant to evasion techniques. Second, we focus on multiple
+world applicability. We also report the detected scam scamcategoriestoimprovethegeneralizabilityofourdetec-
+videostoYouTube. tion approach, rather than limiting it to a single scam type.
+Finally, while these traditional models lack explainability,
+2 RelatedWork ourapproachintegratesscamreasoningcriteriagroundedin
+YouTube’sofficialpolicyon“Spam,deceptivepractices,and
+Scams Across Digital Platforms. A large body of re- scams”(YouTubeHelp2025),providingalevelofexplain-
+searchhasanalyzeddifferenttypesofscamsondigitalplat- abilitythatisessentialforeffectiveplatformgovernance.
+3 Dataset notated using a binary scheme, where each modality is in-
+dependently marked as present or absent (allowing multi-
+We utilize three publicly available YouTube scam video
+plemodalitiespervideo).Incontrast,thecriterialabelsare
+datasetsfrompriorstudies,eachfocusingonadistinctscam
+grounded in YouTube’s policies on spam, deceptive prac-
+category: monetary (Bouma-Sims and Reaves 2021), give-
+tices, and scams (YouTube Help 2025). Following Bouma-
+away (Tripathi, Ghosh, and Bharti 2022), and cryptocur-
+Simsetal.(Bouma-SimsandReaves2021),weextractand
+rencyscams(Li,Guan,andLee2023).Thesedatasetswere
+consolidatescam-relatedcriteriadefinedinYouTube’scon-
+chosen for their open accessibility and coverage of diverse
+tent policies. We present our final set of scam criteria with
+scamtypes.EachdatasetprovidesYouTubevideoIDs,titles,
+representative examples in Table 1, and illustrate instances
+descriptions, and associated metadata. The corresponding
+fromthedatasetinFigure1.Collectively,thesecriteriacap-
+videoswereretrievedusingthePythonlibraryyt-dlp(yt-
+ture the manipulative tactics designed to deceive users and
+dlp2025)byprovidingthevideoIDs.Wenamethisconsol-
+redirectthemintofraudulentecosystems,whileourmodal-
+idateddatasetasVidScam.
+ity annotations reveal how such tactics are operationalized
+acrosstext,audio,andvisualmodalities.
+AdaptingExistingDatasets
+Duringannotation,weobservedthatmany“scam”videos
+Bouma-Sims et al. (Bouma-Sims and Reaves 2021) com-
+didnotresultindirectfinancialloss.Tocapturethisnuance,
+piled a dataset of 3,700 YouTube videos related to various
+weintroducedanadditionallabelingdimensionforscamim-
+scams,includinggiftcardscams,gamecurrencyscams,tech
+plicationwiththreecategories:(i)in-gamefinancialorasset
+supportscams,andbanksupportscams.Theauthorsmanu-
+gain,(ii)real-worldfinancialormaterialgain,and(iii)redi-
+allyreviewedandlabeled668videosasscams,whilethere-
+rection to external websites or apps that may host malware
+mainingvideoswereclassifiedasnon-scams.However,we
+orcollectpersonaldata.Theselabelsofferfinergranularity
+wereabletodownloadonly2,071videos,ofwhich146were
+incharacterizingscamtactics,highlightinghowpromisesof
+labeledscams.Throughoutthepaper,werefertothisdataset
+financialorin-gamerewardsareoftenusedtolureusersinto
+asGiveawayScam.
+fraudulentecosystems.
+Tripathietal.(Tripathi,Ghosh,andBharti2022)focused
+on content promoting financial fraud, such as cash gift of- Annotation Process. With afixed set ofscam criteria, we
+fers, get-rich-quick schemes, and pyramid schemes, which analyze200randomlyselectedvideosfromtheconsolidated
+they categorized as monetary scam videos. Their dataset dataset.Amongthesevideos,120werelabeledasscams.For
+consists of 1,292 manually annotated YouTube videos, in- the annotation process, three researchers with 3-5 years of
+cluding 419 monetary scam videos, 873 non-scam videos. experienceinonlinesafetyresearchannotatedvideosinthe
+We successfully downloaded 1,188, including 278 labeled dataset in batches of 10-20. For each video, annotators ap-
+scams. Throughout the paper, we refer to this dataset as pliedscamcriteria,scamimplication,modality,andalabel
+MonetaryScam. indicating “scam”, “non-scam”. Each video was reviewed
+Lietal.(Li,Guan,andLee2023)investigatedcryptocur- in full, including audio, title, description, and visual con-
+rency arbitrage bot scams and developed a classification tent. After every batch, they convened and discussed their
+modelcalledCryptoScamHunter,whichdetectssuchfraud- applicationofthecriteriatoreachaconsensusontheirmen-
+ulent content on YouTube. Their model was trained using tal models. In some cases where the legitimacy of external
+2,000 ground-truth YouTube video titles and descriptions. apps/websites mentioned in the video was unclear, anno-
+However, we could not obtain the ground-truth videos, as tators verified with two widely used URL checkers, Nord-
+thevideoIDswereunavailable.Nonetheless,weaccesseda VPN (NordVPN 2025) and VirusTotal (VirusTotal 2025),
+set of video IDs classified as scams by CryptoScamHunter labeling the video as scam/non-scam. Moreover, for non-
+anddownloaded580ofthesevideos.Throughoutthepaper, english videos, annotators used YouTube’s auto-captioning
+werefertothisdatasetasCryptoScam. andauto-translationfeatures.
+EthicalConsiderations. Thedatasetsconsistexclusivelyof Inter-rater reliability. To assess inter-rater reliability, we
+publiclyavailableYouTubevideosanddonotincludeuser- computed Krippendorff’s alpha (McDonald, Schoenebeck,
+level personal information. Any incidental personal identi- andForte2019;Krippendorff2011)aftereachbatch,using
+fierswerefilteredoranonymizedpriortouse. a multi-label implementation with the Dice similarity met-
+ric(Grill2025).Krippendorff’salpha(α)iswell-suitedfor
+AnnotationandDatasetValidation
+multi-labelcategoricalannotationwithmultipleraters.Iter-
+The three existing YouTube scam datasets primarily focus ativeannotationcontinueduntilsubstantialagreement(α>
+on metadata (titles, descriptions, and identifiers) but have 0.8)wasachievedafternineiterations,covering115videos.
+two key limitations: (i) they lack explicit annotations of Theremaining85videoswerethendistributedamonganno-
+policy violations that define scam content, and (ii) they tatorsforindependentlabeling.Detailedreliabilityscoresin
+do not attribute these violations to specific modalities or alliterationsarereportedinAppendixB.Forqualitycontrol,
+videopropertiessuchasthetitle,description,orvisualcon- thefirsttwobatcheswerestructuredbyscamtype(allscam,
+tent. To address this limitation, we re-annotated a subset all non-scam), while later batches were randomized across
+of the dataset with two additional labels, i.e., scam modal- classes. For non-scam videos, annotators additionally pro-
+ity and scam criteria. The modality label identifies where vided a short descriptive summary confirming the absence
+scam cues appear such as text, audio, and visual and is an- ofdeceptivepractices.
+Criteria Description Example
+Criteria1 Claimstocommitacrimeonbehalfofthe Videoinstructingviewerstomanipulateacompany’scustomerserviceto
+user,regardlessofwhetheritactuallydoes. obtainfreegoodsorsharingcontentthatdirectlyviolatesplatformpoli-
+cies.
+Criteria2 Purports to provide an unbounded give- Claiming to generate unlimited gift card codes or infinite in-game cur-
+awaythatoffersunlimitedfreeitemswith- rencythroughthird-partyapplications.
+outrules,limitorend.
+Criteria3 Promisesviewersthey’llseesomethingbut Videothatpromisesamovieclipbutinsteadlinkstoanexternalstreaming
+insteaddirectsthemoff-site. site.
+Criteria4 Getsclicks,views,ortrafficoffYouTubeby Videothatadvertisesrapidfinancialorin-gamegainsinordertoredirect
+promisingviewersthatthey’llmakemoney userstomaliciousapplicationsorexternalwebsites(e.g.,“Getafree$200
+fast. NikeGiftCard”,“Make$50perdayusingCryptoarbitragebot”)
+Criteria5 Sends audiences to sites that can spread Videothatexplicitlyinstructsviewerstofollowlinksinthedescriptionor
+malware,trytogatherpersonalinformation visitexternalsitesthatarepotentiallyharmful.
+orothersitesthathaveanegativeimpact.
+Criteria6 Offerscashgifts,getrichquickschemes,or Videothatpromotesunrealisticpromisesoffinancialorin-gamerewards,
+pyramidschemes. such as fraudulent mobile game hacks or earning money by playing
+games.
+Criteria7 Impersonatesanindividual,company,oror- Video that advertises fake customer support number posing as Amazon
+ganization. support.
+Table1:ScamcriteriausedforannotationofYouTubevideos,alongwithrepresentativeexamples.
+(a) (b) (c)
+Figure1:Examplescamvideos.(a,b)illustratescamsthatredirectuserstoexternalwebsites,promote“getrichquick”schemes,
+andattempttodriveclicks,views,ortrafficoffYouTube.(c)impersonatesAmazonwithalikelyfraudulentcontactnumber.
+Text+Video (71) Text+Audio+Video (32)
+Audio+Video (14) Video only (3)
+0 30 60 90 120
+Count
+ytiladoM
+derscores that multimodal information provides richer and
+morereliableindicatorsforidentifyingscams.Figure3ail-
+Text
+lustrates a typical [text+video] case: the title advertises a
+Audio
+Video “hack”forobtainingfreein-gamecurrency,whilethevideo
+frames explicitly display a malicious link to claim the re-
+ward. By contrast, Figure 3b shows a [video-only] exam-
+ple,wherethetitleanddescriptionappearbenign(e.g.,ref-
+erencing “FrontRunning Bot BSC”), yet the video frames
+reveal strong scam cues, such as invitations to join private
+Telegram channels to purchase cryptocurrency bots. More-
+Figure2:Scamcuesacrossmodalityfromannotateddataset.
+over, most scam videos contained only background music
+Figure 2 presents the distribution of combinations of or no audio at all. We also observed recurring visual pat-
+modality in the annotated scam videos. The video title and terns that serve as strong scam indicators: on-screen URLs
+description are grouped as the text modality. The majority or QR codes linking to external websites, textual instruc-
+of the scam videos relied on multimodal cues rather than tionsembeddedinthevideosuchas“Browsethiswebsite,”
+a single modality. Specifically, 32 videos contained indica- “Click on Generate,” or “Link in the Description,” and di-
+torsacrossallthreemodalities(text,audio,andvideo),while rect contact information for private Telegram, Discord, or
+71combinedtextualmetadatawithvisualcues(text+video), WhatsAppgroups.Manyscamvideossimulate“humanver-
+and14leveragedaudioandvideo(audio+video).Onlythree ification” steps, requiring users to complete surveys, pro-
+videosreliedexclusivelyonvisualcues,andnovideoswere videpersonalinformation,orinstallthird-partyapplications
+annotated as text-only, audio-only, or text+audio. This un- toclaimpromisedrewards.Someevenencourageriskybe-
+Crit.1 Crit.2 Crit.3 Crit.4 Crit.5 Crit.6 Crit.7 Label Dataset Train Test Total
+3 12 0 88 105 102 16 MonetaryScam 200 69 269
+GiveawayScam 100 41 141
+Scam
+Table2:Scamcriteriadistributioninannotateddataset. CryptoScam 200 339 539
+VidScam 500 449 949
+ScamCriterion Count
+NonScam VidScam 1000 1890 2890
+Financialormaterialgain 73 All VidScam 1500 2339 3839
+Ingamefinancialorassetgain 30
+Redirecttowebsiteorappthatcanbemalwareor 105 Table4:TrainandTestDatasetDistribution
+collectpersonalinformation
+TrainingandTestSets
+Table3:Distributionofscamtypeinannotateddataset. Using the consolidated dataset, we constructed the train-
+ingandtestsetsforourexperiments.Thetrainingsethasa
+havior,suchasdisablingantivirussoftwaretoinstallfraudu-
+1:2ratioofscamtonon-scamvideos,comprisingatotalof
+lenttools.Collectively,theseresultsindicatethatwhiletex-
+500scamvideos:200fromMonetaryScam,100fromGive-
+tualmetadataisinformative,combiningvisualcueswithtext
+awayScam,and200fromCryptoScam.Fromthecombined
+providesthemostreliableindicatorsofscams,underscoring
+pool of non-scam content across all three datasets, 1,000
+thevalueofmultimodalanalysis.
+non-scamvideoswererandomlysampled.Thetestsetcom-
+Table 2 summarizes the prevalence of scam criteria in prises the remaining videos and does not adhere to a fixed
+the annotated datasets. The most frequently observed cate- ratio of scams to non-scams. A detailed breakdown of the
+goriesinclude:‘Sendsaudiencestositesthatcanspreadmal- trainingandtestsetsisprovidedinTable4.
+ware, try to gather personal information or other sites that
+have a negative impact’, ‘Offers cash gifts, get rich quick
+4 DetectionofVideo-basedScams
+schemes, or pyramid schemes’, and ‘Gets clicks, views, or
+traffic off YouTube by promising viewers that they’ll make The goal of automated scam video detection on YouTube
+money fast’. Moreover, Table 3 presents the annotation re- is to identify content that promotes fraudulent or decep-
+sult for scam implication. Here, financial or material gain tive activities in accordance with YouTube’s scam poli-
+emergedasthemostprominentone,appearingin73times, cies (YouTube Help 2025). To evaluate the incremental
+and in game financial or asset gain appears 30 times. To- value of different information sources, we examine uni-
+gether, these distributions highlight scammers’ reliance on modalandmultimodalmodelsusingtextual,audio,andvi-
+monetaryandasset-basedincentivesasprimarylures. sualcontent,andproposeamultimodalframeworkthatinte-
+grates these signals to improve accuracy and provide inter-
+pretable,policy-alignedexplanations(Figure4).Priorwork
+Takeaway:Majorityofthescamvideosleavedistinctive
+hasexploredlightweightbaselinesbasedontextualandsta-
+scamcuesinboththetextualandvisualmodality.
+tistical features. However, textual content has been shown
+to outperform statistical signals such as views, likes, and
+Forthisstudy,weinitiallytreatedthelabelsfromtheex- comments (Tripathi, Ghosh, and Bharti 2022). Moreover,
+isting datasets as ground truth. However, after annotation, these metrics are easily manipulated through fake interac-
+theresearchersdisagreedwiththegroundtruthlabelsfor13 tions(Chuetal.2022).Consequently,ourstudyfocuseson
+videos, all of which had been originally labeled as scams. content-basedmodalities.
+To further investigate potential mislabeling, annotators re-
+viewedallscamvideosinthemergeddataset.Asaresult,9 ComparativeBaselines
+videosfromtheMonetaryScamdatasetwerereclassifiedas
+For a comprehensive evaluation of automated scam video
+non-scams, as they discussed legitimate income-generating
+detection, we establish comparative baseline models using
+activitiessuchasfreelancing,affiliatemarketing,andblog-
+differentcombinationsofinputfeaturesandmodelarchitec-
+ging. Other examples included informational videos about
+tures.
+Google Pay or recordings of award ceremonies. Similarly,
+5videosfromtheGiveawayScamdatasetwererelabeledas ModalityandInputConfigurations. Weexploremultiple
+non-scams,whichincludecontentsuchasdiscussionsabout feature configurations to evaluate how different modalities
+why certain Clash of Clans game hacks are scams or mu- contributetoscamvideodetection.
+sic videos unrelated to fraudulent activities. Finally, since • Title–Description Based Detector. This configuration
+CryptoScam videos were labeled using the automated tool uses video titles and descriptions, previously shown to
+CryptoScamHunter, a substantial number of false positives be effective for text-based detection (Li, Guan, and Lee
+wereidentified.41videosfromthisdatasetwerereclassified 2023). Non-English metadata are translated into English
+as non-scams, including cryptocurrency tutorials, podcasts, viatheGoogleTranslationAPI(Google2025),andemo-
+and unrelated general content such as cooking videos and jisareconvertedintotextualformusingdemoji(Solomon
+fishingvlogs.Forthefinaldataset,allidentifiedvideoswere 2025).
+relabeledasnon-scamstoensurehigherdataquality(misla- • TranscriptionBasedDetector.Toassesstheroleofspo-
+belingrateisinAppendixE). ken content, we extract audio from each video, generate
+(a) (b)
+Figure3:Modalityofscamvideos.(a)combinestextandvisuals:atitleadvertisingagamehackwithframesshowinginstruc-
+tionsandamaliciouslink;(b)reliesonvisualdeception,directingviewerstoaTelegramchannelforacryptoarbitragebot.
+AllenNLP (Gardner et al. 2018). Although designed for
+Data Collection and Annotation Model Configuration Wild Data Analysis
+MonetaryGiveaway Crypto crypto scams, its linguistic cues, such as deceptive finan-
+Scam Scam Scam
+c Video Title & Audio cialclaims,generalizewellacrossscamtypes.Wealsotrain
+Frames DescriptionTranscript
+a three-layer feedforward network and a fine-tuned BERT
+YouTube
+Manual Search API Key words model on all textual configurations, leveraging pretrained
+Verification LLaVA-Video 7B Yt-dlp video language representations for broader generalization across
+LoRA downloader
+diversescamtypes.
+VidScam Non For configurations involving visual inputs, we focus on
+Scam
+Reasoning open-sourcemultimodalmodelstoensurefullaccesstotheir
+critR ee riaa s fo on r i sn cg a m a nH nu om taa ten d genG eP raT t ed Scam Reasoning Me Vta id da et oa dataV baid se eos architectures and training parameters. Closed-source sys-
+temslikeGPT-4VandGemini,thoughpowerful,posechal-
+Figure 4: Overview: (i) Dataset: Merged and manually re- lengesincost,scalability,andtransparency.Wefirstevaluate
+annotated YouTube scam datasets across three scam types. two open-source vision–language models, LLaVA-Video-
+(ii) Model: Fine-tuned LLaVA-Video-7B fusing frames, ti- 7BandQwen-2.5-VL-7B,inazero-shotsettingusingsam-
+tles, and descriptions for scam prediction with reasoning. pledvideoframesfromthefullVidScamtestset.Asshown
+(iii) Wild Data: VidScamNet is applied to YouTube videos in Table 5, both models achieve low F1 scores (13–17%),
+retrievedviatheSearchAPIforat-scalescamdetection. with Qwen-2.5-VL-7B showing higher precision but poor
+recall,whileLLaVA-Video-7Boffersamorebalancedtrade-
+English transcripts using Whisper (Radford et al. 2022),
+off. Additionally, GPT-4o was evaluated on a 100-sample
+andusethemastextualinputs.
+subsetofthetestset,achievingahigherF1scoreof75.20%,
+• Title–Description–Transcription Based Detector. We
+highlighting the strong zero-shot capability of large pro-
+fuse transcriptions, titles, and descriptions to enrich the
+prietarymultimodalmodels.However,theseclosedmodels
+textualinput.
+lackfine-tuningflexibilityandincurfinancialcosts.Conse-
+• Video Based Detector. For visual input, we uniformly
+quently, we select the best-performing open-source model,
+sample frames from each video to evaluate the contribu-
+LLaVA-Video-7B, for fine-tuning to ensure reproducibility
+tionofvisualcuesforscamvideodetection.
+and scalability. As we show later, fine-tuned open-source
+• Video–Transcription Based Detector. This configura-
+modelscansurpasslargeproprietaryalternatives.
+tion combines video frames with corresponding audio
+transcriptionstojointlycapturevisualandaudiosignals.
+MultimodalScamDetectionwithReasoning
+• Video–Title–Description Based Detector. Finally, we
+combine video frames with processed titles and descrip- For our multimodal scam detection framework, VidScam-
+tionstoassessthejointeffectoftextualandvisualfeatures Net, we consider LLaVA-Video-7B based on its zeroshot
+onscamdetection. performance. Moreover, its diverse video–text pretraining
+and instruction-tuning further enhance its suitability for
+Model Considerations. We employ different architec-
+reasoning-driventasks.
+turestailoredtoeachinputmodality.Fortextualinputs,we
+use CryptoScamHunter (Li, Guan, and Lee 2023), a state- Multimodal Input Processing. We leverage both textual
+of-the-art text-based cryptocurrency scam detector imple- andvisualmodalitiesforYouTubescamvideodetection.For
+mented as a three-layer feedforward neural network using text, we use video titles and descriptions, translating non-
+Model Acc.% Prec.% Rec.% F1Score% 100
+LLaVA-Video-7B 76.78 27.4 12.69 17.35
+Qwen-2.5-VL-7B 80.41 40.22 8.45 13.96
+GPT-4oVision⋆ 69.00 73.44 77.05 75.20 80
+Table5:Zeroshotperformanceofvision-languagemodels. 60
+(⋆Evaluatedonarandomsubsetconsisting100videos)
+40
+EnglishmetadatawiththeGoogleTranslationAPI(Google 100200 500 750 1,000 1,400
+2025) for consistency. Emojis are converted to text using TrainingSamples
+demoji(Solomon 2025) topreserve semanticmeaning. For
+visuals, we uniformly sample 64 frames from each video.
+We adopt 64 frames because this is the default pretraining
+configuration of LLaVA-Video. Increasing to 100 frames
+yielded only a 0.2% F1-score gain in the video-only set-
+ting,whiletriplingruntimeandincreasingmemoryusageby
+1.35times.Inthemultimodalsetting,100framescausedthe
+combinedinputs(frames+title+description)toexceedcon-
+textlimit,makingitinfeasibleformanyvideos.InLLaVA-
+Video, text is tokenized with the Qwen-2 tokenizer (et al.
+2024),andframesareencodedusingtheSigLIPvisionen-
+coder (Zhai et al. 2023). The fused text–vision representa-
+tions are processed by the language model to produce the
+predictedscamlabelandreasoning.
+Supervised Finetuning with LoRA. We formulate
+YouTube scam detection as a multimodal instruction-
+followingtask(Shengyuetal.2023).Eachtraininginstance
+includes the video’s visual frames, temporal metadata (du-
+ration and frame timestamps), and its title and description,
+paired with an instruction prompt: “Is this a scam video?
+AnswerYes/Noandexplainyourreasoning.Analyzethecon-
+tentandrefertotheofficialYouTubeTermsandConditions
+violations for scams (List of scam criteria).” The model is
+trained to output both a binary prediction (Yes/No) and a
+policy-alignedtextualrationale(Section3).
+To efficiently adapt LLaVA-Video-7B, we apply Low-
+Rank Adaptation (LoRA) (Hu et al. 2022), a parameter-
+efficient fine-tuning technique that inserts small trainable
+matrices into select layers while freezing the rest. This ap-
+proach reduces computational and memory costs, enabling
+domain-specific adaptation without compromising perfor-
+mance. In our setup, we use a LoRA rank of 128 and an
+alpha of 32, adding only 55.71 MB of trainable parame-
+ters,whichisabout0.69%ofthemodel’stotalsize(8086.05
+MB).Themodelistrainedforupto10epochswithalearn-
+ingrateof1e−3,resultinginanefficientyeteffectiveadap-
+tationforscamdetection.
+Reasoning Data Augmentation for Training. To fine-
+tune the model for generating policy-grounded reasoning,
+weused200human-annotatedsamplesfromSection3,split-
+ting them evenly between training and evaluation. Fine-
+tuning on this small set resulted in limited performance
+(55.71% F1), underscoring the need for additional training
+data. To scale up, we employed GPT-4o Vision to gener-
+ate reasoning aligned with YouTube’s policy criteria under
+twoinputsettings:(i)title,description,andframes,and(ii)
+framesonly.Thelatterproducedreasoningmoreconsistent
+with human annotations. The GPT-generated explanations
+achievedaBERTScore(Zhangetal.2019)of0.88compared
+egatnecreP
+Precision
+Recall
+F1Score
+Figure5:Effectoftrainingsizeonperformance.
+to 100 human-annotated validation samples (60 scam, 40
+non-scam), indicating high semantic similarity. Moreover,
+we manually evaluated quality of the generated reasoning
+withthevalidationset.Forscamvideos,GPT-generatedrea-
+soning fully aligned in 53 cases and partially aligned in 7.
+For non-scam videos, GPT was instructed to produce brief
+summaries indicating legitimacy and it generated reliable
+summaries for all 40 cases. We then augmented VidScam
+with GPT-generated reasoning for 1,300 additional videos
+(promptusedisavailableinAppendixG).Anablationstudy
+ontrainingdatasize(seeFigure5)furthershowsthatperfor-
+mancesteadilyimprovesasmorereasoningdataareadded.
+We use this final model configuration for all subsequent
+evaluationsinthepaper.
+ImplementationDetails
+AllmodelswereimplementedinPython.Text-onlyexperi-
+ments(thethree-layerneuralnetworkandpretrainedBERT)
+were conducted using the AllenNLP framework (Gardner
+etal.2018)onasystemwithanNVIDIARTX4090GPU.
+ExperimentsinvolvingtheLLaVA-Videomodelwererunon
+amachinewithanNVIDIAA100GPU.
+5 Results
+Our experiment results depict performance differences
+across the text-only, visual-only, and multimodal detection
+models of YouTube scam videos. Table 6 summarizes the
+classification performance across different input modalities
+and feature configurations on the VidScam test set. These
+results form the foundation for the following subsections,
+whereweanalyzetheperformanceindetail.
+PerformanceUnderDifferentModality
+Scam Detection using Text-Only Modality. We first
+evaluate textual features, video titles and descriptions, for
+scamdetection.Thestate-of-the-arttext-basedmodelCryp-
+toScamHunter (Li, Guan, and Lee 2023) achieves 92.03%
+F1scoreonitscryptocurrency-focuseddatasetbutdropsto
+46.88% F1 score on VidScam, which covers broader scam
+types(asshowninTable7).Thisgaphighlightsthemodel’s
+limited generalizability, expected given its simple three-
+layer feedforward design and narrow training scope. Fine-
+tuning the same network on VidScam improves F1 score to
+73.46%, though precision declines due to increased false
+positives. Fine-tuning BERT on the same dataset further
+boostsperformanceto76.61%F1score.
+TrainingData Model Accuracy% Precision% Recall% F1Score%
+3LayerNN 88.20 64.64 85.08 73.46
+Title,Description
+Bert 90.21 70.75 83.52 76.61
+3LayerNN 86.15 62.14 71.21 66.39
+Transcription
+Bert 87.99 65.38 79.51 71.76
+3LayerNN 90.94 74.43 80.40 77.30
+Title,Description,Transcription
+Bert 90.68 71.35 85.97 77.98
+VideoFrames Llava-Video-7B 91.88 76.81 82.63 79.61
+VideoFrames,Transcription Llava-Video-7B 91.11 71.33 89.76 79.49
+VideoFrames,Title,Description Llava-Video-7B 91.45 71.36 92.65 80.62
+VideoFrames,Title,Description,Reasoning Llava-Video-7B 92.82 76.16 91.09 82.96
+Table6:ComparisonoftheproposedVidScamNetwithexistingscamdetectionmodelsacrossdifferentmodalities.
+Dataset Acuracy% Precision% Recall% F1score% Model Acc.% Prec.% Rec.% F1score% Acc.drop%
+CryptoScam 94.36 95.98 88.40 92.03 SVC 84.35 56.02 85.96 67.83 12.00
+VidScam 86.53 96.53 30.96 46.88 Adaboost 87.98 66.34 75.94 70.82 22.00
+RF 90.59 81.36 66.14 72.97 38.00
+VidScamNet 92.82 76.16 91.09 82.96 1.00
+Table7:Performanceofstate-of-the-arttextmodel
+We next assess audio transcriptions for scam detection. Table8:ComparisonwithExistingMLapproaches
+Models using transcriptions alone perform worse, achiev-
+nals, enhancing YouTube scam video detection. Moreover,
+ing 66.39% F1 with a three-layer network and 71.76%
+unimodalmodelsaremorevulnerabletoadversarialpertur-
+with fine-tuned BERT, reflecting that many scam videos
+bations (Appendix F), reinforcing the robustness of multi-
+contain only background music or non-informative audio.
+modallearning.
+In our annotated subset of 200 videos, 90 contain only
+background music, including 74 scam videos, for which
+PolicyGroundedMultimodalDetector
+Whisper produces generic or meaningless transcripts with
+no scam-relevant cues. Finally, combining all three textual The proposed multimodal scam detection framework, Vid-
+inputs—titles, descriptions, and transcriptions—yields the ScamNet, achieves the best overall performance, reaching
+strongest results. The three-layer network reaches 77.30% an F1 score of 82.96% after instruction tuning with video
+F1score(vs.73.46%withtitles+descriptions,66.39%with frames, titles, descriptions, and policy-grounded reason-
+transcriptions), while fine-tuned BERT achieves 77.98%, ing data. Incorporating policy-grounded reasoning yields
+showingmodestgainsfromintegratingtranscriptions. a 2.34% improvement over the non-reasoning multimodal
+baseline(80.62%F1score),indicatingthatexplicitreason-
+Scam Detection using Visual Modality. We evaluate the ing helps the model better capture nuanced scam indica-
+effectiveness of visual information using frame-level fea- tors. This gain comes with minimal overhead, increasing
+tures extracted from video content. Finetuning the LLaVA- tokens by only 0.85%. In addition, the generated explana-
+Video-7BmodelonvideoframesaloneachievesanF1score tionscloselymatchhuman-annotatedreasoning,achievinga
+of79.61%,demonstratingthatvisualcuescanreliablyiden- BERTScoreof0.89on100benchmarksamples(Section4).
+tifyscamcontent.Thevisual-onlymodelalsoattainshigher Beyond accuracy gains, policy-aligned reasoning enhances
+precision (76.81%) than text-only models, indicating fewer transparencyandconsistencywithYouTube’sscamcriteria.
+falsepositivesandhighlightingtherobustnessofvisualfea-
+Takeaway: Multimodal models outperform unimodal
+turesforscamdetection.
+ones in YouTube scam detection, with text providing
+Scam Detection using Multiple Modalities. We evaluate strong cues, visuals improving precision, and policy-
+multimodal performance by combining video frames with grounded reasoning enhancing both performance and in-
+textualinputs(titles,descriptions,andtranscriptions).Fine- terpretability.
+tuning the multimodal models produces consistent gains
+ComparisonwithExistingMLApproaches
+across all configurations (as highlighted in Table 6). Com-
+bining frames with transcriptions achieves an F1 score of Prior work (Tripathi, Ghosh, and Bharti 2022) explored
+79.49%, comparable to the frame-only model (79.61%). lightweightmodels,includingSVC,AdaBoost,andRandom
+However, integrating frames with titles and descriptions Forest, for detecting scam videos using titles and descrip-
+yields the best overall result (80.62% F1 score), surpass- tions.AsshowninTable8,thesemethodsachievemoderate
+ing both the best text-only model (77.98% F1 score) and performance(F1scoreupto72%)buthavelimitedrobust-
+the visual-only model, with a 5.10% recall improvement. nesstoadversarialmanipulation.
+Overall, adding visual cues to textual metadata improves To evaluate realistic evasion strategies, we test textual
+the F1 score by 4.01%. These findings indicate that textual attacks including leet-style obfuscations (e.g., replacing
+featuresfromtitlesanddescriptionscomplementvisualsig- characters with visually similar symbols such as “Fr33
+G!ftC@rd”) and semantic perturbations generated using Crit.1 Crit.2 Crit.3 Crit.4 Crit.5 Crit.6 Crit.7
+TextAttack (Morris et al. 2020), modeling both character-
+7 257 237 1361 1447 1711 65
+levelandmeaning-preservingmanipulationscommonlyob-
+servedinscamcontentonasampleof100scamvideosfrom
+Table9:Distributionofscamcriteriainthewilddataset
+thetestset.Undersemanticperturbations,priorlightweight
+baselines show accuracy drops of 12–38% (Table 8). Sim- Correctlyclassified
+ilarly, the text-only BERT model is highly susceptible to Label (ReasoningQuality) Misclassified
+manipulation,sufferinga33%accuracydecreaseunderleet Fully Partially
+Incorrect
+transformationsanda15%dropundersemanticedits.Arep- aligned aligned
+resentative example (Appendix F) illustrates how text ob- Scam 33 13 1 3
+fuscationcausestext-onlymodelstomisclassifyscamsthat Nonscam 43 3 0 4
+remainvisuallyidentifiablethroughcuessuchasfakecode Total 76 16 1 7
+generatorsandverificationprompts.
+Wefurtherexaminerobustnesstovisualperturbationsby Table10:Manualevaluationofgeneratedreasoning(n=100)
+applyingGaussiannoise,rotation,andblurtovideoframes
+using standard image transformation tools (Lee 2024). The Data API (YouTube 2025) to retrieve video IDs and meta-
+visual-only LLaVA model shows relative robustness to data (titles and descriptions) and used the yt-dlp (yt-dlp
+Gaussiannoiseandrotation,withaccuracydeclinesofonly 2025)librarytodownloadthevideos.DuetoAPIandavail-
+3% and 5%, respectively, but degrades substantially under abilityconstraints,somevideoscouldnotberetrieved.Run-
+blur (30%), indicating reliance on fine-grained visual de- ning the pipeline daily over three months produced a final
+tails. In contrast, the proposed multimodal model exhibits datasetof6,374videos.
+substantiallyimprovedresilience,withtextualperturbations We then deploy the best-performing multimodal model,
+reducing accuracy by only 1% and visual transformations VidScamNet (integrating video frames, titles, and descrip-
+degrading performance by at most 3%. Overall, these find- tions), to analyze the wild dataset. Out of 6,374 YouTube
+ingsdemonstratethatwhilelightweighttext-basedbaselines videos, VidScamNet flagged 1,864 as scams and produced
+offer computational efficiency, multimodal fusion is essen- policy-grounded rationales supporting each classification.
+tialforrobustscamdetectionunderadversarialconditions. Noteably,316ofthevideosflaggedasscamsbyVidScam-
+NethavesincebeenremovedfromYouTube,underscoring
+ComputationalCostAnalysis boththepracticalrelevanceofourdetectionframeworkand
+To assess computational efficiency, we measure inference itspotentialalignmentwithplatformmoderationoutcomes.
+time and GPU memory usage across model configurations Table9showsthedistributionofscamcriteriainthede-
+(details available in Appendix D). The three-layer neural tectedvideos.Themostcommonscamsinvolvedcashgifts
+network is most efficient, using only 0.10 GB of memory and get-rich-quick schemes (1,711), followed by redirec-
+and1mspersamplewithalltextualinputs.Incomparison, tions to malicious sites (1,447) and fast-money promises
+BERT requires 1 GB and 0.13 s per sample, reflecting the (1,361). Less frequent but still notable were unbounded
+added cost of transformer-based models. Multimodal mod- giveaways (257), off-site redirections via misleading con-
+els introduce significantly higher overhead. LLaVA-Video, tent(237),andimpersonationofindividualsororganizations
+when processing only video frames, consumes 55.6 GB of (65).Extremelyrarecasesincludedvideosclaimingtocom-
+memory and 2 s per sample. Adding modalities further in- mit crimes on behalf of users (7). These findings demon-
+creases usage to 66.8 GB and 2.1 s for frames with tran- stratethatmultimodaldetectioneffectivelyuncoversawide
+scriptions,and57.1GBand2.0sforframeswithtitlesand rangeofscamtactics,withfinancialdeceptionandmalicious
+descriptions. Overall, these results underscore the trade-off redirectiondominatingreal-worldoccurrences.
+betweenaccuracyandcomputationalcostinmultimodalde- To further evaluate detection performance and reason-
+tectionsystems.However,forplatformslikeYouTube,such ing quality, we manually inspected 100 randomly selected
+computationalresourcesarequitefeasible. videos (50 scams and 50 non-scams). The model misclas-
+sified7videos,achievinganoverallaccuracyof93%,with
+6 ScamDetectioninWildYouTubeVideos
+94%precisionand92.16%recall.Thereasoningoutputsfor
+We further evaluate our YouTube scam video detection correctlyclassifiedvideoswereratedonathree-levelscale.
+framework on real-world (“in-the-wild”) YouTube videos. ‘Fully Aligned’: accurately captures the key scam criteria
+To construct this dataset, we curated a fixed set of key- inlinewithhumanjudgment;‘PartiallyAligned’:identifies
+words to increase the likelihood of retrieving scam-related somerelevantcriteriabutmissessomeorincludesunrelated
+content. These keywords were drawn from prior studies: criteria; ‘Incorrect’: fails to generate the any relevant scam
+Bouma-Sims et al. (Bouma-Sims and Reaves 2021) iden- criteria.AsshowninTable10,72hadfullyalignedreason-
+tified query patterns targeting giveaway scams, Tripathi et ing, 16 were partially aligned, and 1 had no generated rea-
+al.(Tripathi,Ghosh,andBharti2022)usedGoogleTrendsto soning(labeledIncorrect).Theseresultsindicatethatwhen
+extractmonetaryscam–relatedterms,andLietal.(Li,Guan, the model predicts correctly, its reasoning is generally reli-
+andLee2023)compiledkeywordslinkedtocryptocurrency ableandcloselymatcheshumanannotations.Representative
+scams. In total, we collected 70 keywords (listed in Ap- videos with generated reasoning are provided in Figure 6
+pendix C: Table 12). Using these, we queried the YouTube andinAppendixA.
+Title: Monopoly Go Free Rolls 2025 - How I Get Unlimited Free Dice Rolls in Monopoly Go iOS Android!!
+Description: Monopoly Go Free Rolls 2025 - How I Get Unlimited Free Dice Rolls in Monopoly Go iOS Android!!
+Yes, this is a scam video.
+Reasoning: "Gets clicks, views, or traffic off YouTube by promising viewers that they'll make money fast", "Sends audiences to sites that can spread malware, try to gather
+personal information or other sites that have a negative impact", "Offers cash gifts, 'get rich quick' schemes, or pyramid schemes"
+Title: Best Freelancing Sites in 2025 (USA) | Make Money Online Fast! #freelancer #sidehustle ...
+Description: Looking for the best freelancing websites in 2025? In this 55-second video, we break down the top freelancing platforms in the USA that are helping
+thousands earn from home ….
+No, this is not a scam video.
+Reasoning: The video provides information about reputable freelancing websites that offer high-paying opportunities. It highlights platforms like Upwork, Fiverr Pro, and
+others, focusing on legitimate ways to earn income through professional services. The content emphasizes the benefits of these platforms for freelancers, without
+directing viewers off-site in a misleading way or making unrealistic promises. It maintains a genuine and informative approach, aligning with viewers' interests in finding
+legitimate freelance work.
+Figure6:Examplesclassifiedbythemultimodalframeworkwithpolicy-groundedreasoning.(first:scam;second:non-scam)
+Takeaway: Our multimodal framework detected 1,864 tization reduces memory usage by about 50%. Additional
+real-worldscamvideoswithpolicy-alignedreasoning;fi- methods such as knowledge distillation, batch processing,
+nancial deception and malicious redirection were most andmoreaggressivequantizationcanbeappliedfordeploy-
+common,and316videoswereremovedsubsequently. ment to further optimize the cost. Moreover, the text based
+detectorscanstillserveasinexpensive,high-recallfiltersin
+7 Discussion acascadeddeploymentsetting.Inpractice,lightweighttext
+modelscanbeusedsolelytoroutevideosratherthanmake
+Our study shows that multimodal modeling, combining
+finaldecisions,allowingthesystemtoeliminatealargefrac-
+video,text,andpolicy-groundedreasoning,outperformstra-
+tionofbenigncontentbeforeinvokingmoreexpensivemul-
+ditional metadata-based approaches for detecting YouTube
+timodalmodels.
+scams. In addition to higher accuracy, it provides policy-
+aligned explanations, enhancing transparency and explain-
+Limitations and Future Work. Despite these contribu-
+abilityinautomatedmoderation.
+tions, our work has a few limitations. First, although our
+IntegrationwithinExistingDetectionPipelines. Theav- dataset is large and diverse, it cannot fully capture the
+erageinferencetimeofourmodelis2secondsandmemory evolving landscape of scams, relying on videos available
+usage is 57.1 GB on an A100 GPU. Several standard op- frompriorliterature.Second,weanalyzeuniformlysampled
+timization techniques can further reduce deployment over- frames rather than full video sequences, potentially miss-
+head.Forexample,framepreprocessinglowersaveragein- ing temporal cues that distinguish scams from legitimate
+ference time by approximately 1 second, while FP8 quan- content. Third, some reasoning data is GPT-augmented,
+whichmaynotfullycapturenuancedpolicyinterpretations. Alberto, T. C.; Lochter, J. V.; and Almeida, T. A. 2015.
+Fourth,whileopen-sourcemodelslikeLLaVA-Videoenable Tubespam: Comment spam filtering on youtube. In 2015
+cost-effective fine-tuning, commercial models may achieve IEEE 14th international conference on machine learning
+higherperformance,soourresultsprimarilyestablishanim- andapplications(ICMLA),138–143.
+proved baseline. Finally, our focus is limited to YouTube, Badawi,E.;Jourdan,G.-V.;Bochmann,G.;Onut,I.-V.;and
+and findings may not generalize to other platforms, though Flood, J. 2019. The “game hack” scam. In International
+theframeworkisadaptable. ConferenceonWebEngineering,280–295.Springer.
+Future work could extend this framework to cross-
+Bouma-Sims,E.;andReaves,B.2021. Afirstlookatscams
+platformsettingsbyadaptingthecriteriatoplatformspecific
+onyoutube. arXivpreprintarXiv:2104.06515.
+policiesandcollectingdatasets.Additionally,incorporating
+Bouma-Sims, E. R.; Klucinec, L.; Lanyon, M.; Downs, J.;
+temporal modeling of full video streams to capture time-
+and Cranor, L. F. 2025. The Kids Are All Right: Investi-
+dependentscamtactics,developautomatedframeselection
+gating the Susceptibility of Teens and Adults to YouTube
+ortemporalgroundingforimprovedefficiencyandaccuracy,
+GiveawayScams. InNDSS.
+andconductcross-platformstudiestouncoverbroaderscam
+strategiesandinformcoordinateddefenses. Burton, S. L.; and Moore, P. D. 2024. Pig butchering in
+cybersecurity:Amodernsocialengineeringthreat. SocioE-
+EthicalConsiderations. Ourstudyusespubliclyavailable
+conomicChallenges,8(3):46.
+YouTube videos and is exempt from IRB review. We also
+adhered to YouTube API rate limits during data collection Chaudhary, V.; and Sureka, A. 2013. Contextual feature
+to minimize network impact, and reported identified scam based one-class classifier approach for detecting video re-
+videostoYouTubeforfurtherreview. sponsespamonyoutube. In2013EleventhAnnualConfer-
+enceonPrivacy,SecurityandTrust,195–204.
+8 Conclusion Chu, A.; Arunasalam, A.; Ozmen, M. O.; and Celik, Z. B.
+In this work, we conducted a systematic study of scam de- 2022. Behindthetube:Exploitativemonetizationofcontent
+tectiononYouTubethroughamultimodallens.Unlikeprior onYouTube.In31stUSENIXSecuritySymposium(USENIX
+approachesthatprimarilyrelyontextualorstatisticalmeta- Security22),2171–2188.
+data,ourapproachleveragesacombinationofvideoframes, et al., A. Y. 2024. Qwen2 Technical Report.
+title, description, and policy-grounded reasoning to effec- arXiv:2407.10671.
+tively identify scam videos on YouTube. We constructed a Gardner,M.;Grus,J.;Neumann,M.;Tafjord,O.;Dasigi,P.;
+multimodal dataset of YouTube scam content with associ- Liu,N.;Peters,M.;Schmitz,M.;andZettlemoyer,L.2018.
+ated reasoning criteria and demonstrated the effectiveness AllenNLP:ADeepSemanticNaturalLanguageProcessing
+ofourapproach.Applyingourbest-performingmodel,Vid- Platform. arXiv:1803.07640.
+ScamNet,toalarge-scalewilddataset,weuncoveredthou-
+Google.2025. CloudTranslationAPI. https://cloud.google.
+sands of scam videos, highlighting both the prevalence of
+com/translate/docs/reference/rest. Accessed:January2026.
+scams on the platform and the practical potential of multi-
+Grill, T. 2025. Mtreviso/Krippendorff-Alpha: Python Im-
+modal,policy-aligneddetectionframeworks.
+plementation of Krippendorff’s Alpha That Supports Mul-
+Acknowledgements tilabel Data – Inter-Rater Reliability. https://github.com/
+mtreviso/krippendorff-alpha.
+Wethanktheanonymousreviewersfortheirvaluablefeed-
+Gupta, S.; Bhatia, G. S.; Suri, S.; Kuchhal, D.; Gupta, P.;
+back,andDanielNoltingandDr.BradleyReaves(fromNC
+Ahamad, M.; Gupta, M.; and Kumaraguru, P. 2019. Angel
+StateUniversity)fortheYouTubecrawlerusedinourin-the-
+orDemon?CharacterizingVariationsAcrossTwitterTime-
+wilddatacollection.Theopinions,findings,andconclusions
+lineofTechnicalSupportCampaigners. TheJournalofWeb
+expressedherearethoseoftheauthorsanddonotnecessar-
+Science,6.
+ilyreflecttheviewsoftheparticipatingorganizations.
+Hu,E.J.;Shen,Y.;Wallis,P.;Allen-Zhu,Z.;Li,Y.;Wang,
+References S.;Wang,L.;Chen,W.;etal.2022. Lora:Low-rankadapta-
+tionoflargelanguagemodels. ICLR,1(2):3.
+Acharya, B.; Saad, M.; Cina`, A. E.; Scho¨nherr, L.;
+Dai Nguyen, H.; Oest, A.; Vadrevu, P.; and Holz, T. Ilavendhan,A.;Janani,N.;etal.2024.OptimizingYouTube
+2024. Conning the crypto conman: End-to-end analysis SpamDetectionwithEnsembleDeepLearningTechniques.
+of cryptocurrency-based technical support scams. In 2024 In202414thInternationalConferenceonCloudComputing,
+IEEESymposiumonSecurityandPrivacy(SP),17–35. DataScience&Engineering(Confluence),625–630.
+Agarwal, S.; Harvey, E.; Mariconti, E.; Suarez-Tangil, G.; Kharraz, A.; Robertson, W.; and Kirda, E. 2018. Survey-
+Vasek, M.; et al. 2025. ‘Hey mum, I dropped my phone lance:Automaticallydetectingonlinesurveyscams.In2018
+downthetoilet’:InvestigatingHiMumandDadSMSScams IEEESymposiumonSecurityandPrivacy(SP),70–86.
+intheUnitedKingdom. InUsenixSecuritySymposium. Kolupuri,S.V.J.;Paul,A.;Bhowmick,R.S.;andGanguli,I.
+Al-Rousan, S.; Abuhussein, A.; Alsubaei, F.; Kahveci, O.; 2025. Scamsandfraudsinthedigitalage:ML-baseddetec-
+Farra,H.;andShiva,S.2020.Social-guard:Detectingscam- tionandpreventionstrategies.InProceedingsofthe26thIn-
+mersinonlinedating. In2020IEEEInternationalConfer- ternationalConferenceonDistributedComputingandNet-
+enceonElectroInformationTechnology(EIT),416–422. working,340–345.
+Kotzias, P.; Pachilakis, M.; Aldana-Iuit, J.; Caballero, J.; Shengyu, Z.; Linfeng, D.; Xiaoya, L.; Sen, Z.; Xiaofei, S.;
+Sa´nchez-Rola, I.; and Bilge, L. 2025. Ctrl+ Alt+ Deceive: Shuhe, W.; Jiwei, L.; Hu, R.; Tianwei, Z.; Wu, F.; et al.
+QuantifyingUserExposuretoOnlineScams. InNDSS. 2023. Instructiontuningforlargelanguagemodels:Asur-
+vey. arXivpreprintarXiv:2308.10792.
+Krippendorff, K. 2011. Computing Krippendorff’s alpha-
+reliability. Solomon,B.2025. Accuratelyfindorremoveemojisfrom
+a blob of text using data. https://pypi.org/project/demoji.
+Larson,J.;Tower,B.;Hadfield,D.;Edge,D.;andWhite,C.
+Accessed:January2026.
+2018. Usingweb-scalegraphanalyticstocountertechnical
+support scams. In 2018 IEEE International Conference on Srinivasan, B.; Kountouras, A.; Miramirkhani, N.; Alam,
+BigData(BigData),3968–3971. M.; Nikiforakis, N.; Antonakakis, M.; and Ahamad, M.
+2018. Exposingsearchandadvertisementabusetacticsand
+Lee, N. 2024. Blur-Generator. https://github.com/NatLee/
+infrastructure of technical support scammers. In Proceed-
+Blur-Generator. Accessed:January2026.
+ingsofthe2018WorldWideWebConference,319–328.
+Li, K.; Guan, S.; and Lee, D. 2023. Towards understand-
+Suarez-Tangil, G.; Edwards, M.; Peersman, C.; Stringhini,
+ing and characterizing the arbitrage bot scam in the wild.
+G.;Rashid,A.;andWhitty,M.2019.Automaticallydisman-
+Proceedings of the ACM on Measurement and Analysis of
+tlingonlinedatingfraud. IEEETransactionsonInformation
+ComputingSystems,7(3):1–29.
+ForensicsandSecurity,15:1128–1137.
+Li, X.; Yepuri, A.; and Nikiforakis, N. 2023. Double and
+Team, G. R. 2025. YOUTUBE statistics 2026 (De-
+nothing: Understanding and detecting cryptocurrency give-
+mographics, users by country and more). https://www.
+awayscams. InProceedingsoftheNetworkandDistributed
+globalmediainsight.com/blog/youtube-users-statistics/. Ac-
+SystemSecuritySymposium(NDSS).
+cessed:July2025.
+Liu,E.;Kappos,G.;Mugnier,E.;Invernizzi,L.;Savage,S.;
+Tripathi,A.;Ghosh,M.;andBharti,K.2022. Analyzingthe
+Tao, D.; Thomas, K.; Voelker, G. M.; and Meiklejohn, S.
+unchartedterritoryofmonetizingscamVideosonYouTube.
+2024. Give and take: An end-to-end investigation of give-
+SocialNetworkAnalysisandMining,12(1):119.
+away scam conversion rates. In Proceedings of the 2024
+Vakilinia, I. 2022. Cryptocurrency giveaway scam with
+ACMonInternetMeasurementConference,704–712.
+youtubelivestream. In2022IEEE13thAnnualUbiquitous
+McDonald, N.; Schoenebeck, S.; and Forte, A. 2019. Re- Computing, Electronics & Mobile Communication Confer-
+liability and inter-rater reliability in qualitative research: ence(UEMCON),0195–0200.
+Norms and guidelines for CSCW and HCI practice. Pro-
+VirusTotal. 2025. Analyse suspicious files, domains, IPs
+ceedings of the ACM on human-computer interaction,
+and URLs to detect malware and other breaches, automati-
+3(CSCW):1–23.
+callysharethemwiththesecuritycommunity. https://www.
+Miramirkhani,N.;Starov,O.;andNikiforakis,N.2016.Dial virustotal.com/gui/home/url. Accessed:January2026.
+one for scam: Analyzing and detecting technical support
+YouTube. 2025. YouTube search API. https://developers.
+scams. In22ndAnnualNetworkandDistributedSystemSe-
+google.com/youtube/v3/docs/search/list. Accessed:January
+curitySymposium(NDSS),volume16.
+2026.
+Mishra,S.;andSoni,D.2020. SmishingDetector:Asecu-
+YouTubeHelp.2025. YouTubePoliciesonSpam,deceptive
+ritymodeltodetectsmishingthroughSMScontentanalysis
+practices, and scams policies. https://support.google.com/
+and URL behavior analysis. Future Generation Computer
+youtube/answer/2801973?hl=en. Accessed:July2025.
+Systems,108:803–815.
+yt-dlp. 2025. yt-dlp. https://github.com/yt-dlp/yt-dlp. Ac-
+Morris,J.;Lifland,E.;Yoo,J.Y.;Grigsby,J.;Jin,D.;andQi, cessed:January2026.
+Y.2020. TextAttack:AFrameworkforAdversarialAttacks,
+Zannettou, S.; Chatzis, S.; Papadamou, K.; and Sirivianos,
+Data Augmentation, and Adversarial Training in NLP. In
+M. 2018. The good, the bad and the bait: Detecting and
+Proceedingsofthe2020ConferenceonEmpiricalMethods
+characterizingclickbaitonyoutube. In2018IEEESecurity
+in Natural Language Processing: System Demonstrations,
+andPrivacyWorkshops(SPW),63–69.
+119–126.
+Zhai, X.; Mustafa, B.; Kolesnikov, A.; and Beyer, L. 2023.
+NordVPN.2025.Isthislinksafe?https://nordvpn.com/link-
+Sigmoid loss for language image pre-training. In Proceed-
+checker. Accessed:January2026.
+ingsoftheIEEE/CVFinternationalconferenceoncomputer
+Oak, R.; and Shafiq, Z. 2025. ” Hello, is this Anna?”: Un- vision,11975–11986.
+packingtheLifecycleofPig-ButcheringScams. InTwenty-
+Zhang,T.;Kishore,V.;Wu,F.;Weinberger,K.Q.;andArtzi,
+First Symposium on Usable Privacy and Security (SOUPS
+Y. 2019. Bertscore: Evaluating text generation with bert.
+2025),1–18.
+arXivpreprintarXiv:1904.09675.
+Polskii, M. 2025. The Emergence of Video-Centric Social
+Networks:TrendsandImpacts.https://inappstory.com/blog/
+video-centric-social-media. Accessed:July2025.
+Radford,A.;Kim,J.W.;Xu,T.;Brockman,G.;McLeavey,
+C.;andSutskever,I.2022. RobustSpeechRecognitionvia
+Large-ScaleWeakSupervision. arXiv:2212.04356.
+Appendix
+A QualitativeResults
+Title: [2025 Release] Argon Executor for Roblox | Download Free & Functional | Byfron Bypass Tool
+Description: Downl0ad: http://youtube.com/post/UgkxYL39J6XFrU0Cc_JRxjeKecYlyRAkopyz?si=57pkAgYJ55V4C9PV Passw0rd: 3030
+Yes, this is a scam video.
+Reasoning: "Claims to commit a crime on behalf of the user, regardless of whether it actually does", "Sends audiences to sites that can spread malware, try to gather
+personal information or other sites that have a negative impact", "Gets clicks, views, or traffic off YouTube by promising viewers that they'll make money fast"
+Title: How to earn money online
+Description: How to Make Money FAST in 2025 | Best Side Hustles & Passive Income Ideas! Want to start making money online and achieve financial freedom? In this
+video, I’ll show you ….
+Yes, this is a scam video.
+Reasoning: "Gets clicks, views, or traffic off YouTube by promising viewers that they'll make money fast", "Offers cash gifts, 'get rich quick' schemes, or pyramid schemes”,
+"Sends audiences to sites that can spread malware, try to gather personal information or other sites that have a negative impact"
+Figure7:Examplesclassifiedbytheproposedmultimodalframeworkwithpolicy-groundedreasoning.
+B Krippendorf’salphascores
+Training Numberof ColumnName
+Session Sample AgreewithGroundTruth? Label(Scam,Nonscam) BroadScamCrit. NarrowScamCrit. Modality
+1 10 0.54 0.70 0.40 0.68 0.02
+2 10 1.00 1.00 1.00 - -
+3 19 -0.02 0.73 0.39 -0.11 0.08
+4 10 0.00 0.85 0.29 0.52 0.31
+5 10 0.29 0.87 0.44 0.44 0.31
+6 16 0.78 0.90 0.67 0.52 0.33
+7 10 0.62 0.80 0.77 0.89 0.89
+8 15 0.78 0.91 0.83 1.00 0.57
+9 15 0.73 0.91 0.83 0.72 0.70
+Table11:Krippendorf’salphascoresaftereachiteration
+C KeywordslistforWildDataCollection
+Category Keywords
+GiveawayScam FreeAmazon.comeGiftCard,FreeVisaGiftCard,FreeDoorDasheGiftCard,FreeSephoraGift
+Card, Free Razer Gold eGift Card, Free Uber eGift Card, Free Starbucks eGift Card, Free Mas-
+tercardGiftCard,FreeStarbucksGiftCard,FreeUltaBeautyGiftCard,FreeNetflixeGiftCard,
+FreeVisaVirtualeGiftCard,FreeSpotifyPremiumeGiftCard,FreeAppleGiftCard,freehonorof
+kingscurrency,freeLastwar:survivalcurrency,freewhiteoutsurvivalcurrency,freeroyalmatch
+currency,freepubgmobilecurrency,freemonopolygocurrency,freecandycrushsagacurrency,
+freepokemontcgpocketcurrency,freecoinmastercurrency,freerobloxcurrency,appletechsup-
+port, microsoft tech support, nvidia tech support, samsung tech support, sony tech support, intel
+tech support, dell tech support, panasonic tech support, UBS support, Morgan Stanley support,
+BankofAmericasupport,J.P.Morgan,PrivateBanksupport,Citigroupsupport,BNPParibassup-
+port,GoldmanSachssupport,JuliusBaersupport,RaymondJamessupport,HSBCsupport
+MonetaryScam Howtoearnmoney online,waystoearnmoney online,earnmoneyonlinefast, bestwaytoearn
+moneyonline,howtomakemoneyaskid,howtomakemoneyonlinewithai,howtomakemoney
+onlineasteen
+CryptocurrencyScam passiveincome,hugeprofit,easyprofit,buildingwealthwithcrypto,earnfreebnb,earnfreeeth,
+UniSwap, SushiSwap, PancakeSwap, Aave, Avalanche/Avax, Polygon/Matic, Fantom/FTM, arbi-
+tragebot,front-runningbot,flashloanbot,MEVbot,snipeBot,tradingbot,DeFibot
+Table12:Keywordsusedforwilddatacollection
+D ComputationalCost
+Model InputFeature InferenceTime(sec/sample) Memory(GB)
+3layerNN Title,Description 0.0004 0.08
+Bert Title,Description 0.09 0.99
+3layerNN Transcription 0.001 0.09
+Bert Transcription 0.10 1.00
+3layerNN Title,Description,Transcription 0.001 0.10
+Bert Title,Description,Transcription 0.13 1.00
+LLaVA-Video VideoFrames 2.00 55.58
+LLaVA-Video VideoFrames,Transcription 2.09 66.81
+LLaVA-Video VideoFrames,Title,Description 2.05 57.12
+Table13:Memoryusageandaverageinferencetimeforeachmodel.
+E QualityoftheDatasets
+#Scamin #Relabeled
+Dataset %Mislabeled
+GroundTruth Non-scam
+MonetaryScam 278 9 3.24
+GiveawayScam 146 5 3.42
+CryptoScam 580 41 7.07
+Table14:Qualityofgroundtruthlabelsineachdataset.
+F TextualobfuscationExample
+Video Frames
+Title:Free Walmart Gift Card - How to Get Free Walmart Gift Title:Walmart Gift Card - How to Get Walmart FR33 g|ft
+Card Codes 2020 ( NEWMETHOD!) Textual C@rD 2020 ( NEW METHOD!) Textual
+Detector Detector
+Description:Free Walmart Gift Card -I teach you how to get Description: I teach you how to get WalmartG|ftC@rd
+Walmart gift card codes for free2020 method....
+Figure 8: Effect of textual obfuscation: The fine-tuned BERT model accurately detects the original scam video title and de-
+scription (left). However, simple keyword obfuscations, highlited as red, evades the text based detector (right). At the top,
+representativevideoframesillustratevisualscamsignals,suchasgiftcardcodegenerationandpersonalinformationrequests,
+whichremainundetectedbythetextmodel.Notablythevideocontainsirrelevantbackgroundaudio.1
+G GPTAssistedReasoningGenerationPrompt
+Description PromptContents
+Task TheprovidedframesareextractedfromaYouTubevideo.Thisvideohasbeenidentifiedasascam.
+Yourtaskistoanalyzethecontentanddeterminethemostrelevantreasonsforthisclassification,
+usingthefollowingofficialYouTubeTermsandConditionsviolations.
+Rules 1.Claimstocommitacrimeonbehalfoftheuser,regardlessofwhetheritactuallydoes.
+2.Purportstoprovidean“unbounded”giveawaythatoffersunlimitedfreeitemswithoutrules,limit
+orend.
+3.Promisesviewersthey’llseesomethingbutinsteaddirectsthemoff-site.
+4.Getsclicks,views,ortrafficoffYouTubebypromisingviewersthatthey’llmakemoneyfast.
+5.Sendsaudiencestositesthatcanspreadmalware,trytogatherpersonalinformationorothersites
+thathaveanegativeimpact.
+6.Offerscashgifts,getrichquickschemes,orpyramidschemes.
+7.Impersonatesanindividual,company,ororganization.
+Instructions 1.Carefullyexaminetheframesbypayingcloseattentiontoalldetailsinthecontent.
+2.Selectoneormorereasonsfromthelistabovethatjustifywhythisvideoqualifiesasascam.
+3.Foreachselectedreason,provideabriefexplanationgroundedinthecontent.
+OutputFormat [Reason(s)infulltext]:Briefexplanationforeachselectedreason.
+Table15:PromptusedforGPTassistedreasoninggenerationforscamvideos.
+Description PromptContents
+Task TheprovidedframesareextractedfromaYouTubevideo.Thisvideohasbeenidentifiedasa
+non-scam.Yourtaskistoanalyzethecontentandbrieflyexplainwhythisvideoappearslegiti-
+mate.ConsiderthefollowingofficialYouTubeTermsandConditionsviolationsasindicatorsof
+scams.
+Rules 1.Claimstocommitacrimeonbehalfoftheuser,regardlessofwhetheritactuallydoes.
+2.Purportstoprovidean“unbounded”giveawaythatoffersunlimitedfreeitemswithoutrules,
+limit,orend.
+3.Promisesviewersthey’llseesomethingbutinsteaddirectsthemoff-site.
+4.Getsclicks,views,ortrafficoffYouTubebypromisingfastmoney.
+5.Sendsaudiencestositesthatspreadmalware,gatherpersonalinformation,orcauseharm.
+6.Offerscashgifts,get-rich-quickschemes,orpyramidschemes.
+7.Impersonatesanindividual,company,ororganization.
+Instructions 1.Carefullyexaminetheframesbypayingcloseattentiontoalldetailsinthecontent.
+2.Provideabriefsummaryofwhatthevideoisabout,emphasizingitslegitimatenature.
+3.Avoidlistingallsevenpoints;instead,summarizewhythevideoisanon-scam.
+OutputFormat Ashortexplanationhighlightingthelegitimatepurposeofthevideo,withoutenumeratingevery
+violation.
+Table16:PromptusedforGPT-assistedreasoninggenerationfornon-scamvideos.

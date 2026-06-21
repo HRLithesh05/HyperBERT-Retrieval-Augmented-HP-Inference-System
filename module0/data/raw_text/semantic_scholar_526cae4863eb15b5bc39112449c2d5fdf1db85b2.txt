@@ -1,0 +1,458 @@
+Multilingual Constituency Parsing with Self-Attention and Pre-Training
+NikitaKitaev StevenCao DanKlein
+ComputerScienceDivision
+UniversityofCalifornia,Berkeley
+{kitaev,stevencao,klein}@berkeley.edu
+Abstract of pre-training conditions and experiment over a
+varietyoflanguages,bothjointlyandindividually.
+We show that constituency parsing benefits First, we consider the impact on parsing of us-
+from unsupervised pre-training across a vari-
+ing different methods for pre-training initial net-
+ety of languages and a range of pre-training
+work layers on a large collection of un-annotated
+conditions. We first compare the benefits of
+text. Here, we see that pre-training provides
+no pre-training, fastText (Bojanowski et al.,
+benefits for all languages evaluated, and that
+2017; Mikolov et al., 2018), ELMo (Peters
+etal.,2018),andBERT(Devlinetal.,2018a) BERT (Devlin et al., 2018a) outperforms ELMo,
+for English and find that BERT outperforms which in turn outperforms fastText (Bojanowski
+ELMo, in large part due to increased model etal.,2017;Mikolovetal.,2018),whichperforms
+capacity, whereas ELMo in turn outperforms slightly better than the non pre-trained baselines.
+the non-contextual fastText embeddings. We
+Pre-trainingwithalargermodelcapacitytypically
+also find that pre-training is beneficial across
+leadstohigherparsingaccuracies.
+all11languagestested; however, largemodel
+sizes(morethan100millionparameters)make Second, we consider various schemes for the
+it computationally expensive to train separate parser fine-tuning that is required after pre-
+models for each language. To address this training. While BERT itself can be pre-trained
+shortcoming, we show that joint multilingual jointly on many languages, successfully applying
+pre-trainingandfine-tuningallowssharingall
+it,e.g.toparsing,requirestask-specificadaptation
+butasmallnumberofparametersbetweenten
+via fine-tuning (Devlin et al., 2018a). Therefore,
+languages in the final model. The 10x reduc-
+the obvious approach to parsing ten languages is
+tioninmodelsizecomparedtofine-tuningone
+to fine-tune ten times, producing ten variants of
+model per language causes only a 3.2% rel-
+ative error increase in aggregate. We further the parameter-heavy BERT layers. In this work,
+exploretheideaofjointfine-tuningandshow we compare this naive independent approach to a
+that it gives low-resource languages a way to joint fine-tuning method where a single copy of
+benefit from the larger datasets of other lan-
+fine-tuned BERT parameters is shared across all
+guages. Finally,wedemonstratenewstate-of-
+ten languages. Since only a small output-specific
+the-artresultsfor11languages,includingEn-
+fragmentofthenetworkisuniquetoeachtask,the
+glish(95.8F1)andChinese(91.8F1).
+model is 10x smaller while losing an average of
+only0.28F1.
+1 Introduction
+Although, in general, jointly training multi-
+There has recently been rapid progress in devel- lingual parsers mostly provides a more compact
+oping contextual word representations that im- model, itdoesinsomecasesimproveaccuracyas
+proveaccuracyacrossarangeofnaturallanguage well. To investigate when joint training is help-
+tasks (Peters et al., 2018; Howard and Ruder, ful,wealsoperformpairedfine-tuningonallpairs
+2018; Radford et al., 2018; Devlin et al., 2018a). of languages and examine which pairs lead to the
+While we have shown in previous work (Kitaev largest increase in accuracy. We find that larger
+andKlein,2018)thatsuchrepresentationsareben- treebanks function better as auxiliary tasks and
+eficial for constituency parsing, our earlier results thatonlysmallertreebanksseeabenefitfromjoint
+onlyconsidertheLSTM-basedELMorepresenta- training. These results suggest that this manner
+tions(Petersetal.,2018),andonlyfortheEnglish of joint training can be used to provide support
+language. In this work, we study a broader range for many languages in a resource-efficient man-
+ner, but does not exhibit substantial cross-lingual Method Pre-trainedon Params F1
+generalizationexceptwhenlabeleddataislimited.
+Nopre-training – 26M 93.61a
+Ourparsercodeandtrainedmodelsforelevenlan- FastText English 626M 93.72
+guagesarepubliclyavailable.1 ELMo English 107M 95.21a
+BERT (uncased) Chinese 110M 93.57
+BASE
+2 Model BERT (cased) 104languages 185M 94.97
+BASE
+BERT (uncased) English 117M 95.32
+BASE
+Ourparsingmodelisbasedonthearchitecturede- BERT (cased) English 116M 95.24
+BASE
+scribedinKitaevandKlein(2018), whichisstate BERT LARGE(uncased) English 343M 95.66
+BERT (cased) English 341M 95.70
+of the art for multiple languages, including En- LARGE
+glish. A constituency tree T is represented as a Ensemble(final4modelsabove) 916M 95.87
+setoflabeledspans,
+Table1: ComparisonofparsingaccuracyontheWSJ
+T = {(i t,j t,l t) : t = 1,...,|T|} developmentsetwhenusingdifferentwordrepresenta-
+tions. aKitaevandKlein(2018)
+where the tth span begins at position i , ends at
+t
+position j , and has label l . The parser assigns a
+t t
+scores(T)toeachtree,whichdecomposesas The fact that additional layers are applied to
+the output of BERT – which itself uses a self-
+(cid:88)
+s(T) = s(i,j,l) attentive architecture – may at first seem redun-
+(i,j,l)∈T dant, but there are important differences between
+these two portions of the architecture. The extra
+The per-span scores s(i,j,l) are produced by a
+layers on top of BERT use word-based tokeniza-
+neural network. This network accepts as input a
+tion instead of sub-words, apply the factored ver-
+sequence of vectors corresponding to words in a
+sionofself-attentionproposedinKitaevandKlein
+sentence and transforms these representations us-
+(2018),andarerandomly-initializedinsteadofbe-
+ing one or more self-attention layers. For each
+ing pre-trained. We found that passing the (pro-
+span (i,j) in the sentence, a hidden vector v
+i,j
+jected) BERT vectors directly to the MLP span
+is constructed by subtracting the representations
+classifierhurtsparsingaccuracies.
+associated with the start and end of the span.
+We train our parser with a learning rate of
+An MLP span classifier, consisting of two fully-
+5×10−5 andbatchsize32,whereBERTparame-
+connected layers with one ReLU nonlinearity, as-
+tersarefine-tunedaspartoftraining. Weusetwo
+signslabelingscoress(i,j,·)tothespan. Finally,
+additional self-attention layers following BERT.
+thethehighestscoringvalidtree
+AllotherhyperparametersareunchangedfromKi-
+Tˆ = argmaxs(T) taevandKlein(2018)andDevlinetal.(2018a).
+T
+3 ComparisonofPre-TrainingMethods
+canbefoundefficientlyusingavariantoftheCKY
+algorithm. Formoredetails, seeKitaevandKlein
+In this section, we compare using BERT, ELMo,
+(2018).
+fastText, and training a parser from scratch on
+WeincorporateBERTbycomputingtokenrep-
+treebank data alone. Our comparison of the dif-
+resentationsfromthelastlayerofaBERTmodel,
+ferent methods for English is shown in Table 1.
+applying a learned projection matrix, and then
+BERT (∼115Mparameters)performscompa-
+BASE
+passing them as input to the parser. BERT asso-
+rably or slightly better than ELMo (∼107M pa-
+ciates vectors to sub-word units based on Word-
+rameters; 95.32 vs. 95.21 F1), while BERT
+LARGE
+Piece tokenization (Wu et al., 2016), from which
+(∼340Mparameters)leadstobetterparsingaccu-
+we extract word-aligned representations by only
+racy (95.70 F1). Furthermore, both pre-trained
+retaining the BERT vectors corresponding to the
+contextual embeddings significantly outperform
+last sub-word unit for each word in the sentence.
+fastText, which performs slightly better than no
+We briefly experimented with other alternatives,
+pre-training (93.72 vs. 93.61 F1). These results
+such as using only the first sub-word instead, but
+show that both the LSTM-based architecture of
+didnotfindthatthischoicehadasubstantialeffect
+ELMoandtheself-attentivearchitectureofBERT
+onEnglishparsingaccuracy.
+are viable for parsing, and that pre-training bene-
+1https://github.com/nikitakit/self-attentive-parser fitsfromhavingahighmodelcapacity. Wedidnot
+token MLP (<1M) (cid:3) NP
+1 DE
+(cid:2) VP
+token 2 BERT Self-Attention MLP EN (<1M) . .
+. .
+. . (110M) . . (75M) . .
+. . (cid:3) PP
+token MLP (<1M)
+L FR
+Figure1: Thearchitectureofthemultilingualmodel,withcomponentslabeledbythenumberofparameters.
+observeasizabledifferencebetweenan“uncased” performancecomparabletoourearlierparser(Ki-
+versionofBERTthatconvertsalltexttolowercase taev and Klein, 2018) trained on treebank data
+anda“cased”versionofthatretainscaseinforma- alone (93.57 vs. 93.61 F1). These results suggest
+tion. that even when the pre-training data is a highly
+We also evaluate an ensemble of four English imperfectfitforthetargetapplication,fine-tuning
+BERT-based parsers, where the models are com- can still produce results better than or compara-
+binedbyaveragingtheirspanlabelscores: ble to purely supervised training with randomly-
+initializedparameters.2
+4
+1 (cid:88)
+s (i,j,l) = s (i,j,l)
+ensemble n
+4
+4 MultilingualModel
+n=1
+The resulting accuracy increase with respect to
+We next evaluate how well self-attention and pre-
+the best single model (95.87 F1 vs. 95.66 F1)
+trainingworkcross-linguistically;forthispurpose
+reflects not only randomness during fine-tuning,
+we consider ten languages: English and the nine
+but also variations between different versions of
+languages represented in the SPMRL 2013/2014
+BERT. When combined with the observation that
+sharedtasks(Seddahetal.,2013).
+BERT outperforms BERT , the ensem-
+LARGE BASE
+Our findings from the previous section show
+ble results suggest that empirical gains from pre-
+that pre-training continues to benefit from larger
+training have not yet plateaued as a function of
+model sizes when data is abundant. However, as
+computationalresourcesandmodelsize.
+models grow, it is not scalable to conduct sepa-
+Next, we compare pre-training on monolin-
+ratepre-trainingandfine-tuningforalllanguages.
+gual data to pre-training on data that includes a
+This shortcoming can be partially overcome by
+variety of languages. We find that pre-training
+pre-trainingBERT onmultiple languages, as sug-
+on only English outperforms multilingual pre-
+gested by the effectiveness of the English parser
+training given the same model capacity, but the
+fine-tuned from multilingual BERT (see Table 1).
+decreaseinaccuracyislessthan0.3F1(95.24vs.
+Nevertheless, this straightforward approach also
+94.97 F1). This is a promising result because it
+faces scalability challenges because it requires
+supportstheideaofparametersharingasawayto
+training an independent parser for each language,
+providesupportformanylanguagesinaresource-
+whichresultsinover1.8billionparametersforten
+efficient manner, which we examine further in
+languages. Therefore, weconsiderasingleparser
+Section4.
+withparameterssharedacrosslanguagesandfine-
+To further examine the effects of pre-training
+tunedjointly. ThejointparserusesthesameBERT
+on disparate languages, we consider the extreme
+model and self-attention layers for all ten lan-
+case of training an English parser using a ver-
+guages but contains one MLP span classifier per
+sionofBERTthatwaspre-trainedontheChinese
+languagetoaccommodatethedifferenttreelabels
+Wikipedia. Neither the pre-training data nor the
+(see Figure 1). The MLP layers contain 250K-
+subword vocabulary used are a good fit for the
+850K parameters, depending on the type of syn-
+target task. However, English words (e.g. proper
+tactic annotation adopted for the language, which
+names) occur in the Chinese Wikipedia data with
+sufficient frequency that the model can losslessly
+2We also attempted to use a randomly-initialized BERT
+represent English text: all English letters are in- model,buttheresultingparserdidnottraineffectivelywithin
+cluded in its subword vocabulary, so in the worst therangeofhyperparameterswetried.Notethattheoriginal
+BERT models were trained on significantly more powerful
+caseitwilldecomposeanEnglishwordintoitsin-
+hardwareandforalongerperiodoftimethananyoftheex-
+dividualletters. Wefoundthatthismodelachieves perimentswereportinthispaper.
+Arabic Basque English French German Hebrew Hungarian Korean Polish Swedish Avg Params
+Nopre-traininga 85.61 89.71 93.55 84.06 87.69 90.35 92.69 86.59 93.69 84.45 88.32 355M
+Onemodelperlanguage(thiswork) 87.97 91.63 94.91 87.42 90.20 92.99 94.90 88.80 96.36 88.86 91.40 1,851M
+Jointmultilingualmodel(thiswork) 87.44 90.70 94.63 87.35 88.40 92.95 94.60 88.96 96.26 89.94 91.12 189M
+Relative∆Errorvs.monolingual +4.2%* +10.0%* +5.2%* +0.6% +15.5%* +0.6% +5.6%* -1.5% +2.7% -10.7%* +3.2%*
+Table2: ResultsofmonolingualandmultilingualtrainingontheSPMRLandWSJtestsplitsusingtheversionof
+BERTpre-trainedon104languages. Inthelastrow,starreddifferencesaresignificantatthep<0.05levelusing
+abootstraptest;seeBerg-Kirkpatricketal.(2012). aKitaevandKlein(2018)
+AuxiliaryLanguage Arabic Basque English French German Hebrew Hungarian Korean Polish Swedish Average Best BestAux.
+#trainsentences 15,762 7,577 39,831 14,759 40,472 5,000 8,146 23,010 6,578 5,000
+LanguageTested
+Arabic 0 -0.38 -0.20 -0.27 -0.26 -0.14 -0.29 -0.13 -0.31 -0.33 -0.23 +0 None
+Basque -0.47 0 -0.06 -0.26 0.04 -0.22 -0.27 -0.41 -0.49 -0.34 -0.25 +0.04 German
+English -0.18 -0.04 0 -0.02 -0.03 -0.07 -0.09 0.05 0.10 -0.05 -0.03 +0.10 Polish
+French 0.42 0.01 0.28 0 0.40 -0.14 0.04 0.27 0.29 -0.10 0.15 +0.42* Arabic
+German -0.38 -0.20 0.03 -0.45 0 -0.13 -0.15 -0.13 -0.21 -0.26 -0.19 +0.03 English
+Hebrew 0.13 0.05 -0.27 -0.17 -0.11 0 -0.09 -0.19 -0.30 -0.35 -0.13 +0.13 Arabic
+Hungarian -0.14 -0.43 -0.29 -0.38 -0.11 -0.39 0 -0.17 -0.28 -0.32 -0.25 +0 None
+Korean -0.24 -0.25 0.16 -0.27 -0.11 -0.01 0 0 -0.07 -0.17 -0.10 +0.16 English
+Polish 0.25 0.15 0.20 0.24 0.24 0.21 0.14 0.20 0 0.12 0.18 +0.25* Arabic
+Swedish 0.17 -0.08 0.38 0.54 0.53 -0.11 0.59 0.78 -0.17 0 0.26 +0.78* Korean
+Average -0.04 -0.12 0.02 -0.10 0.06 -0.10 -0.01 0.03 -0.14 -0.18
+Table 3: Change in development set F1 score due to paired vs. individual fine-tuning. In the “Best” column,
+starred results are significant at the p < 0.05 level. On average, the three largest treebanks (German, English,
+Korean)functionthebestasauxiliaries. Also,thethreelanguagesbenefittingmostfrompairedtraining(Swedish,
+French,Polish)functionpoorlyasauxiliaries.
+is less than 0.5% of the total parameters. There- mance only slightly (91.12 vs. 91.40 F1) despite
+fore, this joint training entails a 10x reduction in the sharp model size reduction, and in fact per-
+modelsize. formsbetterforSwedish.
+During joint fine-tuning, each batch contains We hypothesize that the gains/losses in accu-
+sentences from every language. Each sentence racy for different languages stem from two com-
+passesthroughthesharedlayersandthenthrough peting effects: the multilingual model has access
+the MLP span classifier corresponding to its lan- to more data, but there are now multiple objec-
+guage. Toreduceover-representationoflanguages tive functions competing over the same parame-
+with large training sets, we follow Devlin et al. ters. To examine language compatibility, we also
+(2018b) and determine the sampling proportions train a bilingual model for each language pair
+through exponential smoothing: if a language is and compare it to the corresponding monolingual
+somefractionf ofthejointtrainingset, theprob- model (see Table 3). From this experiment, we
+ability of sampling examples from that language see that the best language pairs often do not cor-
+isproportionaltofa forsomea. Weusethesame respond to any known linguistic groupings, sug-
+hyperparametersasinmonolingualtrainingbutin- gestingthatcompatibilityofobjectivefunctionsis
+crease the batch size to 256 to account for the in- influencedmorebyotherfactorssuchastreebank
+crease in the number of languages, and we use labeling convention. In addition, we see that on
+a = 0.7asinDevlinetal.(2018b). Theindividu- average,thethreelanguageswiththelargesttrain-
+allyfine-tunedparsersalsousethesamehyperpa- ing sets (English, German, Korean) function well
+rameters,butwithouttheincreaseinbatchsize. as auxiliaries. Furthermore, the three languages
+Table2presentsacomparisonofdifferentpars- that gain the most from paired training (Swedish,
+ing approaches across a set of ten languages. Our French,Polish)havesmallerdatasetsandfunction
+joint multilingual model outperforms treebank- poorly as auxiliaries. These results suggest that
+only models (Kitaev and Klein, 2018) for each of joint training not only drastically reduces model
+the languages (88.32 vs 91.12 average F1). We size, but also gives languages with small datasets
+alsocomparejointandindividualfine-tuning. The a way to benefit from the large datasets of other
+multilingual model on average degrades perfor- languages.
+Arabic Basque French German Hebrew Hungarian Korean Polish Swedish Avg
+Bjo¨rkelundetal.(2014) 81.32a 88.24 82.53 81.66 89.80 91.72 83.81 90.50 85.50 86.12
+CoavouxandCrabbe´(2017) 82.92b 88.81 82.49 85.34 89.87 92.34 86.04 93.64 84.0 87.27
+KitaevandKlein(2018) 85.61c 89.71c 84.06 87.69 90.35 92.69 86.59c 93.69c 84.45 88.32
+Thiswork(jointmultilingualmodel) 87.44 90.70 87.35 88.40 92.95 94.60 88.96 96.26 89.94 90.73
+∆vs.bestprevious +1.83 +0.99 +3.29 +0.71 +2.60 +1.91 +2.37 +2.57 +4.44
+Thiswork(onemodelperlanguage) 87.97 91.63 87.42 90.20 92.99 94.90 88.80 96.36 88.86 91.01
+∆vs.bestprevious +2.36 +1.92 +3.36 +2.51 +2.64 +2.21 +2.21 +2.67 +3.36
+Table4: ResultsonthetestingsplitsoftheSPMRLdataset. AllvaluesareF1scorescalculatedusingtheversion
+ofevalbdistributedwiththesharedtask. aBjo¨rkelundetal.(2013)bUsescharacterLSTM,whereasotherresults
+fromCoavouxandCrabbe´(2017)usepredictedpart-of-speechtags. cDoesnotusewordembeddings,unlikeother
+resultsfromKitaevandKlein(2018).
+result shows that pre-training is beneficial even
+LR LP F1
+when model parameters are shared heavily across
+Dyeretal.(2016) – – 93.3
+languages.
+ChoeandCharniak(2016) – – 93.8
+LiuandZhang(2017) – – 94.2
+6 Conclusion
+Friedetal.(2017) – – 94.66
+Joshietal.(2018) 93.8 94.8 94.3 Theremarkableeffectivenessofunsupervisedpre-
+KitaevandKlein(2018) 94.85 95.40 95.13 trainingofvectorrepresentationsoflanguagesug-
+Thiswork(singlemodel) 95.46 95.73 95.59 geststhatfutureadvancesinthisareacancontinue
+Thiswork(ensembleof4) 95.51 96.03 95.77
+improving the ability of machine learning meth-
+ods to model syntax (as well as other aspects of
+Table5: ComparisonofF1scoresontheWSJtestset. language). Aspre-trainedmodelsbecomeincreas-
+inglyhigher-capacity,jointmultilingualtrainingis
+a promising approach to scalably providing NLP
+LR LP F1
+systemsforalargesetoflanguages.
+FriedandKlein(2018) – – 87.0
+TengandZhang(2018) 87.1 87.5 87.3 Acknowledgments
+Thiswork 91.55 91.96 91.75
+This research was supported by DARPA through
+theXAIprogram. ThisworkusedtheSaviocom-
+Table6: ComparisonofF1scoresontheChineseTree-
+putational cluster provided by the Berkeley Re-
+bank5.1testset.
+search Computing program at the University of
+California,Berkeley.
+5 Results
+References
+Wetrainandevaluateourparsersontreebanksfor
+eleven languages: the nine languages represented
+Taylor Berg-Kirkpatrick, David Burkett, and Dan
+in the SPMRL 2013/2014 shared tasks (Seddah Klein. 2012. An empirical investigation of statisti-
+et al., 2013) (see Table 4), English (see Table 5), calsignificanceinNLP. InProceedingsofthe2012
+Joint Conference on Empirical Methods in Natural
+and Chinese (see Table 6). The English and Chi-
+Language Processing and Computational Natural
+neseparsersusefullymonolingualtraining,while
+Language Learning, pages 995–1005, Jeju Island,
+the remaining parsers incorporate a version of Korea.AssociationforComputationalLinguistics.
+BERT pre-trained jointly on 104 languages. For
+Anders Bjo¨rkelund, Ozlem Cetinoglu, Agnieszka
+each of these languages, we obtain a higher F1
+Falen´ska, Richa´rd Farkas, Thomas Mueller, Wolf-
+scorethananypastsystemsweareawareof.
+gang Seeker, and Zsolt Sza´nto´. 2014. The IMS-
+InthecaseofSPRML,bothoursinglemultilin- Wrocław-Szeged-CIS entry at the SPMRL 2014
+gual model and our individual monolingual mod- sharedtask: Rerankingandmorphosyntaxmeetun-
+labeled data. In Proceedings of the First Joint
+els achieve higher parsing accuracies than pre-
+WorkshoponStatisticalParsingofMorphologically
+vious systems (none of which made use of pre-
+Rich Languages and Syntactic Analysis of Non-
+trained contextual word representations). This CanonicalLanguages,pages97–102.
+AndersBjo¨rkelund,OzlemCetinoglu,Richa´rdFarkas, JeremyHowardandSebastianRuder.2018. Universal
+Thomas Mueller, and Wolfgang Seeker. 2013. languagemodelfine-tuningfortextclassification. In
+(Re)ranking meets morphosyntax: State-of-the-art Proceedings of the 56th Annual Meeting of the As-
+results from the SPMRL 2013 shared task. In sociationforComputationalLinguistics(Volume1:
+Proceedings of the Fourth Workshop on Statistical LongPapers),pages328–339.AssociationforCom-
+ParsingofMorphologically-RichLanguages, pages putationalLinguistics.
+135–145, Seattle, Washington, USA. Association
+forComputationalLinguistics. VidurJoshi,MatthewPeters,andMarkHopkins.2018.
+Extending a parser to distant domains using a few
+PiotrBojanowski,EdouardGrave,ArmandJoulin,and dozen partially annotated examples. In Proceed-
+TomasMikolov.2017. Enrichingwordvectorswith ings of the 56th Annual Meeting of the Association
+subword information. Transactions of the Associa- forComputationalLinguistics(Volume1: LongPa-
+tionforComputationalLinguistics,5:135–146. pers), pages 1190–1199. Association for Computa-
+tionalLinguistics.
+Do Kook Choe and Eugene Charniak. 2016. Pars-
+Nikita Kitaev and Dan Klein. 2018. Constituency
+ing as language modeling. In Proceedings of the
+parsing with a self-attentive encoder. In Proceed-
+2016 Conference on Empirical Methods in Natural
+ings of the 56th Annual Meeting of the Association
+Language Processing, pages 2331–2336. Associa-
+forComputationalLinguistics(Volume1: LongPa-
+tionforComputationalLinguistics.
+pers), pages 2676–2686. Association for Computa-
+tionalLinguistics.
+Maximin Coavoux and Benoit Crabbe´. 2017. Multi-
+lingual lexicalized constituency parsing with word- Jiangming Liu and Yue Zhang. 2017. In-order
+level auxiliary tasks. In Proceedings of the 15th transition-based constituent parsing. Transactions
+ConferenceoftheEuropeanChapteroftheAssocia- of the Association for Computational Linguistics,
+tionforComputationalLinguistics: Volume2,Short 5:413–424.
+Papers, pages 331–336. Association for Computa-
+tionalLinguistics. Tomas Mikolov, Edouard Grave, Piotr Bojanowski,
+Christian Puhrsch, and Armand Joulin. 2018. Ad-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and vances in pre-training distributed word represen-
+Kristina Toutanova. 2018a. BERT: Pre-training tations. In Proceedings of the 11th Language
+of deep bidirectional transformers for language Resources and Evaluation Conference, Miyazaki,
+understanding. arXiv:1810.04805 [cs]. ArXiv: Japan.EuropeanLanguageResourceAssociation.
+1810.04805.
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, Gardner, Christopher Clark, Kenton Lee, and Luke
+and Kristina Toutanova. 2018b. BERT: Zettlemoyer. 2018. Deep contextualized word rep-
+Pre-training of deep bidirectional transform- resentations. In Proceedings of the 2018 Confer-
+ers for language understanding. https: ence of the North American Chapter of the Associ-
+//github.com/google-research/bert/ ation for Computational Linguistics: Human Lan-
+blob/master/multilingual.md. guageTechnologies,Volume1(LongPapers),pages
+2227–2237, New Orleans, Louisiana. Association
+forComputationalLinguistics.
+Chris Dyer, Adhiguna Kuncoro, Miguel Ballesteros,
+and Noah A. Smith. 2016. Recurrent neural net-
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+work grammars. In Proceedings of the 2016 Con-
+Ilya Sutskever. 2018. Improving language under-
+ferenceoftheNorthAmericanChapteroftheAsso-
+standingbygenerativepre-training.
+ciationforComputationalLinguistics: HumanLan-
+guageTechnologies,pages199–209.Associationfor
+Djame´ Seddah, Reut Tsarfaty, Sandra Ku¨bler, Marie
+ComputationalLinguistics.
+Candito, Jinho D. Choi, Richa´rd Farkas, Jen-
+nifer Foster, Iakes Goenaga, Koldo Gojenola Gal-
+Daniel Fried and Dan Klein. 2018. Policy gradient as letebeitia, Yoav Goldberg, Spence Green, Nizar
+aproxyfordynamicoraclesinconstituencyparsing. Habash,MarcoKuhlmann,WolfgangMaier,Joakim
+In Proceedings of the 56th Annual Meeting of the Nivre,AdamPrzepio´rkowski,RyanRoth,Wolfgang
+Association for Computational Linguistics (Volume Seeker, Yannick Versley, Veronika Vincze, Marcin
+2: Short Papers), pages 469–476. Association for Wolin´ski, Alina Wro´blewska, and Eric Villemonte
+ComputationalLinguistics. delaClergerie.2013. OverviewoftheSPMRL2013
+sharedtask: Across-frameworkevaluationofpars-
+DanielFried,MitchellStern,andDanKlein.2017. Im- ing morphologically rich languages. In Proceed-
+provingneuralparsingbydisentanglingmodelcom- ingsoftheFourthWorkshoponStatisticalParsingof
+binationandrerankingeffects. InProceedingsofthe Morphologically-Rich Languages, pages 146–182.
+55thAnnualMeetingoftheAssociationforCompu- AssociationforComputationalLinguistics.
+tationalLinguistics(Volume2:ShortPapers),pages
+161–166. Association for Computational Linguis- Zhiyang Teng and Yue Zhang. 2018. Two local mod-
+tics. els for neural constituent parsing. In Proceedings
+of the 27th International Conference on Computa-
+tional Linguistics, pages 119–132. Association for
+ComputationalLinguistics.
+Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V.
+Le, Mohammad Norouzi, Wolfgang Macherey,
+Maxim Krikun, Yuan Cao, Qin Gao, Klaus
+Macherey, Jeff Klingner, Apurva Shah, Melvin
+Johnson, Xiaobing Liu, Łukasz Kaiser, Stephan
+Gouws, Yoshikiyo Kato, Taku Kudo, Hideto
+Kazawa, Keith Stevens, George Kurian, Nishant
+Patil, Wei Wang, Cliff Young, Jason Smith, Jason
+Riesa, Alex Rudnick, Oriol Vinyals, Greg Corrado,
+MacduffHughes,andJeffreyDean.2016. Google’s
+Neural Machine Translation System: Bridging the
+Gap between Human and Machine Translation.
+arXiv:1609.08144[cs]. ArXiv: 1609.08144.

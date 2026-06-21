@@ -1,0 +1,960 @@
+Rethinking Masked Language Modeling for Chinese Spelling Correction
+HongqiuWu1,2,∗and ShaohuaZhang3 and YuchenZhang3 and HaiZhao1,2,†
+1DepartmentofComputerScienceandEngineering,ShanghaiJiaoTongUniversity
+2KeyLaboratoryofShanghaiEducationCommissionforIntelligentInteraction
+andCognitiveEngineering,ShanghaiJiaoTongUniversity
+3ByteDance
+wuhongqiu@sjtu.edu.cn,zhang.shaohua.cs@gmail.com
+zhangyuc@gmail.com,zhaohai@cs.sjtu.edu.cn
+Abstract Training Stage
+train pair
+Inthispaper,westudyChineseSpellingCor- 我买的鸟会发出公鸽子的(生硬 -> 声音)。
+rection(CSC)asajointdecisionmadebytwo The bird I bought would make the (stiff -> sound)...
+separatemodels: alanguagemodelandaner- 第一个是跟(生音 -> 声音)有问题。
+ror model. Through empirical analysis, we The first has a problem with the (raw -> sound).
+find that fine-tuning BERT tends to over-fit
+Testing Stage
+the error model while under-fit the language
+test input ground truth
+model,resultinginpoorgeneralizationtoout- 新的机器声影少一点。 (声影 -> 声音)
+of-distributionerrorpatterns. GiventhatBERT The new machine has less shadow. (shadow -> sound)
+isthebackboneofmostCSCmodels,thisphe- 我买的鸟声音很生硬。
+No correction
+nomenonhasasignificantnegativeimpact. To The bird I bought sounds stiff.
+address this issue, we are releasing a multi- Predict
+domainbenchmarkLEMON,withhigherqual- model output
+ityanddiversitythanexistingbenchmarks,to 新的机器声影少一点。 No detection
+allowacomprehensiveassessmentoftheopen The new machine has less shadow.
+domaingeneralizationofCSCmodels. Then, 我买的鸟声音很(生硬 -> 声音)。 Over correction
+we demonstrate that a very simple strategy – The bird I bought sounds (stiff -> sound).
+randomlymasking20%non-errortokensfrom
+Figure1: Mistakesmadebyregularlyfine-tunedBERT.
+theinputsequenceduringfine-tuning–issuffi-
+cientforlearningamuchbetterlanguagemodel
+withoutsacrificingtheerrormodel. Thistech-
+collaboratively to make a decision (Kernighan
+nique can be applied to any model architec-
+etal.,1990). Supposethattheinputsentencecon-
+ture and achieves new state-of-the-art results
+onSIGHAN,ECSpell,andLEMON1. tains n characters X = (x 1,...,x n). The model
+predicts the corrected character at each position
+1 Introduction
+Y = (y ,...,y ). At each position i, let x indi-
+1 n −i
+cate the characters at all other positions, then by
+ChineseSpellingCorrection(CSC)isacrucialtask
+BayesRule(Kernighanetal.,1990),wehave:
+innaturallanguageprocessing(NLP)behindmany
+downstream applications, e.g, web search (Mar-
+P(y |X) ∝ P(y |x ) ·P(x |y ,x ) (1)
+i i −i i i −i
+tinsandSilva,2004;Gaoetal.,2010),nameden-
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+tityrecognition,opticalcharacterrecognition(Afli languagemodel errormodel
+etal.,2016;Guptaetal.,2021). Itaimstodetect
+wherethelanguagemodeldecidesthedistribution
+and correct the potential spelling errors in a sen-
+of the character y given the context, while the
+i
+tence. BERT(Devlinetal.,2019)anditsenhanced
+errormodelrepresentsthedistributionofthepoten-
+variantshaveachievedstate-of-the-artresultsinthe
+tialmisspelledcharacterx giventhecontextand
+i
+currentCSCcommunity(nameafew)(Zhangetal.,
+its correct form (see Appendix A for the deriva-
+2020;Liuetal.,2021;Zhuetal.,2022).
+tion). According to the BERT architecture, these
+From a high-level perspective, CSC requires
+twomodelsarejointlytrainedandevaluated. How-
+a language model and an error model working
+ever,theirrespectiveperformanceshavenotbeen
+∗WorkwasdoneduringacooperationwithByteDance. throughoutstudiedbypreviouswork.
+†Corresponding author; This paper was partially sup- In this paper, we make a key observation that
+ported by Key Projects of National Natural Science Foun-
+BERT-basedCSCmodelstypicallyover-fittheer-
+dationofChina(U1836222and61733011).
+1https://github.com/gingasan/lemon ror model, yet under-fit the language model, be-
+3202
+yaM
+82
+]LC.sc[
+1v12771.5032:viXra
+causetheerrormodelismucheasiertomemorize newstate-of-the-artacrossCSCbenchmarks.
+comparedtothelanguagemodel. Asaresult,the WealsoshowthatMasked-FTiseffectiveindo-
+model generalizes very poor to unseen edit pairs maintransfer. Supposethatthereisanannotated
+(x ,y ) and fails to exploit the context x . We parallelcorpusforacertaindomain,andwewant
+i i −i
+illustratethisfactinFigure1. Here,themodelhas to transfer the model of such a domain to a new
+beenexposedtoeditpairs“生硬→声音”(correct domainwhereonlymonolingual(i.e. unannotated)
+stiff tosound)and“生音→声音”(correctrawto corpusisavailable. Weproposetotrainthemodel
+sound)duringtraining. Duringtesting,themodel withtheparalleldataalongwithamaskedlanguage
+fails to detect an unseen edit pair “声影→声音” modeling(MLM)lossfromthemonolingualcor-
+(correct shadow to sound) and meanwhile over- pus. The idea behind is to transfer the language
+corrects “生硬→声音” (correct stiff to sound). modeltothenewdomainwhilepreservingtheer-
+Thisisduetothefactthatthemodelnaivelymem- rormodelthatislearnedthroughtheparalleldata.
+orizesthetrainingeditpairs,failingtoidentifyif Empiricalresultsdemonstratethatthiswayofus-
+theyfitthebroadercontext. Wewillpresentqualita- ingmonolingualdataproducesabettermodelthan
+tiveanalysisofthisphenomenoninlatersections. datasynthesismethodsbasedonconfusionsets.
+Our contributions are summarized as follows.
+The consequence of a sub-optimal or under-fit
+(1) We perform empirical analysis showing that
+languagemodelisthatthemodelstrugglestogener-
+BERT-basedCSCmodelslearnasub-optimallan-
+alizetonewcontextsandnewdomains. SIGHAN
+guage model, resulting in a bad performance on
+isthecurrentmostwidely-usedbenchmarkinCSC,
+out-of-distributioneditpairs. (2)Wereleasealarge-
+butitislimitedintwoways: (1)anarrowsentence
+scaleandmulti-domainbenchmarkforCSC,which
+corpus sourced exclusively from the Chinese es-
+is more challenging than existing ones. (3) We
+says by foreign speakers (Wu et al., 2013); (2) a
+demonstratethatasimplemasked-fine-tuningstrat-
+lowdiversityofeditpairs(i.e. 370editpairsinits
+egysignificantlyenhancelanguagemodelingwith-
+testset). Asaresult,itdoesnotposeenoughchal-
+outhurtingerrormodeling,leadingtonewstate-of-
+lengetothemodel’sgeneralizationability. Tothis
+the-artresultsacrossbenchmarks.
+end, we present LEMON, a new benchmark that
+isalarge-scalemulti-domaindatasetwithnatural
+2 AnalysisofBERTfine-tuning
+spelling errors, which spans 7 domains and con-
+tainsover22,000exampleswith7,627distinctedit
+In this section, we report empirical analysis on
+pairs collected from real human daily writing. It
+BERT-basedmodels. Westudytheirtop-kperfor-
+providesacomprehensiveevaluationofCSCmod-
+mance,generalizationtounseeneditpairs,andgra-
+elsinreal-worldscenarios.
+dientscalesduringtraining. Theobservationisthat
+BasedonLEMONandotherpublicbenchmarks, theBERT-basedmodels,withregularfine-tuning,
+wedemonstratethataverysimplemethodcanef- easilyover-fitstheeditpairsinthetrainingsetand
+fectivelyenhancelanguagemodelingwithoutcaus- learns a degenerated language model. For some
+ing adverse effect to error modeling, thus signif- analyses,wealsoincludetheresultofmasked-FT
+icantly improves CSC model performances. The (randomlymask20%inputtokens)forcomparative
+methodistorandomlymask20%ofthenon-error study.
+tokensfromtheinputsentenceduringfine-tuning
+2.1 Top-kPredictions
+(thisisdifferentfrommasking15%tokensduring
+pre-training in BERT). If x is masked, it forces CSCtypicallycaresaboutthetop-1predictionat
+i
+themodeltopredicty givenx withoutanyclue each position. But here, we print out the top-5
+i −i
+about x , equivalent to training P(y |x ). This predictionsinordertogetasenseofitslanguage
+i i −i
+masked-fine-tuning(Masked-FT)techniqueisun- modeling capability. We find that the fine-tuned
+like other data augmentation methods based on BERTmodeltendstopredicthomophonesandho-
+homophone substitution, random substitution or mographsoftheinputcharacter, regardlessofits
+confusion sets (Zhao and Wang, 2020; Liu et al., contextualappropriateness. Notethathomophones
+2021), in that it does not impose any assumption andhomographsarethetwomainformsofspelling
+about human errors. As a result, it enables learn- errors in Chinese. Thus, it reveals that the error
+ing a completely unbiased error model from real model has dominated the prediction. In contrast,
+humandata. ThispropertyletMasked-FTachieve themodeltrainedwithMasked-FTtendstopredict
+source 吴阿姨年级大了。 3
+FT 吴阿姨年(纪,级,机,轻,青)大了。
+Masked-FT 吴阿姨年(纪,级,龄,岁,代)大了。
+2
+source 新的机器有可能声影少一点。
+FT 新的机器有可能声(影,景,应,音,引)少一点。 1
+Masked-FT 新的机器有可能声(音,影,声,响,味)少一点。
+0 Table1: Top-kresultseachmodelrecallsonthesame 0 1000 2000 3000
+Step
+sentence. ThemodelsherearetrainedonSIGHAN.FT
+referstoregularfine-tuning.
+charactersthatfitsthecontextbetter.
+WedemonstratetwocasesinTable1. Inthefirst
+case,bothmodelsmakethecorrecttop-1prediction.
+Attop2-5,however,thefine-tunedmodelpredicts
+a list of homophones: “年纪”, “年机” and “年
+轻”, “年青”. None of them makes any sense in
+thecontext. Masked-FTpredicts“年龄”,“年岁”,
+and “年代”, all carrying the meaning of age in
+Chinese,whichfitsthecontext. Inthesecondcase,
+the fine-tuned model predicts the correct answer
+attop-4,butthroughtop2-3,thepredictions“景”
+(ahomographof“影”)and“应”(ahomophoneof
+“影”) don’t fit the context at all. In contrast, the
+Masked-FT model predicts “声音”, “声声”, and
+“声响”, which all represent the correct meaning:
+sound. Allthehomophonesandhomographsthat
+theFTmodelpredictscomefromthepopularedit
+pairsinthetrainingdata.
+2.2 Seenvs. UnseenEditPairs
+In this experiment, we separate the test set of
+SIGHAN(Tsengetal.,2015)intotwosubsets,INC
+(shorthandforinclusive,representingeditpairsthat
+overlapwiththetrainingset)andEXC(shorthand
+forexclusive,witheditpairsthatdonotemergein
+the training set). Table 2 shows the comparison.
+Thefine-tunedBERTfitsINCwell(F1=64.1),but
+theperformancesharplydropsonEXC(F1=6.3).
+It suggests that the model generalizes poorly to
+unseen edit pairs where the error model does not
+provideanyusefulsignal.
+Itisworthnotingthatformanyunseeneditpairs,
+althoughtheyneverappearinthetrainingdata,they
+can actually be corrected by human based on the
+Prec. Rec. F1
+INC 73.5 56.8 64.1 fine-tuned
+EXC 10.7 4.4 6.3
+↓62.8 ↓52.4 ↓57.8
+INC 51.5 48.5 49.9
+vanillaBERT
+EXC 46.3 45.0 45.6
+Table2: CSCperformancecrashonunseeneditpairs.
+mroNdarG
+1.0
+fine-tune
+masked-fine-tune 0.8
+0.6
+0.4
+0.2
+0.0 0 1000 2000 3000
+Step
+(a) GradientNorm
+1F
+fine-tune
+masked-fine-tune
+(b) F1
+Figure2: Gradientandmodelconvergence. In(a),we
+compute the L2-norm of gradients over all model pa-
+rameters. In(b),weevaluatethemodeleach15steps.
+年 纪 轻 就 惨 遭 谢 顶 。 Sum
+FT 0.09 0.07 0.19 0.07 0.03 0.05 0.05 0.04 0.02 0.79
+MFT 0.27 0.10 0.40 0.19 0.53 0.68 1.16 0.92 0.26 4.92
+Table3: Gradientoneachtokenembedding. Wechoose
+amodelcheckpointattheearlystageoftraining(two
+epochs). Thesentenceis“(年级→年纪)轻轻就惨遭
+谢顶。”(Sheddingofhairatayoung(grade→age).).
+context. Toillustratethisfact,weattempttoutilize
+avanillaBERTtocorrecttheerrorsbyreplacing
+themisspelledtokenby[MASK].Surprisingly,we
+findthatthevanillaBERTcanactuallyachieveade-
+centaccuracy(F1=45.6)onEXC,muchbetterthan
+the fine-tuned BERT (F1=6.3). This result high-
+lightsthefactthatawell-trainedlanguagemodel
+has a great potential to handle unseen error pat-
+terns.
+2.3 GradientNorm
+Wenoticethattheerrormodelisrelevanttomost
+ofthespellingerrors,anditiseasytofitthemodel
+bymemorizingthepopularerrorpatterns. Asare-
+sult,theCSCfine-tuningprocessconvergesquickly.
+Weplotthegradientnormcurveduringtrainingin
+Figure 2. For BERT fine-tuning, the gradient de-
+cays quickly. After the gradient norm drops to
+verysmall(lessthan0.05)inthefirstfewhundreds
+steps,theF1scorestopsincreasing. Itmeansthat
+themodelhasalreadyconverged. Incontrast,the
+gradientnormoftheMasked-FTmodelstaysata
+highlevelandtheF1scorekeepsimproving.
+Table3reportsthegradientnormoneachindi-
+vidualtokenforanexamplesentence. Thegradient
+produced by BERT fine-tuning is much smaller
+thanthatproducedbyMasked-FT(MFT),indicat-
+ing that BERT fine-tuning involves less efficient
+token-levelparameterupdatesacrosstokens.
+3 LEMONBenchmark
+志 之 所 趋 , 无 远 勿 届 粗 狂 而 不 失 细 腻
+志 之 所 趋 , 无 远 弗 届 粗 旷 而 不 失 细 腻
+SIGHAN(Tsengetal.,2015)isthecurrentmost Aspirations no boundaries Wild but delicate
+Aspirations without boundaries Rugged but delicate
+widely-usedbenchmarkinCSC,butasdescribedin
+theintroduction,itdoesn’tposeenoughchallenge GAM ENC
+其 代 表 元 权 解 除 本 合 同 紫 外 线 可 以 激 活 络 氨 酸 酶
+to test the generalization ability of CSC models.
+其 代 表 无 权 解 除 本 合 同 紫 外 线 可 以 激 活 酪 氨 酸 酶
+SIGHANisexclusivelycollectedfromtheChinese Yuan entitled to cancel UV can activate tirosinase
+Not entitled to cancel UV can activate tyrosinase
+essayswrittenbyforeignspeakers(Wuetal.,2013).
+That includes 1,100 test examples with a narrow COT MEC
+content coverage. Besides, there are 370 distinct 检 查 油 门 脚 蹋 板 回 位 弹 簧 巨 斧 家 呆 着 无 边 的 旋 风
+检 查 油 门 脚 踏 板 回 位 弹 簧 巨 斧 夹 带 着 无 边 的 旋 风
+editpairsinthetestset,withnearly70%overlap Check the foot pεdal of gas Axe houses a huge whirlwind
+Check the foot pedal of gas Axe carries a huge whirlwind
+with the training set. As a result, a model can
+achieve a decent score by memorizing the error CAR NOV
+patterns. 凤 城 玫 瑰 重 获 新 生 我 每 天 六 天 半 起 床
+风 城 玫 瑰 重 获 新 生 我 每 天 六 点 半 起 床
+Inthispaper,wepresentLEMON,alarge-scale
+Phoenix City Assassin is reborn I get up at six days a half
+multi-domaindatasetwithnaturalspellingerrors, Windy City Assassin is reborn I get up at six and a half
+which spans 7 domains, including game (GAM),
+NEW SIGHAN
+encyclopedia(ENC),contract(COT),medicalcare
+Figure3: AsnapshotofLEMON.Wealsoincludethe
+(MEC),car(CAR),novel(NOV),andnews(NEW).
+SIGHAN-15testsethereforcomparison.
+AsopposedtoECSpell(Lvetal.,2022),wherethe
+typosaredeliberatelycreatedbyhumanoncorrect
+sentences,LEMONconsistsofover22,000exam- model to restore them. For training with parallel
+ples with natural spelling errors identified from data,thisisequivalenttorandomlysubstitutinga
+dailyhumanwriting,annotatedbywell-educated fraction of input tokens by a special mask token.
+nativeChinesespeakers. Theideaistobeasclose The mask token can be any token, as long as it
+to the real-life language distribution as possible. neveroccursinanordinaryinput. Itcanbeunder-
+LEMONcontains7,627editpairsfromalldomains, stoodasaspecial“typo”thathumannevermakes,
+whichismuchmorediversifiedthanSIGHAN. thusintroducingzerobiastotheerrormodel. This
+Figure 3 shows some concrete pieces of exam- technique can be applied to any model architec-
+ples in LEMON. In MEC, for example, we see ture. Empirically, we find that masking 20% of
+tyrosinase is misspelled, which is a professional non-error tokens by [MASK] is the most effective.
+wordinmedicine. Themodelthusrequirescertain Othervariants, suchasusingadifferentmasking
+expertisetocorrectit. Additionally,thelanguage rate,selectingfrombotherrorandnon-errortokens,
+styleofcontextvariesgreatlyfromonedomainto andsubstitutingby[unused],alsoworks,butthey
+another. Forexample,theexpressionsinGAMare achieveslightlyworseresults. Theablationstudy
+idiomaticwhilethoseinCOTarerelativelyregu- ispresentedinSection6.
+larizedandformal. Fortrainingwithbothparallel(annotated)data
+The bottom part of each block shows the his- andmonolingual(unannotated)data,weproposeto
+togramofallcharactersinthisdomain,indicating randomlymask20%tokensfromthemonolingual
+itslexicaldistribution. Wecanseethatthelexicon data,thenconstructMLMloss(Devlinetal.,2019)
+ofeachdomainvariesgreatly,suggestingdifferent andaddittothetrainingobjective. Thisisdifferent
+domain-specificlanguagestyles. Duetospacelim- from generating parallel data by corrupting 20%
+itation,furtheranalysisforLEMONisreportedin tokens. Any corruption rule (e.g. confusion sets)
+AppendixB. would make assumptions on human errors, thus
+introduce a bias to the error model. The MLM
+4 MaskedFine-Tuning
+lossdoesnotintroduceanyerrormodelbias,and
+as Section 5 shows, it achieves better results in
+Theintuitionbehindmaskedfine-tuning(Masked-
+domaintransfer.
+FT)issimple: wewanttoenhancethelearningof
+languagemodelwithoutperturbingtheerrormodel.
+5 EmpiricalResults
+Byequation(1),thelanguagemodelpredictsato-
+ken given all other tokens. Thus, we propose to Inthissection,wecompareregularfine-tuningwith
+randomly mask a fraction of tokens and train the Masked-FT on a variety of model architectures,
+andevaluatethemonSIGHAN-15,ECSpell,and Prec. Rec. F1
+LEMON. Our implementation is based on trans-
+BERT 73.0 72.6 72.8
+formers(Wolfetal.,2020).
+w/. Masked-FT 76.7 79.1 77.9
+↑3.7 ↑6.5 ↑5.1
+Soft-MaskedBERT 67.6 72.8 70.1
+5.1 BaselineApproaches
+w/. Masked-FT 76.3 81.8 79.0
+↑8.7 ↑9.0 ↑8.9
+Webrieflydescribeseveralbaselineapproaches.
+MDCSpell† 78.4 78.2 78.3
+•BERT:Wefine-tunetheBERTmodel2.
+SpellGCN† 72.1 77.7 75.9
+•Soft-MaskedBERT:Zhangetal.(2020)apply
+ConfusBERT† 72.7 76.1 74.4
+aGRUnetworkasthedetectorandmaskthelikely
+DCN† 74.5 78.2 76.3
+errorsinthesequenceinasoftway.
+PLOME† 75.3 79.3 77.2
+•SpellGCN:Chengetal.(2020)leverageGCN
+REALISE† 75.9 79.9 77.8
+tointegratephonologicalandvisualfeatures.
+PHMOSpell† 89.6 69.2 78.1
+•ConfusBERT:Liuetal.(2021)usetheconfu-
+sion set to guide the mask strategy in MLM pre-
+Table4:Fine-tuningresultsonSIGHAN-15.Theresults
+training. ToideaistonarrowthegapbetweenCSC
+in the bottom part requires additional pre-training. †
+andMLM.
+indicatestheresultwequote(DCN(Wangetal.,2021),
+• MDCSpell: Zhu et al. (2022) design an en- PLOME(Liuetal.,2021),REALISE(Xuetal.,2021),
+hanceddetector-correctornetwork,wheretwomod- PHOMOSpell(Huangetal.,2021)).
+ulesareparalleled. Theideaistoeffectivelyincor-
+poratethedetectioncluesfordecisionmaking. Method I-F1 E-F1 F1
+• CRASpell: Liu et al. (2022) introduce addi- vanillaBERT 49.6 35.7 -
+tionalerrorstotheoriginalexamplesandenhances BERT 68.4 10.0 40.2
+LAW w/.Masked-FT 84.9 65.9 76.8
+↑16.5 ↑55.9 ↑36.6
+thelocalsmoothnessofthemodelusingKLdiver-
+MDCSpell 69.0 13.7 42.2
+gence. Theideaistokeepthemodelrobustfrom w/.Masked-FT 86.1 73.2 81.1
+↑17.1 ↑59.5 ↑38.9
+noisycontext(i.e. witherrors). BERT 35.6 5.7 26.9
+w/.Masked-FT 46.7 43.2 63.8
+•BERT-AT:Lietal.(2021)obtaintheadversar- MED ↑11.1 ↑37.5 ↑36.9
+MDCSpell 32.1 7.4 25.7
+ialexamplesthroughcharacter-wisereplacement w/.Masked-FT 47.9 47.8 72.4
+↑15.8 ↑40.4 ↑46.7
+using the confusion set. However, this is time- BERT 54.4 7.4 26.7
+consuming. As an alternative, we adopt CreAT ODW w/.Masked-FT 71.3 ↑16.9 42.4 ↑35 62.9 ↑36.2
+MDCSpell 55.9 6.7 27.5
+(Wuetal.,2023),anend-to-endadversarialtraining
+w/.Masked-FT 75.1 51.2 72.0
+↑19.2 ↑44.5 ↑44.5
+methodtoobtaintheadversarialexamples,which
+perturbstheinputembeddings. Table5: Fine-tuningresultsonECSpell.
+We do not take autoregressive models into ac-
+countinthispaper. ItisworthnotingthatinCSC,
+ASR-basedgeneration(Wangetal.,2018),thenin
+BERT-base models remain the primary architec-
+thesecondstage,trainingonitsownlabeleddata.
+tureduetoitsabilitytoperforminferenceforeach
+We select the best learning rate and batch size in
+tokeninparallel. Ithasbeenshownthatinprevi-
+{1e-5, 2e-5, 5e-5} and {32, 128} respectively for
+ousworkautoregressivemodelslikeGPT2(Brown
+eachstage. Wetraineachmodelfor100,000steps
+etal.,2020)canworkmuchworseontheconcern-
+forthefirststageand10,000stepsforthesecond.
+ingCSCtasks(LiandShi,2021).
+Table4summarizestheresultsonSIGHAN-15.
+5.2 SIGHAN WithBERT,Masked-FTachievesverycompetitive
+results(improvesF1from72.8to77.9). WithSoft-
+SIGHAN-15(Tsengetal.,2015)isawidely-used
+MaskedBERT,itachievesthenewstate-of-the-art
+benchmarkinCSC,whichcontains6,476training
+on SIGHAN (79.0 F1). Although we have not
+examplesand1,100testexamples. Wefollowthe
+trainedotherbaselinemodelswithMasked-FT,it
+commonpracticetoconvertittosimplifiedChinese.
+is likely that they can get a similar performance
+Inaddition,wefollowthetwo-stagetrainingsetting
+boost.
+inmostpreviouswork(Liuetal.,2021;Zhuetal.,
+2022), pre-training the model on the public aug- 5.3 ECSpell
+menteddata(271,329examples)usingOCR-and
+ECSpell (Lv et al., 2022) is a newly shared CSC
+2https://huggingface.co/bert-base-chinese datasetwiththreedomains,LAW(1,960training
+GAM ENC COT MEC CAR NOV NEW SIG Avg
+BERT 27.1 41.6 63.9 47.9 47.6 34.2 50.7 50.6 45.5
+w/. MFT 33.3 45.5 64.1 50.9 52.3 36.0 56.0 53.4 48.9
+↑6.2 ↑3.9 ↑0.2 ↑3.0 ↑4.7 ↑1.8 ↑5.3 ↑2.8 ↑3.4
+Soft-Mased 26.3 43.5 63.8 48.8 47.7 34.3 52.7 50.5 45.9
+w/. MFT 29.8 44.6 65.0 49.3 52.0 37.8 55.8 53.4 48.4
+↑3.5 ↑1.1 ↑1.2 ↑0.5 ↑4.3 ↑3.5 ↑3.1 ↑3.0 ↑2.5
+MDCSpell 28.2 42.4 63.1 49.4 49.1 35.4 53.9 53.2 46.5
+w/. MFT 31.2 45.9 65.4 52.0 52.6 38.6 57.3 54.7 49.7
+↑3.0 ↑3.5 ↑2.3 ↑2.6 ↑3.5 ↑3.2 ↑3.4 ↑1.5 ↑3.2
+CRASpell 22.6 44.5 63.8 48.0 49.6 35.5 53.0 52.4 46.2
+w/. MFT 30.7 48.1 66.0 51.7 51.7 38.6 55.9 55.1 49.7
+↑8.1 ↑3.6 ↑2.2 ↑3.7 ↑2.1 ↑3.1 ↑2.9 ↑2.7 ↑3.5
+BERT-AT 25.6 43.0 62.6 49.4 47.5 33.9 51.6 51.0 45.6
+w/. MFT 34.4 47.1 66.8 52.0 51.6 36.5 55.0 53.8 49.7
+↑8.8 ↑4.3 ↑4.2 ↑2.6 ↑4.1 ↑2.6 ↑3.4 ↑2.8 ↑4.1
+Table6: PerformancesonLEMON.WereporttheF1scoresandalsoincludeSIGHANasthe8thdomain(SIG).
+and500testexamples),MED(medicaltreatment, tencesfromtwogeneraldatabaseswiki2019zhand
+3,000trainingand500test)andODW(officialdoc- news2016zh3 andusetheconfusionsetinLiuetal.
+umentwriting,1,728trainingand500test). Thehy- (2021)tosynthesizepairedsentencesfortraining.
+perparametersearchissimilartothatinSIGHAN Specifically,weuniformlychooseaChinesechar-
+andwetraineachmodelfor5,000steps. acter in a sentence and replace it with a counter-
+DifferentformSIGHAN,thetestsetofECSpell partinitsconfusionset(40%→samepronuncia-
+contains a high proportion (≈ 70%) of edit pairs tion;30%→similarpronunciation;20%→similar
+that never emerge in the training set. As in Sec- glyph;10%→random). Itfinallygenerates34mil-
+tion2.2,letEXCbethetestsubsetwheretheedit liontrainingsentencepairs. Weusethesamecon-
+pairsarenotinthethetrainingset,andINCbethe fusion set in the following part, unless otherwise
+complementary set. We define two new metrics, specified.
+inclusive F1 (I-F1) and exclusive F1 (E-F1), to We select the learning rate in {1e-5, 2e-5, 5e-
+measurethemodelperformanceonthetwosubsets. 5}anduse8192asthebatchsize. Eachmodelis
+AhigherE-F1suggeststhatthemodelisbetterat trainedfor30,000steps(morethan7epochs). We
+generalizingtounseenerrors. uniformlysample20%examplesineachdomain
+FromTable5,weseethatMasked-FTimproves (nomorethan200examples)andputthemtogether
+the BERT model’s E-F1 by a large scale on all asthedevelopmentset.
+threedomains(55.9,37.5and35.0absolutepoints).
+Table6summarizestheresults. WefindMasked-
+It also generates significant gains on I-F1 (16.5,
+FT(shorthandMFT)consistentlyimprovesevery
+11.1 and 16.9 absolute points). This is because
+modelandacrosseverydomain. Itisworthnoting
+that a better language model can assist the error
+thatalthoughBERT-ATperformscomparablywith
+modelinmakingmorecontextualdecisions,even
+fine-tuning BERT (only 0.1 gain), the gap grows
+onpopularheaderrorpatterns. WithMasked-FT,
+widerwithMasked-FT(0.8gain). Itisknownthat
+BERTandMDCSpellachievethenewstate-of-the-
+adversarial training enhances the optimization of
+artF1scoresonallthreedomainsofECSpell.
+the objective function. With regular fine-tuning,
+WenotethatthevanillaBERTperformsbetter
+itmainlyimproveserrormodeling. WithMasked-
+than the fine-tuned BERT on E-F1 when the er-
+FT,itimprovesbotherrormodelingandlanguage
+rorpositionisknown,butconsistentlyworsethan
+modeling,resultingingreaterperformancegains.
+Masked-FT.Itmeansthatregularfine-tuningcan
+Inthesecondexperiment,weevaluateondomain
+leadtocontextualdegeneration,whileMasked-FT
+transfer. In this setting, we have 2.8M sentence
+actuallylearnsabetterlanguagemodelthanvanilla
+pairsfromthenews(NEW)domain,annotatedby
+BERT.
+humaneditors. Ourgoalistodeployamodelfor
+themedicalcare(MEC)andthecar(CAR)domain.
+5.4 LEMON
+Foreachofthesetwodomains,wehave10ksen-
+We report two experiments on LEMON. In the
+first experiment, only monolingual data is used
+3https://github.com/brightmart/nlp_chinese_
+to train the model. We collect monolingual sen- corpus
+Trainingdata TransferMethod NEW MEC CAR Maskrate F1 I-F1 E-F1
+NEW - 70.7 55.3 64.1 0% 40.2 68.4 10.0
+NEW+MEC MLMLoss 72.2 62.1 - 5% 62.0 73.9 47.7
+NEW+MEC Synthesis(Masked-FT) 71.4 58.1 - 10% 70.1 81.3 55.2
+NEW+MEC Synthesis(FT) 61.4 54.6 - 15% 75.6 83.1 64.8
+NEW+CAR MLMLoss 71.1 - 68.4 20% 76.8 84.9 65.9
+NEW+CAR Synthesis(Masked-FT) 69.4 - 65.4 30% 75.7 83.2 62.3
+NEW+CAR Synthesis(FT) 61.6 - 59.5 50% 66.7 75.6 60.7
+Table7: Domaintransferresults(F1score). Allmodels Table8: ImpactofmaskratioonECSpell-LAW.
+aretrainedwithMasked-FT,unlessspecifiedasFT,re-
+ferringtoregularfine-tuning.
+Maskstrategy ENC CAR NEW Avg
+fine-tuning 41.6 47.6 50.7 46.6
+w/.[MASK] 45.5 52.3 56.0 51.3(↑)
+tenceswithoutanyhumanannotation. Weexplore w/.[unused] 44.9 52.2 55.5 50.9(↑)
+w/.[UNK] 39.1 45.2 47.1 43.8(↓)
+two methods to utilize the unannotated data: (1)
+masknon-error 45.5 52.3 56.0 51.3(↑)
+constructandtrainwithMLMloss,asdescribedin
+maskerror 42.9 48.2 52.2 47.8(↑)
+Section4;(2)generatesyntheticdatabycorrupting maskany 45.0 49.5 53.8 49.4(↑)
+unannotatedsentenceswithaconfusionset(train
+Table 9: Comparison of mask strategies on three
+with either regular FT or Masked-FT). For both
+LEMONdomains(F1score). Themaskrateis0.2.
+strategies,themodelisjointlytrainedonthe2.8M
+annotateddataalongwith10kmonolingualdata.
+FromTable7,wefindthatincorporatingMLM
+BERT,itisinitializedwithabetterembeddingthan
+lossontheunannotateddatagiveshigherF1scores that of [unused]. On the other hand, masking
+thantrainingwiththe2.8Mannotateddataalone. with[UNK]leadstoapoorresult. Thisisbecause
+Furthermore, the MLM loss method works bet- that[UNK]canoccurinordinaryinputstoencode
+ter than the data synthesis method (with or with-
+unknown characters. Masking with this token in-
+outMask-FT).Weconjecturethatthehigh-quality
+troducesanimplicitassumptionthatwhenanun-
+annotated data has contributed to a precise error
+known character appears in the input, it is very
+model. TheadditionalMLMlosshelpslearninga
+likelyaspellingerror,whichisobviouslynottrue.
+betterlanguagemodelforthenewdomainwithout
+Thisresulthighlightsthenecessityofkeepingthe
+changingtheerrormodel. Ontheotherhand,the
+errormodelintact.
+datasynthesismethodintroducesanewerrordistri-
+Anotherdecisionfactoristhepositiontomask.
+bution,thusimpairstheerrormodel. Overall,the
+InTable9,wecomparethreestrategies: masking
+best combination is to jointly train the model on
+non-errortokensonly,maskingerrortokensonly,
+paralleldatawithMasked-FT,andonmonolingual
+and masking any token. We find that the “mask-
+datawithMLMloss.
+ingnon-errortokensonly”strategyworksthebest.
+This is because that the error model can only be
+6 FurtherAnalysis
+learned from error tokens. Masking error tokens
+MaskRate Weinvestigatetheimpactfromthe reducestheamountoftrainingdataforerrormodel-
+mask rate p. A large p can hurt the training as it ing,resultinginaslightlyworseerrormodel. How-
+wipesouttoomuchcontextualinformation. From ever, Masked-FT consistently outweighs regular
+Table8,weseethatthemodelimprovesaspgoes fine-tuningnomatterwherewemask.
+from 0 to 20%. Even p = 5% substantially im-
+vs. Data Augmentation via Confusion Set A
+provesE-F1. However,anoverlyhighpcanhurt
+populardataaugmentationstrategyistorandomly
+theperformanceasthecontextisspoiled.
+substitute a certain fraction of tokens with a mis-
+MaskStrategy Wedefaulttomaskingtheinput spelled token from the confusion set. Liu et al.
+tokens with the [MASK] token. In fact, any token (2021)usetheconfusionsettoguidethemasking
+thatdoesnotappearinordinaryinputscanbecho- strategyinMLMpre-training. Weapplythesame
+sentoperformMasked-FT.FromTable9,wefind confusionsetsubstitutionrulestofine-tuning. As
+thatmaskingwith[unused]resultsinsimilarbut showninTable10,usingaconfusionsetfordata
+slightlylowerperformancegains. Wehypothesize augmentationhelpsinthepre-trainingstage,butit
+that since [MASK] matches the training of vanilla doesnothelpinthefine-tuningstage. Again,this
+isduetothefactthatanyconfusionsetintroducesa source 但好像从没见人淘出过银两。
+biastotheerrormodel. Inparticular,theconfusion target 但好像从没见人淘出过银两。
+FT 但好像从没见人掏出过银两。
+setsubstitutioninjectslargeamountoferrorsthat
+Masked-FT 但好像从没见人淘出过银两。
+humans would not make in practice. As a result,
+source 有一聪明人应聘年薪只要1元,第二年2年...
+themodelwilllearntodetectandcorrecterrorsin target 有一聪明人应聘年薪只要1元,第二年2元...
+anoverlyaggressivemanner. FT 有一聪明人应聘年薪只要1元,第二年2年...
+Masked-FT 有一聪明人应聘年薪只要1元,第二年2元...
+Method Prec. Rec. F1
+Table12: CasestudyselectedfromLEMON.
+Masked-FT 76.7 79.1 77.9
+SIGHAN confusion-FT 63.9 75.2 69.1
+confusion-pretrain† 72.7 76.1 74.4 source 可以换成洛听新，一天一片...
+target 可以换成洛汀新，一天一片...
+Table10: Masked-FTvs. confusionset(F1score). Masked-FT 可以换成洛听新，一天一片...
+source 不要随便使用化妆品，保持皮肤洁净...
+Method ENC CAR NEW
+target 不要随便使用化妆品，保持皮肤洁净...
+Masked-FT 45.5 52.3 56.0
+Masked-FT 不要随便使用化浴品，保持皮肤洁净...
+LEMON confusion-FT 35.2 43.4 46.3
+mixed-FT 40.7 47.4 50.5
+Table13: ErroranalysisselectedfromECSpell-MED.
+Table11: Masked-FTvs. confusionset(F1score).
+Mask-FTcannotallowthemodeltoacquireprofes-
+Table 11 reports a similar comparison on
+sionalknowledge. Itsuggeststhatauniversalcor-
+LEMON.Again,Masked-FTconsistentlyoutper-
+rectionsystemnecessitatesdomain-specificdataor
+formsfine-tuningwithconfusionsetsubstitution.
+knowledgeforstrongeradaptiontosomedomain
+We also compare with the “mixed” strategy pro-
+like medicine, science, with a wide range of ex-
+posedby(ZhaoandWang,2020): with50%proba-
+pertise. For the second case, the model wrongly
+bility,maskingthesentence,andwiththeremain-
+corrects“妆”(makeup)to“浴”(bathing)because
+ing50%probability,corruptingthesentenceviathe
+ofthesubsequentcontext“保持皮肤洁净”(keep
+confusionset. Theresultofthe“mixed”strategy
+skin clean). It implies a subtle trade-off between
+interpolatesbetweenthetwoextremes,suggesting
+languagemodelanderrormodel. Ofcourse,thisis
+thatamixingstrategycannotoffsettheerrormodel
+anextremecase,whichrarelyoccurs.
+biascausedbytheconfusionset.
+7 RelatedWork
+CaseStudy Westudytwoconcreteexamplesin
+Table12whereCSCiscontextdependent. Forthe
+For Chinese spelling correction, BERT (Devlin
+first case (It seems no one has ever found out sil-
+et al., 2019; Liu et al., 2019; Cui et al., 2020) is
+ver taels.), the fine-tuned model wants to correct
+the straightforward backbone model. There is a
+foundouttobetookout,whileMask-FTdoesnot
+lineofworkonimprovingthemodelarchitecture
+makeanychange. Bothfoundoutsilvertaelsand
+on top of BERT, such as imposing masking sig-
+tookoutsilvertaelsarereasonablecombinations.
+nalstothosepotentialerrortokenstoimproveer-
+Accordingtothecontext,however,wecanreason
+ror detection (Zhang et al., 2020), incorporating
+thatsomeoneisdiggingfortreasure. Hence,found
+multi-modalknowledge(e.g. pronunciation,glyph)
+outsilvertaelsismoreappropriate. Forthesecond
+(Chengetal.,2020;Liuetal.,2021;Huangetal.,
+case (There was a smart person who applied for
+2021; Xu et al., 2021; Zhang et al., 2021), using
+a job with a salary of 1 yuan for the first year, 2
+multi-task network to explicitly let the model de-
+years (→ yuan) for the second...), we can reason
+tect(Zhuetal.,2022)orpredictthepronunciation
+the second year should be corrected to yuan be-
+(Liuetal.,2021). Anothermajorcategoryisdata
+causethepreviouscontextmentionssalary,while
+augmentation, with the goal of synthesizing effi-
+thefine-tunedmodelisnotabletodoso.
+cient training data. Existing data augmentation
+Error analysis Though Masked-FT exhibits techniquesarebasedonhomophonesubstitution,
+powerfulpotential,wefurtherstudyitserrorcases randomsubstitutionorconfusionsets(Wangetal.,
+toenlightenfutureresearch. Weillustratetwotypi- 2018,2019;Liuetal.,2021;Guoetal.,2021).
+calerrorcasesinTable13. Forthefirstcase,“洛 The decomposition of CSC into a language
+汀新”(Lotensin)isaparticularkindofpill,while modelandanerrormodelisinspiredbytheclassi-
+calnoisychanneltheory(Kernighanetal.,1990). Neelakantan,PranavShyam,GirishSastry,Amanda
+Themasked-FTmethodproposedinthispaperis Askell, Sandhini Agarwal, Ariel Herbert-Voss,
+Gretchen Krueger, Tom Henighan, Rewon Child,
+similartothe“dynamicmasking”methodproposed
+Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu,
+by Zhao and Wang (2020). However, there are
+ClemensWinter,ChristopherHesse,MarkChen,Eric
+a few differences between the two studies. First, Sigler,MateuszLitwin,ScottGray,BenjaminChess,
+Zhao and Wang (2020) describes dynamic mask- Jack Clark, Christopher Berner, Sam McCandlish,
+Alec Radford, Ilya Sutskever, and Dario Amodei.
+ingasadataaugmentationmethod,andproposes
+2020. Languagemodelsarefew-shotlearners. InAd-
+tomixitwithotherdataaugmentationtechniques
+vancesinNeuralInformationProcessingSystems33:
+suchasconfusionsetsubstitution;incontrast,we AnnualConferenceonNeuralInformationProcess-
+describe masked-FT as a mean to enhance lan- ing Systems 2020, NeurIPS 2020, December 6-12,
+2020,virtual.
+guagemodelingwithoutperturbingerrormodeling,
+demonstrating both theoretically and empirically
+Xingyi Cheng, Weidi Xu, Kunlong Chen, Shaohua
+thatitshouldbecarriedoutalonewithoutmixing Jiang,FengWang,TaifengWang,WeiChu,andYuan
+withdataaugmentation. Second,westudydomain Qi.2020. Spellgcn: Incorporatingphonologicaland
+visualsimilaritiesintolanguagemodelsforchinese
+transferwithmonolingualdata,showingthatMLM
+spellingcheck. InProceedingsofthe58thAnnual
+trainingperformsbetterthantrainingwithsynthe-
+Meeting of the Association for Computational Lin-
+sized data. Again, it verifies our language/error guistics,ACL2020,Online,July5-10,2020,pages
+decompositiontheoryandtothebestofourknowl- 871–881.AssociationforComputationalLinguistics.
+edge,wasnotdiscussedinpreviouswork.
+YimingCui,WanxiangChe,TingLiu,BingQin,Shijin
+Wang,andGuopingHu.2020. Revisitingpre-trained
+8 Conclusion
+modelsforchinesenaturallanguageprocessing. In
+FindingsoftheAssociationforComputationalLin-
+Thispaperpresentsqualitativeanalysisandshows
+guistics: EMNLP2020,OnlineEvent,16-20Novem-
+thatexistingCSCmodelsleantoover-fittheerror ber2020,volumeEMNLP2020ofFindingsofACL,
+modelandunder-fitthelanguagemodel. Asimple pages657–668.AssociationforComputationalLin-
+guistics.
+yeteffectivemethodisthuspresentedtoencourage
+abetterlanguagemodellearning. Empiricalresults Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+demonstratethatthesimplemethodachievesnew Kristina Toutanova. 2019. BERT: pre-training of
+deepbidirectionaltransformersforlanguageunder-
+state-of-the-art results on public benchmarks, in-
+standing. InProceedingsofthe2019Conferenceof
+cludingonLENON,anewlarge-scalechallenging
+theNorthAmericanChapteroftheAssociationfor
+benchmarkreleasedwiththispaper. ComputationalLinguistics: HumanLanguageTech-
+nologies,NAACL-HLT2019,Minneapolis,MN,USA,
+Limitations June2-7,2019,Volume1(LongandShortPapers),
+pages 4171–4186. Association for Computational
+Wehavenottestedallpossiblerecentmethodson Linguistics.
+LEMON.WehaveusedexpensiveGPUresources
+JianfengGao,XiaolongLi,DanielMicol,ChrisQuirk,
+tospeedupthetrainingprocessonLEMON,with
+andXuSun.2010. Alargescaleranker-basedsys-
+8NVIDIAA100sheets,butconsistentresultscan temforsearchqueryspellingcorrection. InCOLING
+also be obtained with 8 V100 sheets. Our work 2010, 23rd International Conference on Computa-
+focuses on Chinese. Other languages, such as tional Linguistics, Proceedings of the Conference,
+23-27August2010,Beijing,China,pages358–366.
+JapaneseandKorean,couldbenefitfromthesame
+TsinghuaUniversityPress.
+technique,buthavenotbeenstudiedinthiswork.
+ZhaoGuo,YuanNi,KeqiangWang,WeiZhu,andGuo-
+tongXie.2021. Globalattentiondecoderforchinese
+References spellingerrorcorrection. InFindingsoftheAssocia-
+tion for Computational Linguistics: ACL/IJCNLP
+Haithem Afli, Zhengwei Qiu, Andy Way, and Páraic 2021, Online Event, August 1-6, 2021, volume
+Sheridan.2016. UsingSMTforOCRerrorcorrec- ACL/IJCNLP2021ofFindingsofACL,pages1419–
+tionofhistoricaltexts. InProceedingsoftheTenth 1428.AssociationforComputationalLinguistics.
+International Conference on Language Resources
+andEvaluationLREC2016,Portorož,Slovenia,May Harsh Gupta, Luciano Del Corro, Samuel Broscheit,
+23-28,2016.EuropeanLanguageResourcesAssoci- Johannes Hoffart, and Eliot Brenner. 2021. Unsu-
+ation(ELRA). pervised multi-view post-ocr error correction with
+languagemodels. InProceedingsofthe2021Confer-
+TomB.Brown,BenjaminMann,NickRyder,Melanie enceonEmpiricalMethodsinNaturalLanguagePro-
+Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind cessing,EMNLP2021,VirtualEvent/PuntaCana,
+Dominican Republic, 7-11 November, 2021, pages QiLv,ZiqiangCao,LeiGeng,ChunhuiAi,XuYan,and
+8647–8652.AssociationforComputationalLinguis- GuohongFu.2022. Generalanddomainadaptivechi-
+tics. nesespellingcheckwitherrorconsistentpretraining.
+CoRR,abs/2203.10929.
+Li Huang, Junjie Li, Weiwei Jiang, Zhiyu Zhang,
+MinchuanChen,ShaojunWang,andJingXiao.2021.
+BrunoMartinsandMárioJ.Silva.2004. Spellingcor-
+Phmospell: Phonologicalandmorphologicalknowl- rection for search engine queries. In Advances in
+edgeguidedchinesespellingcheck. InProceedings NaturalLanguageProcessing,4thInternationalCon-
+of the 59th Annual Meeting of the Association for
+ference,EsTAL2004,Alicante,Spain,October20-22,
+ComputationalLinguisticsandthe11thInternational
+2004,Proceedings,volume3230ofLectureNotesin
+JointConferenceonNaturalLanguageProcessing,
+ComputerScience,pages372–383.Springer.
+ACL/IJCNLP2021,(Volume1:LongPapers),Virtual
+Event,August1-6,2021,pages5958–5967.Associa-
+Yuen-HsienTseng,Lung-HaoLee,Li-PingChang,and
+tionforComputationalLinguistics. Hsin-HsiChen.2015. IntroductiontoSIGHAN2015
+bake-offforchinesespellingcheck. InProceedings
+Mark D. Kernighan, Kenneth Ward Church, and
+of the Eighth SIGHAN Workshop on Chinese Lan-
+William A. Gale. 1990. A spelling correction pro-
+guageProcessing,SIGHAN@IJCNLP2015,Beijing,
+grambasedonanoisychannelmodel. In13thInter-
+China,July30-31,2015,pages32–37.Association
+nationalConferenceonComputationalLinguistics,
+forComputationalLinguistics.
+COLING1990,UniversityofHelsinki,Finland,Au-
+gust20-25,1990,pages205–210.
+Baoxin Wang, Wanxiang Che, Dayong Wu, Shijin
+ChongLi,CenyuanZhang,XiaoqingZheng,andXuan- Wang,GuopingHu,andTingLiu.2021. Dynamic
+jingHuang.2021. Explorationandexploitation:Two connectednetworksforchinesespellingcheck. In
+waystoimprovechinesespellingcorrectionmodels. FindingsoftheAssociationforComputationalLin-
+In Proceedings of the 59th Annual Meeting of the guistics: ACL/IJCNLP2021,OnlineEvent,August
+Association for Computational Linguistics and the 1-6, 2021, volume ACL/IJCNLP 2021 of Findings
+11thInternationalJointConferenceonNaturalLan- ofACL,pages2437–2446.AssociationforComputa-
+guage Processing, ACL/IJCNLP 2021, (Volume 2: tionalLinguistics.
+ShortPapers),VirtualEvent,August1-6,2021,pages
+441–446.AssociationforComputationalLinguistics. Dingmin Wang, Yan Song, Jing Li, Jialong Han, and
+Haisong Zhang. 2018. A hybrid approach to auto-
+Piji Li and Shuming Shi. 2021. Tail-to-tail non- maticcorpusgenerationforchinesespellingcheck.
+autoregressivesequencepredictionforchinesegram- In Proceedings of the 2018 Conference on Empiri-
+maticalerrorcorrection. InProceedingsofthe59th calMethodsinNaturalLanguageProcessing,Brus-
+AnnualMeetingoftheAssociationforComputational sels,Belgium,October31-November4,2018,pages
+Linguisticsandthe11thInternationalJointConfer- 2517–2527.AssociationforComputationalLinguis-
+enceonNaturalLanguageProcessing,ACL/IJCNLP tics.
+2021, (Volume1: LongPapers), VirtualEvent, Au-
+gust 1-6, 2021, pages 4973–4984. Association for Dingmin Wang, Yi Tay, and Li Zhong. 2019.
+ComputationalLinguistics. Confusionset-guided pointer networks for chinese
+spellingcheck. InProceedingsofthe57thConfer-
+ShulinLiu,ShengkangSong,TianchiYue,TaoYang,
+enceoftheAssociationforComputationalLinguis-
+Huihui Cai, Tinghao Yu, and Shengli Sun. 2022.
+tics, ACL 2019, Florence, Italy, July 28- August 2,
+Craspell: Acontextualtyporobustapproachtoim-
+2019, Volume 1: Long Papers, pages 5780–5785.
+prove chinese spelling correction. In Findings of
+AssociationforComputationalLinguistics.
+theAssociationforComputationalLinguistics: ACL
+2022,Dublin,Ireland,May22-27,2022,pages3008–
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+3018.AssociationforComputationalLinguistics.
+Chaumond,ClementDelangue,AnthonyMoi,Pier-
+ricCistac,TimRault,RemiLouf,MorganFuntow-
+ShulinLiu, TaoYang, TianchiYue, FengZhang, and
+icz,JoeDavison,SamShleifer,PatrickvonPlaten,
+Di Wang. 2021. PLOME: pre-training with mis-
+Clara Ma, Yacine Jernite, Julien Plu, Canwen Xu,
+spelled knowledge for chinese spelling correction.
+In Proceedings of the 59th Annual Meeting of the Teven Le Scao, Sylvain Gugger, Mariama Drame,
+Association for Computational Linguistics and the QuentinLhoest,andAlexanderRush.2020. Trans-
+11thInternationalJointConferenceonNaturalLan- formers:State-of-the-artnaturallanguageprocessing.
+guage Processing, ACL/IJCNLP 2021, (Volume 1:
+InProceedingsofthe2020ConferenceonEmpirical
+Methods in Natural Language Processing: System
+LongPapers),VirtualEvent,August1-6,2021,pages
+Demonstrations,pages38–45,Online.Association
+2991–3000.AssociationforComputationalLinguis-
+forComputationalLinguistics.
+tics.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- Hongqiu Wu, Yongxiang Liu, Hanwen Shi, hai zhao,
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, andMinZhang.2023. Towardadversarialtraining
+Luke Zettlemoyer, and Veselin Stoyanov. 2019. on contextualized language representation. In The
+Roberta: A robustly optimized BERT pretraining EleventhInternationalConferenceonLearningRep-
+approach. CoRR,abs/1907.11692. resentations.
+Shih-Hung Wu, Chao-Lin Liu, and Lung-Hao Lee. NE NPE SL NEC NEP
+2013. ChinesespellingcheckevaluationatSIGHAN
+Game 400 155 33.0 1.16 133
+bake-off 2013. In Proceedings of the Seventh
+Encyclopedia 3434 1712 39.8 1.28 1217
+SIGHANWorkshoponChineseLanguageProcessing,
+Contract 1026 474 40.1 1.19 331
+SIGHAN@IJCNLP2013,Nagoya,Japan,October Medicalcare 2090 1053 39.3 1.33 674
+14-18,2013,pages35–42.AsianFederationofNatu- Car 3451 1762 43.6 1.35 1236
+ralLanguageProcessing. Novel 6000 3014 36.3 1.13 5819
+News 5892 2946 25.1 1.11 1963
+Heng-Da Xu, Zhongli Li, Qingyu Zhou, Chao Li,
+SIGHAN-15 1100 541 30.6 1.30 370
+ZizhenWang,YunboCao,HeyanHuang,andXian-
+LingMao.2021. Read,listen,andsee: Leveraging
+Table14: DatastatisticsforLEMON(NE:numberof
+multimodalinformationhelpschinesespellchecking.
+examples,NPE:numberofpositiveexamples,SL:sen-
+InFindingsoftheAssociationforComputationalLin-
+tencelength,NEC:numberoferrorcharactersperex-
+guistics: ACL/IJCNLP2021,OnlineEvent,August
+1-6,2021,volumeACL/IJCNLP2021ofFindingsof ample,NEP:numberofeditpairs). SIGHAN-15refers
+ACL,pages716–728.AssociationforComputational totheSIGHAN-15testset.
+Linguistics.
+RuiqingZhang,ChaoPang,ChuanqiangZhang,Shuo- Notice that P(x |x ) is a constant for varying
+i −i
+huan Wang, Zhongjun He, Yu Sun, Hua Wu, and
+y , thus the left-hand side is proportional to the
+i
+Haifeng Wang. 2021. Correcting chinese spelling
+numerator,namely
+errors with phonetic pre-training. In Findings
+of the Association for Computational Linguistics:
+P(y |x ,x ) ∝ P(y |x )P(x |y ,x ),
+ACL/IJCNLP2021,OnlineEvent,August1-6,2021, i i −i i −i i i −i
+volume ACL/IJCNLP 2021 of Findings of ACL,
+whichgivesquestion(1).
+pages 2250–2261. Association for Computational
+Linguistics.
+B LEMON
+ShaohuaZhang,HaoranHuang,JicongLiu,andHang
+Li.2020. Spellingerrorcorrectionwithsoft-masked ChineseSpellingCorrection(CSC)inrecentyears
+BERT. InProceedingsofthe58thAnnualMeetingof makesagreatstride,withmanymethodsemerging
+theAssociationforComputationalLinguistics,ACL
+and making impressive performances on general
+2020,Online,July5-10,2020,pages882–890.Asso-
+benchmarkslikeSIGHAN-2015. However,anul-
+ciationforComputationalLinguistics.
+timate CSC system must be able to cope with di-
+ZeweiZhaoandHoufengWang.2020. Maskgec: Im-
+versedomainsandcontextssimultaneouslyandof-
+provingneuralgrammaticalerrorcorrectionviady-
+ferappropriateerrorcorrectionrecommendations.
+namic masking. In The Thirty-Fourth AAAI Con-
+ference on Artificial Intelligence, AAAI 2020, The Wefindthatthecurrentwell-trainedmodelsona
+Thirty-Second Innovative Applications of Artificial single-domainstillsufferfrompoorperformances
+IntelligenceConference,IAAI2020,TheTenthAAAI
+onmulti-domainscenarios. Thecommunityisnow
+SymposiumonEducationalAdvancesinArtificialIn-
+ingreatneedofanothergeneralbenchmarktoeval-
+telligence,EAAI2020,NewYork,NY,USA,February
+7-12,2020,pages1226–1233.AAAIPress. uateandstudythegeneralizationabilityofaCSC
+system. We thus present LEMON, a large-scale
+ChenxiZhu,ZiqiangYing,BoyuZhang,andFengMao.
+multi-domaindatasetwithnaturalspellingerrors.
+2022. Mdcspell: A multi-task detector-corrector
+frameworkforchinesespellingcorrection. InFind- LEMON spans 7 domains, including game
+ingsoftheAssociationforComputationalLinguistics: (GAM),encyclopedia(ENC),contract(COT),med-
+ACL2022,Dublin,Ireland,May22-27,2022,pages ical care (MEC), car (CAR), novel (NOV), and
+1244–1253.AssociationforComputationalLinguis-
+news(NEW).Asopposedtopriorwork,wherethe
+tics.
+typosaredeliberatelycreatedoncorrectsentences,
+A DerivationofEquation(1) LEMON consists of 23 thousand examples with
+naturalspellingerrorspickedfromdailywritingof
+Let the input sentence be X = (x ,...,x ) and
+1 n human,whichadmittedlyrequiresmoreannotation
+output sentence be Y = (y ,...,y ). Given
+1 n resources. Our idea is to stick close to the real
+X, the BERT model predicts each element of Y
+humanlanguagedistribution.
+separately, namely computing P(y |X) for i =
+i LEMON contains a diverse collection of edit
+1,2,...,n. Let x = (x ,...,x ,x ,...,x ),
+−i 1 i−1 i+1 n pairs and context, e.g. some cases requiring the
+thenP(y |X) = P(y |x ,x ). ByBayesRule:
+i i i −i domain-specificknowledge,somerequiringthein-
+P(y |x )P(x |y ,x ) ference. Thissectionpresentsamoreconcretelook
+i −i i i −i
+P(y |x ,x ) =
+i i −i P(x |x ) attheexamplesinLEMON.Foreachcase,weare
+i −i
+going to demonstrate the source sentence, target •发动机发生故障切忌盲目拆检。「TRG」
+sentence(humanannotated),aswellasthemodel •发动机发生故障切记盲目拆检。「BERT」
+prediction. Asitturnsout,thecurrentmodelcan 切记(remember)and切忌(remembernot)are
+hardlyaddressthosechallengingcases. antonymsandbothofthemarecorrectexpressions.
+Case1: expertise(fromMEC) Accordingtotheglobalcontext,whatitmeanshere
+•头孢过敏可以用大环类酯。「SRC」 isnottodosomething. Hence, remember should
+•头孢过敏可以用大环内酯。「TRG」 becorrectedtoremembernot.
+•头孢过敏可以用大环类酯。「BERT」 We can find that most of the cases here are
+Aprofessionalword大环类酯(macrolidesan- expertise-free,butratherrequiremoreorlesscon-
+tibiotics)ismisspelledhere,whichcanbeveryhard textual comprehension and inference. Unfortu-
+to correct if the model is not exposed to specific nately,thecurrentmodelisstillweakininference,
+knowledgeduringthetrainingprocess. perhapsmorecontextualizedCSCmethodscould
+bedevelopedinfuturestudy.
+Case2: referentialinference(fromMEC)
+•色盲眼镜是用于矫正色觉障碍的一种眼睛。 Case6: multipletypos(fromCOT)
+「SRC」
+•由于上述原因试乙方无法履行保证时以方不
+•色盲眼镜是用于矫正色觉障碍的一种眼镜。
+承担责任。「SRC」
+「TRG」
+•由于上述原因使乙方无法履行保证时乙方不
+•色盲眼镜是用于矫正色觉障碍的一种眼睛。
+承担责任。「TRG」
+「BERT」
+•由于上述原因使乙方无法履行保证时以方不
+眼镜(glasses)ismisspelledto眼睛(eyes)here.
+承担责任。「BERT」
+Thiscasecontainsmorethanoneerrors.
+Wenoticethatglassesismentionedearlierinthe
+sentence, which requires the model to make the
+associationbasedontheglobalcontext,albeitthis
+iseasyforhuman.
+Case3: unusualexpressionbutgloballycor-
+rect(fromGAM)
+•但好像从没见人淘出过银两。「SRC」
+•但好像从没见人淘出过银两。「TRG」
+•但好像从没见人掏出过银两。「BERT」
+淘出(findout)israrelyexpressedcomparedto
+掏出(takeout). Themodelisinclinedtomiscor-
+rectthoseunusualexpressions. Bothfindoutcoins
+andtakeoutcoinsarecorrectexpressions. Accord-
+ingtotheglobalcontext,however,wecanknowthe
+backgroundhereissomeonewhodigsfortreasure.
+Hence,itshouldbefoundouthere.
+Case4: fixedpair(fromENC)
+•可爱的动物共同构成了一副让人惊艳不已的
+画面。「SRC」
+•可爱的动物共同构成了一幅让人惊艳不已的
+画面。「TRG」
+•可爱的动物共同构成了一副让人惊艳不已的
+画面。「BERT」
+Since one will use 一副 a pair of with 画面
+(scene), it should be corrected to 一幅 (a picture
+of)here. However,thereisalongattributivethat
+separatesthemapart. Themodelfailstomakeitas
+aresult.
+Case5: locallycorrectbutgloballyincorrect
+expression(fromCAR)
+•发动机发生故障切记盲目拆检。「SRC」

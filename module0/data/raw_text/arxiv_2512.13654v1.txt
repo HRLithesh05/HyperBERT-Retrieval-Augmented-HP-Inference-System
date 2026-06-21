@@ -1,0 +1,723 @@
+Large-language memorization during the classification of United States
+Supreme Court Cases
+JohnE.Ortega and DhruvD.Joshi and MattP.Borkowski
+PaceUniversity
+NewYork,NewYork
+Corresponding author: mb26703p@pace.edu
+Abstract courtcasesintocategoricaltopics.
+ThecomplexityofUnitedStatesSupremeCourt
+Large-language models (LLMs) have been (SCOTUS) decisions presents significant chal-
+showntorespondinavarietyofwaysforclas-
+lenges for automated classification systems, as
+sificationtasksoutsideofquestion-answering.
+demonstrated by prior work (Vatsal et al., 2023;
+LLM responses are sometimes called “hallu-
+cinations” since the output is not what is ex- Undaviaetal.,2018). Overtime,naturallanguage
+pected. MemorizationstrategiesinLLMsare processing(NLP)approacheshaveevolved—from
+being studied in detail, with the goal of un- traditional methods like Latent Dirichlet Alloca-
+derstandinghowLLMsrespond. Weperform tion(LDA)(Bleietal.,2003)totransformer-based
+a deep dive into a classification task based
+modelssuchasBERT(Devlinetal.,2018). While
+on United States Supreme Court (SCOTUS)
+BERTisitselfalargelanguagemodel(LLM),pre-
+decisions. The SCOTUS corpus is an ideal
+viouseffortsprimarilyreliedonfine-tuningBERT
+classification task to study for LLM memory
+variantsforclassification,withoutadeeperexplo-
+accuracy because it presents significant chal-
+lengesduetoextensivesentencelength,com- rationofmodern,decoder-basedLLMsorprompt-
+plexlegalterminology,non-standardstructure, basedinferencetechniques. Toourknowledge,this
+and domain-specific vocabulary. Experimen- workrepresentsthefirstformalattempttoclassify
+tation is performed with the latest LLM fine- SCOTUSdecisionsusingadiversesetofcontem-
+tuningandretrieval-basedapproaches,suchas
+poraryLLMarchitecturesandstrategies,including
+parameter-efficientfine-tuning,auto-modeling,
+bothencoder-anddecoder-stylemodels.
+andothers,ontwotraditionalcategory-based
+In this article, we introduce and compare four
+SCOTUSclassificationtasks: onewith15la-
+beled topics and another with 279. We show novel LLM components (1) Parameter Efficient
+thatprompt-basedmodelswithmemories,such Fine-Tuning(PEFT),(2)Prompt-BasedClassifica-
+as DeepSeek, can be more robust than previ- tion(PBC),(3)AutomatedModelSelection(Au-
+ousBERT-basedmodelsonbothtasksscoring toModelApproach)and(4)Retrieval-Augmented
+about2pointsbetterthanpreviousmodelsnot
+Classification(RAC).Ourgoalistobetterunder-
+basedonprompting.
+standmemorizationandanomaliesresultingfrom
+theuseoftheseLLMcomponents.
+1 Introduction
+Weevaluatethefourcomponentsonthesupreme
+Theclassificationoflegaldocumentscanbecon- court database (SCDB), a corpus curated by the
+sidered a pivotal task in the streamlining of legal University of Washington School of Law that la-
+research and decision-making. Wikipedia has al- beled 8.5 thousand court cases into 15 broad cat-
+ready shown that the number of Supreme Court egoriesand279detailedsub-categories. Through
+casesintheUnitedStateshasgrownsignificantly comprehensiveexperimentationandtheuseofac-
+overtime. While7,000-8,000newcasesarefiled curacy,precision,recall,andF1scoremetrics,we
+intheSupremeCourteachyear,onlyabout80of aimtoidentifythemosteffectiveapproachforclas-
+thosecasesareactuallyreviewedbytheSupreme sifyingSCOTUSdecisionsacrossbothbroadand
+Court.1 With the ever growing demand for legal fine-grainedcategories.
+documentprocessing,onecleartaskthatwouldas- Tobetterdescribeourexperimentsandapproach,
+sistparalegalsandattorneysistheclassificationof wefirstpresentworkthatisrelatedtooursinSec-
+tion2. Wethenprovidefurtherinsightintothefour
+1https://en.wikipedia.org/wiki/Number_of_U.S.
+_Supreme_Court_cases_decided_by_year componentsstudiedinSection3. Next,ourwork’s
+1
+5202
+ceD
+51
+]LC.sc[
+1v45631.2152:viXra
+experimental settings are presented in Section 4. adeepdiveintoLLMresponsesordidnotusethe
+Then, we cover the results of the experiments in same SCDB tasks based on 15 or 278 categories.
+Section5andprovideafinalconclusionandfuture This article applies the latest LLM techniques to
+workinSection6. theSCDBtasksforaclassificationstudytoaddress
+thechallengesofdomain-specificlanguage,docu-
+2 RelatedWork mentlength,andtheneedforpreciseinformation
+retrieval.
+The application of NLP in the legal domain has
+madesignificantadvancements,particularlywith 3 Methodology
+the adoption of transformer-based models like
+BERT (Devlin et al., 2018). In the past, BERT In this section, we describe the LLMs and ap-
+modelshavebeenfine-tunedforvariouslegaltasks, proaches(promptandnon-promptbased)thatwe
+includingdocumentclassification,toaddresschal- useinourexperiments. Therearefourmodelsde-
+lengesposedbytheuniquecharacteristicsoflegal scribedfurtherinthissection: BERT(Devlinetal.,
+texts,specificallyforSCOTUSandSCDBbyVat- 2019), Legal-Bert(NLP-AUEB,2020), LLaMa
+saletal.(2023);Undaviaetal.(2018). 3(Touvronetal.,2023)andDeepSeek(AI,2023).
+WhiletheworkbyVatsaletal.(2023);Undavia Themodelspresentedhereincorporatesignificantly
+et al. (2018) is parallel to ours since it used the larger parameter counts and diverse architectural
+samecorpora,therewasnotadeepdiveintoLLM innovations compared to earlier approaches (Vat-
+performanceorreasoningastowhymodelmem- saletal.,2023;Undaviaetal.,2018)onthesame
+orizationmadeadifference. Alternatively,others tasks. The overall aim with these four models is
+(Tewari, 2024; Chalkidis et al., 2020) introduced to evaluate the impact of memorization, scaling,
+LEGAL-BERT,aBERTvariantpre-trainedonadi- domainadaptation,andprompt-basedinferenceon
+versecorpusoflegaltextsthatperformedablation the SCDB task. Additionally, in this section we
+studiesonvariousstandardNLPtaskslikeGLUE presentthethreeprompt-basedapproachesandtwo
+(Wangetal.,2018)andSQUAD(Rajpurkaretal., nonprompt-basedthatweexperimentwithonthe
+2016). Thereworkshowedhowwelldifferentap- fourmodels.
+proaches maintained robustness across the tasks
+3.1 Models
+and, thus, briefly discussed the contributions of
+BERT. Nonetheless, the LLMs used in this work We used the following models along with the
+werenotreviewed. approaches listed below on each corresponding
+InanotherstudybyLimsopatham(2021),legal model:
+documentswereshowntoexceedthetokenlimita- Model 1: BERT. (Bidirectional Encoder Rep-
+tionsofstandardtransformermodels. Theirwork resentationsfromTransformers): Afoundational
+exploredtechniquesforadaptingBERTtolongle- transformer model pretrained on general English
+galtexts,suchashierarchicalmodelsandchunking corpora,capturingbidirectionalcontextforvarious
+strategies. Their goal was to effectively capture NLPtasks. (Devlinetal.,2019)
+contextbeyondthetypicaltokenlimits. Incontrast Model2: Legal-BERT.Adomain-specificadap-
+to the work described here, they did not analyze tationofBERT,pretrainedonextensivelegaltexts,
+modelsinthecurrentLLMlandscapeordecoder- enhancingitsabilitytounderstandlegalterminol-
+onlymodels. ogyandnuances. (NLP-AUEB,2020)
+Someworkhasbeenperformedthatshowshow Model3: LLaMA3. Alargelanguagemodel
+welltheintegrationofretrievalmechanismswith designedtoperformeffectivelyacrossdiversetasks,
+generativemodels,knownasRetrieval-Augmented including those in specialized domains like law.
+Generation(RAG),enhancelegaltextprocessing. (Touvronetal.,2023)
+(PipitoneandAlami,2024)Weconsidertheirwork Model4: DeepSeek. Atransformer-basedlarge
+more along the lines of ours; yet, there was not language model, trained on general multilingual
+a focus on SCOTUS cases as there is here. Simi- corpora,optimizedforsemanticunderstandingof
+larly,Wiratungaetal.(2024)proposedCBR-RAG prompts,reasoning,andtextgeneration. (AI,2023)
+whichcombinedcase-basedreasoningwithRAG BERTandLegal-BERT(Models1and2)serve
+toimprovelegalquestion-answeringsystems. asstrongbaselinestocompareourlargermodels
+Othertechniquesfromtheliteraturedidnotdo against. LLaMAandDeepSeek(Models3and4)
+2
+are up-to-date open-weight LLMs that introduce ReducedComputationalOverheadCompared
+advancedcapabilitiesthroughpre-trainingonmas- toFine-Tuning: Fine-tuninglarge-scalemod-
+siveanddiversecorporaandsupportzero-shotand els such as Model 2 can be computationally
+few-shotgeneralization. intensiveandresource-prohibitive. Incontrast,
+prompt-basedmethodsleveragetheinference
+3.2 Prompt-BasedApproaches
+capabilitiesofpre-trainedmodels,eliminating
+Weexperimentwithprompt-basedapproacheswith theneedforadditionaltraining.
+thegoalofcreatingmorerobustsystems. Thissec-
+tionenumeratesreasonsthatprompt-basedsystems Weimplementthefollowingapproaches,asmo-
+mayimproveresultsonSCPDtasks. tivatedinsection3.1forModels3and4.
+ApproachPB1: Prompt-BasedClassification.
+ImprovedContextualUnderstandingofLegal
+Thisapproachleveragesthemodels’abilitytoper-
+Language: TheSCDBcompriseslegaldocu-
+formtasksbasedonnaturallanguageprompts. By
+mentscharacterizedbycomplexsyntax, for-
+crafting specific prompts that guide the model to
+malstructure,anddomain-specificterminol-
+generatedesiredoutputs,wecaneffectivelyutilize
+ogy. Prompt-based large language models
+thepre-trainedknowledgewithoutextensivefine-
+(LLMs), such as Model 3, leverage deep bi-
+tuning. Additionally, for large language models
+directionalcontextualunderstanding. Webe-
+such as Model 4, which perform next-token gen-
+lievethatpromptingcancapturelegalnuance
+erationasopposedtotraditionalmachine-learning
+more effectively without the need for exten-
+classification,promptingpromotesmoreprecisese-
+sivepre-processingorfine-tuning.
+manticsimilarity. Thismethodisespeciallyuseful
+Facilitation of Zero-Shot Learning: Conven- inzero-to-fewshotlearningsituationswherelim-
+tionalclassificationmodelsoftenrequirelarge, itedlabeleddatahasahigherdemandforin-context
+annotated datasets for supervised learning, learning. ThisapproachisusedwithModel3.
+which is a limitation in legal domains due ApproachPB2: Retrieval-AugmentedClassi-
+to the scarcity and cost of expert-labeled fication. Inthisapproach,weintegratearetrieval
+data. Zero-shot learning models, on the mechanism to enhance the models’ performance.
+otherhand,enableclassificationwithouttask- By retrieving relevant legal documents related to
+specific training data. They leverage pre- theinputtext,themodelcanincorporateadditional
+trainedmodelsandspecifytasksthroughnatu- context, leading to more accurate classifications.
+rallanguageprompts. Thisapproachreduces Thismethodmakesuseofexternalknowledgenot
+therelianceonlabeleddatawhilestilldeliver- included with a pre-trained model’s context. We
+inghighperformanceacrossarangeoftasks. believethatthisapproachisparticularlyeffective
+in the legal domain where context and precedent
+Domain Transferability and Adaptability:
+arecrucial. ThisapproachisusedwithModel3.
+Prompt-based LLMs, pre-trained on diverse
+ApproachPB3: Prompt-BasedClassification
+corpora, exhibit strong generalization capa-
+with Log-Smoothed Weighted Loss and Clas-
+bilities across domains. Without requiring
+sification Head Adaptation. This is a variation
+task-specificfine-tuning,thesemodelscanbe
+ofApproachPB1,usedexclusivelyforourexperi-
+easilyadaptedtosub-fieldsoflaw(e.g.,con-
+mentswithModel4. Weattempttoaddressclass
+stitutional,civilrights,criminallaw)through
+and memory imbalance within the SCDB by as-
+taskdescriptionembeddedintheprompt.
+signing weights to classes corresponding to their
+SemanticSensitivitytoLegalJudgments: Le- frequency. Inpractice,certainlegalcategoriestend
+gal classification tasks often rely on subtle to appear more frequently than others, we apply
+linguisticcues(e.g.,distinctionsbetween“af- logarithmicsmoothingofthoseclassweightsdur-
+firmed,”“reversed,”or“remanded”). Prompt- ing fine-tuning. Additionally, to address extreme
+basedLLMshavedemonstratedsuperiorper- outlier weights, we introduced a clipping mecha-
+formanceincapturingsuchsemanticdistinc- nism2 that will provide an upper bound for class
+tions through in-context reasoning, as op- weights. Thisismoreusefulforclassificationthan
+posedtorelyingsolelyontoken-levelpatterns generationbyprovidinglogisticalprobabilitiesin
+orstatisticalco-occurrence,whicharetypical
+2https://pytorch.org/docs/stable/generated/
+oftraditionalmodels. torch.clamp.html
+3
+theresponseapartfromthefinalclassification. This 4 ExperimentalSettings
+approachisusedwithModel4.
+4.1 Data
+In addition the prompt-based approaches men-
+The corpus presented here and in previous work
+tioned,wedefinetheotherapproachesbelow.
+(Vatsaletal.,2023;Undaviaetal.,2018)isbased
+ontheSCDBapubliclyavailabledatasetcurated
+3.3 NonPrompt-BasedApproaches
+byWashingtonUniversitySchoolofLaw. (Spaeth
+We also explored several non prompt-based ap-
+etal.,2013)Thecorpusconsistsof8,419Supreme
+proachestoassesstheireffectivenessinclassifying
+Court decisions, each labeled with a primary is-
+complexlegaltexts. Thesemethodsareparticularly
+suearea. SCDBprovidesatwo-levelontologyfor
+relevantforscenarioswheredirectpromptingmay
+classification: (i)15broadcategoriesrepresenting
+not be ideal due to resource constraints, limited
+high-levellegaldomains(e.g.,CivilRights,Crim-
+modelcompatibility,ortask-specificperformance
+inal Procedure, Economic Activity) and (ii) 279
+challenges. Nonprompt-basedapproachessuchas
+fine-grained categories that further specify legal
+Parameter-EfficientFine-Tuning(PEFT)andAu-
+subtopics within each broad category. The class
+tomated Model Selection (AutoModel) allow us
+distributioncanbeconsideredimbalancedacross
+toleveragethefullcapacityofpre-trainedmodels
+categories. Documents length can be considered
+throughtargetedadaptationsandstructuredevalu-
+highlyvariable,withamedianlengthof5,552to-
+ationpipelines. Byfocusingonthesetechniques,
+kens and a mean length of 6,960 tokens, posing
+we aim to understand how traditional fine-tuning
+challengesformodelswithinputlengthrestrictions
+andoptimizationpipelinesperformincontrastto
+(e.g.,512-tokenlimitinBERT).
+inference-driven prompting, especially in high-
+cardinality classification settings like the SCDB 4.2 Chunking
+dataset. Theseapproachesprovideavaluablebase- Ourchunkingstrategiesfortheapproachesinsec-
+line and comparative benchmark to evaluate the tions3.2and3.3areasfollows:
+strengthsandweaknessesofprompt-basedalterna-
+NPB2. Models 1 and 2: Tokenization is per-
+tivesinbothcoarse-andfine-grainedlegalcatego-
+formedwiththeHuggingFaceAutoTokenizer
+rizationtasks.
+wheremaxlengthissetto512andtruncation
+Approach NPB1: Parameter-Efficient Fine-
+is set. We apply batch-wise processing and
+Tuning(PEFT).WeutilizeLow-RankAdaptation
+textsthatexceed512tokensaretruncated.
+(LoRa) (Hu et al., 2022) to fine-tune the models
+efficiently. LoRA introduces trainable low-rank
+NPB2. Models1and2: Theuseoftransformer-
+matrices into each layer of the transformer archi-
+basedclassificationandchunkingwithamax
+tecture,allowingadaptationtospecifictaskswith
+lengthof512;batchesareofsize4.
+reduced computational resources. For Models 3
+and4,LoRAhelpsmitigatetheneedforfullmodel PB1. Model3: Fullcourtcasetextsareusedthat
+retraining. This approach is used with Model 1, donoexceedthecontextlimit(≈2048-4096
+Model2andModel4. tokens).
+ApproachNPB2: AutomatedModelSelection.
+PB2. Model 3: Chunking is used based on a
+We employ an automated framework from Hug-
+dictionary. Textissegmentedaccordingtothe
+gingFace3depictedinFigure1thatselectsthemost
+structureofthedocument.
+suitablemodelforclassification. Itassesseseach
+model’s performance on the validation set using PB3. Model4: Chunksofthedocumentaretrun-
+metricssuchasaccuracy,precision,recall,andF1 cated according to the model’s context win-
+score. Theuseofauto-modelingenablesanobjec- dow(upto128,000tokens)andresourceson
+tivecomparisonandhelpsidentifythemodelthat hand. Inourexperiments,wechosealimitof
+offersthebesttrade-offbetweenperformanceand 5,000tokens.
+computationalefficiency. (Wolfetal.,2020)This
+5 ResultsandDiscussion
+approachisusedwithModel1andModel2.
+Our results for both categories from the SCDB
+3https://github.com/huggingface/transformers/
+corpusareshowninTable1for15broadcategories
+blob/main/src/transformers/models/auto/modeling_
+auto.py andinTable2for279detailedcategories.
+4
+Figure1: AutoHeadmodelforsequenceclassificationfromHuggingFaceusedforModels1and2.
+ItisclearthatModel4isthemostrobustoverall mentsarenotperfectlyalignedwiththeclassifica-
+forbothtasks,despiteitscoringslightlylower(1 tiontarget. TheseresultssuggestthatwhileRAG
+misclassification)on279categories. Additionally, iswell-suitedfortasksrequiringlong-contextun-
+Models1and2haveoutperformedpreviouswork derstanding and answer synthesis, prompt-based
+(Vatsaletal.,2023;Undaviaetal.,2018). Although, LLMclassificationismoreeffectiveforstructured
+theusedoftheNPB2techniqueinModel2hasout- predictiontaskslikelegalcasecategorization.
+performed Model 4 in the categorization of 279
+Table 1 provides the best results for Models 1
+labels. ThisdichotomybetweenBERT-basedmod-
+and 2 (both BERT-based) on 15 categories after
+elsandlargelyprompt-basedmodelsisinterested
+trying several sequence modeling techniques. It
+tonotesincetheseexperimentsareperformedon
+isnoteworthythatthebestresultsforbothmodels
+complexlegalstructure. Model3didnotperform
+were gotten using the Stride-64 n-gram compres-
+well on the 15 broad categories compared to the
+siontechniqueexperimentedwithinpreviouswork
+other models. The memory consumption overall
+(Vatsaletal.,2023;Undaviaetal.,2018). Further
+causedseveralissueduetothetheOllamaframe-
+resultsonbothmodelsareinorderofbest-to-worst
+workwhichwasabandonedforthe279categorical
+performanceassuch: Concat-512,Summarization-
+taskdespiteseveralattempttorestartandaddress
+512, Best-512, Ensemble and LSMs (Longer Se-
+the issues. We plan on addressing this for future
+quence Models). We believe that there could be
+workbutareconvincedthatitslowperformanceon
+multiple reasons that the LSM technique under-
+15categorieswouldonlybereplicatedfor279.
+performedinourexperiments. First,LSMsallow
+Contrastingly,theapproachesforModel3were multi-headattentionstoadheretoarestrictedmem-
+significantlydifferent. PB2(aretrieval-augmented orization window contrary to BERT-based mod-
+generation(RAG)approach)achievesaclassifica- els where these multi-head attentions are free to
+tionaccuracyof0.55comparedtojust0.33from concentrate on any of the tokens. Second, with
+PB1(aprompt-basedapproach). Thisperformance morenumberoftokens,morevarianceiscreated
+discrepancycanbeattributedprimarilytothedif- which can lead to poor performance due to the
+ferencesinarchitecturalfocusandtaskalignment wider search space. In our studies, we find that
+betweenthetwomethods. PB1’spromptingstrat- the first 512 tokens contribute the most and this
+egywastailoredfordirectclassificationwherethe maybeattributedtothefactthatthedocumentsare
+model receives structured input and is explicitly of unequal length and there are many documents
+guidedtoproduceaclassificationlabel. Incontrast, which are less than or equal to the length of 512
+PB2,whilepowerfulforopen-domainQAandgen- tokens. Additionally,Best-512probablyperforms
+erativereasoning,introducesmultiplepointsofpo- worsethanConcat-512andBest-512because,even
+tentialfailureinaclassificationsetting. Itsreliance thoughthefirst512tokensarethemostimportant,
+on a retrieval step followed by generation intro- context beyond these 512 tokens still contributes
+duces noise, especially when the retrieved docu- and should not be ignored. Summarization-512
+5
+Model Technique Accuracy Precision F1
+NPB1 0.718 0.669 0.679
+Model1 NPB2 0.785 0.779 0.780
+NPB1 0.748 0.705 0.715
+Model2 NPB2 0.793 0.792 0.791
+PB1 0.554 0.633 0.577
+Model3 PB2 0.332 0.461 0.346
+Model4 PB3 0.824 0.827 0.820
+Table1: ResultsFor15Categories
+Model Technique Accuracy Precision F1
+NPB1 0.171 0.042 0.063
+Model1 NPB2 0.581 0.542 0.541
+NPB1 0.365 0.201 0.246
+Model2 NPB2 0.624 0.617 0.602
+Model4 PB3 0.620 0.624 0.598
+Table2: ResultsFor279Categories
+reductionoveranentiredocumentislimiteddueto inlegalNLP.Overall, theseresultshighlightthat
+itsattempttonarrowdownlargerdocumentsto512 LegalBERTismoreeffectiveandreliableforlegal
+tokens. Asexpected,theensemblemethodoutper- case classification, especially when dealing with
+formsBest-512andSummarization-512becauseit nuancedorlarge-scalecategorizationtasks.
+tries to exploit joint learning across multiple 512 Weobservedasignificantdropinclassification
+tokenchunksthroughitsmaximumvotingmecha- performance when increasing the number of out-
+nismrule. Concat-512ontheotherhandcaptures putlabelsfrom15to279,despiteusingidentical
+better context across multiple 512 token chunks model architectures and training settings across
+as it learns this knowledge during back propaga- bothBERTandLoRA-adaptedBERT(viaPEFT).
+tionofthemodel. Finally,Stride-64outperforms Thisdegradationcanbeattributedtomultiplecom-
+Concat-512becausewhenwetakedisjointchunks, poundingfactorsinherenttohigh-cardinalityclas-
+thecontinuityofcontextgoesmissingwhereasif sification tasks. First, with a large number of
+thereisanoverlappingportionoftextbetweentwo classes, the final softmax layer distributes prob-
+consecutivechunks, it gives bettercontextualun- ability mass across more labels, resulting in re-
+derstanding. duced confidence and increased prediction ambi-
+Our evaluation demonstrates that LegalBERT guity. Second,theeffectivesamplesizeperclass
+consistentlyoutperformsthestandardBERTmodel drops sharply, leading to high variance and poor
+acrossbothcoarse-grained(15categories)andfine- generalization,especiallyforunderrepresentedla-
+grained(279categories)legalclassificationtasks. bels. Crucially, LoRA adapters modify internal
+In the15-class task, while BERTshowedreason- attentionlayersbutdonotadapttheclassification
+able performance, LegalBERT delivered notice- head, which becomes a significant bottleneck in
+ablybetterresultsonbothevaluationdatasets,re- high-dimensionallabelspaces. Therandomlyini-
+flecting its ability to better capture the structure tialized classification head (e.g., 768×279) lacks
+and semantics of legal texts. The improvement sufficient supervision for effective optimization
+is even more pronounced in the 279-class classi- without full fine-tuning. Furthermore, traditional
+fication setting, where the complexity and speci- cross-entropylossbecomeslesseffectiveinsuch
+ficityoflabelsmakedomainunderstandingcritical. settings, particularly when class distributions are
+BERT’sperformancedroppedsignificantlyinthis imbalanced. Theseobservationswereconsistentin
+scenario,particularlyonmorechallengingdatasets. bothstandardBERTfine-tuningandLoRA-based
+LegalBERT, however, showed greaterrobustness setups,suggestingafundamentalchallengerelated
+andmaintainedrelativelystrongperformance,con- tolabel-spacesparsityratherthanparameteradap-
+firming the value of domain-specific pretraining tationstrategy. Addressingthisrequirestechniques
+6
+suchasclassifierheadaugmentation,labelsmooth- 0.6accuracyonamorefine-grained279-classcat-
+ing, orhierarchicallabelmodeling. Interestingly, egorizationtask. Ourmethodologydivergedfrom
+models instantiated using Hugging Face’s Auto- Vatsal et al.’s (Vatsal et al., 2023) in several key
+ModelForSequenceClassificationtendtoyieldbet- ways. By using LegalBERT, a model pretrained
+terperformanceinsuchsettings. Thisisbecause on legal corpora, we were able to better capture
+theclassencapsulatestask-specificheadswithap- semanticandsyntacticnuancesoflegallanguage.
+propriateinitializationschemes,dropoutstrategies, Additionally, instead of relying solely on chunk-
+andarchitecturalconfigurationsoptimizedforclas- basedvotingorsummarization,ourapproachpre-
+sification. Itensuresconsistencywithpretraining servedmoreofthedocument’scontext—eitherby
+objectives and provides robust handling of class optimizinghowchunkswereprocessedorbybetter
+imbalance and label index alignment internally. leveragingattentionmechanismswithinthemodel.
+Moreover, the AutoModel abstraction leverages Ourtrainingpipelinealsoincorporatedadvanced
+model-specificnuances(e.g.,classificationtoken scheduling,regularization,andevaluation,leading
+treatmentinBERTvs. LegalBERT),ensuringbet- tomorerobustgeneralizationforcomparisonpur-
+terdownstreamperformanceacrossdiversearchi- poses.
+tectureswithminimalmanualadjustments.
+Thesefindingsdemonstratethatdomain-adapted
+The limitations of BERT-based models due to
+models combined with parameter-efficient fine-
+context-window size points to a conclusion that
+tuningcanprovidestate-of-the-artperformancein
+prompt-basedLLMscouldoutperformthemwhen
+legal case classification. Our approach not only
+measuringaccuracy,precisionandrecall. However,
+improves accuracy over traditional chunk-based
+thepossibilityofasmallermodel,suchasModel
+strategies but also offers greater scalability and
+2,withalowermemoryfootprintandavailability
+efficiency—making it a compelling solution for
+of on-premise inference is also promising. It is
+real-worldlegalAIsystems.
+cleartousthatlargermodelsthatallowformore
+As a part of future work, we can leverage the
+in-context memory and, thus, larger context win-
+knowledge embedded in references of a given
+dows with refined outputs provide better results.
+SCDBdocument. AreferenceinanSCDBdocu-
+Model 4, based on DeepSeek R1, is able to take
+ment basically refers to some other SCDB docu-
+advantage of context as much as 10 times larger
+mentthathasbeencitedtolegallyjustifythedeci-
+thanModels1and2inourexperiments. Model3,
+siontakenontheformerSCDBdocument. Theraw
+as previously explained, has limitations and, due
+textofthesereferencesmaynotbeveryhelpfulin
+to its overly large context-window sizeand other
+improving the classification tasks. We can use a
+memorizationattributes,wasrenderedunusablein
+graph structure to denote the relations between a
+ourexperimentsgiventhetechnologyonhand,two
+givenSCDBdocumentwithotherdocumentscited
+NvidiaQuadroP4000with8GBofmemoryeach.
+init. ThefinalclassificationresultofagivenSCDB
+This,thus,impliesthatinourexperimentsModel4
+document can be calculated based on some form
+isthebestperformingmodelduetoitsrobustness
+ofaggregationincorporatingclassificationresults
+forbothtasks.
+of its references weighted by the graph structure
+representing quantified relations with the SCDB
+6 Conclusion&FutureWork
+documentathand.
+Recent advances in legal NLP have highlighted Another area of future work can be applying
+thechallengesofclassifyinglong-formdocuments greedyapproachestothetechniquesdiscussedin
+suchasU.S.SupremeCourtdecisions. Oneofthe this work. For example, we can have a greedy
+most notable works in this area is by Vatsal et al. summarization technique where in the final 512
+(2023) (Vatsal et al., 2023), who proposed using token summary, we can include more number of
+BERT-basedtechniquesforclassifyingsuchcases. tokensfromthebestperforming512tokenchunk
+Duetotheinherent512-tokenlimitationofBERT, asinferredfromBest-512technique. Similarly,we
+theirapproachemployedchunkingandsummariza- canhavegreedyensembletechniquewhereduring
+tion to preprocess the legal texts. By applying thevotingphase,wecangivemoreweighttothe
+ensemblevotingovermultiplechunkedorsumma- best performing 512 token chunk as the results
+rizedinputs, theyachievedcommendableresults: showfromBest-512technique.
+0.8accuracyfora15-classclassificationtaskand
+7
+References SamirUndavia,AdamMeyers,andJohnEOrtega.2018.
+Acomparativestudyofclassifyinglegaldocuments
+DeepSeek AI. 2023. Deepseek llm: Scaling open-
+with neural networks. In 2018 Federated Confer-
+sourcelanguagemodelswithefficienttrainingmeth-
+enceonComputerScienceandInformationSystems
+ods. Accessed: March2025.
+(FedCSIS),pages515–522.IEEE.
+David M Blei, Andrew Y Ng, and Michael I Jordan.
+Shubham Vatsal, Adam Meyers, and John E Or-
+2003. Latentdirichletallocation. Journalofmachine
+tega. 2023. Classification of us supreme court
+Learningresearch,3(Jan):993–1022.
+cases using bert-based techniques. arXiv preprint
+arXiv:2304.08649.
+IliasChalkidis,ManosFergadiotis,ProdromosMalaka-
+siotis, Nikolaos Aletras, and Ion Androutsopoulos. Alex Wang, Amanpreet Singh, Julian Michael, Felix
+2020. LEGAL-BERT:Themuppetsstraightoutof Hill, Omer Levy, and Samuel R Bowman. 2018.
+lawschool. InFindingsoftheAssociationforCom- Glue: Amulti-taskbenchmarkandanalysisplatform
+putationalLinguistics: EMNLP2020,pages2898– fornaturallanguageunderstanding. arXivpreprint
+2904, Online. Association for Computational Lin- arXiv:1804.07461.
+guistics.
+NirmalieWiratunga,RamithaAbeyratne,LasalJayawar-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and dena,KyleMartin,StewartMassie,IkechukwuNkisi-
+KristinaToutanova.2018. Bert: Pre-trainingofdeep Orji, Ruvan Weerasinghe, Anne Liret, and Bruno
+bidirectionaltransformersforlanguageunderstand- Fleisch. 2024. Cbr-rag: case-based reasoning for
+ing. arXivpreprintarXiv:1810.04805. retrievalaugmentedgenerationinllmsforlegalques-
+tionanswering. InInternationalConferenceonCase-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+BasedReasoning,pages445–460.Springer.
+KristinaToutanova.2019. Bert: Pre-trainingofdeep
+bidirectionaltransformersforlanguageunderstand- Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+ing. arXivpreprintarXiv:1810.04805. Chaumond,ClementDelangue,AnthonyMoi,Pier-
+rotRoussel,RémiLouf,MorganFuntowicz,Jamie
+Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan
+Brew,andAlexanderM.Rush.2020. Transformers:
+Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang,
+State-of-the-artnaturallanguageprocessing.
+WeizhuChen,and1others.2022. Lora: Low-rank
+adaptationoflargelanguagemodels. ICLR,1(2):3.
+A Prompts
+NutLimsopatham.2021. EffectivelyleveragingBERT
+A.1 Model4(DeepSeek)
+forlegaldocumentclassification. InProceedingsof
+the Natural Legal Language Processing Workshop ThefollowingisaU.S.SupremeCourtopinion.Yourtaskis
+toclassifyitintooneofthe263knownlegalcategoriesbased
+2021, pages 210–216, Punta Cana, Dominican Re-
+onitssubjectmatter.
+public.AssociationforComputationalLinguistics.
+ImportantNotes:
+NLP-AUEB.2020. Legal-bert: Thelawisallyouneed.
+• Thelabelsarenumeric(e.g.,0-262)butdonotindicatea
+rankingorrelationshipbetweencategories.Instead,the
+Nicholas Pipitone and Ghita Houir Alami. 2024.
+labelsrepresentvariouslegaltopics,examplesofwhich
+Legalbench-rag: A benchmark for retrieval- include:‘employmentdiscriminationbasedonrace,age,
+augmented generation in the legal domain. arXiv religion,ornationalorigin’,‘affirmativeaction’,‘civil
+preprintarXiv:2408.10343. rightsprotests’,and‘FirstAmendment-freespeech’.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and • Carefullyreadtheopinionanddeterminethemostap-
+Percy Liang. 2016. Squad: 100,000+ questions propriatecategory.
+formachinecomprehensionoftext. arXivpreprint
+• Iftheopiniondiscussesmultiplelegalissues,assignthe
+arXiv:1606.05250.
+primarycategory.
+HaroldJSpaeth, LeeEpstein, AndrewDMartin, Jef- • Note: Theseopinionshavebeentruncatedforbrevity
+freyASegal,TheodoreJRuger,andSaraCBenesh. butretainessentialcontext.
+2013. Supremecourtdatabase,version2013release
+01. Databaseathttp://supremecourtdatabase.org. ExampleClassifications:
+Opinion(truncated):"Petitioner,anOrthodoxJewandor-
+Amit Tewari. 2024. Legalpro-bert: Classification of dainedrabbi,wasorderednottowearayarmulkewhileon
+legal provisions by fine-tuning bert large language dutyandinuniformasacommissionedofficerintheAirForce
+atMarchAirForceBase,pursuanttoanAirForceregulation
+model. arXivpreprintarXiv:2404.10097.
+thatprovidesthatauthorizedheadgearmaybewornoutof
+doorsbutthatindoors"[h]eadgear[may]notbeworn...except
+HugoTouvron,ThibautLavril,GautierIzacard,Xavier
+byarmedsecuritypoliceintheperformanceoftheirduties."
+Martinet,Marie-AnneLachaux,TimotheeLacroix,
+PetitionerthenbroughtanactioninFederalDistrictCourt,
+BaptisteRoziere,NamanGoyal,EricHambro,Faisal
+claimingthattheapplicationoftheregulationtopreventhim
+Azhar, and 1 others. 2023. Llama: Open and effi- fromwearinghisyarmulkeinfringeduponhisFirstAmend-
+cient foundation language models. arXiv preprint mentfreedomtoexercisehisreligiousbeliefs. TheDistrict
+arXiv:2302.13971. CourtpermanentlyenjoinedtheAirForcefromenforcingthe
+8
+regulationagainstpetitioner.TheCourtofAppea..."Category: 0:CriminalProcedure,
+(115) 1:CivilRights,
+Opinion(truncated):"Respondentwasconvictedofsecond- 2:FirstAmendment,
+degreemurderforkillingoneSewellwithaknifeduringa 3:DueProcess,
+fight. Evidenceatthetrialdisclosed,interalia,thatSewell, 4:Privacy,
+justbeforethekilling,hadbeencarryingtwoknives,includ- 5:Attorneys,
+ingtheonewithwhichrespondentstabbedhim,thathehad 6:Unions,
+beenrepeatedlystabbed,butthatrespondentherselfwasunin- 7:EconomicActivity,
+jured. Subsequently,respondent’scounselmovedforanew 8:JudicialPower,
+trial,assertingthathehaddiscoveredthatSewellhadaprior 9:Federalism,
+criminalrecord(includingguiltypleastochargesofassault 10:InterstateRelations,
+andcarryingadeadlyweapon,apparentlyaknife)thatwould 11:FederalTaxation,
+havetendedtosupporttheargumentthatrespondentactedin 12:Miscellaneous
+self-defense,andthattheprosecutorhadfailedtodisclosethis -Carefullyreadtheopinionanddeterminethemostappro-
+informationtothedefense.TheDistri..."Category:(120) priatecategory.
+Opinion (truncated): "To assist airline employees dislo- -Iftheopiniondiscussesmultiplelegalissues,assignthe
+catedasaresultofthederegulationofcommercialaircarri- primarycategory.
+erspursuanttotheAirlineDeregulationActof1978(Act), -Note:Theseopinionshavebeentruncatedforbrevitybut
+CongressenactedanEmployeeProtectionProgram(EPP)as retainessentialcontext.
+43oftheAct.TheEPPimposesoncoveredairlinesthe"duty ExampleClassifications:
+to hire" dislocated protected employees, who have a "first
+Opinion(truncated):"Inanactionbroughttorestrainthe
+rightofhire"intheiroccupationalspecialitieswithanycov-
+enforcementofastatestatuteonfederalconstitutionalgrounds,
+eredairlinethatishiringadditionalemployees. Section43
+thefederalcourtshouldretainjurisdictionuntiladefinitive
+authorizestheSecretaryofLabortoissueregulationsforthe
+determinationoflocallawquestionisobtainedfromthelocal
+administrationoftheEPP,but43(f)(3)containsalegislative-
+courts;andthejudgmentoftheDistrictCourtinthiscaseis
+vetoprovisionstatingthatanyfinalregulationshallbecome
+vacatedandthecauseisremandedtoitwithdirectionstoretain
+effective after 60 legislative days following its submission
+jurisdictionuntileffortstoobtainanappropriateadjudication
+toCongress,unlessduringthatperiodeitherH..."Category:
+inthestatecourtshavebeenexhausted. Pp. 364-367. 146
+(259)
+F. Supp. 214, judgment vacated and cause remanded with
+Opinion(truncated):"Inpetitioner’semploymentcompen-
+directions.MiltonI.Shadurarguedthecauseforappellants.
+sation action, which respondent removed from a Colorado
+WithhimonthebriefwereArthurJ.Goldberg,DavidE.Feller
+state court to the Federal District Court on the basis of di-
+andHerbertS.Thatcher.GordonMadison,AssistantAttorney
+versity of citizenship, judgment was entered on the jury’s
+GeneralofAlabama,argued..."Category:(9)
+verdictforpetitionerinanamountconsiderablylessthanhe
+Opinion(truncated): "RehearingDeniedMarch3, 1947
+hadsought. Petitionertimelyfilednew-trialmotionsanda
+See. Messrs. FordW.ThompsonandJ.L.London, both
+motionforattorney’sfeesunderColoradolaw. OnMay14,
+ofSt. Louis,Mo.,forappellant. Mr. FerreC.Watkins,of
+1984,thecourtdeniedthenewtrialmotionsbutfoundthat
+Chicago,Ill.,forappellee.Mr.JusticeDOUGLASdelivered
+petitionerwasentitledtoattorney’sfees,and,onAugust1,
+the opinion of the Court. This case presents a substantial
+1984,enteredafinalorderdeterminingtheamountofthefees.
+question under the Full Faith and Credit Clause (Art. IV,
+OnAugust29,petitionerfilednoticeofappealtotheCourtof
+1)oftheConstitution. ChicagoLloyds, anunincorporated
+Appeals,coveringalloftheDistrictCourt’spost-trialorders.
+association,wasauthorizedbyIllinoistotransactaninsurance
+Althoughaffirmingtheattorney’sfeesaward,t..."Category:
+businessinIllinoisandotherStates.Itqualifiedtodobusiness
+(226)
+in Missouri. In 1934 petitioner sued Chicago Lloyds in a
+Opinion (truncated): "[ Footnote * ] Together with No.
+Missouricourtformaliciousprosecutionandfalsearrest.In
+89-700,AstrolineCommunicationsCompanyLimitedPart-
+1938,beforejudgmentwasobtainedinMissouri,respondent’s
+nership v. Shurberg Broadcasting of Hartford, Inc., et al.,
+predecessor was appointed by an Illinois court as statu..."
+alsooncertioraritothesamecourt.Thesecasesconsiderthe
+Category:(11)
+constitutionalityoftwominoritypreferencepoliciesadopted
+Opinion(truncated):"620F.2d17,affirmedbyanequally
+by the Federal Communications Commission (FCC). First,
+dividedCourt.MarkI.Levyarguedthecauseforpetitioners.
+theFCCawardsanenhancementforminorityownershipand
+WithhimonthebriefswereSolicitorGeneralMcCree,Acting
+participationinmanagement,whichisweighedtogetherwith
+AssistantAttorneyGeneralMartin,DeputySolicitorGeneral
+allotherrelevantfactorsincomparingmutuallyexclusiveap-
+Geller,MichaelKimmel,RobertKaplan,andMiltonJ.Socolar.
+plicationsforlicensesfornewradioortelevisionbroadcast
+GilbertH.Weilarguedthecauseforrespondent. Withhim
+stations. Second,theFCC’sso-called"distresssale"policy
+onthebriefwasRobertL.Sherman. *[Footnote*]Philip
+allowsaradioortelevisionbroadcasterwhosequalifications
+Lacovara,RonaldA.Stern,StanleyL.Temko,CharlesLister,
+toholdalicensehavecomeintoquestiontotransferthatl..."
+andClareDaltonfiledabriefforMerck&Co.,Inc.,etal.as
+Category:(66)
+amicicuriaeurgingaffirmance.PERCURIAM.Thejudgment
+Nowclassifythefollowingopinion:
+isaffirmedbyanequallydividedCourt.JUSTICESTEWART
+—OpinionStart—
+tooknopartintheconsiderationordecisionofthiscase...."
+—OpinionEnd—
+Category:(0)
+Providethecorrectcategorynumber.
+Opinion(truncated):"Toavertanation-widestrikeofsteel
+workersinApril1952,whichhebelievedwouldjeopardize
+A.2 DeepSeek
+nationaldefense,thePresidentissuedanExecutiveOrderdi-
+ThefollowingisaU.S.SupremeCourtopinion.Yourtaskis rectingtheSecretaryofCommercetoseizeandoperatemost
+toclassifyitintooneofthe13knownlegalcategoriesbased ofthesteelmills.TheOrderwasnotbaseduponanyspecific
+onitssubjectmatter. statutoryauthoritybutwasbasedgenerallyuponallpowers
+ImportantNotes: vestedinthePresidentbytheConstitutionandlawsofthe
+-Thelabelsarenumeric(e.g.,0-12)butdonotindicatea UnitedStatesandasPresidentoftheUnitedStatesandCom-
+rankingorrelationshipbetweencategories.Instead,thelabels manderinChiefoftheArmedForces.TheSecretaryissued
+representvariouslegaltopics: anorderseizingthesteelmillsanddirectingtheirpresidents
+9
+tooperatethemasoperatingmanagersfortheUnitedStatesin -EconomicActivity: Casesinvolvingbusiness,
+accordancewithhisregulationsanddirections.Thepresident trade,orcommerce.
+promptlyreportedtheseeventstoCongress;b..."Category:
+-JudicialPower: Casesaddressingthepowers
+(13)
+Opinion (truncated): "A Georgia statute requires candi- ofcourtsandthejudiciary.
+datesfordesignatedstateofficestocertifythattheyhavetaken -Federalism: Casesaboutthedivisionofpower
+aurinalysisdrugtestwithin30dayspriortoqualifyingfor
+betweenstateandfederalgovernments.
+nominationorelectionandthatthetestresultwasnegative.
+Petitioners,LibertarianPartynomineesforstateofficessubject -InterstateRelations: Casesaboutinteractions
+tothestatute’srequirements,filedthisactionintheDistrict
+betweenstates.
+Courtaboutonemonthbeforethedeadlineforsubmissionof
+thecertificates.NamingasdefendantstheGovernorandtwo -FederalTaxation: Casesinvolvingfederaltax
+officialsinvolvedinthestatute’sadministration,petitionersas- laws.
+serted,interalia,thatthedrugtestsviolatedtheirrightsunder
+-Miscellaneous: Casesthatdonotclearlyfitinto
+theFirst,Fourth,andFourteenthAmendmentstotheUnited
+States Constitution. The District Court denied petitioners’ anyoftheabovecategories.
+motionforapreliminar..."Category:(5) - Private Action: Cases involving disputes
+Nowclassifythefollowingopinion:
+betweenprivateindividualsorentities.
+—OpinionStart—
+—OpinionEnd—
+Providethecorrectcategorynumber. PromptsforApproachPB2forModel3
+Initialpromptforreferencedata: Givemea
+A.3 Model3(LLaMa3)
+listofwordsandphrases(atleast15)whichwould
+PromptsforApproachPB1forModel3 bepresentinacasetexttoclassifyitintofollow-
+Systemprompt: YouareanexpertinSupreme ing categories. Do not write any explaination or
+Courtcasesandlegalclassifications. Yourtaskisto warnings.
+analyzetheprovidedtextofaSupremeCourtcase -CriminalProcedure: Casesinvolvingthepro-
+andclassifyitintooneofthefollowingpredefined cessofinvestigatingandprosecutingcrimes.
+categories: -CivilRights: Casesabouttherightsofindivid-
+Instructions: ualstoreceiveequaltreatment.
+1. Carefully analyze the text and identify the -FirstAmendment: Casesaddressingissuesre-
+primarycategoryitbelongsto. latedtofreedomofspeech,religion,orpress.
+2. Provide only the category name as the re- - Due Process: Cases focusing on legal safe-
+sponseandnothingelse. guardsensuringfairtreatment.
+3. Ifuncertain,selectthemostrelevantcategory -Privacy: Casesdealingwiththerighttoprivacy.
+basedonthecase’sprimarylegalfocus. - Attorneys: Cases about the legal profession
+4. Response should not exceed more than 2 andlawyerregulations.
+words. - Unions: Cases concerning labor unions and
+Userprompt: (casetextusingfstring) collectivebargaining.
+Pleasereplywiththecategoryonlyandnothing -EconomicActivity: Casesinvolvingbusiness,
+else. Ensure its category is from the given list or trade,orcommerce.
+themostrelevantone. Herearethecategories: -JudicialPower: Casesaddressingthepowers
+- None: Cases that do not fit into any specific ofcourtsandthejudiciary.
+category. -Federalism: Casesaboutthedivisionofpower
+-CriminalProcedure: Casesinvolvingthepro- betweenstateandfederalgovernments.
+cessofinvestigatingandprosecutingcrimes. -InterstateRelations: Casesaboutinteractions
+-CivilRights: Casesabouttherightsofindivid- betweenstates.
+ualstoreceiveequaltreatment. -FederalTaxation: Casesinvolvingfederaltax
+-FirstAmendment: Casesaddressingissuesre- laws.
+latedtofreedomofspeech,religion,orpress. -Miscellaneous: Casesthatdonotclearlyfitinto
+- Due Process: Cases focusing on legal safe- anyoftheabovecategories.
+guardsensuringfairtreatment. - Private Action: Cases involving disputes be-
+-Privacy: Casesdealingwiththerighttoprivacy. tweenprivateindividualsorentities.
+- Attorneys: Cases about the legal profession Formattheoutputinthefollowingway:
+andlawyerregulations. ’Category’: words,phrase
+- Unions: Cases concerning labor unions and Promptforclassification: YouareanAIassis-
+collectivebargaining. tant trained in Supreme Court case classification.
+10
+Giventhefollowingretrievedcategories,classify
+thenewcaseintothemostappropriateissuearea.
+RetrievedRelevantCategories:
+(retrievedtextfromRAG)
+Pleasereplywiththecategoryonlyandnothing
+else.
+11

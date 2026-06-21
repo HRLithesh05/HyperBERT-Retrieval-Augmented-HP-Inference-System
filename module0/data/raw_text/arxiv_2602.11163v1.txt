@@ -1,0 +1,687 @@
+Nested Named Entity Recognition in Plasma
+Physics Research Articles
+Muhammad Haris1[0000−0002−5071−1658], Hans Höft2[0000−0002−9224−4103],
+Markus M. Becker2[0000−0001−9324−3236], and Markus
+Stocker1[0000−0001−5492−3212]
+1 TIB—Leibniz Information Centre for Science and Technology, Leibniz University
+Hannover, 30167, Hannover, Germany
+{muhammad.haris, markus.stocker}@tib.eu
+2 Leibniz Institute for Plasma Science and Technology (INP), Felix-Hausdorff-Str. 2,
+17489 Greifswald, Germany
+{markus.becker, hans.hoeft}@inp-greifswald.de
+Abstract. Named Entity Recognition (NER) is an important task in
+natural language processing that aims to identify and extract key enti-
+ties from unstructured text. We present a novel application of NER in
+plasmaphysicsresearcharticlesandaddressthechallengesofextracting
+specialized entities from scientific text in this domain. Research articles
+inplasmaphysicsoftencontainhighlycomplexandcontext-richcontent
+that must be extracted to enable, e.g., advanced search. We propose
+a lightweight approach based on encoder-transformers and conditional
+random fields to extract (nested) named entities from plasma physics
+research articles. First, we annotate a plasma physics corpus with 16
+classes specifically designed for the nested NER task. Second, we evalu-
+ate an entity-specific model specialization approach, where independent
+BERT–CRF models are trained to recognize individual entity types in
+plasmaphysicstext.Third,weintegrateanoptimizationprocesstosys-
+tematicallyfine-tunehyperparametersandenhancemodelperformance.
+Ourworkcontributestotheadvancementofentityrecognitioninplasma
+physics and also provides a foundation to support researchers in navi-
+gating and analyzing scientific literature.
+Keywords: NestedNamedEntityRecognition·ScholarlyCommunica-
+tion · Domain-specific NER · Information Extraction · Bayesian Opti-
+mization · Hyperparameters tuning
+1 Introduction
+Named Entity Recognition (NER), a branch of natural language processing
+(NLP), provides a promising solution to automatically identify and classify
+named entities in unstructured text into predefined categories such as locations,
+organization, persons etc [25]. This technology is widely adopted in several aca-
+demicfieldsincluding,computerscience[4],lifesciences[23],agriculture[5],and
+biodiversity [1].
+6202
+naJ
+71
+]LC.sc[
+1v36111.2062:viXra
+2 Haris et al.
+Plasma physics, a research field that studies the physical properties of plas-
+mas, reports scientific findings about complex phenomena with rich contex-
+tual information including experimental details. The specialized, complex and
+context-rich terminology used in plasma physics research articles makes it diffi-
+cultforsystemstoefficientlysupportresearchersinsearchingandanalyzingrele-
+vantinformation.NERoffersasolutiontoautomaticallyidentifyandclassifyter-
+minology and thus support researchers with more efficient information retrieval
+and knowledge discovery. In this work, we employ Nested NER (NNER), be-
+causeinadditiontobeingcomplexandcontext-rich,terminologyusedinplasma
+physicsoftencarriesmultiplemeaningsorbelongstooverlappingcategories,two
+challenges that NNER can address.
+Severalframeworkshavebeendevelopedtoextractnestedentitiesfromnatu-
+rallanguagetext,includingspan-basedmethods[28,21],hypergraphmodels[16,
+11,29], and layered approaches [10,27,19]. While these techniques show poten-
+tial, applying NER to plasma physics texts remains a significant challenge. The
+diversity of entity classes, the complexity of domain-specific terminology, and
+unevendatadistributionrequiresaspecializedapproach.MostexistingNERsys-
+tems are designed for general or biomedical text and they struggle to accurately
+capture the important entities/mentions from plasma physics literature, specifi-
+cally.Evenwiththeadventofadvancedmodels,suchaslayeredapproachesand
+hypergraph models, satisfactory performance on domain-specific datasets can-
+not be guaranteed. Underrepresented classes are often overlooked, which leads
+to less stable prediction performance. Given that manual data annotation is
+both time-consuming and labor-intensive, there is a pressing need for methods
+that can effectively handle imbalanced data while maintaining high accuracy, as
+this is essential for ensuring the usability of extracted information in real-world
+applications.
+This paper addresses these challenges by developing a NNER model specifi-
+cally designed for plasma physics. Our contributions are summarized as follows:
+1. We annotate and publish a domain-specific plasma physics dataset compris-
+ing 16 entity classes created for Named Entity Recognition (NER) tasks.
+2. WeaddresstheproblemofNNERintheplasmaphysicsdomainbyproposing
+alightweightBERT-CRF-basedmodel.Ourapproachemploysentity-specific
+specialization, in which independent BERT–CRF models are trained for in-
+dividual entity types and their predictions are subsequently aggregated to
+produce the final outputs. Fine-tuning a pretrained language model (e.g.,
+BERT) with this architecture allows the system to learn class-specific pat-
+terns while leveraging shared knowledge across all entity types.
+3. To further enhance model performance, we incorporate Bayesian Optimiza-
+tion(BO)toautomaticallyfine-tunethehyperparametersofourNERmodel,
+which leads to improved evaluation metrics.
+4. We evaluate the proposed approach and also experiment with several base-
+line models on our annotated dataset to demonstrate the reliability of our
+approach.Tofurtherassessthegeneralizabilityofourmethod,wealsoevalu-
+Nested Named Entity Recognition in Plasma Physics Research Articles 3
+ateitonpubliclyavailabledatasets,namelyGENIAandtheChileanWaiting
+List corpus.
+2 Related Work
+Ju et al. [10] have introduced a dynamic neural model for NNER that oper-
+ateswithouttheneedforexternalknowledgeresourcesorhandcraftedlinguistic
+features. This approach enables the sequential stacking of flat NER layers from
+bottom to top, which allows for end-to-end identification of nested entities.
+Pyramid et al. [27], a layered model designed for NNER, is another notable
+approach. This architecture is composed of a stack of interconnected layers,
+where each layer is responsible for predicting whether a text span corresponds
+to a complete entity mention.
+Fu et al. [7] frame NNER as a constituency parsing task with partially ob-
+servedtreesthatleveragesapartiallyobservedTreeCRFtomodelthisstructure.
+In this approach, all labeled entity spans are treated as observed nodes within
+a constituency tree, while the remaining spans are considered latent. The use
+of TreeCRFs provides a unified framework for jointly modeling both the ob-
+servedandlatentnodes,enablingeffectivehandlingofthehierarchicalstructure
+inherent in nested entities.
+Rehana et al. [19] present a BERT-based approach for NNER, specifically
+leveraging the pretrained PubMedBERT model to address the challenges posed
+by nested entities in biomedical texts. The method integrates rich contextual
+embeddings from PubMedBERT with a multilayer tagging strategy, enabling
+the model to effectively distinguish overlapping entity mentions.
+To address the challenge of limited overlap between the training and test
+sets, the approach by Wan et al. [26] focuses on enhancing span representations
+throughretrieval-basedspan-levelgraphs.Thismethodconstructsglobalentity-
+entityandspan-entitygraphsbyleveragingn-gramsimilarity,effectivelylinking
+spans in the input with semantically similar entities from the training data.
+A novel sequence-to-set neural framework [24] has also been proposed for
+NNER,anapproachthataimstomovebeyondpredefinedcandidatespans.This
+approach introduces a fixed set of learnable vectors that are trained to capture
+patterns associated with meaningful spans. By employing a non-autoregressive
+decoder, the model predicts the entire set of entities in a single forward pass.
+Yang et al. [30] proposed an NNER approach that models all nested entities
+withinasentenceasaunified,holisticstructure.Theauthorsproposedaholistic
+structureparsingalgorithmtoextractthecompletesetofentitiesinasinglepass.
+A study by Rojas et al. [20] revisits LSTM-CRF and proposed Multiple
+LSTM-CRF (MLC) model, a straightforward yet under-explored approach that
+trains separate sequence labeling models independently for each entity type.
+TheextensiveexperimentsconductedonthreeNNERdatasetsdemonstratethat
+MLC achieves competitive performance.
+Finally, Lu and Roth [16] introduced a hypergraph representation for ex-
+tracting entity mentions. Katiyar and Cardie [11] proposed a directed hyper-
+4 Haris et al.
+graph model leveraging LSTM-based features to learn nesting patterns. Muis
+and Lu [17] proposed another approach by incorporating mention separators
+and handcrafted features.
+WhilepriorworkhasprimarilyfocusedonNERmethodsfordomain-agnostic
+datasets and well-studied domains such as biomedical corpora, domain-specific
+challenges and the role of automatic hyperparameter tuning have received com-
+paratively less attention. In contrast, our work introduces a curated dataset for
+the plasma physics domain, develops a specialized NER approach designed for
+this domain, and integrates Bayesian Optimization to automatically tune hy-
+perparameters. This combination distinguishes our contribution from existing
+approaches,whichtypicallyeitheremphasizegenericmodelingstrategiesorrely
+on manually selected hyperparameters.
+3 Methodology
+3.1 Problem Formulation
+WedefinetheNamedEntityRecognition(NER)taskasatoken(words)classifi-
+cationproblem.Givenaninputsentencex∈X,whereX isthesetofallpossible
+token sequences and x = {w ,w ,...,w } consists of n tokens, the objective is
+1 2 n
+to assign a label y from a predefined set of entity labels E to each token w .
+i i
+Each token w is assigned a label y such that y ∈ E =
+i i i
+{O,B ,I ,B ,I ,...,B ,I }, where O represents tokens outside any
+E1 E1 E2 E2 Em Em
+entity, and B ,I with k =1,...,m denote the beginning and inside tags for
+Ek Ek
+entity type E . Since a token may belong to multiple overlapping entity types,
+k
+we model this as a multi-label classification problem, where each token can be
+associated with a subset of entity labels, i.e., y ⊆ E with |y | ≥ 1 in cases of
+i i
+overlapping entities.
+3.2 Dataset Preparation
+Our corpus consists of plasma physics research articles and patents. Domain
+experts annotated the dataset using the INCEpTION tool3 with 16 predefined
+entityclassesspecificallydesignedforNamedEntityRecognition(NER)tasks.In
+total, the corpus includes 30 full-text research papers and 500 patent abstracts,
+comprising 10,272 sentences. Document selection was not arbitrary, we have
+followed domain-specific heuristics to ensure diversity in experimental configu-
+rations (e.g., dielectric barrier discharge), target applications, and device types.
+Entity types were defined based on well-established concepts from the Plasma-
+MDSmetadataschema[6],thatensuressemanticconsistency.Theselectedarti-
+clesarerepresentativeofaparticularsubfieldinlow-temperatureplasmaphysics.
+Thedefinedentitytypescaptureoverarchingdomainconcepts,meaningthatthe
+annotationdatacanbeconsideredbroadlyrepresentativeofnon-thermalgasdis-
+chargesatatmosphericpressure(e.g.[14,12]),eventhoughcertainsubfieldssuch
+3 https://inception-project.github.io/
+Nested Named Entity Recognition in Plasma Physics Research Articles 5
+Fig.1:Anexampleofnestedentitiesfromtheannotateddataset,wherethetext
+is labeled with multiple overlapping entity types for specific terms.
+as plasma medicine are not yet covered in detail. In addition, the scope of the
+patent corpus is broader and not limited to atmospheric-pressure discharges.
+Nested annotations play a crucial role in our corpus. An entity is considered
+nested if its span overlaps with another labeled entity in a different annotation
+layer. When an entity is embedded within another entity, both are annotated
+with their respective labels. Figure 1 illustrates an example of nested named
+entities, where the term pure helium refers to a Plasma Medium entity that
+overlaps with another term, which is labeled as Plasma Target. Similarly, the
+termvoltage amplitude referstodifferentclassesthatiswhyitisannotatedwith
+both Physical Quantity and Power Supply classes. Table 1 presents entity
+class definitions with examples, while Table 2 reports detailed descriptions and
+frequency statistics for each class. We report the number of sentences, total
+entities, and nested entities for each data split. The nested percentage indicates
+the proportion of entities involved in overlapping mentions.
+In data preparation, we formatted the dataset using the BIO (Begin-Inside-
+Outside) tagging scheme for each entity type. For every type, we filtered the
+training data to retain only relevant annotations and labeling all unrelated to-
+kens as O (non-entity). We divided the dataset of each type into three different
+datasets: training (70%), validation (15%) and test (15%).
+3.3 NNER Model Construction
+For NNER, we adopt a BERT-CRF architecture (Figure 2).Bidirectional En-
+coder Representations from Transformers (BERT) [3] is well known for pro-
+ducing deep contextualized word embeddings that significantly improve natural
+languageunderstandingtasks.However,whileBERTcapturescontextualseman-
+tics, it does not explicitly model structural dependencies between output labels,
+which can lead to invalid or inconsistent entity sequences. To address this limi-
+tation, we add a Conditional Random Field (CRF) layer [15] on top of BERT.
+The CRF layer models dependencies between neighboring labels that reduce in-
+consistencies in the output sequence and provide more consistent predictions,
+which is particularly beneficial for structured NER tasks involving nested and
+overlapping entities.
+6 Haris et al.
+Table 1: Entity types used in the dataset, with concise definitions and represen-
+tative examples.
+Entity Type Definition Examples
+Physical Quantity Observable property of a mobility, velocity, electron
+physicalobject,eventorsys- energy
+tem
+Physical Effect Phenomenon leading to a diffusion,ionization,heating
+measurable change in a
+physicalsystemgovernedby
+the laws of physics
+Species Chargedorneutralparticles ozone, electron, molecular
+with a medium nitrogen
+Diagnostic Device Instrument used to observe ICCD camera, fiber-optic
+physical quantities spectrometer, oscilloscope
+Plasma Source Deviceorconfigurationused dielectric barrier discharge,
+to generate plasma plasma jet, spark discharge
+Power Supply System or component that sinusoidal operation, pulsed
+provides electrical power operation, voltage ampli-
+tude
+Plasma Medium Medium or environment in air, feeding gas mixture, he-
+which plasma is generated lium
+Experiment Specific physical setup for optical emission spec-
+scientific measurements troscopy, iCCD recording,
+electrical measurement
+Electrode Material Medium acting as an elec- tungsten,stainlesssteel,alu-
+trode mina
+Plasma Application An application domain ozone synthesis, steriliza-
+where plasma is used. tion, plasma display
+Unit Standardized quantity used kV, kHz, mm
+to express measurements of
+physical quantities
+Modelling Theoretical, numerical, or fluid model, reaction ki-
+computational study netics model, particle-in-cell
+simulation
+Discharge Regime Operating mode of an elec- diffuse, filamentary dis-
+trical discharge charge, glow discharge
+Electrode Configura- Geometricorstructuralelec- single filament, embedded
+tion trode arrangement mesh, coaxial
+Plasma Properties Intrinsic properties describ- atmospheric pressure, non-
+ing plasma state thermal, partly ionized
+Plasma Target Material or object exposed liquid surface, bacterial sus-
+to plasma treatment pension, wafer
+OurmodelisinspiredbyMulti-headDense-augmentedCRF[9]andMultiple
+LSTM-CRF (MLC) [20] approaches. However, instead of relying on additional
+middleware,weemployentity-specificBERT–CRFmodelsbuiltdirectlyonpre-
+Nested Named Entity Recognition in Plasma Physics Research Articles 7
+Table 2: Statistics of the dataset: showing frequency of each entity as well as
+number of nested entities.
+Item Total Nested Entities Train Test Val
+Count %
+Sentences 10,272 – – 7,191 1,542 1,539
+Split percentage – – – 70% 15% 15%
+Physical Quantity 19710 4706 23.87% 13669 3121 2920
+Physical Effect 11164 3036 27.19% 7799 1738 1627
+Species 8935 2196 24.57% 6069 1530 1336
+Diagnostic Device 8348 1447 17.33% 6067 1211 1070
+Plasma Source 6412 1984 30.94% 4570 964 878
+Power Supply 5463 1275 23.33% 3825 867 771
+Plasma Medium 4857 1041 21.43% 3275 827 755
+Experiment 4528 1211 26.74% 3198 688 642
+Electrode Material 4149 1091 26.29% 2836 706 607
+Plasma Application 4131 836 20.23% 2803 691 637
+Unit 2929 1563 53.36% 2078 442 409
+Modelling 2665 605 22.70% 1891 408 366
+Discharge Regime 2643 970 36.70% 1872 399 372
+Electrode Configuration 2576 718 27.87% 1849 336 391
+Plasma Properties 2338 858 36.69% 1599 378 361
+Plasma Target 856 323 37.73% 594 125 137
+trainedtransformerrepresentations.WefurtherintegrateBayesianOptimization
+(BO)fortuningkeyhyperparameterswhichimprovesperformanceunderimbal-
+anced and nested entity settings.
+Ourdatasetexhibitssignificantclassimbalance,withentityfrequenciesrang-
+ing from 856 to 19,710 instances. In the presence of overlapping and nested
+entities, training a single-head sequence labeling model across all entity types
+can lead to performance degradation due to entity-type interference, particu-
+larly for rare classes or for classes that represent shorter sequences. Rather than
+collecting or annotating additional data (which is time-consuming), we adopt
+a more moderate approach: leveraging a BERT–CRF framework that supports
+per-entity-type specialization while benefiting from shared contextual represen-
+tations.
+In the presence of overlapping and nested entities, training a single sequence
+labeling model across all entity types can lead to entity-type interference, par-
+ticularly for rare classes or for entities represented by short spans. Rather than
+collecting or annotating additional data, which is time-consuming, we adopt a
+more moderate approach: leveraging a BERT–CRF framework with per-entity-
+type specialization. This design enables the model to better accommodate class
+imbalanceandspanvariabilityandsupportsstableandcompetitiveperformance
+under strict span-based evaluation.
+8 Haris et al.
+Fig.2: Overview of the proposed BERT–CRF approach with Bayesian Opti-
+mization (BO). BO operates in an outer loop to tune hyperparameters, while
+specialized BERT–CRF models are trained for individual entity types and their
+predictions are aggregated to handle nested entities.
+This design effectively reduces label conflicts by decoupling decision layers.
+EachCRFheadfocusesonitsrespectiveentitydistribution,thatimproveslearn-
+ingforunderrepresentedclasses.Suchamethodalsoimprovestheinterpretabil-
+ity of model behavior and performance for each entity type, as we can analyze
+the errors, predictions, and learning aspects of each model.
+3.4 Automatic Fine-Tuning Model Parameters
+Given a BERT-CRF model for NNER, we aim to optimize hyperparameters
+θ =(learning_rate,batch_size,weight_decay) to maximize the F1-score on the
+validation set:
+θ∗ =argmaxF (θ),
+1
+θ
+whereF (θ)istheF1-scoreobtainedbytrainingthemodelwithhyperparam-
+1
+eters θ. To achieve optimal hyperparameters, we choose Bayesian Optimization
+(BO) [8], a method for optimizing black-box functions that are costly to evalu-
+ate. It is suitable in high-dimensional spaces and leverages Gaussian Processes
+(GPs) [18] to model the objective function and an acquisition function to guide
+the search.
+WeemployGaussianProcess(GP)surrogatemodelingtoefficientlyoptimize
+hyperparameters θ by approximating the relationship between configurations
+and their corresponding validation F1-scores F (θ). The GP provides a proba-
+1
+bilistic representation of F (θ) through a mean function µ(θ) and a covariance
+1
+kernel k(θ,θ′), that enables simultaneous estimation of predicted performance
+and uncertainty across the hyperparameter space.
+Asasequentialoptimizationstrategyforexpensive-to-evaluatefunctions,BO
+leverages this GP surrogate trained on observed data
+D ={(θ ,F (θ ))}m
+i 1 i i=1
+Nested Named Entity Recognition in Plasma Physics Research Articles 9
+to infer the posterior distribution over the objective function, P(F | D). The
+1
+optimizationprocessisguidedbyanacquisitionfunctionα(θ)thatquantifiesthe
+utility of evaluating each candidate configuration θ ∈ Θ, where Θ denotes the
+feasible hyperparameter space. This two-stage approach ensures computational
+efficiency, as the acquisition function operates on the surrogate model rather
+than directly evaluating the expensive objective function. To guide the hyper-
+parametersearch,wemaximizetheExpected Improvement (EI) overthecurrent
+best F1-score (F+):
+1
+EI(θ)=E(cid:2)
+max(F
+(θ)−F+,0)(cid:3)
+1 1
+where F (θ) is the predicted F1-score for hyperparameters θ and F+ is the
+1 1
+highest observed F1-score so far. This criterion balances exploration (sampling
+high-uncertaintyregionswhereF (θ)mayexceedF+).UndertheGaussianPro-
+1 1
+cess surrogate, EI has a closed-form solution that combines the predicted mean
+µ(θ) and uncertainty σ(θ) of F (θ).
+1
+Weleveragethisapproachtoautomaticallyfine-tunethehyperparametersof
+our model and, thus, optimize performance in computationally intensive tasks
+suchastrainingdeeplearningmodels.Bymodelinguncertaintyandfocusingthe
+evaluation on high-utility regions, Bayesian Optimization offers a data-efficient
+and scalable alternative to traditional methods such as grid or random search,
+and can be accelerated with GPU support for large-scale experiments.
+4 Experiments
+We evaluate the effectiveness and generalizability of our model on the anno-
+tated plasma physics dataset and compare it against several state-of-the-art
+NERmethods.Wefurtherassessgeneralizationontwowidelyusedbenchmarks:
+GENIA [13] and the Chilean Waiting List [2].
+4.1 Evaluation on the Plasma Physics Dataset
+We evaluate our approach on the annotated plasma physics dataset introduced
+in this work and compare performance with established NNER methods under
+a consistent experimental setup.
+– Span-based and biaffine [28]: Utilizes a biaffine model to score pairs of start
+and end tokens within a sequence for entity span detection.
+– Pyramid[27]:Introducesnormalandinversepyramidalstructurestocapture
+bidirectional interactions for entity recognition.
+– Partially-Observed Tree CRFs [7]: Employs a partially observed TreeCRF
+to jointly model these nodes, that effectively capturing hierarchical nested
+entity structures.
+– Layered model [10]: A sequence labeling-based model designed to identify
+nested entities by dynamically stacking LSTM-CRF layers.
+10 Haris et al.
+Table 3: Summary statistics for the GENIA and Chilean Waiting List datasets,
+calculated using the official benchmark splits reported in [20].
+GENIA Chilean Waiting List
+Metric Train Test Val Train Test Val
+Sentences 15,023 1,854 1,669 8,014 990 890
+Tokens 454,88257,02148,932 149,57418,436 16,754
+Entities 45,929 5,474 4,337 35,480 4,289 3,971
+Nested (%) 17.0 20.6 16.8 46.4 45.9 46.7
+– Second-best [21]: Applies second-best sequence decoding to detect nested
+entities within already extracted spans.
+– Span-based Attention Network [31]: Triaffine attention encodes span rep-
+resentations using boundary and label queries over internal tokens, while
+triaffine scoring jointly models interactions to classify spans.
+– Multiple LSTM-CRF (MLC) model [20]: Trains separate sequence labeling
+models for each entity type independently, that simplifies nested NER.
+– Multi-head Dense-augmented CRF [9]: Employs multi-head Dense-
+augmented CRF to learn the nested entities within biomedical datasets.
+4.2 Cross-Dataset Evaluation
+Toassessthegeneralizabilityofourmethod,wefurtherevaluateitontwowidely-
+used NER datasets: GENIA and the Chilean Waiting List. This allows us to
+evaluate our approach across different domains. The statistics of these datasets
+and their train, test, and validation splits, as reported in prior work [20], are
+summarized in Table 3.
+GENIA. TheGENIAcorpusisawidelyusedbiomedicaltextdatasetcontaining
+abstracts from PubMed related to transcription factors in human blood cells. It
+is annotated with nested named entities like proteins, DNAs, RNAs, cells, and
+cell lines. Due to its rich, overlapping annotations, GENIA is often used for
+evaluating NNER models in the biomedical domain.
+Chilean Waiting List. The Chilean Waiting List dataset comprises clinical case
+descriptions (in Spanish) explaining the reasons for medical referrals within the
+Chileanpublichealthcaresystem.Itfeaturesnestedandcomplexmedicalentities
+relatedtodiseases,symptoms,andproceduresthatmakesitsuitableforstudying
+NNER in multilingual, real-world healthcare contexts.
+4.3 Hyperparamters Tuning
+WefirsttrainBERT–CRFmodelsontheplasmaphysicsdatasetusingmanually
+selected hyperparameters commonly used in transformer-based NER, including
+Nested Named Entity Recognition in Plasma Physics Research Articles 11
+Table 4: Performance comparison of baseline models and the proposed method.
+Model PrecisionRecall F1
+Layered BiLSTM-CRF [10] 0.63 0.54 0.58
+Multiple LSTM-CRF (MLC) [20] 0.58 0.61 0.59
+Span-based and biaffine [28] 0.62 0.63 0.63
+Recursive-CRF [21] 0.64 0.63 0.63
+Pyramid [27] 0.65 0.65 0.65
+Triaffine (Span-based Attention network) [31] 0.73 0.58 0.65
+Triaffine (Span-based) [31] 0.66 0.65 0.65
+Multi-head Dense-augmented CRF [9] 0.67 0.66 0.66
+Partially observed Tree CRFs [7] 0.69 0.68 0.69
+Our method (BERT-CRF) - w/o BO 0.61 0.71 0.65
+Our method - BO-optimized 0.64 0.74 0.68
+a learning rate in the range [1 × 10−5,4 × 10−5], a dropout of 0.1, a batch
+size in [2,32], a weight decay in [0.01,0.03], and 15 training epochs. We then
+apply Bayesian Optimization to tune the learning rate in [10−6,10−4], batch
+size in [2,32], and weight decay in [0,0.3], with the objective of maximizing the
+validation F1 score, and use the best configuration to train the final models.
+5 Results
+We report micro-averaged Precision, Recall, and F1 as the primary evaluation
+metrics, as they reflect overall extraction performance across all entity classes.
+In particular, we focus on strict span-based evaluation, where a predicted entity
+is counted as correct only if both its span boundaries and its label match the
+gold annotation exactly. This evaluation protocol provides a more realistic and
+challenging assessment of nested named entity recognition performance.
+Table 4 presents a comparative evaluation of our proposed method against
+several state-of-the-art baselines on the plasma physics NNER dataset. Among
+the existing approaches, the Partially Observed Tree CRFs achieves the high-
+est performance with an F1 score of 0.69, followed by Pyramid (0.65), Triaffine
+models(0.65),andMulti-headDense-augmentedCRF(0.66).Theseresultsshow
+that span-based and tree-structured models remain competitive for nested en-
+tity recognition in this domain. Our BERT-CRF model without Bayesian Opti-
+mization achieves an F1 score of 0.65, which is comparable to Recursive-CRF,
+Span-based and Biaffine, and MLC baselines. When hyperparameters are op-
+timized using Bayesian Optimization, our model achieves an F1 score of 0.68,
+comparable to the highest-performing baseline. While this does not exceed the
+strongest TreeCRF baseline, it demonstrates that a simpler architecture can
+achieve near state-of-the-art performance under strict span-based evaluation.
+Most importantly, our BO-optimized model achieves the highest recall among
+all compared methods (0.74). This indicates that our approach is particularly
+effectiveatidentifyingalargerproportionofrelevantentities,whichisespecially
+12 Haris et al.
+Table 5: Performance comparison of the NNER model with manually selected
+hyperparametersvs.BayesianOptimization(BO),reportingF1perentityunder
+two evaluation schemes: token-based and strict span-based.
+F1 (token-based) F1 (span-based)
+Entity Type
+w/o BO with BO w/o BO with BO
+Physical Quantity 0.80 0.82 0.64 0.67
+Species 0.84 0.84 0.68 0.70
+Diagnostic Device 0.79 0.82 0.63 0.66
+Power Supply 0.82 0.83 0.61 0.64
+Plasma Medium 0.80 0.84 0.62 0.68
+Experiment 0.80 0.85 0.65 0.69
+Electrode Material 0.82 0.84 0.66 0.68
+Plasma Application 0.75 0.80 0.58 0.60
+Unit 0.94 0.94 0.87 0.87
+Physical Effect 0.81 0.83 0.60 0.63
+Modelling 0.75 0.81 0.55 0.60
+Discharge Regime 0.87 0.89 0.71 0.72
+Electrode Configuration 0.83 0.88 0.65 0.68
+Plasma Properties 0.77 0.87 0.68 0.75
+Plasma Target 0.46 0.70 0.44 0.64
+Plasma Source 0.84 0.88 0.75 0.78
+desirableinknowledgegraphconstruction.Theresultsshowthatcomplexstruc-
+tured models provide only marginal gains despite higher computational costs,
+while BERT-CRF achieves competitive performance with a lightweight design.
+Table 5 presents the results for each class, comparing models trained with-
+outandwithBayesianOptimization.Theimprovementsdemonstratethatauto-
+mated hyperparameter tuning leads to better model performance. By applying
+Bayesian Optimization, we observe consistent improvements in F1 scores com-
+pared to models trained with fixed, manually selected hyperparameters. For
+most classes, the performance improved after tuning, while for a few, the op-
+timized results remain same to the fixed setup. Notably, for under-performing
+classessuchasPlasma Target,BayesianOptimizationsignificantlyenhancedthe
+model’s performance, increasing the token-based F1 score from 0.46 to 0.70 and
+the strict span-based F1 from 0.44 to 0.64. This demonstrates that systemati-
+cally exploring the hyperparameter space produce more reliable configurations
+according to the unique characteristics of each class. As a result, training the
+model with optimized hyperparameters leads to better and more generalizable
+performance across diverse entity classes.
+Wealsotrainedourmodelonpubliclyavailabledatasets,namelyGENIAand
+the Chilean Waiting List. Table 6 compares the performance on these datasets.
+On GENIA, different baselines achieve F1-scores between 0.71 and 0.81, with
+Triaffineperformingbest,whileourBERT-CRFattainscompetitiveperformance
+Nested Named Entity Recognition in Plasma Physics Research Articles 13
+Table 6: Performance comparison across GENIA and Chilean Waiting List
+datasets against baselines and our method.
+GENIA Chilean Waiting List
+Model
+P R F1 P R F1
+Layered 0.73 0.68 0.71 0.75 0.72 0.73
+Exhaustive 0.74 0.69 0.71 0.76 0.71 0.68
+Pyramid 0.78 0.72 0.75 0.79 0.75 0.77
+Biaffine 0.79 0.73 0.76 0.81 0.67 0.73
+Recursive-CRF 0.75 0.75 0.75 0.75 0.77 0.76
+MLC 0.77 0.74 0.75 0.77 0.78 0.78
+PO-TreeCRFs 0.78 0.78 0.78 - - -
+Triaffine 0.80 0.82 0.81 - - -
+Span-level Graphs0.77 0.80 0.79 - - -
+Our method 0.77 0.77 0.77 0.79 0.78 0.79
+(F1 = 0.77). On the Chilean Waiting List, Pyramid, Recursive-CRF, and MLC
+reportF1-scoresintherangeof0.76–0.78,andourmethodachievescomparable
+results(F1=0.79).Overall,theseresultsindicatethatalightweightBERT-CRF
+canremaincompetitivewithmorestate-of-the-artarchitecturesacrossstandard
+NER benchmarks. Dashes indicate results not reported in the corresponding
+baseline studies.
+6 Conclusions
+We propose a lightweight approach based on BERT-CRF to extract nested
+named entities from plasma physics articles. To support this task, we have an-
+notated and published the plasma physics NNER dataset. This dataset enables
+the extraction of detailed information such as experiments information, diag-
+nostic devices, plasma sources, and more. Our method adopts an entity-specific
+specialization setting, in which independent BERT–CRF models are trained for
+individualentitytypesandtheirpredictionsareaggregatedtoformthefinalout-
+put. In addition, we incorporate Bayesian Optimization to automatically fine-
+tune model hyperparameters to ensure the optimal performance of a trained
+model. Our results show that the proposed approach achieves competitive strict
+span-based performance on the plasma physics dataset while maintaining sub-
+stantially lower architectural complexity than existing nested NER models. Our
+findings indicate that lightweight, well-tuned models can provide practical solu-
+tions for real-world scientific information extraction research problems.
+7 Data and Code Availability
+The scores of representative models are published in reproducible form in the
+TIBKnowledgeLoom(KL)athttps://doi.org/10.82209/hv44-a941followingthe
+KL method [22].
+14 Haris et al.
+Acknowledgments
+The work was funded by the German Federal Ministry of Research, Technology
+and Space (BMFTR) under the grant marks 16KOA013A and 16KOA013B.
+Disclosure of Interests
+The authors declare that they have no competing interests.
+References
+1. Abdelmageed,N.,Löffler,F.,Feddoul,L.,Algergawy,A.,Samuel,S.,Gaikwad,J.,
+Kazem, A., König-Ries, B.: Biodivnere: Gold standard corpora for named entity
+recognition and relation extraction in the biodiversity domain. Biodiversity Data
+Journal 10, e89481 (2022). https://doi.org/10.3897/BDJ.10.e89481
+2. Báez, P., Villena, F., Rojas, M., Durán, M., Dunstan, J.: The chilean waiting
+list corpus: a new resource for clinical named entity recognition in spanish. In:
+Proceedingsofthe3rdclinicalnaturallanguageprocessingworkshop.pp.291–300
+(2020)
+3. Devlin, J., Chang, M.W., Lee, K., Toutanova, K.: BERT: Pre-training of deep
+bidirectional transformers for language understanding. In: Burstein, J., Doran,
+C., Solorio, T. (eds.) Proceedings of the 2019 Conference of the North Amer-
+ican Chapter of the Association for Computational Linguistics: Human Lan-
+guage Technologies, Volume 1 (Long and Short Papers). pp. 4171–4186. As-
+sociation for Computational Linguistics, Minneapolis, Minnesota (Jun 2019).
+https://doi.org/10.18653/v1/N19-1423
+4. D’Souza, J., Auer, S.: Computer science named entity recognition in the open
+research knowledge graph. In: Tseng, Y.H., Katsurai, M., Nguyen, H.N. (eds.)
+FromBorn-PhysicaltoBorn-Virtual:AugmentingIntelligenceinDigitalLibraries.
+pp. 35–45. Springer International Publishing, Cham (2022)
+5. D’Souza,J.:Agriculturenamedentityrecognition—towardsfair,reusablescholarly
+contributions in agriculture. Knowledge 4(1), 1–26 (2024)
+6. Franke, S., Paulet, L., Schäfer, J., O’Connell, D., Becker, M.M.: Plasma-mds, a
+metadata schema for plasma science with examples from plasma technology. Sci-
+entific data 7(1), 439 (2020). https://doi.org/10.1038/s41597-020-00771-0
+7. Fu, Y., Tan, C., Chen, M., Huang, S., Huang, F.: Nested
+named entity recognition with partially-observed treecrfs. Proceed-
+ings of the AAAI Conference on Artificial Intelligence 35(14),
+12839–12847 (May 2021). https://doi.org/10.1609/aaai.v35i14.17519,
+https://ojs.aaai.org/index.php/AAAI/article/view/17519
+8. Jones,D.R.,Schonlau,M.,Welch,W.J.:Efficientglobaloptimizationofexpensive
+black-box functions. Journal of Global optimization 13, 455–492 (1998)
+9. Jonker, R.A.A., Almeida, T., Antunes, R., Almeida, J.R., Matos, S.:
+Multi-head crf classifier for biomedical multi-class named entity recog-
+nition on spanish clinical notes. Database 2024, baae068 (07 2024).
+https://doi.org/10.1093/database/baae068
+Nested Named Entity Recognition in Plasma Physics Research Articles 15
+10. Ju, M., Miwa, M., Ananiadou, S.: A neural layered model for nested named en-
+tity recognition. In: Walker, M., Ji, H., Stent, A. (eds.) Proceedings of the 2018
+Conference of the North American Chapter of the Association for Computational
+Linguistics: Human Language Technologies, Volume 1 (Long Papers). pp. 1446–
+1459. Association for Computational Linguistics, New Orleans, Louisiana (Jun
+2018). https://doi.org/10.18653/v1/N18-1131
+11. Katiyar, A., Cardie, C.: Nested named entity recognition revisited. In: Proceed-
+ings of the 2018 conference of the North American chapter of the association for
+computational linguistics: human language technologies. vol. 1 (2018)
+12. Kettlitz, M., Höft, H., Hoder, T., Reuter, S., Weltmann, K.D., Brandenburg,
+R.: On the spatio-temporal development of pulsed barrier discharges: influ-
+ence of duty cycle variation. J. Phys. D: Appl. Phys. 45(24), 245201 (1 2012).
+https://doi.org/10.1088/0022-3727/45/24/245201
+13. Kim,J.D.,Ohta,T.,Tateisi,Y.,Tsujii,J.:Geniacorpus—asemanticallyannotated
+corpus for bio-textmining. Bioinformatics 19(suppl_1), i180–i182 (2003)
+14. Kogelschatz, U.: Dielectric-barrier discharges: Their history, discharge physics,
+and industrial applications. Plasma Chem. Plasma Process. 23, 1–46 (1 2003).
+https://doi.org/10.1023/A:1022470901385
+15. Lafferty, J.D., McCallum, A., Pereira, F.C.N.: Conditional random fields: Proba-
+bilistic models for segmenting and labeling sequence data. In: Proceedings of the
+EighteenthInternationalConferenceonMachineLearning.p.282–289.ICML’01,
+Morgan Kaufmann Publishers Inc., San Francisco, CA, USA (2001)
+16. Lu,W.,Roth,D.:Jointmentionextractionandclassificationwithmentionhyper-
+graphs. In: Proceedings of the 2015 conference on empirical methods in natural
+language processing. pp. 857–867 (2015)
+17. Muis, A.O., Lu, W.: Labeling gaps between words: Recognizing overlapping men-
+tionswithmentionseparators.In:Proceedingsofthe2017ConferenceonEmpirical
+Methods in Natural Language Processing. pp. 2608–2618 (2017)
+18. Rasmussen, C.E.: Gaussian processes in machine learning. In: Summer school on
+machine learning, pp. 63–71. Springer (2003)
+19. Rehana, H., Bansal, B., Çam, N.B., Zheng, J., He, Y., Özgür, A., Hur, J.: Nested
+namedentityrecognitionusingmultilayerbert-basedmodel.CLEFWorkingNotes
+(2024)
+20. Rojas, M., Bravo-Marquez, F., Dunstan, J.: Simple yet powerful: An overlooked
+architecture for nested named entity recognition. In: Calzolari, N., Huang, C.R.,
+Kim,H.,Pustejovsky,J.,Wanner,L.,Choi,K.S.,Ryu,P.M.,Chen,H.H.,Donatelli,
+L., Ji, H., Kurohashi, S., Paggio, P., Xue, N., Kim, S., Hahm, Y., He, Z., Lee,
+T.K., Santus, E., Bond, F., Na, S.H. (eds.) Proceedings of the 29th International
+ConferenceonComputationalLinguistics.pp.2108–2117.InternationalCommittee
+on Computational Linguistics, Gyeongju, Republic of Korea (Oct 2022)
+21. Shibuya, T., Hovy, E.: Nested named entity recognition via second-best sequence
+learninganddecoding.Transactionsoftheassociationforcomputationallinguistics
+8, 605–620 (2020)
+22. Stocker, M., Snyder, L., Anfuso, M., Ludwig, O., Thießen, F., Farfar,
+K.E., Haris, M., Oelen, A., Jaradeh, M.Y.: Rethinking the production
+and publication of machine-readable expressions of research findings. Sci-
+entific Data 12(1) (Apr 2025). https://doi.org/10.1038/s41597-025-04905-0,
+https://doi.org/10.1038/s41597-025-04905-0
+23. Suneetha, S., Ramu, J., Priyadarsini, N.K., Bikku, T.: Enhancing named entity
+recognition (ner) in biomedical texts: Biobert on cord-19 data set. In: Tuba, M.,
+16 Haris et al.
+Akashe,S.,Joshi,A.(eds.)ICTSystemsandSustainability.pp.355–365.Springer
+Nature Singapore, Singapore (2025)
+24. Tan, Z., Shen, Y., Zhang, S., Lu, W., Zhuang, Y.: A sequence-to-set network for
+nested named entity recognition. In: "Proceedings of the Thirtieth International
+Joint Conference on Artificial Intelligence (IJCAI-21)" (2021)
+25. Tjong Kim Sang, E.F., De Meulder, F.: Introduction to the CoNLL-2003 shared
+task:Language-independentnamedentityrecognition.In:ProceedingsoftheSev-
+enthConferenceonNaturalLanguageLearningatHLT-NAACL2003.pp.142–147
+(2003), https://aclanthology.org/W03-0419/
+26. Wan, J., Ru, D., Zhang, W., Yu, Y.: Nested named entity recognition with span-
+level graphs. In: Muresan, S., Nakov, P., Villavicencio, A. (eds.) Proceedings
+of the 60th Annual Meeting of the Association for Computational Linguistics
+(Volume 1: Long Papers). pp. 892–903. Association for Computational Linguis-
+tics, Dublin, Ireland (May 2022). https://doi.org/10.18653/v1/2022.acl-long.63,
+https://aclanthology.org/2022.acl-long.63/
+27. Wang, J., Shou, L., Chen, K., Chen, G.: Pyramid: A layered model for
+nested named entity recognition. In: Jurafsky, D., Chai, J., Schluter, N.,
+Tetreault, J. (eds.) Proceedings of the 58th Annual Meeting of the Association
+for Computational Linguistics. pp. 5918–5928. Association for Computational
+Linguistics, Online (Jul 2020). https://doi.org/10.18653/v1/2020.acl-main.525,
+https://aclanthology.org/2020.acl-main.525/
+28. Yan, H., Sun, Y., Li, X., Qiu, X.: An embarrassingly easy but strong base-
+line for nested named entity recognition. In: Rogers, A., Boyd-Graber, J.,
+Okazaki, N. (eds.) Proceedings of the 61st Annual Meeting of the Asso-
+ciation for Computational Linguistics (Volume 2: Short Papers). pp. 1442–
+1452. Association for Computational Linguistics, Toronto, Canada (Jul 2023).
+https://doi.org/10.18653/v1/2023.acl-short.123
+29. Yan, Y., Cai, B., Song, S.: Nested named entity recognition as building local hy-
+pergraphs. Proceedings of the AAAI Conference on Artificial Intelligence 37(11),
+13878–13886 (June 2023). https://doi.org/10.1609/aaai.v37i11.26625
+30. Yang,Y.,Li,Z.,Zhao,H.:Nestednamedentityrecognitionascorpusawareholis-
+tic structure parsing. In: Calzolari, N., Huang, C.R., Kim, H., Pustejovsky, J.,
+Wanner, L., Choi, K.S., Ryu, P.M., Chen, H.H., Donatelli, L., Ji, H., Kurohashi,
+S., Paggio, P., Xue, N., Kim, S., Hahm, Y., He, Z., Lee, T.K., Santus, E., Bond,
+F., Na, S.H. (eds.) Proceedings of the 29th International Conference on Compu-
+tational Linguistics. pp. 2472–2482. International Committee on Computational
+Linguistics, Gyeongju, Republic of Korea (Oct 2022)
+31. Yuan,Z.,Tan,C.,Huang,S.,Huang,F.:Fusingheterogeneousfactorswithtriaffine
+mechanismfornestednamedentityrecognition.In:Muresan,S.,Nakov,P.,Villav-
+icencio,A.(eds.)FindingsoftheAssociationforComputationalLinguistics:ACL
+2022. pp. 3174–3186. Association for Computational Linguistics, Dublin, Ireland
+(May 2022). https://doi.org/10.18653/v1/2022.findings-acl.250

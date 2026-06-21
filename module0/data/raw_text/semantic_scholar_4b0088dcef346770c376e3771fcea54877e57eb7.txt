@@ -1,0 +1,550 @@
+ProceedingsoftheTwenty-NinthInternationalJointConferenceonArtificialIntelligence(IJCAI-20)
+BERT-PLI: Modeling Paragraph-Level Interactions for Legal Case Retrieval
+YunqiuShao1, JiaxinMao1, YiqunLiu1(cid:3), WeizhiMa1, KenSatoh2, Min
+Zhang1 and ShaopingMa1
+1BNRist,DCST,TsinghuaUniversity,Beijing,China
+2NationalInstituteofInformatics,Tokyo,Japan
+yiqunliu@tsinghua.edu.cn
+Abstract ThedevelopmentofretrievalmodelssitsatthecoreofIR
+researches. The legal case retrieval scenario, which aims to
+LegalcaseretrievalisaspecializedIRtaskthatin- identify relevant prior cases given a query case, can be also
+volves retrieving supporting cases given a query viewedasaspecificapplicationofretrievalmodels.However,
+case. Compared with traditional ad-hoc text re- the legal case retrieval task is different from traditional ad-
+trieval, the legal case retrieval task is more chal- hoc text retrieval in several aspects, including the length of
+lenging since the query case is much longer and queryandcandidatetexts,thedefinitionofrelevance,andthe
+morecomplexthancommonkeywordqueries. Be- accessibility of legal datasets. Therefore, existing methods
+sides that, the definition of relevance between a developed for IR tasks face a few serious challenges in this
+query case and a supporting case is beyond gen- task,suchas:
+eraltopicalrelevanceanditisthereforedifficultto
+Challenge 1. Both the query and candidate cases involve
+construct a large-scale case retrieval dataset, espe-
+extremelongtexts.Forexample,casesinCOLIEE2019Task
+cially one with accurate relevance judgments. To
+1containaround3,000wordsonaverage.Itischallengingfor
+address these challenges, we propose BERT-PLI,
+representation learning methods to represent the long docu-
+a novel model that utilizes BERT to capture the
+mentwellinalimitedsemanticspace,anditisalsodifficult
+semantic relationships at the paragraph-level and
+forthematchingfunctionlearningmethodstoconstructand
+theninferstherelevancebetweentwocasesbyag-
+aggregatematchingsignals.
+gregating paragraph-level interactions. We fine-
+tunetheBERTmodelwitharelativelysmall-scale Challenge 2. The definition of relevance in the legal sce-
+case law entailment dataset to adapt it to the le- narioissomehowbeyondthegeneraldefinitionoftopicalrel-
+gal scenario and employ a cascade framework to evance [Van Opijnen and Santos, 2017]. Relevant cases are
+reducethecomputationalcost. Weconductexten- thosethatcansupportthedecisionofthecurrentcase,which
+siveexperimentsonthebenchmarkoftherelevant usuallyinvolvesimilarsituationsandsuitablestatutes.There-
+caseretrievaltaskinCOLIEE2019. Experimental fore, itiscrucialtoidentifythesimilaritiesintheaspectsof
+resultsdemonstratethatourproposedmethodout- legalissuesandlegalprocessesofthecases, whichcallsfor
+performsexistingsolutions. semanticunderstandingofwholedocuments.
+Challenge3. Collectingalargedatasetforthistaskcanbe
+challenging if not impossible. For one thing, downloading
+1 Introduction
+large-scalelegaldocumentsisrestrictedinmanylawsystems.
+Precedents (case laws) are a primary source of laws in the Foranother,itisquiteexpensivetoobtainaccuraterelevance
+common law system, which is fundamental for a lawyer’s judgmentssinceitrequiresexpertknowledgeinthelegaldo-
+court preparations. With the rapid increase of digitized le- main.Thelackofdatabringsobstaclestothetrainingprocess
+gal documents, it takes great efforts of legal practitioners to ofdeepneuralmodels.
+search for relevant cases manually. Given this situation, an To tackle the above challenges, we propose BERT-PLI,
+automaticretrievalsystemthatidentifiesrelevantpriorcases a novel model that utilizes BERT [Devlin et al., 2018] to
+will greatly alleviate the heavy document works. Therefore, model Paragraph-Level Interactions for legal case retrieval.
+case law retrieval is an important research issue for both IR Formodelingoflongtexts(Challenge1),webreakthedoc-
+and legal communities. In recent years, there have been uments into paragraphs and infer the relationship between
+a number of benchmark efforts on the topic of Legal In- cases from a fine-grained perspective, which allows exploit-
+formation Retrieval, e.g., Legal TREC [Oard et al., 2013], ingtheinformationofthefulldocumentinsteadofthetrun-
+AILA [Bhattacharya et al., 2019], COLIEE [Rabelo et al., cated or summarized one. Beyond term-level matching, we
+2019],etc. modelthesemanticinteractionsbetweentwoparagraphswith
+BERT(Challenge2). Moreover, weadapttheBERTmodel
+(cid:3)CorrespondingAuthor tothelegalscenariobyfine-tuningitonasentencepairclassi-
+3501
+ProceedingsoftheTwenty-NinthInternationalJointConferenceonArtificialIntelligence(IJCAI-20)
+fication task with a small-scale legalcase entailment dataset or query-passage pairs. As for legal case retrieval, it is still
+(Challenge 3). In practice, we employ the cascade frame- worth investigating how to utilize BERT to model the rela-
+worktoavoidhighcomputationalcostandarrangethemodel tionshipbetweenlongcasedocuments.
+inamulti-stagepipelineforlegalcaseretrieval. Specifically, Findingrelevantmaterialsisfundamentalinthelegalfield.
+weselecttop-K candidatesaccordingtotheBM25rankings In countries following the common law system, prior cases
+andfine-tuneBERTwithanextralegaldatasetbeforeapply- are one of the primary sources of law. Thus, legal case re-
+ingBERT-PLItorelevanceprediction. Experimentsarecon- trievalisanimportantresearchtopic. Meanwhile,legalcase
+ductedontheCOLIEE2019[Rabeloetal.,2019]legalcase retrievalischallengingbecauseitisdifferentfromad-hocre-
+retrievaltaskandtheresultsdemonstratetheeffectivenessof trievalinvariousaspects,includingthedefinitionofrelevance
+ourproposedmethod. inlaw[VanOpijnenandSantos,2017]andthecharacteristics
+oflegaldocuments,suchasthedocumentlength,professional
+legal expressions, and the logical structures behind natural
+2 RelatedWork
+languages[Turtle,1995]. Avarietyofapproachesaswellas
+A large number of retrieval models, especially for ad-hoc expert knowledge are involved in this task [Bench-Capon et
+text retrieval, have been proposed in the past decades. Tra- al.,2012],e.g.,logicalanalysis,lexicalmatching,distributed
+ditional bag-of-words IR models, including VSM [Salton representation, etc. For instance, decomposition of legal is-
+and Buckley, 1988], BM25 [Robertson and Walker, 1994], sues[Zengetal.,2005],ontologicalframeworks[Saravanan
+andLMIR[SongandCroft,1999],whicharewidelyapplied et al., 2009], and link analysis [Monroy et al., 2013] have
+insearchsystems, aremostlybasedonterm-levelmatching. beenexplored. Generallyspeaking,methodscanbegrouped
+Sincethemid-2000s, LTR(LearningtoRank)methods[Liu intotwobroadcategories: thosebasedonmanualknowledge
+andothers,2009],whicharedrivenheavilybymanualfeature engineering (KE) and those based on natural language pro-
+engineering,havebeenwellstudiedandutilizedbycommer- cessing (NLP) [Maxwell and Schafer, 2008]. The compe-
+cialwebsearchenginesaswell. titions held recently, such as COLIEE, are mostly aimed at
+Inrecentyears,thedevelopmentofdeeplearninghasalso exploringtheapplicationofNLP-basedmethodsandprovid-
+inspired applications of neural models in IR. Generally, the ingbenchmarksforthelegalcaseretrievaltask. InCOLIEE
+methodscanbecategorizedintotwotypes[Xuetal.,2018], 2019,bothtraditionalretrievalmodelsandneuralmodelsare
+methods of representation learning and methods of match- explored in the legal case retrieval task. Specifically, [Tran
+ing function learning. Based on the idea of representation et al., 2019] combined distributed representation with lexi-
+learning,queriesanddocumentsarerepresentedinthelatent cal matching features via LTR algorithms while [Rossi and
+spacebydeeplearningmodels,andthequery-documentrel- Kanoulas, 2019] utilized BERT with the help of automatic
+evance score is calculated based on their latent representa- summarizationalgorithms.
+tions with a vector space scoring function, e.g., cosine sim-
+ilarity. Various neural network models have been applied 3 Method
+to this task. For instance, DSSM [Hu et al., 2014] uti-
+lized DNN in the early stage. Further, some studies ex- 3.1 TaskDescription
+ploitCNNstocapturethelocalinteractions[Huetal.,2014;
+Thelegalcaseretrievaltaskinvolvesfindingpriorcasesthat
+Shen et al., 2014], while some studies apply RNNs to mod-
+shouldbe“noticed”concerningagivenquerycaseintheset
+eling text sequences [Palangi et al., 2016]. However, most
+of candidate cases [Rabelo et al., 2019]. “Noticed case” is
+ofthemodelstructuresarenotdesignedforrepresentinglong
+a legal technical term denoting that a precedent is relevant
+documents.Inparticular,itisdifficultforCNNmodelstorep-
+to a query case, in other words, it supports the decision of
+resent the complex global semantic information while RNN
+a query case. Formally, given a query case q, and a set of
+modelstendtoforgetimportantsignalswhendealingwitha
+candidatecasesD = fd ;d ;:::;d g,thetaskistoidentify
+long sequence. On the other hand, matching function learn- 1 2 n
+thesupportingcasesD(cid:3) = fd(cid:3) j d(cid:3) 2 D^noticed(d(cid:3);q)g,
+ingmethodsfirstconstructamatchingmatrixorcapturelocal i i i
+wherenoticed(d(cid:3);q)denotesthatd(cid:3)shouldbenoticedgiven
+interactions based on the word-level matching, and then use i i
+thequerycaseq. Boththequeryandthecandidatesarelegal
+neuralnetworkstodiscoverthehigh-levelmatchingpatterns
+documentscontaininglongtexts,whichconsistofthefactsin
+and aggregate the final relevance score. Well-known mod-
+acase.
+elsincludeARC-II[Huetal.,2014],MatchPyramid[Panget
+al., 2016], and Match-SRNN [Wan et al., 2016]. Although
+3.2 ArchitectureOverview
+these models work well for ad-hoc text retrieval, where the
+query is quite short, their performances are restricted in the Ingeneral,wedealwiththelegalcaseretrievaltaskwithina
+scenario of legal case retrieval due to its quadratic time and multi-stage pipeline inspired by the cascade framework. As
+memorycomplexityinconstructingthewholeinteractionma- illustratedinFigure1,itconsistsofthreestages. InStage1,
+trix. Since BERT [Devlin et al., 2018] has reached state- weselecttop-K candidatesfromtheinitialcandidatecorpus
+of-art performance in 11 NLP tasks, pre-trained language with respect to the query case q according to BM25 scores.
+models have drawn great attention in many fields related to InStage2,wefine-tunetheBERTmodelonasentencepair
+NLP. Recently, some works have shed light on the appli- classification task with a legal case entailment dataset in or-
+cation of BERT to ad-hoc retrieval [Dai and Callan, 2019; der to adapt it to modeling semantic relationships between
+Yilmazetal.,2019]bymodelingevidenceinquery-sentence legalparagraphs. Inthefinalstage,BERT-PLIconductsrele-
+3502
+QueryCase BM25 d 1
+d
+2
+Corpus
+Top k candidate cases
+…
+Entailment Stage 2
+Label
+C T 1 … TQ T [SEP] T 1′ … TP′
+BERT Interaction Map MaxPooling
+Sentence Pair Classification pq1 … pq′ k1 E [CLS] E 1 … EQ E [SEP] E 1′ … EP′ pq2 … … …p =q′ k2 y
+[CLS]Tok 1…Tok Q[SEP]Tok1…Tok P
+pqi Cij … … pq′ ki
+pqN … pq′ kN
+Decision Candidate
+pk1 pk2 pkj pkM
+Paragraph Paragraph
+BERT
+Aggregation & Prediction
+pqi pkj
+q=(pq1,pq2,...,pqN) dk=(pk1,pk2,...,pkM)
+d
+2 Stage 3
+Paragraph-Level Interaction
+dk
+Stage 1
+RNN Attention Prediction
+ProceedingsoftheTwenty-NinthInternationalJointConferenceonArtificialIntelligence(IJCAI-20)
+Figure1:Anillustrationofthemulti-stagepipeline.
+vancepredictionwiththefine-tunedBERT(Stage2)among binaryclassification,optimizingacross-entropyloss,written
+theselectedcandidates(Stage1). as(cid:0)(ylog(y^)+(1(cid:0)y)log(1(cid:0)y^)).
+3.3 Stage1: BM25Selection 3.5 Stage3: BERT-PLI
+Deep learning models are usually time-consuming and
+To tackle the challenge brought by long and complex docu-
+resource-consuming. Considering the computational cost,
+ments,wefirstbreakadocumentintoparagraphs(Challenge
+we employ the cascade framework which utilizes BM25 to
+1) and model the interactions between paragraphs in the se-
+prunethesetofcandidates.TheBM25modelisimplemented
+manticlevel(Challenge2). InFigure1(Stage3),thequery
+according to the standard scoring function [Robertson and
+q and one of the candidate document d are represented by
+Walker, 1994]. This stage inevitably hurts both recall and k
+paragraphs, denoted as q = (p ;p ;:::;p ) and d =
+q1 q2 qN k
+precision, and we mainly pay attention to optimizing recall
+(p ;p ;:::;p ), whereN andM denotethetotalnum-
+k1 k2 kM
+atthisstagesincethedownstreammodelscanfurtherdiscard
+bers of paragraphs in q and d , respectively. For each para-
+k
+irrelevantdocuments.
+graph in q and d , we construct a paragraph pair (p ;p ),
+k qi kj
+where 1 (cid:20) i (cid:20) N and 1 (cid:20) j (cid:20) M, as the input of BERT,
+3.4 Stage2: BERTFine-tuning
+alongwiththereservedtokens(i.e. [CLS]and[SEP]).The
+Fine-tuningisrelativelyinexpensivecomparedwiththepre-
+finalhiddenstatevectorofthetoken[CLS]isviewedasthe
+training procedure, which allows BERT to model specific
+aggregate representation of the input paragraph pair. In that
+tasks with small datasets [Devlin et al., 2018]. Therefore,
+way, we can get an interaction map of paragraphs, in which
+b ge rafo pr he s,ap wp ely fiin ng e-B tuE nR eT itt wo ii tn hfe ar sth me ar lle -l sa ct aio lens lh ei gp alof cac sa ese enp ta ar ia l-
+-
+each component C ij, C
+ij
+2 RHB, models the semantic re-
+lationshipbetweenthequeryparagraphp andthecandidate
+ment dataset provided by COLIEE 2019 Task 2 (Challenge qi
+paragraphp .
+3). This task involves identifying the paragraphs that entail kj
+For eachparagraph of thequery, we capture thestrongest
+thedecisionparagraphofaquerycasefromagivenrelevant
+matchingsignalswiththecandidatedocumentusingthemax-
+case. Fine-tuningonthistaskenablesBERTtoinferthesup-
+poolingstrategy,andhencegetasequenceofvectors,denoted
+portiverelationshipsbetweenparagraphs,whichisusefulfor
+asp0 = [p0 ;p0 ;:::;p0 ]. Eachcomponentp0 ag-
+thelegalcaseretrievaltask. qk qk1 qk2 qkN qki
+gregatestheinteractionsofallofparagraphsinthecandidate
+We fine-tune all parameters of BERT on a sentence pair
+document corresponding to the i-th query paragraph as fol-
+classificationtaskinanend-to-endfashion.Theinputiscom-
+lows:
+posedofthedecisionparagraphofaquerycaseandacandi-
+dateparagraphintherelevantcase. Thetextpairisseparated p0
+qki
+=MaxPool(C i1;C i2;:::;C iM); p0
+qki
+2RHB: (1)
+bythe[SEP]tokenanda[CLS]tokenisprependedtothetext
+pair. Asfortheoutput, wefeedthefinalhiddenstatevector We use an RNN structure to further encode the represen-
+correspondingtothefirstinputtoken([CLS])intoaclassifi- tation sequence. Assuming that the legal document always
+cationlayer. Inthistask,weuseafully-connectedlayertodo follows a certain reasoning order, we consider the forward
+3503
+ProceedingsoftheTwenty-NinthInternationalJointConferenceonArtificialIntelligence(IJCAI-20)
+RNN in this model. In the forward pass, RNN generates a Task1 Train Test
+sequenceofhiddenstates:
+#querycase 285 61
+h
+qk
+=[h qk1;h qk2;:::;h qkN]; h
+qki
+2RHR; (2) #candidatecases/query 200 200
+#noticedcases/query 5.21 5.41
+where h = RNN(h ;p0 ) is generated by LSTM
+qki qk(i(cid:0)1) qki Task2 Train Test
+orGRUinpractice.
+#querycase 181 44
+Theattentionmechanismisalsoemployedtoinfertheim-
+#candidateparagraphs/query 32.12 32.91
+portanceofeachposition. Theattentionweightofeachposi-
+#entailingparagraphs/query 1.12 1.02
+tionismeasuredby:
+exp(h (cid:1)u ) Table1:SummaryofdatasetsinCOLIEE2019task1andtask2.
+(cid:11) = qki qk ; (3)
+qki P exp(h (cid:1)u )
+i0 qki0 qk
+whereh isthei-thhiddenstategivenbytheforwardRNN ofpredominantlyFederalCourtofCanadacaselaws. Table1
+qki
+andu isgeneratedasfollows: gives a statistical summary of the raw datasets in these two
+qk
+tasks. Task1isthemainfocusofourwork,whilethedataof
+u =W (cid:1)MaxPool(h )+b ; (4)
+qk u qk u Task2areusedtofine-tuneBERTinStage2.
+where W
+u
+2 RHR(cid:2)HR, b
+u
+2 RHR. We can then get the We follow the evaluation metrics in the competition.
+Micro-averageofprecision,recall,andF1areused.
+document-levelrepresentationviaattentiveaggregation:
+X 4.2 BaselineMethods
+d = (cid:11) h : (5)
+qk qki qki
+i We compare our model with the following three types of
+baselines.
+Finally, the representation d is passed through a fully-
+qk
+connectedlayerfollowedbyasoftmaxfunctiontomakepre- (cid:15) Traditional bag-of-words retrieval models, including
+dictionasfollows: VSM[SaltonandBuckley,1988],BM25[Robertsonand
+Walker,1994],andLMIR[SongandCroft,1999].
+y^ =softmax(W (cid:1)d +b ); (6)
+qk p qk p
+(cid:15) Deep retrieval models. Prior work shows that match-
+whereW p 2 RjRj(cid:2)HR,b p 2 RjRj,andRdenotesthesetof ing function learning methods usually outperform the
+relevance labels, e.g., R = f0;1g and jRj = 2. During the representation learning ones [Xu et al., 2018], so we
+training procedure, we optimize the following cross-entropy considertwomatchingfunctionlearningmodels,ARC-
+loss: II [Hu et al., 2014] and MatchPyramid [Palangi et al.,
+2016]. BothofthemutilizetheCNNstructure,whichis
+jRj
+X fasterthanRNN-basedmodels,especiallywhendealing
+L (y^ ;y )=(cid:0) y log(y^ ); (7)
+qk qk qk qkr qkr
+withlongtexts.Wedonotincludethestate-of-artneural
+r=1
+models that involve rich behavioral signals (e.g., click)
+Inthepracticeofthelegalcaseretrievaltask,BERT-PLIis sincewefocusontext-basedretrievalhere.
+combined with the two stages mentioned above. To be spe-
+(cid:15) Methods in the competition. We also compare with
+cific, the candidate documents at the input of BERT-PLI are
+the methods of the top 2 teams [Tran et al., 2019;
+those selected by BM25 in Stage 1. After Stage 2, we con-
+Rossi and Kanoulas, 2019] in the competition. The
+sider that the BERT is able to well represent the paragraph-
+championteam(namedas“JNLP”)trainedasupervised
+levelsemanticrelationshipsinlegalcasedocuments. Hence,
+summarizationmodelbasedonCOLIEE2018’sdataset
+we utilize the fine-tuned parameters directly without updat-
+and applied the model to encoding the case document
+ing them when training BERT-PLI. The multi-stage opera-
+intoacontinuousvector. Theycombinedsuchthesum-
+tions make the training process easy and affordable. As for
+maryembeddingswithlexicalmatchingfeatures,calcu-
+testing,wereturntheonesthatarepredictedasrelevantcases
+latedbyROUGE[Lin,2004],andlearnedthedocument
+byBERT-PLIcorrespondingtoagivenquerycase.
+rankings via RankSVM. Another team ranked follow-
+ing JNLP (named as “ILPS”) generated summaries by
+4 Experiments
+theTextRankalgorithm[MihalceaandTarau,2004]first
+4.1 DatasetsandEvaluationMetrics andassessedpairwiserelevancebyacarefullyfine-tuned
+Our experiments are conducted based on the COLIEE 2019 BERTmodel,combinedwithoversamplingstrategies.
+datasets[Rabeloetal.,2019]. Task1isalegalcaseretrieval
+4.3 ExperimentalSettings
+task,whichinvolvesreadinganewcaseQandextractingsup-
+porting cases S ;S ;:::;S for the decision of Q from the Intherawlegalcasedocuments,alongwiththetextbodyof
+1 2 n
+caselawcorpus. Thesupportingcasesareconsideredas“rel- the case (known as “facts”), some meta information is also
+evantcases”or“noticedcases”forthequerycaseQ. Task2 provided, such as the court, the date, the head note and so
+isalegalcaseentailmenttasktoidentifyparagraphsthaten- on. However,thetypesofmetadatavarywithdocumentsand
+tailthegivendecisionparagraphofaquerycasefromagiven haveahighmissingrate, inwhichcase, webuildourmodel
+relevantcase. Datainbothtasksaresampledfromadatabase based on the text body of a case. Some cases contain both
+3504
+ProceedingsoftheTwenty-NinthInternationalJointConferenceonArtificialIntelligence(IJCAI-20)
+EnglishandFrenchversionsofdescription,andonlytheEn- Model Precision Recall F1
+glish one is considered in our experiments. Asillustrated in
+BM25 0.5100 0.4636 0.4867
+Figure1(Stage1), weselectcandidatesaccordingtoBM25
+VSM 0.4833 0.4394 0.4603
+scores. We set K = 50 (top 50 candidates for each query),
+LMIR 0.5467 0.4970 0.5306
+considering both the recall and the effectiveness in the fol-
+ARC-II 0.1967 0.1788 0.1873
+lowingstages. Notethatonlythecasesthathappenedbefore
+MP 0.1933 0.1758 0.1841
+the current case could be noticed according to the problem
+definition,thoseinvalidcasesintermsoftimearedismissed, ARC-II sum 0.1900 0.1727 0.1810
+which would otherwise be noisy in the candidates. The re- MP sum 0.2233 0.2030 0.2127
+callofStage1onthetrainingandtestingsetare0.9159and BERT-PLI(LSTM) 0.5931 0.5697 0.5812
+0.9273, respectively. The relative high recall suggests that BERT-PLI(GRU) 0.6026 0.5697 0.5857
+setting K = 50 in Stage 1 brings little harm to the overall
+BERT-PLI (LSTM) 0.5278 0.4606 0.4919
+org
+retrievalperformance.
+BERT-PLI (GRU) 0.4958 0.5364 0.5153
+org
+In Stage 2, paragraph pairs are constructed using the de-
+cision and candidate paragraphs in Task 2. The paragraphs
+Table2: Performanceoftraditionalretrievalmodels,deepretrieval
+havenomorethan100wordsonaverageandwetruncatethe models,andBERT-PLIonthetestset,measuredbymicro-average
+wordssymmetricallyifthepairexceedsthemaximuminput ofprecision,recallandF1. MPistheabbreviationforMatchPyra-
+lengthofBERT.WeusetheuncasedbaseversionofBERT.1 mid.sumdenotesthemodelthatusesthegeneratedsummaryasthe
+Atfirst,itisfine-tunedonthetrainingdataandtestedonthe modelinput.orgdenotesthemodelwithoutStage2,whichusesthe
+remaining testing data. We use the Adam optimizer and set originalBERTparameters.
+thelearningrateas10(cid:0)5. Thefine-tuningprocedurecancov-
+erageafterthreeepochsandF1onthetestsetreaches0.6526,
+4.4 ResultsandAnalysis
+which is better than the results of BM25 in this task. After
+that, we utilize the same hyperparameter settings but merge All of the models employ the cascade framework except
+thetrainingandtestingdatatofine-tuneBERTfor3epochs BM25. In other words, these models conduct further rank-
+fromscratch. ingorclassificationbasedonthedatasetD selectedinStage
+1
+InStage3, theparagraphsegmentationgivenbytheorig- 1. In particular, all of the deep learning models are trained
+inal documents is adopted. Similarly, if the paragraph pair on the same training data and selected according to F1 on
+exceeds the maximum input length, we simply truncate the thevalidationdata. Fortherankingmodels,weconsiderthe
+texts. WesetN = 54andM = 40,whichcancover3/4of top5resultsastherelevantones4,whilefortheclassification
+paragraphsinmostqueryandcandidatecases. InBERT-PLI, models,wesimplyusethelabelgivenbythemodel.
+H B = 768, which is determined by the size of the BERT Table2showstheperformanceonthewholetestset.Inthe
+hidden vector. As for RNN, H R is set as 256 and only one BERT-PLImodel,weuseLSTMandGRUastheRNNlayer
+hidden layer is used for both LSTM and GRU. The training respectively. The LSTM and GRU versions achieve similar
+setissplitintotwoparts.20%queriesfromthetrainingsetas performancehereandbothoutperformthebaselinemethods,
+wellasalloftheircandidatesaretreatedasthevalidationset. includingthetraditionalretrievalmodelsandthedeeplearn-
+Wetrainthemodelonthetrainingdataleftfornomorethan ing ones, by a large margin. The structure of BERT-PLI is
+60 epochs and select the best model in the training process abletotakethewholecasedocumentintoconsideration. At
+accordingtotheF1measureonthevalidationset. Duringthe thesametime, ithasabettersemanticunderstandingability
+trainingprocess,weusetheAdamoptimizerandsetthestart thanthebag-of-wordsIRmodelswiththehelpofBERTand
+learningrateas10(cid:0)4withaweightdecayof10(cid:0)6. sequencemodelingcomponents.
+As for the baseline methods, we use a bigram language Among the baseline retrieval methods, deep learning re-
+modelwithlinearsmoothinginLMIRwhileVSMandBM25 trieval models perform much worse than the traditional re-
+arecalculatedbasedonthestandardscoringfunctions. ARC- trievalmodelsinthistask. Sincethesedeeplearningmodels
+II and MatchPyramid are implemented by MatchZoo [Guo are mostly designed for the ad-hoc scenario, it is hard for
+etal., 2019]. WetrainARC-IIandMatchPyramidinapair- themtohandlelongtextretrieval. Thelengthoftheinputis
+wise way since pairwise training usually outperforms point- restrictedinthesemodels.Thefirst256wordsarenotenough
+wisetraining. Theinputlengthisalsorestrictedduetomem- to represent the document well, so it is not surprising that
+oryandtimelimit. Wetruncateboththequeryandcandidate theyperformpoorlyinthistask. Inadditiontotruncation,we
+documentto256words,whichisconsistentwiththerestric- also attempt to utilize automatic summarization techniques
+tions of BERT. Meanwhile, we use TextRank2 to generate a to shorten the input length. However, it does not result in
+summarywitha256-wordslengthlimitforeachcase. JNLP stable improvements. Even taking the generated summary
+group also provides the summary encoding and the lexical as the input, the deep models still underperform. Assum-
+features, and we further conduct experiments based on the ing that the legal documents contain plenty of information
+providedfeaturesusingRankSVM.3 andcomplexlogic,itishardtoexpressthemwellinamuch
+1https://github.com/google-research/bert 4Thethreshold5iswidelyusedbyteamsinthecompetitionand
+2https://radimrehurek.com/gensim/ isreasonableconsideringthereareabout5relevantcasesperquery
+3https://www.cs.cornell.edu/people/tj/svm light/svm rank.html onaverage.
+3505
+ProceedingsoftheTwenty-NinthInternationalJointConferenceonArtificialIntelligence(IJCAI-20)
+Team/Method Precision Recall F1 Features Precision Recall F1
+JNLP 0.6000 0.5545 0.5764 JNLP’sfeatures
+ILPS 0.6810 0.4333 0.5296
+EM 0.4700 0.4273 0.4476
+BERT-PLI(LSTM) 0.5931 0.5697 0.5812 ROUGE 0.4800 0.4364 0.4571
+BERT-PLI(GRU) 0.6026 0.5697 0.5857 EM-ROUGE 0.4933 0.4485 0.4698
+CombinedwithBERT-PLIoutputs
+Table 3: Comparison with the best runs of the top 2 teams in the
+competition.“JNLP”and“ILPS”aretheteamnames. EM 0.5833 0.5303 0.5566
+ROUGE 0.5367 0.4879 0.5111
+EM-ROUGE 0.5967 0.5424 0.5683
+shorter summary. Meanwhile, the unsupervised summariza-
+tion techniques might cause additional information loss and Table4: PerformancesofcombiningthefeaturesofJNLPwiththe
+noise. The results emphasize the importance of considering outputsofBERT-PLI(GRU)onthetestset.
+thefulldocumentinformationinthelegalcaseretrievaltask.
+Ontheotherhand,traditionalretrievalmodelsgiverelatively
+GRU and LSTM versions achieve similar performance but
+good results. They take advantage of the whole document
+GRU gives a slightly better result in the prior experiments
+thoughtheyareweakinsemanticunderstanding.
+(Table 2), so we use the probabilities given by BERT-PLI
+Ablation study. We further investigate the effects of the (GRU)asthefeatures.Theresultsaregiveninthesecondpart
+fine-tuningstage. Weusetheoriginalparametersofthepre- ofTable4,whichshowthatcombinationwithourmodelcan
+trainedBERTmodelratherthanthefine-tunedonetoinferthe leadtoimprovementsinalltypesoftheirfeatures. Compared
+paragraph interactions. Then the remaining parts of BERT- amongdifferenttypesoffeatures,ourmodelcanimprovethe
+PLI are trained and evaluated under the same experimental representation-basedfeaturesbyalargeramount. Weassume
+settings. The model without Stage 2 is denoted as BERT- that the embedding features are generated by a summariza-
+PLI . AsshowninTable2,thereisabigdropintheperfor- tionmodelwhileourmethodconsidersthewholedocument,
+org
+manceforboththeLSTMandGRUversionscomparedwith andthesetwoaspectsmightbecomplementary.
+the results of BERT-PLI. Without Stage 2, the model has a
+similarperformancewithtraditionalretrievalmodels. Recall 5 Conclusions
+thatwedonotupdatetheparametersofBERTduringtraining
+Inthispaper,weproposetoaddresstheproblemoflegalcase
+BERT-PLI. Therefore, fine-tuning is essential for the BERT
+retrieval. Totacklethechallengeraisedbythelongandcom-
+model to well represent the semantic relationships between
+plex legal documents, we introduce a novel model, BERT-
+paragraphs. In conclusion, the experimental results suggest
+PLI5, which models the paragraph-level interactions of case
+that it is useful and effective to adapt BERT to a paragraph-
+documentsviaBERTandthenaggregatetheseinteractionsto
+levelmodelingtaskinthelegaldomain.
+inferthedocumentrelevanceviaasequentialmodelingmech-
+Comparison with results in the competition. Table 3 anism. We propose to arrange BERT-PLI in a multi-stage
+showsthebestresultsofthetoptwoteamsinthecompetition pipelineinthepracticeoflegalcaseretrieval. Tobespecific,
+leaderboard.Intermsofthefinalevaluationresultsonthetest we prune the candidate set according to BM25 rankings in
+set,ourmethods(BERT-PLI(GRU/LSTM))achieveabetter thefirststage. Inordertoenhancetheabilitytomodelthese-
+recallandF1score,eventhoughStage1hurtstherecallofour mantic relationships between legal paragraphs, we fine-tune
+approach a bit. The results show that our method can reach theBERTmodelwithanaccessibleentailmentdatasetinthe
+a better balance in precision and recall. Further, with the legal domain before applying it to BERT-PLI. The ablation
+summaryencodingandlexicalfeaturesprovidedbytheJNLP studyalsosupportstheeffectivenessofthefine-tuningstage.
+group,weconductanadditionalexperiment,whichcombines Finally, BERT-PLI is employed to further identify the rele-
+theoutputsofBERT-PLIwiththeirfeatures. Theexperiment vantcaseswithrespecttoaquerycase.Weconductextensive
+istwo-fold. Inordertocombinethetwoapproaches,wefirst experiments on the datasets of COLIEE 2019. The experi-
+arrangetheirmodelinthecascadeframework. Similarly,we mental results demonstrate that our approach is effective in
+conduct the operations of Stage 1 to select candidate cases legalcaseretrievalandthecombinationwithBERT-PLIcan
+and get the dataset D , which is the same as the one for furtherimproveothermodelsforthistask.
+1
+BERT-PLI. Then, a RankSVM model is trained and the top
+5documentsareusedasthenoticedcases. Sincetheirmodel Acknowledgements
+combinestwotypesoffeatures,therepresentation-basedfea-
+This work is supported by the National Key Research and
+tures(denotedas“EM”)andtheterm-matchingfeatures(de-
+Development Program of China (2018YFC0831700), Nat-
+notedas“ROUGE”),weconductexperimentsoneachtypeof
+ural Science Foundation of China (Grant No. 61732008,
+featuresseparately. AsshowninTable4,theperformanceof
+61532011,61902209),BeijingAcademyofArtificialIntelli-
+allkindsoffeaturesgoesdown,whichmightresultfromthat
+gence(BAAI),JSTCRESTGrantNumberJPMJCR1513and
+wedonotusethesametrainingset(weonlyuseD instead
+1 JSPSKAKENHIGrantNumberJP17H06103.
+of the whole corpus to train the RankSVM). We further ap-
+pendtheprobabilitiesofrelevancepredictedbyBERT-PLIto 5https://github.com/ThuYShao/BERT-PLI-IJCAI2020. The im-
+their features and then apply the RankSVM algorithm. The plementationhasbeenavailable.
+3506
+ProceedingsoftheTwenty-NinthInternationalJointConferenceonArtificialIntelligence(IJCAI-20)
+References [Rabeloetal.,2019] JulianoRabelo,Mi-YoungKim,Randy
+Goebel, Masaharu Yoshioka, Yoshinobu Kano, and Ken
+[Bench-Caponetal.,2012] Trevor Bench-Capon, Michał
+Satoh. COLIEE 2019 overview. In COLIEE’19, pages
+Araszkiewicz, Kevin Ashley, Katie Atkinson, Floris Bex,
+1–9,2019.
+Filipe Borges, Daniele Bourcier, Paul Bourgine, Jack G
+Conrad,EnricoFrancesconi,etal. AhistoryofAIandlaw [RobertsonandWalker,1994] Stephen E Robertson and
+in 50 papers: 25 years of the international conference on Steve Walker. Some simple effective approximations to
+AIandlaw. AI&Law,20(3):215–319,2012. the 2-poisson model for probabilistic weighted retrieval.
+InSIGIR’94,pages232–241.Springer,1994.
+[Bhattacharyaetal.,2019] Paheli Bhattacharya, Kripa-
+bandhu Ghosh, Saptarshi Ghosh, Arindam Pal, Parth [RossiandKanoulas,2019] Juline Rossi and Evangelos
+Mehta, Arnab Bhattacharya, and Prasenjit Majumder. Kanoulas. Legal information retrieval with generalized
+Overview of the FIRE 2019 AILA track: Artificial languagemodels. InCOLIEE’19,pages16–19,2019.
+intelligence for legal assistance. FIRE’19, pages 12–15, [SaltonandBuckley,1988] Gerard Salton and Christopher
+2019.
+Buckley. Term-weightingapproachesinautomatictextre-
+[DaiandCallan,2019] Zhuyun Dai and Jamie Callan. trieval. IP&M,24(5):513–523,1988.
+Deeper text understanding for IR with contextual neural [Saravananetal.,2009] M Saravanan, Balaraman Ravin-
+languagemodeling. arXiv:1905.09217,2019.
+dran,andSRaman. Improvinglegalinformationretrieval
+[Devlinetal.,2018] Jacob Devlin, Ming-Wei Chang, Ken- using an ontological framework. AI & Law, 17(2):101–
+ton Lee, and Kristina Toutanova. BERT: Pre-training of 124,2009.
+deep bidirectional transformers for language understand- [Shenetal.,2014] Yelong Shen, Xiaodong He, Jianfeng
+ing. arXiv:1810.04805,2018.
+Gao, Li Deng, and Gre´goire Mesnil. A latent semantic
+[Guoetal.,2019] Jiafeng Guo, Yixing Fan, Xiang Ji, and model with convolutional-pooling structure for informa-
+XueqiCheng. MatchZoo: Alearning,practicing,andde- tionretrieval. InCIKM’14,pages101–110.ACM,2014.
+veloping system for neural text matching. In SIGIR’19, [SongandCroft,1999] Fei Song and W Bruce Croft. A
+pages1297–1300,NewYork,NY,USA,2019.ACM.
+general language model for information retrieval. In
+[Huetal.,2014] Baotian Hu, Zhengdong Lu, Hang Li, and CIKM’99,pages316–321.ACM,1999.
+QingcaiChen.Convolutionalneuralnetworkarchitectures [Tranetal.,2019] Vu Tran, Minh Le Nguyen, and Ken
+for matching natural language sentences. In NeurlPS’14,
+Satoh. Building legal case retrieval systems with lexical
+pages2042–2050,2014.
+matching and summarization using a pre-trained phrase
+[Lin,2004] Chin-Yew Lin. ROUGE: A package for auto- scoringmodel. InICAIL’19,pages275–282,2019.
+matic evaluation of summaries. In Text Summarization [Turtle,1995] Howard Turtle. Text retrieval in the legal
+BranchesOut,pages74–81,2004.
+world. AI&Law,3(1-2):5–54,1995.
+[Liuandothers,2009] Tie-Yan Liu et al. Learning to rank [VanOpijnenandSantos,2017] Marc Van Opijnen and
+forinformationretrieval. FnTIR,3(3):225–331,2009.
+Cristiana Santos. On the concept of relevance in legal
+[MaxwellandSchafer,2008] K Tamsin Maxwell and informationretrieval. AI&Law,25(1):65–87,2017.
+BurkhardSchafer. Conceptandcontextinlegalinforma- [Wanetal.,2016] ShengxianWan,YanyanLan,JunXu,Ji-
+tionretrieval. InJURIX,pages63–72,2008.
+afengGuo,LiangPang,andXueqiCheng. Match-SRNN:
+[MihalceaandTarau,2004] Rada Mihalcea and Paul Tarau. Modeling the recursive matching structure with spatial
+TextRank: Bringingorderintotext. InEMNLP’04,pages RNN. arXiv:1604.04378,2016.
+404–411,2004. [Xuetal.,2018] JunXu,XiangnanHe,andHangLi. Deep
+[Monroyetal.,2013] AlfredoLo´pezMonroy,HiramCalvo, learning for matching in search and recommendation. In
+Alexander Gelbukh, and Georgina Garc´ıa Pacheco. Link SIGIR’18,pages1365–1368.ACM,2018.
+analysisforrepresentingandretrievinglegalinformation. [Yilmazetal.,2019] Zeynep Akkalyoncu Yilmaz, Wei
+InCICLing’13,pages380–393.Springer,2013.
+Yang, Haotian Zhang, and Jimmy Lin. Cross-domain
+[Oardetal.,2013] DouglasWOard,WilliamWebber,etal. modeling of sentence-level evidence for document
+Information retrieval for e-discovery. FnTIR, 7(2–3):99– retrieval. In EMNLP-IJCNLP’19, pages 3481–3487,
+237,2013. 2019.
+[Palangietal.,2016] HamidPalangi,LiDeng,YelongShen, [Zengetal.,2005] Yiming Zeng, Ruili Wang, John
+JianfengGao,XiaodongHe,JianshuChen,XinyingSong, Zeleznikow, and Elizabeth Kemp. Knowledge represen-
+and Rabab Ward. Deep sentence embedding using long tation for the intelligent legal case retrieval. In KES’05,
+short-termmemorynetworks: Analysisandapplicationto pages339–345.Springer,2005.
+informationretrieval. TASLP’16,24(4):694–707,2016.
+[Pangetal.,2016] Liang Pang, Yanyan Lan, Jiafeng Guo,
+JunXu,ShengxianWan,andXueqiCheng.Textmatching
+asimagerecognition. InAAAI’16,2016.
+3507

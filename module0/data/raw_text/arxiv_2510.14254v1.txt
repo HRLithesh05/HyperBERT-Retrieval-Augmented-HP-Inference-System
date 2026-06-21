@@ -1,0 +1,1819 @@
+Generalist vs Specialist Time Series Foundation
+Models: Investigating Potential Emergent Behaviors
+in Assessing Human Health Using PPG Signals
+Saurabh Kataria1†, Yi Wu1,2†, Zhaoliang Chen1,
+Hyunjung Gloria Kwak1, Yuhao Xu4,
+Lovely Yeswanth Panchumarthi4, Ran Xiao1, Jiaying Lu1,
+Ayca Ermis1, Anni Zhao1, Runze Yan1, Alex Federov1,
+Zewen Liu4, Xu Wu2, Wei Jin4, Carl Yang4, Jocelyn Grunwell1,3,
+Stephanie R. Brown1,3, Amit Shah5, Craig Jabaley6,
+Tim Buchman7, Sivasubramanium V Bhavani8, Randall J. Lee9,
+Xiao Hu1
+1Nell Hodgson Woodruff School of Nursing, Emory University.
+2School of Computer Science, University of Oklahoma.
+3Department of Pediatrics, Emory University School of Medicine.
+4Department of Computer Science, Emory University.
+5Department of Epidemiology, School of Public Health, Emory University.
+6Department of Anesthesiology, Emory University School of Medicine.
+7Department of Surgery, Emory University School of Medicine.
+8Department of Medicine, Emory University School of Medicine.
+9School of Medicine, University of California, San Francisco.
+Contributing authors: saurabh.kataria@emory.edu; yi.wu-1@ou.edu;
+xiao.hu@emory.edu;
+†Co-first authors
+Abstract
+Foundation models are large-scale machine learning models that are pre-trained
+on massive amounts of data and can be adapted for various downstream tasks.
+They have been extensively applied to tasks in Natural Language Processing and
+ComputerVisionwithmodelssuchasGPT,BERT,andCLIP.Theyarenowalso
+increasinglygainingattentionintime-seriesanalysis,particularlyforphysiological
+1
+5202
+tcO
+61
+]GL.sc[
+1v45241.0152:viXra
+sensing.However,mosttimeseriesfoundationmodelsarespecialist models-with
+data in pre-training and testing of the same type, such as Electrocardiogram,
+Electroencephalogram, and Photoplethysmogram (PPG). Recent works, such as
+MOMENT,trainageneralist timeseriesfoundationmodelwithdatafrommultiple
+domains, such as weather, traffic, and electricity. This paper aims to conduct
+a comprehensive benchmarking study to compare the performance of generalist
+and specialist models, with a focus on PPG signals. Through an extensive suite
+of total 51 tasks covering cardiac state assessment, laboratory value estimation,
+andcross-modalinference,wecomprehensivelyevaluatebothmodelsacrossseven
+dimensions, including win score, average performance, feature quality, tuning
+gain, performance variance, transferability, and scalability. These metrics jointly
+capturenotonlythemodels’capabilitybutalsotheiradaptability,robustness,and
+efficiencyunderdifferentfine-tuningstrategies,providingaholisticunderstanding
+oftheirstrengthsandlimitationsfordiversedownstreamscenarios.Inafull-tuning
+scenario, we demonstrate that the specialist model achieves a 27% higher win
+score. Finally, we provide further analysis on generalization, fairness, attention
+visualizations, and the importance of training data choice.
+Keywords:Foundationmodel,Benchmarking,Photoplethysmography,DigitalHealth,
+Emergentbehavior,Computationalphysiology
+1 Introduction
+Foundation models (FM) are trained on extensive collections of datasets and have
+demonstrated exceptional capabilities in understanding the meaning of input data,
+such as in BERT [1], GPT-4 [2], Stable Diffusion [3], and Whisper [4]. These models
+possess a broad generalization capability due to their large parameter size and the
+diversity of the pre-training data. Specifically, foundation models can extract useful
+feature representations from pre-processed data (e.g., tokenized), and these extracted
+representationscanbefurtherutilizedasinputforalightweightdeepneuralnetworkto
+addressvariousdownstreamtasks,includingclassification,regression,andforecasting[5].
+Although these models have shown superior performance in the Natural Language
+Processing (NLP) and Computer Vision (CV), an emerging research field is to focus
+foundation models on physiological time-series data, such as Photoplethysmography
+(PPG) [6], Electroencephalography (EEG) [7], and Electrocardiography (ECG) [8].
+Since foundational models can learn general representations of physiological signals,
+they are instrumental in various clinical tasks where high-quality labeled data is
+expensive to obtain, such as Atrial Fibrillation (AF) detection and cuffless Blood
+Pressure (BP) monitoring.
+Physiological foundation models are typically trained via self-supervision with
+contrastive learning (e.g., SiamQuality [9]), masked modeling (e.g., ECG-BERT [10]),
+or next-token/patch prediction (e.g., Generative Pre-trained Transformer (GPT)).
+Contrastive learning relies on bringing similar examples closer together while pushing
+others apart. On the other hand, masked modeling requires the input sequence to
+be randomly masked in several regions to reconstruct the input. ECG-BERT and
+2
+ECG-FM [11] both leverage masked sequence modeling for pre-training for ECG
+analysis. Differently, GPT-based models require the input data to be divided into
+patches/segments, and the model is trained to predict the next patch based on the
+previous ones. A recent model, PPG-GPT [6, 12], proposed next-patch prediction as
+the pretext task for PPG signals.
+However, most foundation models for physiological data are specialist models,
+where all the pre-training data comes from the same domain as testing. For instance,
+ECG-BERTistrainedexclusivelyonECGsignals,whilePPG-GPTistrainedsolelyon
+PPGsignals.Giventhewidevarietyofphysiologicaldatatypes,analyzingpatientdata
+with multiple types of signals can become a burden. On the other hand, a recent work,
+MOMENT [5], introduced a generalist foundation model trained on time series data
+from multiple domains, including weather, traffic, ECG, electricity, and others, using
+masked modeling as a pre-training approach. We choose MOMENT as the primary
+generalist foundation model for comparison, as our preliminary experiments showed
+its superior performance over competing FMs, such as Chronos [13] and Tiny Time
+Mixers (TTM) [14]. We pose the following question: Can a generalist foundation model
+outperform a specialist model, even when the downstream tasks are specific to the
+domain signals of the specialist model?
+We choose to investigate this question using PPG signals. Exploring this question
+is essential for several reasons. First, we establish an organized dataset repository that
+can serve as a benchmark for evaluating the performance of foundation models. This
+benchmark will allow for a systematic comparison between generalist and specialist
+models, revealing their respective strengths and weaknesses in handling physiological
+data. The findings from this study could provide valuable insights into the most
+effective approaches for leveraging foundation models in clinical applications involving
+PPG signals. If generalist models can outperform specialist models even in domain-
+specific tasks, it could dramatically reduce the need for building separate models for
+each type of signal (e.g., ECG, PPG, EEG). This would simplify the development
+and application of AI in clinical and healthcare settings, making it more scalable
+and efficient. If specialist models outperform generalist models in their respective
+domains, it would highlight the value of training models specifically to the unique
+characteristics of particular physiological signals, indicating that specialist models that
+deeply understand the characteristics of different types of signals are still necessary.
+We assess the performance of MOMENT and PPG-GPT across 18 unique diverse
+tasks (51 total tasks) using 21 datasets, including AF detection, SpO2 estimation,
+Heart Rate (HR) estimation, electrolyte estimation, and more. Classification tasks
+and regression tasks are evaluated separately. We evaluate both models along seven
+dimensions, with the key findings summarized below:
+• Win Score: MOMENT secures significantly better task-level performance in
+classification, while PPG-GPT holds an advantage in regression.
+• Average Performance: MOMENT achieves higher accuracy in classification,
+whereas regression results are more balanced between the two models.
+• Feature Quality: MOMENT’s pretrained features generalize better in both
+classificationandregressiontasks,whilethegapforregressiontasksismuchnarrower.
+3
+• Tuning Gain: For both classification and regression tasks, PPG-GPT benefits more
+from full-model fine-tuning, indicating stronger adaptability when weights of the
+foundation models are updated.
+• Variance:Bothmodelsmaintainstableperformanceacrossdatasets,withMOMENT
+showing slightly lower variance.
+• Transferability: The two task types exhibit opposite patterns — in classification,
+PPG-GPT shows a slight advantage, whereas in regression, MOMENT demonstrates
+markedly better transferability.
+• Scalability: A similar contrast is observed — in classification, PPG-GPT scales
+worse with model size, while in regression, MOMENT’s scalability score is close to
+zero, indicating minimal size-dependent gains.
+2 Related Work
+Foundation models have been extensively deployed in NLP and CV domains, with
+notable examples including Llama [15], Contrastive Language-Image Pre-training
+(CLIP) [16], and Segment Anything Model 2 (SAM 2) [17]. Some of these mod-
+els are further specifically customized for clinical settings, such as BioBERT [18],
+PubMedBERT [19], and MED-BERT [20]. These models are typically trained using
+self-supervised methods, such as masked modeling or next-patch prediction. In recent
+years, there has been a significant rise in the development of foundation models specifi-
+cally optimized for physiological data such as EEG and ECG. We list a few relevant
+FMs here. An FM called LIFT-PD [21] did mask prediction to learn representations of
+movement data from accelerometers. Choi et al. and McKeen et al. introduced ECG-
+BERT [10] and ECG-FM [11] - two ECG foundation models trained using masked
+modeling and contrastive learning. Fusion of FMs is also useful, as shown in [22] for
+Acute Coronary Syndrome (ACS) detection. Cui et al. proposed Neuro-GPT, an EEG
+foundation model based on the GPT architecture, trained using next-patch predic-
+tion [23]. In contrast, Kim et al. developed EEG-GPT, a different type of foundation
+model that does not directly extract representations from EEG signals. Instead, it
+derives statistical features (e.g., standard deviation) from the EEG data and incor-
+porates these features into a language prompt fed to a GPT-3 model, which then
+assesses whether the EEG signal is abnormal [24]. Chen et al. proposed PPG-GPT, a
+foundation model for PPG signals that leverages next-patch prediction and the GPT
+architecture [12]. Instead of treating ECG as a time series, Vaid et al. interpret ECG
+signals as 2D images and raise HeartBEIT [25], a vision-transformer-based founda-
+tion model. Additionally, many foundation models exist for various time-series data,
+including TS2Vec [26], PatchTST [27], and Multivariate Time Series Representation
+Learning [28], among others. However, the majority of them are trained on individual
+datasets,whilemakinglarge-scalemulti-datasetpre-trainingunexplored.Totacklethis,
+Mononitoet al.proposedMOMENT,ageneralistfoundationmodelforgeneral-purpose
+time series analysis [5]. MOMENT is also trained using masked language modeling
+and has demonstrated its robustness across numerous downstream tasks. However, it
+remains unclear whether a generalist model can outperform a specialist model on tasks
+4
+tailored explicitly to the specialist model. A comprehensive, large-scale benchmarking
+evaluation across diverse settings is essential to address this question.
+The PPG foundation model PaPaGei [29] comes closest to our work in terms
+of addressing the diversity of downstream tasks. A recent model Pulse-PPG [30]
+improves upon PaPaGei in terms of modeling and training data selection, but not
+in task selection. PPG-GPT [6, 12, 31] model has been shown to obtain state-of-the-
+art results on several tasks, including Atrial Fibrillation and Cardiac Arrest (CA)
+prediction [32, 33]. Papagei and PPG-GPT are both shown to be performant for the
+AF task, even with model distillation [34] - showing promise for efficient deployment.
+ThefoundationmodelsNormWear[35]andApplePPG/ECGFM[36]doesnotaddress
+Electronic Health Record (EHR)-derived blood biomarkers and cross-modal inference,
+such as estimating ECG and Echocardiogram (ECHO) parameters. ECG foundation
+models have matured quickly, evaluating ECG interpretation labels, reduced LVEF,
+and abnormal troponin [37]. However, there is still no single model addressing all
+common biomarker estimation. For instance, ECHO parameter estimation is addressed
+by vision foundation models [38], but not using waveform-based models. Our study
+addresses several tasks unexplored by PPG FM, including biometric identification,
+non-invasivecholesterolestimation[39],bloodelectrolyteandbiomarker(glucose,A1C,
+lactate, troponin, potassium, and sodium) estimation and predicting ECHO Metrics
+such as Left Ventricular Ejection Fraction (LVEF) and LVMass (Left Ventricular
+Mass). Note that a few tasks, such as elevated troponin and potassium (hyperkalemia),
+are addressed by ECG-FM [11], and multi-modal models estimate skin temperature.
+However, a single PPG model has not yet been benchmarked for all above mentioned
+tasks. In parallel work, we study the continuous lab estimation capability of PPG FMs
+within a framework called UNIPHY+ [40, 41]. However, in this work, we restrict to
+short-term prediction capability by benchmarking on 30-second long signals only. We
+mention a few more relevant works in Section 8.
+3 Physiological foundation models
+Here, we describe the two primary Time-Series Foundation Models (TSFM) we use:
+the generalist MOMENT [5] and the specialist PPG-GPT [6, 12].
+MOMENT. MOMENT is trained on time series data from multiple domains,
+including weather, traffic, ECG, electricity, and more, using masked modeling as a
+pre-trainingapproach.Maskedmodelingrequirestheinputsequencetorandomlymask
+several inputs from the signal, with the pre-training task being to predict the masked
+values to reconstruct the original input. As a generalist foundation model, MOMENT
+learns domain-agnostic temporal representations that can be adapted to a wide variety
+of downstream tasks across heterogeneous time series domains, rather than being
+specialized to a single application area. It is available in sizes: 40M, 125M, 385M.
+PPG-GPT. PPG-GPT adapts the standard GPT architecture for PPG signals,
+which have a time-series format. Pre-trained on a dataset containing over 200 million
+30-second PPG segments sourced from more than 25,000 hospitalized adult patients,
+this model demonstrates exceptional performance across various tasks, including heart
+rate estimation, signal denoising, and the detection of AF. Notably, PPG-GPT excels
+5
+in regressive tasks, leveraging its inherent ability to reconstruct and predict signal
+sequences. PPG-GPT builds upon the foundational principles of the GPT framework,
+introducing targeted modifications to enhance its suitability for processing continuous
+physiological signals. Specifically, the model employs patch tokenization, where nor-
+malized PPG signals are segmented into non-overlapping patches, each representing
+one second of data roughly corresponding to one heartbeat. These patches serve as
+tokens,effectivelyreducingsequencelengthandimprovingcomputationalefficiency.To
+capture temporal dependencies within sequential data, PPG-GPT incorporates Rotary
+Positional Embeddings (RoPE) and efficient implementations of the attention mecha-
+nism. Additionally, the model replaces traditional layer normalization with Root Mean
+Square Normalization (RMSNorm), which facilitates smoother training dynamics and
+enhances gradient stability. These architectural refinements collectively optimize PPG-
+GPTforhandlingphysiologicalsignalswithgreaterprecisionandefficiency.Apartfrom
+short-termtasks[6,12],thismodelhasalsobeenshowntomodellong-contextPPGfor
+cardiac arrest prediction [32] and lab prediction [41] as well. It is available in four sizes:
+19M, 85M, 345M, and 1B. We chose the first three for fair comparison with MOMENT.
+4 Evaluation Methodology
+In this section, we will briefly describe the downstream clinical application tasks
+and datasets used, detail the training and testing split methodologies, specify the
+hyperparameter configurations, and explain the evaluation metrics.
+4.1 Datasets
+We curate a vast selection of tasks ranging from mental state assessment (mental
+workload), cardiac state assessment (arrhythmia), blood-chemistry marker estimation
+(electrolyte, cholesterol), vital-sign & fitness parameters (respiration, heart rate), and
+cross-modal inference (ECG, ECHO metrics). The datasets and downstream tasks
+includedinthisbenchmarkaresummarizedinTable1.Thetasksarebroadlycategorized
+into two types: classification and regression. For classification, we include four unique
+tasks across six datasets. For regression, 14 unique tasks are covered across 15 datasets.
+In total, the benchmark comprises 18 unique tasks and 21 datasets. Note that several
+datasets are used for multiple tasks; for instance, the MIMIC-III dataset is utilized for
+SPO2 estimation, electrolyte estimation, etc. This results in an effective number of
+regression tasks of 45 and a total number of tasks of 51. Additionally, these datasets
+encompass a wide range of characteristics, with the number of participants varying
+from fewer than 30 to over 5,000. The dataset size also varies, ranging from less than
+an hour to over 6,500 hours.
+The PPG data are segmented into different lengths based on the total amount of
+datawithineachdataset,withthedetailssummarizedinTable1.Toensureconsistency
+across samples, we apply min-max normalization to each segment, scaling the data
+within the range of 0 to 1. Given the original PPG data segment as X, the normalized
+6
+Task TaskType(Nclass) DataSource Channels #participants Datasize Length
+Stanford[42] 1 163 285h 25s
+AFDetection Classification(2)
+Simband[43] 1 98 7h 30s
+MentalLoad MentalStressPPG[44] 1 27 4.5h 5s
+Classification(2)
+Assessment MAUS[45] 1 22 3.7h 5s
+ActivityRecognition Classification(3) PulseTransitPPG[46] 2 22 9h 5s
+HumanIdentification Classification(35) RealWorldPPG[47] 1 35 3.5h 6s
+SleepDisordered[48] 1 146 1,400h 10s
+SPO2Estimation Regression BIDMC[49] 1 53 7h 30s
+MIMIC-III[50] 1 4,382 6,500h 30s
+SkinTemperature PulseTransitPPG[51] 2 22 9h 5s
+Regression
+Estimation MIMIC-III[50] 1 73 2,516h 30s
+WESAD 1 17 96.4h 8s
+DALIA 1 15 143.8h 8s
+HeartRate
+Regression Gyro-Acc-PPG[52] 3 24 5.6h 10s
+Estimation
+BUTPPG[53] 1 50 10.8h 10s
+WelltoryPPG 3 13 0.5h 5s
+BIDMC 1 53 7h 30s
+Potassium MIMIC-III 1 5,842 6,500h 30s
+Regression
+Estimation Inst.A[54] 1 21,000 143h 30s
+Sodium MIMIC-III 1 5,826 6,500h 30s
+Regression
+Estimation Inst.A 1 21,446 150h 30s
+Glucose MIMIC-III 1 5,602 6,500h 30s
+Regression
+Estimation Inst.A 1 6199 152h 30s
+A1CEstimation Regression Inst.A 1 1895 152h 30s
+Troponin MIMIC-III 1 1,548 6500h 30s
+Regression
+Estimation Inst.A 1 4014 182h 30s
+Lactate MIMIC-III 1 4500 6500h 30s
+Regression
+Estimation Inst.A 1 3746 300h 30s
+RespirationRate BIDMC 1 53 7h 30s
+Regression
+Estimation MIMIC-III[50] 1 4,397 6,500h 30s
+PPG-BP[55] 1 219 0.4h 2.1s
+Aurora-Oscillometric[56] 1 1125 170.1h 30s
+BloodPressure Aurora-Auscultatory[56] 1 1125 20.9h 30s
+Regression
+Estimation CAS-BP[57] 4 1272 334h 30s
+VitalVideos[58] 2 880 7.3h 30s
+BCG 1 40 4.6h 30s
+BUTPPG[53] 1 50 10.8h 10s
+Inst.A(PRInterval) 1 7351 546h 30s
+ECGmetrics
+Regression Inst.A(QRSInterval) 1 7351 546h 30s
+Estimation
+Inst.A(QTInterval) 1 7351 546h 30s
+ECHOmetrics Inst.A(LVEF) 1 3467 148h 30s
+Regression
+Estimation Inst.A(LVMass) 1 2887 144h 30s
+Cholesterol Inst.A(HDL) 1 1645 172h 30s
+Regression
+Estimation Inst.A(LDL) 1 1619 158h 30s
+Table 1: Overview of datasets for downstream tasks.
+segment X can be represented as
+n
+X−min(X)
+X = . (1)
+n max(X)−min(X)
+SincethePPG-GPTmodelistrainedon40Hzdata,weresampleallevaluationdatasets
+to the sampling frequency of 40Hz. We also repeat signals to increase their length to
+30s whenever the signal is short. We conduct the same processing for MOMENT, as it
+is a flexible model that is trained with data at different sampling rates.
+7
+4.1.1 Multi-purpose datasets
+Some datasets are endowed with multiple labels, which can be used to obtain subsets
+of data for different purposes and tasks. Here, we list such datasets.
+MIMIC-III [50]. Following standard practice, we use 30s, 125Hz, single-channel
+PPG signals (downsampled to 40Hz for experiments) from the MIMIC-III Wave-
+form Database Matched Subset (MIMIC3WDB-matched) [50], Version 1.0. The
+MIMIC3WDB-matched dataset comprises various types of physiological signals, includ-
+ing PPG, ECG, and Arterial Blood Pressure (ABP), along with corresponding time
+seriesofvitalsignscollectedfrombedsidemonitorsfor10,282distinctadultandneona-
+tal patients in the Intensive Care Unit (ICU). We first derive three sub-datasets for
+vitalsignsestimation,including:(1)SpO2estimation,(2)bodytemperatureestimation,
+and (3) respiration rate estimation, all sourced directly from MIMIC3WDB-matched.
+Vital signs in the dataset are available at two frequencies: 1 Hz and 0.0167 Hz. For
+this study, we use the 1 Hz vital sign time series and link them to the corresponding
+high-frequency PPG signals. To ensure temporal alignment, we only retain samples
+where both the PPG signals and vital signs have continuous, overlapping 30s segments.
+Additionally, we derive five laboratory measurement estimation sub-datasets by linking
+PPG signals from MIMIC3WDB-matched to corresponding laboratory test results
+from the MIMIC-III Clinical Database [59]. The laboratory measurements include:
+(1) Potassium, (2) Sodium, (3) Lactate, (4) Glucose, and (5) Troponin-T. Laboratory
+tests occur at variable and irregular time intervals. For each lab result, we associate all
+PPG segments recorded within a one-hour window before the laboratory test time as
+corresponding PPG samples. Unlike prior studies [60], which may use a time window
+extending both before and after the lab test (e.g., -1 hour to +1 hour), our approach
+avoids potential data leakage by ensuring the PPG signals precede the lab result, thus
+preserving temporal causality for model development.
+UCSF ICU dataset [9, 54]. This multi-modal data was obtained in the intensive
+careunitsofUCSFMedicalCenterbetweenMarch2013andDecember2018.Itconsists
+of multi-channel physiological waveforms, bedside monitor alarms, vital signs, and
+associated EHR from over 24,100 patients. The waveforms consist of 7-lead ECGs (I,
+II, III, V, AVR, AVL, AVF), PPG, and respiration rate, which we all downsample
+to 40 Hz. This collection was conducted with an approved waiver of written patient
+consent under the UCSF Institutional Review Board (IRB number: 14-13262). For
+the pre-training of the PPG-GPT foundation model, we use half of the total available
+data, i.e., 1.3 million hours, divided into non-overlapping 30-second segments. For
+this dataset, we follow similar data and label extraction methodologies to those used
+in MIMIC-III. Note that this dataset is not publicly available; however, it can be
+replacedwithMIMIC-IIIforallpurposesduetothesimilaritybetweenthetwodatasets.
+We can additionally utilize this dataset for conducting in-domain testing. As noted
+in Table 1, we prepare 13 labeled subsets which includes blood-chemistry markers
+(K+/Potassium, Na+/Sodium, Glucose, Hemoglobin A1C/HbA1c, Troponin, Lactate),
+Echocardiography/ECG metrics (PR, QRS, QT interval), Echocardiogram/ECHO
+metrics (Left Ventricular Ejection Fraction/LVEF, Left Ventricular Mass/LVMass),
+High and Low Density Lipo-protein (HDL, LDL) Cholesterol. All these tasks belong
+to the regression task type, and the amount of data with labels present can vary from
+8
+approximately 150 hours to over 500 hours, due to varying lab test frequencies. For
+evaluating out-of-domain performance, we primarily leverage MIMIC-III data, which
+we noted is similar to UCSF. In this paper, we also refer to the UCSF dataset as
+Institute A or simply Inst. A for brevity.
+BIDMC [61]. The BIDMC PPG and Respiration Dataset was derived from the much
+larger MIMIC-II [62] database, which was obtained from critically ill patients at the
+Beth Israel Deaconess Medical Centre (Boston, MA, USA). Using the 53 recordings
+within the dataset, each of 8 minutes’ duration, we derive the resampled 40 Hz PPG
+signals and SPO2 and heart rate labels. To derive these labels per 30s segment, we
+choose the median value.
+BUT PPG [53].WeusedtheBrnoUniversityofTechnologySmartphonePPG(BUT-
+PPG) database, consisting of 3,888 10s recordings of PPGs and corresponding ECG
+signals (for HR determination). Simultaneous BP estimates were also provided by a
+device suitable for diabetes and hypertension. This dataset is balanced across genders
+and can therefore be used to evaluate the bias of foundation models (Table 15).
+4.1.2 AF Detection
+Stanford Dataset [42]. The Stanford dataset comprises PPG recordings obtained
+from 163 individuals in ambulatory settings. We utilize the complete dataset with
+predefinedtrain,validation,andtestsplits,ensuringnooverlapofparticipantsbetween
+sets to avoid data leakage and ensure fair evaluation. Note that duplicate signals
+were removed from the original dataset, resulting in a total of 41,114 PPG segments
+(12,690 AF and 28,424 non-AF), each with a duration of 25 seconds, amounting to
+approximately 285 hours of recordings.
+SimbandDataset[43].TheSimbanddatasetcontainsPPGrecordingscollectedusing
+the Samsung Simband smartwatch from 98 participants, including 45 with AF and 53
+with other cardiac rhythms. The dataset is divided into 857 30-second segments, with
+348 AF segments and 509 non-AF segments, totaling approximately 7 hours. Simband
+was collected from patients at Emory University Hospital undergoing AF ablation,
+who consented to wear a study device for signal collection under IRB (00084629).
+4.1.3 Mental Load Assessment
+Mental Stress PPG [44]. This dataset includes PPG signals collected from 27
+healthy university students (15 male, 12 female; mean age 21) using an ear-lobe sensor
+connected to an Arduino device. Recordings are taken during a baseline resting stage
+and while participants perform a Stroop test to induce stress, simulating real-life
+conditions outside a controlled lab. The dataset comprises 153 stress segments and 133
+non-stress segments, each lasting 60 seconds, totaling 4.5 hours.
+MAUS [45]. MAUS is a dataset for mental workload assessment using PPG signals
+collected from a wristband. It includes data from 22 participants who completed the
+PSQI questionnaire during resting sessions and performed N-back tasks during stress-
+inducing sessions. The dataset contains 1,575 stress segments and 1,575 non-stress
+segments, each lasting 5 seconds, totaling approximately 3.7 hours of recordings.
+9
+4.1.4 Human Activity Recognition
+Pulse Transit Time PPG Dataset [46]. This dataset contains two-channel PPG
+recordings from 22 healthy subjects (16 male, six female) performing three physical
+activities: sitting, stationary walking, and running. Participants range in age from 20
+to 53, with a mean age of 28.52 years. The dataset is evenly divided across the three
+activities, comprising 6,724 segments that last 5 seconds each, totaling approximately
+9 hours.
+4.1.5 Human Identification
+Real World PPG [47].TheReal-WorldPPGdatasetcomprises6-secondwrist/finger
+PPGsegmentsfrom35healthyparticipants(aged10-75,withameanageof28.4years),
+acquiredusinganIoTPPGsensorineveryday(uncontrolled)conditions.Eachsegment
+has300samplesat50Hz.Theauthorsprovideafixedsplit:1,374segmentsfortraining
+(66%) and 700 for testing (34%), which we adopt for 35-way subject identification. We
+report top-1 accuracy on the official test set. Several works utilize this corpus as a
+baseline for PPG biometrics and denoising under realistic noise conditions.
+4.1.6 SPO2 Estimation
+Sleep Disorder [48]. This pediatric cohort comprises 146 children referred for
+overnight polysomnography. Additionally, a phone Oximeter recorded PPG at 62.5 Hz
+and SpO2 at 1 Hz on an adjacent finger, producing full-night traces per subject. We
+segment the PPG into non-overlapping 10-s windows and pair each window with the
+contemporaneous SpO2 value (or short-term average) as the regression target, yielding
+4.35 million seconds of data (1.21k hours) across all recordings.
+4.1.7 Heart Rate Estimation
+WESAD [63]. WESAD is a controlled lab corpus of 15 adults wearing a chest
+RespiBAN and wrist Empatic E4 under neutral, stress, and amusement conditions.
+Numerous simultaneous signals are drawn, and we retain the PPG signals, resampling
+themto40Hz.Notethatweextractsignalsforallmentalandemotionalstates,resulting
+in diverse testing sets.
+DALIA [64]. We used PPG-DaLiA, a daily living dataset of 15 adults wearing a
+wrist Empatica E4 and chest RespiBAN while performing eight real-world activities
+(e.g., sitting, walking, stair climbing, cycling, driving, lunch, table soccer, working)
+plus transitions. Similar to WESAD, parallel signals are collected, like ECG and 3-axis
+acceleration, but we discard them. A key difference between WESAD and DALIA is
+that the former is a controlled stress/affect lab corpus, and the latter is an ambulatory
+daily-living PPG dataset targeting HR under motion.
+Gyro-Acc-PPG[52].Thisdatasetincludes3-channelPPGrecordingsfrom24healthy
+subjects (10 male, 14 female; average age 26.9 ± 4.8 years) recruited at Wonkwang
+University. Participants perform walking and running on a treadmill while their heart
+rate is monitored. The dataset contains 432 PPG segments, each 10 seconds long,
+totaling approximately 5.6 hours.
+10
+Welltory PPG [65].Thisdatasetcontains3-channelPPGrecordingsfrom13healthy
+participants aged 25–35. Each participant performs one or two measurements using a
+smartphone camera via the Welltory app, resulting in a total of 352 5-second PPG
+segments.
+4.1.8 Blood pressure estimation
+PPG-BP [55]. The PPG-BP dataset comprises 657 PPG segments, each 2.1 seconds
+inlength,collectedfrom219participants.Participantsrangeinagefrom20to89years
+and include individuals with conditions such as hypertension and diabetes. The signals
+are sampled at a high rate of 1 kHz, though the total duration amounts to only 0.38
+hours.
+Microsoft Aurora [56]. This dataset, obtained with a Data Use Agreement (DUA),
+includes BP estimation results from 1,125 participants aged 21 to 85 (49.2% female)
+across multiple hypertensive categories. BP is measured in the lab over 24 hours
+using both auscultatory and oscillometric methods, with a subset of participants also
+undergoing ambulatory monitoring. In the oscillometric setting, there are 12,246 PPG
+segments,whiletheauscultatorysetupincludes1,511segments,eachlasting30seconds.
+CAS-BP [57]. This dataset comprises 29,568 PPG recordings collected from 3,077
+participants using a smartwatch. Participants range in age from 18 to 75 (65.16%
+female), and 35.91% of participants have a history of hypertension. Reference BP
+readings were obtained via dual-observer manual auscultation before and after each
+data recording session. Participants wore the smartwatch for 2 minutes to acquire
+signals. This procedure was repeated three times per day with a 5-minute interval.
+Recordings were collected on four different days within a month (D, D+7, D+14, and
+D+21), resulting in a maximum total of 12 recordings per participant.
+Vital Videos [58]. This corpus, obtained with a DUA, contains recordings from 850
+unique participants. For each participant, the study captured two 30-second uncom-
+pressed face videos synchronized with contact PPG and a single cuff BP measurement;
+demographics (age, sex, and skin tone) were also recorded. We treat each 30s clip as
+one sample and 1) derive HR/PR labels from the simultaneously recorded contact
+PPG, and 2) pair both clips with the participant’s single BP label for BP estimation.
+BCG [66]. This dataset includes time-aligned ECG, PPG, and Ballistocardiography
+(BCG) data, as well as continuous blood pressure data, collected from 40 participants
+aged 18 to 65 (57.5% female). 10% of participants have a history of cardiovascular-
+related conditions. Data collection was conducted in the lab using a custom bed
+system, resulting in over 4.5 hours of data being collected. All signals were sampled
+synchronously at a rate of 1 kHz.
+4.1.9 Cross-modality datasets
+For cross-modality tasks, we investigate whether the PPG FM backbone can translate
+to brain-related targets as well as signals, which are derived from different sensors and
+anatomical mismatches. First, we pursue Intra-Cranial Pressure (ICP) [67, 68] predic-
+tionusingCerebralBloodFlowVelocity(CBFV)recordingsmeasuredviaTranscranial
+Doppler (TCD) technology. In other words, we regress CBFV signals to invasive ICP
+11
+valuesusingaPPGFMmodel,Thisisimportantsincethetimelydetectionofintracra-
+nial hypertension can guide therapy. Second, we pursue Electroencephalography (EEG)
+based sleep/wake binary classification [69]. In this task, we regress EEG signals to
+binary values using the PPG FM model. These two tasks are interrelated, and even
+their signal dynamics may share some commonalities. Even though we pursue these
+tasks independently, effective adaptation of PPG FM can guide the development of
+non-invasive sensors at the bedside.
+CBFV-ICP This dataset that we collected contains ICP and CBFV recordings from
+156 patients across six institutions, including 75 from the University of California, Los
+Angeles (UCLA), 25 from the University of California, Davis (UCD), one from Emory
+University (IRB: STUDY00004039), 35 from Brain4Care (IRB: NCT03144219), one
+fromNeuraSignal,Inc(IRB:14430),and19fromWroclawMedicalUniversityinPoland
+(IRB: KB-620/2020, KB-133/2023). The data from these institutions were obtained
+under Emory-approved DUAs. Each recording is 360 heartbeats with a sampling
+frequency of 400Hz, resulting in a total of 448 recordings. All the patients have various
+intracranialdiseases,includingtraumaticbraininjury(TBI),subarachnoidhemorrhage
+(SAH), and other diseases such as intraparenchymal hematoma, subdural hematoma,
+intraventricular hemorrhage (IVH), pontine hemorrhage, epidural hemorrhage, stroke,
+neoplasm, lumbar stenosis, and intracerebral hemorrhage (ICH). The participants
+range in age from 18 to 89, with a female population of 54.02%.
+Sleep-EDF [69]FortheEEGsleepclassificationtask,wederivedabinarysleep/wake
+datasetfromtheexpandedSleep-EDFDatabase.Sleep-EDFofferscomprehensivewhole-
+night Polysomnography with Electroencephalography (EEG) (Fpz–Cz and Pz–Oz) and
+additional signals. It also consists of expert hypnograms scored in 30-s epochs. From
+each night, we extracted the Fpz–Cz EEG channel and down-sampled to 40 Hz. We
+synchronizedtothehypnogramandbinarizedlabels,assigningwake(W)=0andsleep
+= 1 for all non-W stages (R, N1–N3), with movement time treated as sleep. We then
+segmented the EEG into non-overlapping 30s windows (the standard scoring epoch)
+and assigned each window the majority label within the 30-s interval.
+4.2 Train & Test Split
+In-domainEvaluation.In-domainevaluationreferstothescenariowherethetraining,
+validation, and testing sets are drawn from the same dataset. For all downstream tasks
+and datasets, except for user identification, we employ an inter-patient evaluation
+scheme in which the training and testing data are derived from different groups of
+participants to assess the model’s generalizability. This approach is more practical and
+reflective of real-world scenarios. Specifically, for smaller datasets with fewer than 30
+participants, we apply a leave-one-out methodology. In this setup, each participant’s
+data serves as the testing set, while the remaining participants’ data are split into
+training and validation sets in a 4:1 ratio. It is important to note that the training and
+validation sets share the same data distribution (i.e., data from the same participants
+can be included in both sets). This process is repeated until every participant has been
+used as the testing set, and the average performance across all iterations is reported
+as the final result for the given dataset. In each iteration, we select the model with
+the best performance on the validation set to assess its performance on the test set.
+12
+For larger datasets, where the number of participants exceeds 30, we randomly split
+the data into training, validation, and test sets based on participant IDs, using a
+4:1:1 ratio. Similar to the leave-one-out methodology, the model achieving the best
+performance on the validation set is subsequently evaluated on the test set to assess
+its final performance. Due to the inherent characteristics of user identification, the
+data from all participants must be included in the training set. Therefore, we simply
+randomly split the entire dataset into training, validation, and test sets. For user
+identification tasks, only in-domain evaluation is performed.
+Theunitsforlabelsforheartratearebpm(beatsperminute),forpotassiummEq/L,
+for sodium mEq/L, for glucose mg/dL, for troponin-T ng/ml, for SPO2 is percentage,
+forskintemperatureCelsius,forbloodpressuremmHg,forA1Cpercentage,forlactate
+mmol/L, for ECG metrics millisecond, for LVEF percentage, and for LVMass grams.
+Out-domain Evaluation. Additionally, we evaluate out-of-domain performance,
+whereamodeltrainedononedatasetistestedonadifferentdataset.Allavailabledata
+in the training set is used to fine-tune the foundation model, which is then evaluated
+on the entire testing set.
+4.3 Fine-tuning Strategies
+For each dataset and both models (PPG-GPT and MOMENT), we use two fine-
+tuning strategies to evaluate the robustness of the models: (1) Fine-tune task-head
+only (“head tuning”), in which we freeze the foundation model and fine-tune only
+the task-specific classification or regression head. This method assesses how well the
+pre-trained representations transfer to new tasks with adaptation; and (2) Fine-tune
+the whole model (“full tuning”), in which we fine-tune the entire model, including the
+foundation model and the task head. This allows us to evaluate the models’ ability to
+adapt to new datasets with more training capability by updating all parameters. Our
+preliminary experiments, informed by initial parameters from authors of prior works
+on MOMENT and GPT, resulted in two configs for full and head tuning.
+4.4 Evaluation Metrics
+Tocomprehensivelyassesstheoverallrobustness,accuracy,andcapabilityofMOMENT
+and PPG-GPT across diverse datasets and training strategies, we evaluate their
+performance from seven key perspectives:
+Win score. A straightforward metric that counts the number of tasks for which the
+best performance is achieved by a model among competing models. We also use win
+score combined, which sums up the win scores of models belonging to a particular
+subset to facilitate group-level analysis.
+Average Performance. We primarily use F1-score or accuracy to evaluate perfor-
+mance on classification tasks and Mean Absolute Error (MAE) for regression tasks.
+ThefinalaverageperformanceofeachmodeliscomputedasthemeanF1-scoreorMAE
+across all datasets and training strategies. F1-score is defined as 2· Precision·Recall , in
+Precision+Recall
+which precision is the ratio of true positives to predicted positives, and recall is the
+ratio of true positives to actual positives. MAE is simply defined as 1 (cid:80)N |y −yˆ|,
+N i=1 i i
+13
+in which y and yˆ are the ground truth and predicted values for the i-th sample,
+i i
+respectively.
+Scalability.Weadoptalog-performancescalinglaw approach,inspiredbypriorstudies
+on large-scale models. The goal is to evaluate how model performance varies as the
+model size increases, using the following equation:
+Performance=a·log(Model Size)+b. (2)
+We use the number of parameters for each model on a log scale, and fit a linear
+regression between the log-transformed model size and the corresponding average
+performance.The slope coefficient a from the fitted line quantifies the model’s
+scalability. A higher value of a indicates stronger scalability, suggesting that the
+model benefits more from an increase in parameters.
+Feature Quality. Feature quality is reflected by the model’s average performance
+whenonlythetaskheadisfine-tuned,withthefoundationmodelkeptfrozen[70].This
+metric is crucial for evaluating the generality of the pretrained representations without
+relying on full model tuning.
+Tuning Gain. Tuning Gain quantifies the relative improvement in performance
+achieved by fully fine-tuning the model compared to tuning only the task head. It is
+computed as:
+1 (cid:88)N Pfull−Phead
+Tuning Gain= i i , (3)
+N Phead
+i=1 i
+,wherePhead andPfull arethemodel’sperformance(e.g.,F1-scoreorinverseMAE)
+i i
+on the i-th task when only the classification head is fine-tuned and when the whole
+model is fine-tuned, respectively. This metric highlights the additional benefit gained
+from full model fine-tuning, indicating whether full fine-tuning is truly necessary for a
+given model and task setup.
+Variance. To quantify performance stability across tasks and model configurations,
+we compute the Normalized Standard Deviation (NSD) as a measure of relative
+variance. It is defined as:
+σ
+NSD= , (4)
+µ
+, where σ is the standard deviation and µ is the mean of the model’s performance
+scores across all datasets and tuning strategies.
+Transferability. In real-world scenarios, it is common for test data to differ from
+the dataset used during training. Therefore, transferability, defined as the model’s
+performance on an unseen dataset that was not used in the training phase, is a critical
+metric. We evaluate transferability by measuring the average performance on such
+unseen datasets for each model.
+5 Performance on Classification Tasks
+In Tables 2 and 3, we present the classification results for head and full fine-tuning,
+respectively. The corresponding results are visualized as a radar chart in Fig. 1. Under
+14
+the head-only fine-tuning setting, PPG-GPT achieves notably higher F1 scores on AF
+detection datasets, particularly for the smaller 19M and 85M models. However, the
+largest345MmodelunexpectedlyyieldsthelowestperformanceontheStanforddataset,
+suggesting that increasing model size does not necessarily guarantee improved results.
+Similar trends are observed for the Human Identification and Mental Stress datasets,
+where the largest PPG-GPT model also performs the worst. A plausible explanation
+is that, in the head-only fine-tuning setting, the pre-trained feature representations
+of large models may not align well with the data distribution of the downstream
+task. Since the backbone is frozen, such mismatches cannot be corrected during the
+adaptation process. This issue is more pronounced for PPG-GPT, whose pre-training
+datadistributionisrelativelycentralized,andlesssevereforMOMENT,whichbenefits
+from pre-training on a more diverse set of datasets. Larger models tend to learn
+more task-agnostic and abstract representations during pre-training, which may fail to
+capture the fine-grained features required for specific downstream physiological signal
+tasks,resultinginunderutilizationoftheircapacitywhenonlytheclassificationheadis
+updated.Anothercontributingfactorispotentialunderfittingintheclassificationhead:
+given a frozen, high-dimensional feature space from a large model, a small task-specific
+head may struggle to generalize when trained on limited downstream data, particularly
+if the extracted features are not well-structured for the target task.
+MOMENT PPG-GPT
+Task/Dataset (Metric)
+40M 125M 385M 19M 85M 345M
+AF Detection (F1 Score) ↑
+Stanford 55.47% 61.20% 66.74% 83.22% 84.24% 59.43%
+Simband 59.74% 58.19% 58.33% 63.27% 58.48% 66.67%
+Mental Workload (F1 Score) ↑
+MAUS 65.96% 62.90% 72.72% 56.54% 55.24% 58.44%
+Mental Stress PPG 71.91% 71.11% 72.97% 71.91% 71.11% 51.72%
+Activity Recognition (Accuracy) ↑
+Pulse Transit 77.03% 75.99% 82.09% 67.51% 66.91% 67.29%
+Human Identification (Accuracy) ↑
+Real-world PPG 83.57% 89.71% 81.00% 83.00% 81.86% 43.86%
+SCORE-class-head 0/6 1/6 3/6 0/6 1/6 1/6
+SCORE-class-head-comb 4/6 2/6
+Table 2: Comparison between MOMENT and PPG-GPT on classification tasks by
+fine-tuning only the task head. Higher values are better. Bold and underline represent
+the best and second-best performance, respectively.
+From the combined win scores of both tables for head-tuning and full-tuning,
+we observe that MOMENT outperforms GPT. In fact, full-tuning improves the win
+score for MOMENT from 4 to 5 (out of 6). We observe that the clinically meaningful
+arrhythmia detection task benefits more from waveform-level nuance captured by
+GPT embeddings, as evidenced by the best scores achieved by GPT in both tuning
+configurations. The benefits of model scaling are mostly evident in MOMENT under
+head-only fine-tuning; in other cases, increased capacity is underutilized, likely due to
+15
+Fig. 1: Radar chart visualizations comparing the classification performance of
+MOMENT and PPG-GPT models with fine-tuning the whole model. Detailed results
+are provided in Table 3.
+MOMENT PPG-GPT
+Task/Dataset (Metric)
+40M 125M 385M 19M 85M 345M
+AF Detection (F1 Score) ↑
+Stanford 85.59% 83.55% 89.63% 87.61% 86.81% 86.41%
+Simband 64.32% 55.22% 64.84% 65.74% 66.34% 70.29%
+Mental Workload (F1 Score) ↑
+MAUS 68.24% 68.01% 66.03% 62.78% 64.04% 61.89%
+Mental Stress PPG 72.50% 72.73% 71.11% 69.66% 71.11 62.50%
+Activity Recognition (Accuracy) ↑
+Pulse Transit 86.99% 87.96% 84.23% 80.89% 80.30% 75.91%
+Human Identification (Accuracy) ↑
+Real-world PPG 95.30% 92.43% 89.86% 86.43% 88.00% 72.71%
+SCORE-class-full 2/6 2/6 1/6 0/6 0/6 1/6
+SCORE-class-full-comb 5/6 1/6
+Table 3: Comparison between MOMENT and PPG-GPT on classification tasks by
+fine-tuning the full model.
+optimizationchallengesandthelimitationsofadaptingfrozenfeatures.Notableoutliers,
+such as the 345M PPG-GPT’s low 51.72% accuracy for Mental Workload detection
+in the Mental Stress PPG dataset under head-only fine-tuning, further underscore
+that larger models without sufficient adaptation may perform worse than their smaller
+counterparts.
+Seven-Dimension analysis. Fig. 2 illustrates the comparison across the seven
+predefined metrics. We appropriately invert and normalize metrics such that a more
+spread-out radar denotes better performance in all axes. We observe that MOMENT
+demonstrates superior performance over PPG-GPT in several key aspects.
+• Win Score: MOMENT achieves a significantly higher win score (9 vs. 3, when com-
+bining head and full tuning scores), indicating that it delivers the best performance
+in more individual tasks.
+• Performance: Similar to win score, MOMENT shows stronger average performance
+(73.2% vs. 68.8%), reflecting its overall superiority across multiple tasks & datasets.
+16
+Metric(↑↓) MOMENT PPG-GPT
+WinScore(↑) 9 3
+Performance(↑) 73.22% 68.76%
+FeatureQuality(↑) 69.70% 64.78%
+TuningGain(↑) 10.52 13.54
+Variance(↓) 16.08 17.75
+Transferability%(↑) 57.46 66.90%
+Scalability(↑) 59.73 -4.48
+Table 4: Metric comparison for classifica-
+tion.
+Fig. 2:Comparisonofsevenclassification
+dimensions
+• Feature Quality: MOMENT also exhibits better feature quality (69.7 vs. 64.8),
+indicating that its pre-trained representations generalize more effectively when the
+backbone is frozen.
+• Tuning Gain and Variance: PPG-GPT performs slightly better in tuning gain (13.5
+vs. 10.5) but worse at variance (17.8 vs. 16.1), implying that it can gain more from
+full fine-tuning but at the cost of potentially less stability.
+• Transferability: PPG-GPT leads in transferability (66.9 vs. 57.5), indicating better
+generalization to unseen datasets.
+• Scalability: MOMENT has a significantly higher scalability score (59.7 vs. -4.5),
+indicating that its performance benefits more consistently from increased model size.
+Overall, MOMENT achieves stronger baseline performance, scalability, and rep-
+resentation quality on classification tasks, likely due to its pretraining on a broader
+range of sensing modalities, device types, and acquisition conditions, which fosters
+robust and generalizable representations even within the PPG domain. In contrast,
+PPG-GPT’smorehomogeneous,PPG-focusedpretraininglimitsbaselinegeneralitybut
+yieldshighertransferabilityandfine-tuninggains,asitsrepresentationsarewell-aligned
+with PPG-specific patterns and can benefit more from full-model adaptation.
+6 Performance on Regression Tasks
+We have 14 unique task types for regression evaluations, which cover the majority of
+tasks in this paper. Due to multiple datasets used for each task, we have a total of 45
+tasks (counting systolic BP, diastolic BP, LDL, and HDL separately). For readability,
+we split the results into two tables (part 1 (p1) and part 2 (p2)) for both configs: head
+tuning (Table 5,7) and full fine-tuning (Table 6,8). The three accompanying radar
+charts are Fig. 3-5.
+Table 5 summarizes results across five types of tasks. Unlike in classification, for
+regressiontasks,PPG-GPTachievesasubstantiallyhighernumberofbestresults(17vs.
+10) under head-only fine-tuning, outperforming MOMENT in nearly all task categories
+17
+MOMENT PPG-GPT
+Task/Dataset(MAE)
+40M 125M 385M 19M 85M 345M
+SPO2Estimation(MAE)↓
+SleepDisorder 3.68 3.53 5.42 6.75 4.04 4.05
+BIDMC 5.07 3.54 3.64 2.03 2.58 2.44
+MIMIC-III 2.56 2.57 2.59 2.86 2.31 2.46
+SkinTemperatureEstimation(MAE)↓
+MIMIC-III 1.24 1.45 1.40 1.16 0.83 1.23
+PulseTransit 2.20 1.28 1.42 1.08 1.24 1.22
+HeartRateEstimation(MAE)↓
+WESAD 10.41 10.03 9.69 10.88 10.43 10.32
+DALIA 13.24 12.61 10.59 16.87 16.10 17.09
+BIDMC 8.72 9.40 9.28 10.58 10.34 9.68
+Gyro-Acc-PPG 21.73 21.03 21.34 20.23 20.26 20.26
+Welltory-PPG 8.33 8.42 8.76 10.70 12.14 8.76
+BUT-PPG 10.36 10.43 10.54 11.47 11.77 11.66
+RespirationRateEstimation(MAE)↓
+BIDMC 2.18 2.15 2.13 1.86 1.98 2.04
+MIMIC-III 4.63 4.63 4.64 4.64 4.61 4.61
+BloodPressureEstimation(Diastolic/Systolic)(MAE)↓
+PPG-BP 9.13/16.68 9.17/17.28 9.57/17.01 43.10/17.44 60.08/18.07 32.03/16.62
+Aurora-Oscillometric 22.74/25.44 22.48/25.60 21.49/25.07 8.43/20.97 8.18/20.96 8.52/20.91
+Aurora-Auscultatory 11.34/15.18 10.00/14.10 10.70/16.54 9.71/13.77 9.74/13.77 9.71/13.77
+CAS-BP 8.81/14.69 8.96/14.98 8.94/14.91 8.40/14.33 8.42/14.33 8.40/14.31
+VitalVideos 7.89/18.22 7.91/18.31 7.98/18.19 23.53/67.27 8.87/42.54 8.12/18.59
+BCG 5.75/5.71 5.81/4.39 5.32/6.47 5.82/4.23 5.59/4.10 6.34/4.45
+BUT-PPG 8.67/47.33 9.49/41.94 13.09/48.30 7.75/15.75 9.12/16.83 8.64/16.50
+SCORE-reg-head-p1 5/27 1/27 4/27 7/27 5/27 5/27
+SCORE-reg-head-p1-comb 10/27 17/27
+Table 5: Comparison between MOMENT and PPG-GPT on regression tasks by fine-
+tuning only the task head for in-domain evaluation (Group 1).
+exceptforheartrateestimation.Specifically,PPG-GPTachievestopperformanceonall
+datasetsforbothskintemperatureandrespirationrateestimation,andsecuresthebest
+resultsontwooutofthreedatasetsforSPO2estimation.Forbloodpressureestimation,
+oneofthemostchallengingtasksinphysiologicalsignalprocessing,weobservethemost
+unstable and highly variable performance patterns. PPG-GPT outperforms MOMENT
+on nearly all datasets for SBP estimation (except for Vital Videos), whereas for DBP
+estimation,bothMOMENTandPPG-GPTyieldcompetitiveresultsacrossalldatasets.
+MOMENT achieves its best performance on the BCG dataset at 385M parameters
+with MAE values of 5.32/6.47 for diastolic/systolic BP, while maintaining relatively
+stable performance with model scaling on other datasets. PPG-GPT demonstrates
+superior performance at smaller scales on specific datasets, with the 19M model
+achieving notably strong results on Aurora-Auscultatory (43.10/17.44) and BUT-PPG
+(7.75/15.75). However, PPG-GPT shows significant improvement on the Vital Videos
+dataset from 19M (23.53/67.27) to 345M (8.12/18.59). PPG-GPT achieves the best
+overall performance on the BCG dataset at 85M parameters (5.59/4.10). Both models
+perform consistently on datasets, with CAS-BP showing stable performance across
+different model sizes (MAE values of 8.4-8.9 for diastolic and 14.3-14.9 for systolic BP)
+and similar results on Aurora-Auscultatory tasks. PPG-GPT demonstrates superior
+performance on the Aurora-Oscillometric dataset, which utilizes a smartwatch-based
+data collection approach with both controlled and ambulatory measurements. The
+18
+BCG dataset reveals different scaling patterns, suggesting that the optimal model
+choice depends on both the dataset’s characteristics and the available computational
+resources. The results suggest that controlled clinical environments may favor the
+generalistapproach,whilereal-worldambulatoryscenariosmaybenefitfromspecialized
+architectures.
+MOMENT PPG-GPT
+Task/Dataset(Metric)
+40M 125M 385M 19M 85M 345M
+SPO2Estimation(MAE)↓
+SleepDisorder 3.94 3.44 4.28 4.25 4.05 4.00
+BIDMC 2.54 2.56 2.57 1.93 1.65 0.94
+MIMIC-III 2.25 2.25 2.24 2.28 2.38 2.37
+SkinTemperatureEstimation(MAE)↓
+MIMIC-III 2.52 2.02 1.98 1.32 0.91 1.31
+PulseTransit 1.28 1.28 1.28 0.90 0.91 0.94
+HeartRateEstimation(MAE)↓
+WESAD 10.87 10.86 10.86 10.89 10.51 10.52
+DALIA 12.98 11.67 10.84 8.86 7.83 7.97
+BIDMC 9.83 9.57 4.55 1.99 1.73 1.98
+Gyro-Acc-PPG 20.79 20.72 20.48 20.99 21.80 21.18
+Welltory-PPG 7.30 7.25 7.18 9.05 8.91 6.61
+BUT-PPG 10.68 10.77 10.78 11.50 11.58 10.25
+RespirationRateEstimation(MAE)↓
+BIDMC 2.09 2.09 2.09 1.23 1.17 1.40
+MIMIC-III 4.64 4.63 4.63 4.53 4.47 4.56
+BloodPressureEstimation(Diastolic/Systolic)(MAE)↓
+PPG-BP 9.17/17.07 9.14/17.10 9.16/16.99 10.27/16.25 9.85/16.78 9.42/16.67
+Aurora-Oscillometric 21.11/25.11 22.19/25.12 23.82/25.11 7.96/20.44 7.21/20.45 7.35/20.43
+Aurora-Auscultatory 13.79/13.82 9.70/13.77 9.79/13.83 9.74/13.77 9.78/13.77 9.74/14.15
+CAS-BP 8.39/14.39 8.39/14.30 8.42/14.30 8.49/14.34 8.49/14.36 8.48/14.36
+VitalVideos 7.95/18.19 7.97/18.19 7.86/18.24 7.93/18.30 7.91/18.20 7.86/18.37
+BCG 5.86/4.46 5.86/4.46 5.86/4.60 7.32/4.31 6.13/4.37 6.65/4.45
+BUT-PPG 8.46/33.00 8.93/17.39 8.46/16.61 7.86/15.53 7.79/16.86 7.74/15.53
+SCORE-reg-full-p1 1.33/27 5.17/27 3.33/27 3.83/27 7.33/27 6/27
+SCORE-reg-full-p1-comb 9.83/27 17.16/27
+Table 6: Comparison between MOMENT and PPG-GPT on regression tasks by fine-
+tuning the whole model for in-domain evaluation (Group 1).
+Fig. 3: Radar chart comparing the regression performance of MOMENT and PPG-
+GPTmodelswithfine-tuningthewholemodel(Group1).Detailedresultsareprovided
+in Table 6.
+19
+Fig. 4: Radar chart comparing the regression performance of MOMENT and PPG-
+GPT models with fine-tuning the whole model (Group 2 partially). Detailed results
+are provided in Table 8.
+Fig. 5: Radar chart comparing the regression performance of MOMENT and PPG-
+GPT models with fine-tuning the whole model (Group 2 rest). Detailed results are
+provided in Table 8.
+When fine-tuning the entire model (Table 6), PPG-GPT outperforms MOMENT
+across some datasets and model sizes. PPG-GPT shows significant improvement in
+DBP estimation results with full-model fine-tuning, particularly on the PPG-BP
+dataset, where it achieves an MAE result of 9.42 at 345M parameters, compared
+to its performance of 32.03 at 345 parameters when fine-tuning only the task head.
+Similarly, PPG-GPT shows significant improvement in SBP estimation with whole-
+modelfine-tuningforsmallermodelsizesontheVitalVideosdataset,whereitachieves
+an MAE result of 18.30 at 19M parameters, compared to its performance of 67.27
+when fine-tuning only the task head. In contrast, MOMENT’s performance with full
+model fine-tuning is more variable, with some datasets showing minimal improvement
+or even degradation compared to task-head fine-tuning. When fine-tuning the entire
+model, PPG-GPT outperforms MOMENT in SBP estimation across most datasets,
+while MOMENT has better MAE results for DBP estimation across many datasets.
+Both models perform competitively on controlled datasets like CAS-BP and Vital
+20
+Videos with BP measurements collected with participants seated and at rest. For these
+two datasets, PPG-GPT shows slight advantages in most configurations.
+MOMENT PPG-GPT
+Task/Dataset(MAE)
+40M 125M 385M 19M 85M 345M
+PotassiumEstimation(MAE)↓
+MIMIC-III 0.49 0.48 0.50 0.47 0.47 0.46
+Inst.A 0.46 0.46 0.45 0.57 0.58 0.52
+SodiumEstimation(MAE)↓
+MIMIC-III 5.17 5.84 5.73 4.80 3.77 3.74
+Inst.A 9.85 7.55 9.45 8.25 9.16 10.72
+GlucoseEstimation(MAE)↓
+MIMIC-III 38.77 38.19 35.66 35.14 35.05 34.95
+Inst.A 51.62 52.22 55.02 56.52 56.86 56.71
+A1cEstimation(MAE)↓
+Inst.A 1.43 1.41 1.43 1.48 1.49 1.33
+TroponinEstimation(MAE)↓
+MIMIC-III 1.18 1.25 1.11 1.16 1.19 1.15
+Inst.A 6.26 6.03 5.82 6.38 6.54 6.57
+LactateEstimation(MAE)↓
+MIMIC-III 1.15 1.24 1.15 1.23 1.19 1.21
+Inst.A 1.23 1.24 1.29 1.13 1.17 1.11
+ECGMetricsEstimation(MAE)↓
+PRinterval(Inst.A) 30.51 29.81 29.96 28.15 28.44 28.59
+QRSduration(Inst.A) 18.19 17.72 19.89 17.43 17.47 17.38
+QTinterval(Inst.A) 55.44 52.81 52.96 49.53 50.77 53.68
+ECHOMetricsEstimation(MAE)↓
+LVEF(Inst.A) 13.39 13.14 13.06 14.11 14.22 14.49
+LVmass(Inst.A) 32.83 31.73 31.71 31.82 31.83 31.71
+CholesterolEstimation(HDL/LDLMAE)↓
+Inst.A 14.42/31.12 13.90/30.83 13.13/31.08 13.81/31.71 14.07/31.60 13.92/32.33
+SCORE-reg-head-p2 1.5/18 2/18 6/18 2/18 0/18 6.5/18
+SCORE-reg-head-p2-comb 9.5/18 8.5/18
+SCORE-reg-head(p1+p2) 6.5/45 3/45 10/45 10/45 5/45 12.5/45
+SCORE-reg-head-comb 20.5/45 24.5/45(RATIO=1.20)
+Table 7: Comparison between MOMENT and PPG-GPT on regression tasks by fine-
+tuning only the task head for in-domain evaluation (Group 2).
+As shown in Table 7, the overall performance of MOMENT and PPG-GPT on
+laboratory measurement regression tasks is broadly comparable. The two models
+achieve a similar number of best results (9.5 vs. 8.5), with MOMENT holding a slight
+numerical advantage. Unlike in classification, the scalability effect is evident here:
+for both MOMENT and PPG-GPT, the largest models achieve substantially higher
+win scores than the smaller ones. For potassium, A1c, and Troponin estimation, the
+performance differences between the two models are small, typically within 0.1–0.5
+MAE. For sodium and glucose estimation, PPG-GPT achieves significantly better
+results on MIMIC-III, while MOMENT attains the best performance on Inst. A.
+For ECG metric estimation, PPG-GPT shows significant advantages in all metrics,
+particularly with the smaller 19M model, as evidenced by the PR interval (28.15) and
+QT interval (49.53). MOMENT wins on ECHO metrics and cholesterol estimation, but
+the gap between the two models is subtle. These results suggest that both generalist
+and specialist architectures are equally capable of capturing patterns in laboratory
+measurement tasks, and performance differences are often dataset-specific rather than
+21
+model-type specific. Overall, while MOMENT’s marginal lead in the total best-result
+count hints at a slight advantage, the small absolute performance gaps indicate that
+eitherapproachcanbepracticalforlabmeasurementregression,dependingonresource
+constraints and deployment priorities.
+MOMENT PPG-GPT
+Task/Dataset(Metric)
+40M 125M 385M 19M 85M 345M
+Potassiumestimation(MAE)↓
+MIMIC-III 0.47 0.47 0.47 0.50 0.46 0.49
+Inst.A 0.45 0.45 0.45 0.50 0.48 0.51
+Sodiumestimation(MAE)↓
+MIMIC-III 3.63 3.63 3.63 4.31 4.12 4.04
+Inst.A 3.99 3.90 3.84 6.85 6.43 5.70
+Glucoseestimation(MAE)↓
+MIMIC-III 36.19 36.13 35.72 35.51 35.57 35.43
+Inst.A 51.88 52.15 51.89 56.60 55.17 54.54
+A1cestimation(MAE)↓
+Inst.A 1.37 1.35 1.34 1.39 1.44 1.31
+Troponinestimation(MAE)↓
+MIMIC-III 1.27 1.26 1.29 1.33 1.29 1.30
+Inst.A 6.50 6.59 6.49 6.71 6.88 6.92
+Lactateestimation(MAE)↓
+MIMIC-III 1.21 1.18 1.24 1.24 1.20 1.33
+Inst.A 1.36 1.34 1.29 1.10 1.08 1.08
+ECGmetricsestimation(MAE)↓
+PRinterval(Inst.A) 28.45 28.43 28.38 27.99 27.62 27.97
+QRSduration(Inst.A) 17.19 17.04 17.23 17.19 17.11 17.54
+QTinterval(Inst.A) 50.62 50.62 50.62 35.99 34.46 35.08
+ECHOmetricsestimation(MAE)↓
+LVEF(Inst.A) 14.13 14.42 13.98 14.58 13.99 13.70
+LVmass(Inst.A) 31.61 31.61 31.61 31.03 31.59 31.96
+CholesterolEstimation(HDL/LDLMAE)↓
+Inst.A 12.27/29.72 12.24/29.83 13.38/29.79 13.52/31.19 13.92/32.83 13.50/31.33
+SCORE-reg-full-p2 2.67/18 4.67/18 2.67/18 1/18 3.5/18 3.5/18
+SCORE-reg-full-p2-comb 10/18 8/18
+SCORE-reg-full(p1+p2) 4/45 9.83/45 6/45 4.83/45 10.83/45 9.5/45
+SCORE-reg-full-comb 19.83/45 25.17/45(RATIO=1.27)
+Table 8: Comparison between MOMENT and PPG-GPT on regression tasks by fine-
+tuning the whole model for in-domain evaluation (Group 2).
+AsshowninTable8,whenthewholemodelisfine-tunedforlaboratorymeasurement
+classification tasks, MOMENT still achieves a slightly higher overall win score (10 vs.
+8) compared to PPG-GPT. For potassium estimation, both models perform similarly,
+with MOMENT slightly ahead on Inst. A (0.45) and PPG-GPT leading on MIMIC-III
+(0.46).Additionally,MOMENToutperformssodiumandtroponinestimationwithlower
+MAEs on both MIMIC-III and Inst. A. For glucose estimation, PPG-GPT achieves the
+best performance on MIMIC-III (35.43) and maintains competitive results on Inst. A,
+despite MOMENT’s lead. A1c estimation results are close, with PPG-GPT narrowly
+outperforming MOMENT on Inst. A (1.31 vs. 1.34). In lactate estimation, PPG-GPT
+demonstrates clear advantages on Inst. A (1.08) and competitive results on MIMIC-III.
+The QT interval in ECG metrics shows the most significant difference: PPG-GPT
+can achieve a 34.46 MAE, while MOMENT has an MAE as high as 50.62. In echo
+22
+metrics estimation, both models achieve nearly identical results for LV mass, and
+PPG-GPT attains the best LVEF score (13.70). For cholesterol estimation, the models
+are competitive, with MOMENT leading slightly on both HDL and LDL. Overall, full
+model tuning slightly amplifies MOMENT’s lead in lab measurement classification.
+However, both architectures exhibit strong and broadly comparable capabilities, with
+performance differences largely dependent on the specific biomarker and dataset.
+Summarizing all results in regression, we find the following key observations:
+• Across all regression tasks, PPG-GPT attains a higher total number of best results
+than MOMENT under both head-only and whole-model fine-tuning.
+• For blood pressure estimation, performance patterns are the most unstable and
+dataset-dependent. PPG-GPT shows clear advantages for SBP estimation, whereas
+DBP estimation results are competitive between the two models. Scaling effects vary
+across datasets, with some showing optimal performance at smaller model sizes.
+• Laboratory measurement tasks (e.g., potassium) exhibit much smaller performance
+gaps between the models compared to physiological signal tasks. Both architectures
+achieve similar MAE.
+• The scalability effect is more evident in regression than in classification: for both
+MOMENT and PPG-GPT, larger models generally achieve higher win counts.
+However, the optimal model size remains task- and dataset-dependent.
+Metric(↑↓) MOMENT PPG-GPT
+WinScore(↑) 19.83 25.17
+Performance(↓) 13.21 12.88
+FeatureQuality(↑) 13.76 14.10
+TuningGain(↑) 0.05 0.11
+Variance(↓) 0.98 1.02
+Transferability(↑) 11.22 23.40
+Scalability(↑) 0.01 0.55
+Table 9: Metric comparison between
+MOMENT and PPG-GPT
+Fig. 6: Comparison of 7 Regression
+Dimensions
+Seven-Dimension analysis. Fig. 6 represents a comprehensive comparison
+between MOMENT and PPG-GPT across seven regression metrics. Since the majority
+ofmetrics(includingPerformance,FeatureQuality,andTransferability)areMAE-based,
+lower values indicate better performance. Like previously, we invert and normalize
+metrics such that a more spread-out radar denotes better performance in all axes.
+• Win Score: PPG-GPT has a higher win count (25 vs. 19), indicating it ranks first
+more frequently across individual tasks, with a slightly lower average error.
+23
+• Performance: PPG-GPT achieves lower average MAE (12.88 vs. 13.21), indicating
+marginally better overall regression performance.
+• Feature Quality: Surprisingly, MOMENT achieves better feature quality (13.76
+vs. 14.10), implying its frozen representations are more effective for downstream
+regression tasks.
+• Tuning Gain: PPG-GPT benefits more from full-model fine-tuning (0.11 vs. 0.05),
+showing greater plasticity in adapting to task-specific objectives.
+• Variance: MOMENT shows lower prediction variance (0.98 vs. 1.02), suggesting
+better consistency and robustness across runs.
+• Transferability: MOMENT generalizes much better to unseen datasets (11.22 vs.
+23.40), demonstrating lower out-of-distribution MAE and better cross-domain
+robustness.
+• Scalability: PPG-GPT exhibits significantly better scalability (0.55 vs. 0.01),
+benefiting more from increasing model size in regression settings.
+Overall, MOMENT achieves better generalization (lower MAE) and more stable
+representations,likelyduetoitsdiverse,modality-richpretrainingdatasets.Incontrast,
+PPG-GPT benefits from more flexible representations that are highly adaptable with
+full fine-tuning, leading to higher win counts and scalability, but at the cost of higher
+average and transfer MAE.
+To further summarize the findings of the regression results, we present a few bar
+charts in Fig. 7. In subfigure 7a, we plot win scores for three scales of models for both
+FMs. Hence, we compare six models here. We can see that in head tuning, small and
+large sizes are best, indicating inconsistent scaling behavior in both FMs. In subfigure
+7b, we plot results for full tuning. Here, we observe opposite behavior, with the best
+results achieved by the medium-sized FM, indicating that tuning methods are unable
+to harness the largest model under the six-model comparison scheme. Under a relaxed
+comparison scheme, we see an adequate scaling effect as shown in subfigure 7c, where
+we focus on the generalist model. The specialist model also exhibits proper behavior
+as shown in subfigure 7d. Note that it shows proper behavior even in a head-tuning
+scenario.
+Another analysis we performed was in Table 10. Here, we examined the in- and
+out-domain tasks of varying sizes. This gives us four regimes: in-domain (size >100h),
+out-domain (<10h), out-domain (10-100h), and out-domain (>100h). Here, we chose
+the biggest fully tuned generalist and specialist models. We observe an average relative
+improvementandwithin-regimecorrelationwithincreasingdatasize.Surprisingly,GPT
+shows the highest improvement in small out-of-domain tasks with positive correlation.
+Inotherregimes,thereisnocorrelation,andimprovementislesswithlargeravailability
+of downstream data.
+7 Further analysis
+7.1 Comparison with statistical and traditional baselines
+InTable11,wecomparetheperformanceofthefoundationmodelwithsimplestatistical
+baselines based on demographics [71] or the Last-Observed-Carry-Forward (LOCF)
+24
+(a) Head tuning (b) Full tuning
+(c) Generalist model (d) Specialist model
+Fig. 7: Comparison of head vs full tuning and generalist vs specialist.
+Table10:Domain×size-regimesummary.’Meanimprovement’is(MOMENT−
+GPT)/MOMENT×100 (%); higher is better for GPT. r is the Pearson correla-
+tion between hours and improvement within each subset.
+Domain Size regime Count Mean improvement (%) r(size, improvement)
+In ≥ 100 h 13 -2.3 0.00
+Out ≤ 10 h 10 17.3 0.37
+Out 10-100 h 8 2.5 -0.02
+Out ≥ 100 h 14 9.0 -0.57
+value [72]. For BP and HR estimation, we fit a linear regression model based on
+demographic information (age, height, and weight). In BP prediction, the demographic
+baseline is better, especially for systolic pressure. In HR prediction, FMs can surpass
+the demographic baseline by a slight margin. For the remaining eight tasks, we use
+LOCF, where the last obtained lab value is used as the prediction for the current
+25
+time. LOCF is a naive yet powerful supervised approach. We note that for glucose and
+potassium estimation, FMs can match or surpass LOCF, but for the majority of tasks,
+LOCF dominates.
+Next, in Table 12, we take a deeper look by evaluating on subsets of patients with
+positive or negative state as marked by practitioners using clinical thresholds. We also
+note performance for transition states, i.e., positive-to-negative (patient undergoing
+recovery) and vice versa (exhibiting degradation). We find that during patient health
+transition, LOCF is expectedly way off, and foundation models, being unbiased from
+past lab tests, perform much better. The discrepancy in LOCF and FM predictions
+can potentially serve as a signal to trigger an earlier retest of a particular lab.
+Furthermore,wepresentafewcomparisonsofselecttaskswithtraditionalbaselines
+to ascertain the need for foundation models. Using classical baselines, we estimated
+heart rate (HR), respiratory rate (RR), and blood pressure (BP) from short PPG
+windows. On 8–10s segments, IBI (peak-to-peak) [73] achieved 16.80 bpm MAE (more
+than 2x GPT’s MAE), where beats were located via a smoothed derivative-squared
+energyenvelope,andHRwascomputedas60/median(IBI).On30ssegments,baseline-
+wander(BW)[74]yielded8.04MAEbrpmMAE(approx.2xGPT’sMAE)byisolating
+the slow trend and taking the dominant frequency in 0.1–0.5 Hz via Welch Power
+Spectral Density (PSD). For BP on 10s windows, Ridge regression on pulse-wave
+morphology [75] reached 24.03/24.13 and 10.02/14.03 mmHg MAE (DBP/SBP) for
+Aurora oscillometric and auscultatory datasets using per-beat features: amplitude,
+Task/(blinetype) MOMENT GPT-PPG Stat.bline.
+Blood pressure estimation (Diastolic/Systolic)(MAE)↓/(Age,Height,Weight)
+BUT-PPG 8.46/16.61 7.74/15.53 6.24/7.29
+Heart rate estimation(MAE)↓/(Age,Height,Weight)
+BUT-PPG 10.36 10.25 10.67
+Troponin estimation(MAE)↓/(Carryforward)
+MIMIC 1.11 1.15 0.42
+Inst.A 5.82 6.38 2.03
+Lactate estimation(MAE)↓/(Carryforward)
+MIMIC 1.15 1.19 0.82
+Inst.A 1.23 1.08 0.82
+Potassium estimation(MAE)↓/(Carryforward)
+MIMIC 0.47 0.46 0.44
+Inst.A 0.45 0.48 0.43
+Sodium estimation(MAE)↓/(Carryforward)
+MIMIC 3.63 3.74 2.11
+Inst.A 3.84 5.70 2.64
+Glucose estimation(MAE)↓/(Carryforward)
+MIMIC 35.66 34.95 38.05
+Inst.A 51.62 54.54 38.49
+A1c estimation(MAE)↓/(Carryforward)
+Inst.A 1.34 1.31 0.24
+ECHO LVEF(MAE)↓/(Carryforward)
+Inst.A 13.06 13.70 6.82
+ECHO LVmass(MAE)↓/(Carryforward)
+Inst.A 31.71 31.03 13.42
+Table 11: Comparison of best results obtained with MOMENT and GPT with
+statistical baselines
+26
+rise/fall times, max up/down slopes, area, perfusion index, and notch-timing ratio
+aggregated by robust statistics (median/IQR/mean/std) across the window.
+Task/(Statsblinetype) all pos neg pos2neg neg2pos
+Troponin estimation(MAE)↓
+Carryforward 2.47 2.79 0.32 1.54 2.00
+MOMENT 6.50 8.39 5.17 4.94 4.69
+GPT-PPG 6.71 6.36 0.58 0.61 0.75
+Lactate estimation(MAE)↓
+Carryforward 0.82 1.52 0.52 1.94 2.12
+MOMENT 1.36 2.18 0.86 0.55 1.52
+GPT-PPG 1.10 2.61 0.53 0.42 1.96
+Potassium estimation(MAE)↓
+Carryforward 0.44 0.38 0.63 0.83 0.80
+MOMENT 0.45 0.72 0.35 0.32 0.94
+GPT-PPG 0.50 0.83 0.36 0.33 0.96
+Sodium estimation(MAE)↓
+Carryforward 2.67 2.40 3.19 5.33 5.26
+MOMENT 3.99 8.59 2.25 2.40 7.78
+GPT-PPG 6.85 10.68 5.93 4.66 10.59
+Table 12: Comparison of (supervised) carry forward baseline
+with 19M GPT-PPG and 40M MOMENT full fine-tuning on Inst.
+A subset by patient lab status, positive, negative, and transition
+periods.
+Task/(blinetype) MOMENT GPT-PPG Trad.bline.
+Heart Rate Estimation(MAE)↓/(Inter-BeatIntervalunsupervised)
+DALIA 10.59 7.83 16.80
+Respiration Rate Estimation(MAE)↓/(BaselineWanderunsupervised)
+MIMIC 4.63 4.47 8.04
+Blood Pressure Estimation(MAE)↓/(Morphologyfeaturessupervisedregression)
+Aurora-Oscillometric 21.11/25.07 7.21/20.43 24.03/24.13
+Aurora-Auscultatory 9.70/13.77 9.71/13.77 10.02/14.03
+Table 13: Comparison of best foundation model results with traditional
+baselines
+7.2 Cross-domain robustness
+In Table 14, we explore domain-mismatch where fine-tuning train and test sets belong
+todifferentdomains.Notethatthisisdifferentandmorechallengingthanthestandard
+testing setup (Tables 2-8) since fine-tuning training and test sets are typically from
+the same domain. We select five representative tasks, 12 metrics, and fully-tuned small
+FMs. GPT obtains better results in only 4 out of 12 metrics, indicating MOMENT’s
+expected better domain generalization. However, we see better performance of GPT on
+the classification task of AF detection. We also note the performance of GPT without
+27
+Task/Dataset(Metric) MOMENT GPT-PPG(w/&w/oLaplace)
+Trainset Testset
+AF detection(F1score)↑
+Stanford Simband 55.15% 67.47%(60.42%)
+Simband Stanford 59.76% 66.32%(55.68%)
+SPO2 estimation(MAE)↓
+SleepDisorder MIMIC 2.82 2.81(2.22)
+MIMIC SleepDisorder 4.21 4.23(4.41)
+Heart Rate Estimation(MAE)↓
+DALIA BUT-PPG 11.53 14.84(18.59)
+BUT-PPG DALIA 24.98 30.18(33.44)
+Blood Pressure Estimation (Diastolic/Systolic)(MAE)↓
+PPG-BP BUT-PPG 8.15/25.47 63.85/43.47(64.53/67.70)
+BUT-PPG PPG-BP 10.91/16.45 10.94/20.93(9.69/21.74)
+Sodium Estimation(MAE)↓
+MIMIC Inst.A 4.00 30.33(9.92)
+Inst.A MIMIC 3.63 16.96(3.75)
+Table 14: Cross-domain generalization during fine-tuning with full tuning of 40M
+MOMENT and 19M GPT-PPG.
+the additional generative (Laplace) fine-tuning objective. In some instances, such as
+sodium estimation, we observe significantly better performance without additional
+loss terms, indicating the need for more effective tuning strategies for the specialist
+GPT-PPG model.
+7.3 Bias study
+Here, we investigate cross-domain robustness in addition to gender bias. We evaluated
+the impact of gender-balanced fine-tuning using inverse frequency weighting on two
+heart rate estimation models—GPT-PPG (19M) and MOMENT (40M)—across six
+train–test cross-dataset configurations involving DALIA, BUT-PPG, and MIMIC. In
+Table 15, balanced training showed mixed but generally positive effects for GPT-PPG,
+improving the performance in 4 out of 6 cross-dataset configurations, though the
+gains were modest. Notable improvements included DALIA to MIMIC (MAE: 24.59
+→ 23.49), MIMIC to DALIA (49.24 → 47.44), and slight gains in MIMIC to BUT-
+PPG (35.54 → 35.42) and BUT-PPG to MIMIC (24.73 → 24.54). However, some
+configurations exhibited performance degradation with balancing, particularly BUT-
+PPG to DALIA (26.40 → 30.99), which highlights the complexity of achieving both
+fairnessandperformanceinchallengingcross-datasetscenarios.Incontrast,MOMENT
+emerged as the more robust model, achieving better baseline performance and more
+reliable improvements from balanced training compared to GPT-PPG’s inconsistent
+gains. Balancing improved MOMENT’s performance in several scenarios (e.g., 15.95
+→ 13.98 from MIMIC to BUT-PPG), although the gains were smaller and more stable
+comparedtoGPT-PPG.Overall,performanceimprovementsfrombalancingweremost
+pronounced when the training set was both extensive and demographically imbalanced
+(e.g., DALIA). At the same time, gains were attenuated or inconsistent in smaller or
+more skewed datasets (e.g., MIMIC).
+28
+Task(Metric) Dataset MOMENT(40M) GPT-PPG(19M)
+HR(MAE)↓ Trainset Testset Unbal. Bal. Bal.helps? Unbal. Bal. Bal.helps?
+DALIA BUT-PPG
+Total 64,697(100.0%) 3,888(100.0%) 13.40 14.61 13.78 14.04
+Male 29,598(45.7%) 1,902(48.9%) 13.60 14.67 14.84 15.07
+Female 35,099(54.3%) 1,986(51.1%) 13.20 14.56 12.76 13.06
+DALIA MIMIC
+Total 64,697(100.0%) 10,927(100.0%) 19.67 19.56 ✓ 24.59 23.49 ✓
+Male 29,598(45.7%) 4,123(37.73%) 18.65 18.47 ✓ 24.05 22.89 ✓
+Female 35,099(54.3%) 6,804(62.27%) 20.30 20.23 ✓ 24.91 23.86 ✓
+BUT-PPG DALIA
+Total 3,888(100.0%) 64,697(100.0%) 17.08 17.00 ✓ 26.40 30.99
+Male 1,902(48.9%) 29,598(45.7%) 21.01 20.93 ✓ 30.09 32.05
+Female 1,986(51.1%) 35,099(54.3%) 13.77 13.69 ✓ 23.28 30.09
+BUT-PPG MIMIC
+Total 3,888(100.0%) 10,927(100.0%) 22.55 22.33 ✓ 24.73 24.54 ✓
+Male 1,902(48.9%) 4,123(37.73%) 22.14 21.89 ✓ 24.24 23.67 ✓
+Female 1,986(51.1%) 6,804(62.27%) 22.81 22.60 ✓ 25.04 25.07
+MIMIC DALIA
+Total 10,927(100.0%) 64,697(100.0%) 18.00 17.46 ✓ 49.24 47.44 ✓
+Male 4,123(37.73%) 29,598(45.7%) 21.55 21.20 ✓ 54.64 52.77 ✓
+Female 6,804(62.27%) 35,099(54.3%) 15.00 14.32 ✓ 44.69 42.95 ✓
+MIMIC BUT-PPG
+Total 10,927(100.0%) 3,888(100.0%) 15.95 13.98 ✓ 35.54 35.42 ✓
+Male 4,123(37.73%) 1,902(48.9%) 15.88 14.11 ✓ 35.12 35.79
+Female 6,804(62.27%) 1,986(51.1%) 16.03 13.87 ✓ 35.95 35.07 ✓
+Table 15: Comparison of subgroup performance for HR detection under unbalanced
+(Unbal.) and balanced (Bal.) training. Best (lowest MAE) in bold. ✓ indicates that
+balancing reduced MAE for that model in that row.
+7.4 Generalization to cross-modal biosignals
+In Table 16, we evaluate the adaptability of foundation models to signals other than
+PPG. We chose three signals: TCD CBFV (Transcranial Doppler Ultrasound-based
+Cerebral Blood Flow Velocity), ECG (Electrocardiography), and EEG (Electroen-
+cephalogram) signals. These signals are used to predict invasive ICP (Intercranial
+pressureinmmHg),bloodpressure,andsleepdetection,respectively.ForBPprediction,
+we use the BUT-PPG dataset. Other datasets are described in Section 4.1.9.
+The MOMENT foundation model has been adopted for forecasting time-series ICP
+and presents comparative results against LSTM within a 30-minute horizon [76]. Here,
+we see it outperforms GPT-PPG by a small margin. In BP prediction, GPT-PPG
+surpasses MOMENT (lower MAE for both SBP/DBP), suggesting that a represen-
+tation learned from pulsatile hemodynamics transfers well to another synchronous
+cardiac waveform. For EEG-based sleep detection, MOMENT outperforms GPT-PPG,
+highlighting that it benefits from EEG pretraining.
+7.5 Visualizing attention patterns
+MOMENTandGPT-PPGbothfollowtheTransformerarchitecture.Hence,comparing
+theirattentionmapscanrevealthedifferencesintheirfunctioning.Weusetheattention
+29
+Task/Signal(Metric) MOMENT GPT-PPG
+ICP prediction(MAE)↓
+TCDCBFVsignal 3.93 4.03
+Blood Pressure estimation (Diastolic/Systolic)(MAE)↓
+ECGsignal 8.77/14.59 6.78/8.12
+Sleep detection(F1score)↑
+EEGsignal 83.84% 52.91%
+Table 16:Generalizationofthefoundationmodel’sability
+to process non-PPG inputs.
+entropy formula [77] to identify which attention heads (in different layers) are focused
+(low entropy) or diffuse (high entropy). For this analysis, we selected the Atrial
+Fibrillation task with fully tuned small FMs. In Fig 8, we can see MOMENT has low
+entropy in most (except the last few layers) heads, indicating that the generalist model
+has near-spike attention. While GPT-PPG has healthier and more diverse heads, we
+believethatwithimprovedpre-trainingandfine-tuningstrategies,wecanleveragethem
+to their fullest potential in the future. In Appendix A, we provide the complementary
+attention maps for further insights.
+7.6 MOMENT-PPG: pre-training MOMENT with PPG
+We trained a MOMENT variant exclusively on PPG corpora (MOMENT-PPG) and
+compared it with (i) MOMENT-vanilla (pre-trained on the multi-domain Time-Series
+Pile) and (ii) our GPT-PPG. For this evaluation, we selected the 13 most challenging
+tasks to facilitate better performance comparison and obtained both head and full
+tuning results.
+In head tuning, MOMENT-PPG wins 2/13 tasks, MOMENT-vanilla wins 5/13,
+while GPT-PPG wins 6/13. Bold and underline denote the best and second-best
+performance obtained, respectively. MOMENT-PPG improves over MOMENT-vanilla
+onseveralPPG-centrictargets(e.g.,skintemperature,HR,andelectrolytes),indicating
+a positive domain-adaptive pre-train effect. But GPT-PPG still leads on four of these,
+suggestingthat(beyonddata)thegenerative/causalpre-trainingandtokenizationused
+in GPT-PPG impart inductive biases that yield higher head-tuned performance on
+PPG-centric targets. In full tuning, we make identical observations. In summary, we
+note the complementary effects of MOMENT and GPT’s choices of data and training.
+8 Discussion
+The present study provides one of the first large-scale benchmarks (18 unique tasks,
+21 datasets, 51 total tasks) [78] comparing a generalist time-series foundation
+model (MOMENT) with a specialist physiological model (PPG-GPT) across diverse
+classificationandregressiontasksusingPPGsignals.Thisispursuedwithdifferentfine-
+tuningmethods,modelscales,andaseven-dimensionalevaluationmethod.Additionally,
+weprovideanextensiveanalysiswithstatisticalbaselinecomparison,cross-modalstudy,
+bias analysis, cross-modal generalization, attention visualization, and investigation of
+training data and architectures.
+30
+(a) MOMENT attention entropy
+(b) GPT-PPG attention entropy
+Fig. 8: Comparison of attention entropy patterns
+WealsoexploreunimodalapplicationofPPGratherthanthetrendofmultimodality
+followed by recent FMs such as NormWear [35], Large Sensor Model (LSM) [79],
+SleepFM [7], and Apple’s WBM (wearable health behavior foundation model) [80].
+NormWear also employs 18 tasks, but differs from our work in that it uses significantly
+less pre-training data and a majority of non-PPG test sets. Notably, it shows better
+performance by the specialist model over the generalist in a few benchmarks. Our
+study conclusively looks at this. LSM works with physiological signal feature-level
+data and demonstrates competitive performance on several datasets. WBM reports 57
+evaluations, but works with high-level tasks and a single closed-source dataset from
+Apple device users. On the other hand, competing unimodal models are PaPaGei [29],
+31
+Task/Dataset(Metric) MOMENT- MOMENT- GPT-PPG MOMENT- MOMENT- GPT-PPG
+vanilla PPG vanilla PPG
+Headtuning Fulltuning
+AFdetection(F1score)↑
+Simband 55.47% 52.15% 83.22% 56.22% 52.15% 65.74%
+Mentalworkload(F1score)↑
+MAUS 65.96% 68.63% 56.54% 68.24% 68.63% 62.78%
+SpO2 Estimation(MAE)↓
+SleepDisorder 3.68 5.81 6.75 3.94 5.39 4.25
+SkinTemperatureEstimation(MAE)↓
+PulseTransit 2.20 1.30 1.08 1.28 1.28 0.90
+HeartRateEstimation(MAE)↓
+Gyro-Acc-PPG 21.73 20.26 20.23 20.79 20.25 20.99
+PotassiumEstimation(MAE)↓
+Inst.A 0.46 0.60 0.57 0.45 0.46 0.50
+SodiumEstimation(MAE)↓
+Inst.A 9.85 3.52 8.25 3.99 4.00 6.85
+GlucoseEstimation(MAE)↓
+Inst.A 51.62 55.10 56.52 51.88 55.30 56.60
+Troponin-TEstimation(MAE)↓
+Inst.A 6.26 9.83 6.38 6.50 9.20 6.71
+LactateEstimation(MAE)↓
+Inst.A 1.23 1.45 1.13 1.36 1.31 1.10
+RespirationRateEstimation(MAE)↓
+MIMIC-III 4.63 4.64 4.64 4.64 4.62 4.53
+BloodPressureEstimation(Diastolic/Systolic)(MAE)↓
+Aurora-Oscillometric 22.74/25.44 21.14/25.12 8.43/20.97 21.11/25.11 22.55/25.14 7.96/20.44
+WINSCORE 5/13 2/13 6/13 5/13 2/13 6/13
+Table 17: Comparing MOMENT-vanilla (40M), MOMENT-PPG (40M), and GPT-
+PPG (19M) with head and full tuning. Best results are in bold; second-best are
+underlined. Ties share the underline. Win scores are separated by tuning scheme.
+Pulse-PPG [30], and Apple PPG/ECG-FM [36]. PaPaGei comes closest to our study
+by training on 57k hours and testing on 20 tasks. Pulse-PPG uses a similar amount of
+pre-training data but chooses field PPG data, which has higher variability, resulting
+in better downstream performance on the majority of 11 tasks compared to Papagei.
+Apple PPG/ECG-FM uses 333k hours of data but does not provide a comparison with
+other FMs and instead relies on survey-derived targets. Unimodal ECG FMs, such as
+ECGFounder[8](150tasks)andDeepECG-SSL[81](77tasks),alsoapproachthescale
+and diversity of our study. In the future, we can benchmark more specialist models as
+seen in the medical LLM space. For instance, MedHELM [82] evaluates nine LLMs on
+35 benchmarks. We can also elevate the benchmarking platform to a federated setup
+as illustrated in MedPerf [83].
+Overall,ourfindingsrevealafundamentaltrade-off:MOMENT’sbroadpre-training
+delivers strong baseline performance in classification tasks, while PPG-GPT’s domain-
+specific training yields superior adaptability and gains when thoroughly fine-tuned for
+regression. Significantly, neither model consistently surpasses conventional statistical
+or clinical LOCF baselines, underscoring both the promise and the current limitations
+of foundation models in computational physiology. These results prompt reflection on
+the broader role of foundation models in analyzing biomedical signals. Beyond task-
+level performance, the contrasting behaviors of MOMENT and PPG-GPT highlight
+32
+more profound questions about pre-training strategies, architectural choices, and their
+practical utilities. The following discussion unpacks these themes, moving from specific
+performance dichotomies to broader considerations of pre-training, scalability, and
+clinical implications. With these insights, we finally propose future directions for
+developing the next generation of physiological foundation models.
+8.1 Data Diversity vs. Data Specialization in Model
+Performance
+Webeginbyexamininghowdifferencesinpre-trainingdatacontributedtotheobserved
+performance gap between MOMENT and GPT-PPG. In particular, we analyze the
+results under two complementary perspectives: prediction type and task difficulty.
+8.1.1 Dichotomy in Classification and Regression Performance
+An apparent dichotomy emerges when performance is viewed through the lens of
+prediction type. For classification tasks, MOMENT dominates, winning 67% of the six
+datasets under head tuning and 83% when thoroughly fine-tuned. On the other hand,
+for regression tasks, GPT-PPG holds an advantage, winning 54% of 45 datasets with
+head-tuning and 56% when fine-tuning the entire model.
+MOMENT’s advantage in classification likely stems from its pre-training objective.
+MOMENT is pre-trained on a dataset of diverse time-series data sources. While
+MOMENT is never explicitly trained to classify one type from another, the task of
+reconstructing partially masked input sequences without class conditioning implicitly
+encourages the model to differentiate between signal types, resulting in latent feature
+representations that are naturally more separable, providing more precise decision
+boundaries for downstream classification.
+GPT-PPG,trainedonmorethan200millionPPGsegmentscollectedfromthesame
+hospital, lacks this cross-domain discriminative signal. However, this focused exposure
+likely allowed it to capture the specific morphological details and waveform nuances
+essential for precise quantitative estimation, explaining its edge on regression tasks.
+The higher gain from full parameter fine-tuning in both classification and regression
+tasks also shows that its representations are highly plastic and adaptable to these
+specific estimation tasks.
+8.1.2 Impact of Task Difficulty
+Beyond prediction type, performance differences can also be understood in terms of
+task difficulty. We categorize the benchmark suite into three classes:
+• Category 1: Conventional tasks: well-established and standard physiological mea-
+surement problems from PPG. These include predictions for: AF detection, SpO ,
+2
+heart rate, blood pressure, and respiration rate.
+• Category 2: Emerging tasks: less studied physiological measurement problems from
+PPG. These include predictions for: mental stress, activity recognition, human
+biometric identification, and skin temperature.
+33
+• Category 3: Challenging tasks: problems for which PPG is not typically used, and
+whose results can be viewed as an evaluation of the model’s emergent behaviors.
+Those include estimations for: potassium, sodium, glucose, A1C, troponin, lactate,
+ECG metrics, ECHO metrics, and cholesterol.
+We define the winner of each dataset as the model that performs best across all
+sizes and fine-tuning strategies. Note that this categorization combines classification
+andregressiontasks,andisthusbiasedduetothestarkdifferenceinFM’sperformance
+in these tasks. Our results are summarized as follows:
+• Category 1: GPT-PPG wins 60.0% of the 27 datasets.
+• Category 2, MOMENT wins 66.7% of the 6 datasets.
+• Category 3: MOMENT wins 55.6% of the 18 datasets.
+These results suggest a division of strengths. GPT-PPG, pre-trained exclusively on
+PPG signals, exhibits stronger performance on PPG-centric tasks, i.e., those where
+domain-specific nuances matter most. In contrast, MOMENT gains the upper hand as
+tasks become harder. Most notably, in Cat 3 tasks where success requires emergent
+generalization beyond what PPG alone typically affords, MOMENT demonstrates
+advantages, likely leveraging inductive biases or knowledge transferred from other
+time-series modalities. This pattern is reinforced by our cross-domain and cross-modal
+evaluations, where MOMENT outperforms GPT-PPG by a large margin, further
+underscoring the benefits of diversity-driven pre-training.
+Taken together, pre-training data played a huge role in shaping the models’ raw
+performance in downstream tasks. The diverse and heterogeneous time-series data
+enabled MOMENT to learn discriminative features that work exceptionally well on
+downstream classification tasks and emergent capabilities when dealing with complex
+problems. On the other hand, a massive PPG-only dataset allowed GPT-PPG to
+excel in domain-specific physiological measurement problems, especially when precise
+numerical predictions are required. Yet data alone does not account for all observed
+differences: architectural choices also leave distinct fingerprints on model behavior,
+which we examine next.
+8.2 Architectural Contributions to Model Behavior
+To isolate the impact of architecture, we trained a MOMENT-PPG, a model that
+preserves MOMENT’s encoder architecture but is pre-trained on the same PPG-only
+dataset used for GPT-PPG. On 13 datasets, GPT-PPG outperformed MOMENT-
+PPG under both head-tuning and full-model fine-tuning in terms of overall win rate.
+This finding suggests that architectural design, independent of data, imparts inductive
+biases that can materially affect downstream performance.
+8.3 Model Scalability
+Scalability is a theme we explore in the analysis of both FMs. Our results challenge
+the expectation that “bigger model is better”. We do not consistently observe it. For
+classification, GPT-PPG generally attains worse performance as the model scales up.
+In contrast, for regression tasks, we plotted summary charts in Fig. 7 which exhibit
+34
+much more consistency in scalability. In (c) and (d), the bottom two plots, we observe
+near-perfect scalability for both the generalist and specialist models. Note that this
+consistency is not observed when analyzing individual test results.
+Recallthepatternsthatwediscussedearlier:GPT-PPGstruggleswithclassification,
+and MOMENT underperforms relative to GPT-PPG on regression. For tasks that are
+inherently difficult for the model, additional parameters do not yield the expected
+improvements. However, on issues where the model is already reasonably good, scaling
+the model size can improve performance. In other words, model size alone does not
+bridge the gap caused by the lack of functional inductive bias. This highlights an
+essential limitation of brute-force scaling in physiological foundation models: pre-
+training data and architectures may be more effective drivers of performance, and
+scaling is only helpful when these two factors have provided sufficient inductive bias.
+8.4 Clinical Benchmarking and Real-World Applicability
+Beyond aggregate metrics, a crucial question is whether foundation models provide
+practicalvalueinclinicalsettingscomparedtoestablishedbaselines.Ourstudyrevealed
+that for many tasks involving stable patients, simple statistical baselines—those condi-
+tioned on prior measurements—outperform complex foundation models with millions
+of parameters, sometimes by a substantial margin. This highlights that foundation
+models, at their current stage, are not a universal replacement for existing clinical
+tools, both in terms of performance and efficiency.
+However, foundation models do deliver better-than-baseline performance during
+periods of patient health transition. Unlike statistical baselines that heavily rely on
+historical measurements, foundation models operate primarily on raw physiological
+signals and are therefore less biased by past stability. While historical measurement
+data serve as a valuable baseline for stable patients, they may negatively bias the
+model predictions during health transitions if not appropriately handled.
+8.5 Limitations and Future Directions
+In this study, we have identified a few critical limitations in the current physiologi-
+cal foundation models. First, a consistent gap remains between the performance of
+foundation models and simpler statistical baselines in many stable-patient tasks. This
+highlights that current architectures and training paradigms are not yet sufficient to
+deliver clinical reliability across the board. Second, optimization stability poses chal-
+lenges, particularly for large-scale GPT-PPG variants, where inconsistent performance
+acrossdatasetssuggeststheneedformorerobustfine-tuningstrategies.Third,although
+we attempted to mitigate bias by balancing training data, residual disparities persist,
+indicating that fairness in foundation models for healthcare remains an open issue.
+Fourth, the foundation models that we have tested are all large in size, some scaling
+to hundreds of millions. This creates significant deployment challenges, especially in
+resource-constrained settings such as wearable devices. Finally, cross-domain gener-
+alization remains an open problem, although we are already seeing some promising
+results using MOMENT.
+35
+These limitations point directly toward promising directions for future work. A key
+priority is the development of more diverse and representative pre-training corpora.
+MOMENT already leverages a dataset comprising heterogeneous time-series sequences.
+A similar effort could be applied to diverse types of physiological data, potentially
+leveragingthe connections amongthem (suchas pairedPPGand ECGdata). Architec-
+turally, sequential models, such as GPT, have shown advantages in handling temporal
+signals; however, hybrid designs that combine discriminative and generative objectives
+may further improve robustness. Another frontier is history-aware modeling, where
+patient trajectories are explicitly incorporated to support both stable monitoring and
+detection of transitions. To address efficiency concerns, future work may look into
+model distillation or compression techniques.
+In summary, we are still at the dawn of physiological foundation models; current
+results are promising, but there is still a massive gap to deployment. We believe that
+our study provides valuable insights into what future generation models may look like
+— ones that combine the adaptability of specialists with the robustness of generalists,
+utilizing an inference method that takes into account the patient’s history to enhance
+their reliability further.
+9 Conclusion
+The practical focus of our benchmarking study is to provide practitioners with a
+realistic guide to the state of the art, enabling them to choose a model for effective
+clinical deployment. Non-invasive technologies hold great potential for redefining the
+health monitoring space entirely, with significant implications for both consumer
+wearables and treatments. We explore this area using PPG technology and propose
+novel tasks, such as cholesterol estimation, which have not been addressed by a
+foundation model previously. We propose a seven-dimensional analysis to distill our
+600+ comparisons of generalist versus specialist models, considering all model sizes
+and training configurations. Metrics include win score, performance accuracy, feature
+quality, tuning gain, variance, transferability, and scalability. Our unique comparisons
+include 51 tasks, and we show a significantly higher win score for the specialist PPG-
+GPT model over the generalist MOMENT model, with 27% improvement in win score
+in regression tasks. In the current research trend of (parameter-efficient) fine-tuning
+generalist models, we deliver an alternate message regarding preference for specialist
+models in critical health applications. Further analysis may involve studying the role
+of pre-training objective and developing a generalist-specialist model, i.e., diverse
+data-trained specialist models to capture the best of both worlds. In the majority of
+our tasks, we explored point-estimate level accuracy. Future analysis should assess
+the capability of foundation models with extensions to novel categorical tasks and a
+continuous monitoring regime while grounding the findings and methods in the context
+of EHR. This is, for instance, revealed in our patient status-level result stratification
+analysis. Further exploration into fairness, robustness, and generalization to other
+modalities, as demonstrated by our study, can suggest modifications to specialist
+models, thereby improving them over the generalist model in all axes of our seven-
+dimensional analysis. With our multidimensional contributions to tasks, evaluation
+36
+methodology, and analysis, we hope our study serves as a comprehensive reference for
+benchmarking physiological foundation models.
+Acknowledgments
+We want to acknowledge the efforts of the Center for Data Science (School of Nursing,
+Emory University) cluster support team, including Viren Patel. We also appreciate the
+Emory HPC support team, including Prasad and Circe.
+References
+[1] Devlin, J.: Bert: Pre-training of deep bidirectional transformers for language
+understanding. arXiv preprint arXiv:1810.04805 (2018)
+[2] Achiam, J., Adler, S., Agarwal, S., Ahmad, L., Akkaya, I., Aleman, F.L., Almeida,
+D.,Altenschmidt,J.,Altman,S.,Anadkat,S.,etal.:Gpt-4technicalreport.arXiv
+preprint arXiv:2303.08774 (2023)
+[3] Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution
+image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF
+ConferenceonComputerVisionandPatternRecognition,pp.10684–10695(2022)
+[4] Radford,A.,Kim,J.W.,Xu,T.,Brockman,G.,McLeavey,C.,Sutskever,I.:Robust
+speech recognition via large-scale weak supervision. In: International Conference
+on Machine Learning, pp. 28492–28518 (2023). PMLR
+[5] Goswami, M., Szafer, K., Choudhry, A., Cai, Y., Li, S., Dubrawski, A.: Moment:
+A family of open time-series foundation models. arXiv preprint arXiv:2402.03885
+(2024)
+[6] Chen, Z., Ding, C., Kataria, S., Yan, R., Wang, M., Lee, R., Hu, X.: Gpt-ppg:
+a gpt-based foundation model for photoplethysmography signals. Physiological
+Measurement 46(5), 055004 (2025)
+[7] Thapa, R., He, B., Kjaer, M.R., Moore, H., Ganjoo, G., Mignot, E., Zou, J.:
+Sleepfm: Multi-modal representation learning for sleep across brain activity, ecg
+and respiratory signals. arXiv preprint arXiv:2405.17766 (2024)
+[8] Li, J., Aguirre, A., Moura, J., Liu, C., Zhong, L., Sun, C., Clifford, G., West-
+over, B., Hong, S.: An electrocardiogram foundation model built on over 10
+millionrecordingswithexternalevaluationacrossmultipledomains.arXivpreprint
+arXiv:2410.04133 (2024)
+[9] Ding, C., Guo, Z., Chen, Z., Lee, R.J., Rudin, C., Hu, X.: Siamquality: a
+convnet-based foundation model for photoplethysmography signals. Physiological
+Measurement 45(8), 085004 (2024)
+37
+[10] Choi, S., Mousavi, S., Si, P., Yhdego, H.G., Khadem, F., Afghah, F.: Ecgbert:
+Understandinghiddenlanguageofecgswithself-supervisedrepresentationlearning.
+arXiv preprint arXiv:2306.06340 (2023)
+[11] McKeen, K., Oliva, L., Masood, S., Toma, A., Rubin, B., Wang, B.: Ecg-fm: An
+openelectrocardiogramfoundationmodel.arXivpreprintarXiv:2408.05178(2024)
+[12] Chen, Z., Ding, C., Modhe, N., Lu, J., Yang, C., Hu, X.: Adapting a generative
+pretrainedtransformerachievessotaperformanceinassessingdiversephysiological
+functionsusingonlyphotoplethysmographysignals:Agpt-ppgapproach.In:AAAI
+2024 Spring Symposium on Clinical Foundation Models (2024)
+[13] Ansari, A.F., Stella, L., Turkmen, C., Zhang, X., Mercado, P., Shen, H., Shchur,
+O., Rangapuram, S.S., Arango, S.P., Kapoor, S., et al.: Chronos: Learning the
+language of time series. arXiv preprint arXiv:2403.07815 (2024)
+[14] Ekambaram, V., Jati, A., Dayama, P., Mukherjee, S., Nguyen, N., Gifford, W.M.,
+Reddy, C., Kalagnanam, J.: Tiny time mixers (ttms): Fast pre-trained models
+for enhanced zero/few-shot forecasting of multivariate time series. Advances in
+Neural Information Processing Systems 37, 74147–74181 (2024)
+[15] Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux, M.-A., Lacroix, T.,
+Rozi`ere, B., Goyal, N., Hambro, E., Azhar, F., et al.: Llama: Open and efficient
+foundation language models. arXiv preprint arXiv:2302.13971 (2023)
+[16] Radford,A.,Kim,J.W.,Hallacy,C.,Ramesh,A.,Goh,G.,Agarwal,S.,Sastry,G.,
+Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from
+natural language supervision. In: International Conference on Machine Learning,
+pp. 8748–8763 (2021). PMLR
+[17] Ravi, N., Gabeur, V., Hu, Y.-T., Hu, R., Ryali, C., Ma, T., Khedr, H., Ra¨dle, R.,
+Rolland, C., Gustafson, L., et al.: Sam 2: Segment anything in images and videos.
+arXiv preprint arXiv:2408.00714 (2024)
+[18] Lee, J., Yoon, W., Kim, S., Kim, D., Kim, S., So, C.H., Kang, J.: Biobert: a
+pre-trained biomedical language representation model for biomedical text mining.
+Bioinformatics 36(4), 1234–1240 (2020)
+[19] Gu,Y.,Tinn,R.,Cheng,H.,Lucas,M.,Usuyama,N.,Liu,X.,Naumann,T.,Gao,
+J., Poon, H.: Domain-specific language model pretraining for biomedical natural
+language processing. ACM Transactions on Computing for Healthcare (HEALTH)
+3(1), 1–23 (2021)
+[20] Rasmy, L., Xiang, Y., Xie, Z., Tao, C., Zhi, D.: Med-bert: pretrained contextu-
+alized embeddings on large-scale structured electronic health records for disease
+prediction. NPJ digital medicine 4(1), 86 (2021)
+38
+[21] Soumma, S.B., Mangipudi, K., Peterson, D., Mehta, S., Ghasemzadeh, H.:
+Wearable-based real-time freezing of gait detection in parkinson’s disease using
+self-supervised learning. arXiv preprint arXiv:2410.20715 (2024)
+[22] Meng, Z., Panchumarthi, L.Y., Kataria, S., Fedorov, A., Z`egre-Hemsey, J., Hu, X.,
+Xiao, R.: Fusion of ecg foundation model embeddings to improve early detection
+of acute coronary syndromes. arXiv preprint arXiv:2502.17476 (2025)
+[23] Cui, W., Jeong, W., Tho¨lke, P., Medani, T., Jerbi, K., Joshi, A.A., Leahy, R.M.:
+Neuro-gpt: Towards a foundation model for eeg. In: 2024 IEEE International
+Symposium on Biomedical Imaging (ISBI), pp. 1–5 (2024). IEEE
+[24] Kim,J.W.,Alaa,A.,Bernardo,D.:Eeg-gpt:exploringcapabilitiesoflargelanguage
+models for eeg classification and interpretation. arXiv preprint arXiv:2401.18006
+(2024)
+[25] Vaid, A., Jiang, J., Sawant, A., Lerakis, S., Argulian, E., Ahuja, Y., Lampert, J.,
+Charney, A., Greenspan, H., Narula, J., et al.: A foundational vision transformer
+improves diagnostic performance for electrocardiograms. NPJ Digital Medicine
+6(1), 108 (2023)
+[26] Yue, Z., Wang, Y., Duan, J., Yang, T., Huang, C., Tong, Y., Xu, B.: Ts2vec:
+Towards universal representation of time series. In: Proceedings of the AAAI
+Conference on Artificial Intelligence, vol. 36, pp. 8980–8987 (2022)
+[27] Nie, Y., Nguyen, N.H., Sinthong, P., Kalagnanam, J.: A time series is worth 64
+words: Long-term forecasting with transformers. arXiv preprint arXiv:2211.14730
+(2022)
+[28] Franceschi, J.-Y., Dieuleveut, A., Jaggi, M.: Unsupervised scalable representation
+learning for multivariate time series. Advances in neural information processing
+systems 32 (2019)
+[29] Pillai, A., Spathis, D., Kawsar, F., Malekzadeh, M.: Papagei: Open foundation
+models for optical physiological signals. arXiv preprint arXiv:2410.20542 (2024)
+[30] Saha,M.,Xu,M.A.,Mao,W.,Neupane,S.,Rehg,J.M.,Kumar,S.:Pulse-ppg:An
+open-source field-trained ppg foundation model for wearable applications across
+lab and field settings. arXiv preprint arXiv:2502.01108 (2025)
+[31] Panchumarthi, L.Y., Kataria, S., Wu, Y., Hu, X., Fedorov, A., Kwak, H.G.:
+Fairtune: A bias-aware fine-tuning framework towards fair heart rate prediction
+from ppg. arXiv preprint arXiv:2509.16491 (2025)
+[32] Kataria, S., Xiao, R., Ruchti, T., Clark, M., Lu, J., Lee, R.J., Grunwell, J., Hu,
+X.: Continuous cardiac arrest prediction in icu using ppg foundation model. arXiv
+preprint arXiv:2502.08612 (2025)
+39
+[33] Kataria, S., Fattahi, D., Wang, M., Xiao, R., Clark, M., Ruchti, T., Mai, M.,
+Hu, X.: Wav2arrest 2.0: Long-horizon cardiac arrest prediction with time-to-
+event modeling, identity-invariance, and pseudo-lab alignment. arXiv preprint
+arXiv:2509.21695 (2025)
+[34] Ni, J., Kataria, S., Tang, S., Yang, C., Hu, X., Jin, W.: Ppg-distill: Efficient
+photoplethysmography signals analysis via foundation model distillation. arXiv
+preprint arXiv:2509.19215 (2025)
+[35] Luo, Y., Chen, Y., Salekin, A., Rahman, T.: Toward foundation model for multi-
+variate wearable sensing of physiological signals. arXiv preprint arXiv:2412.09758
+(2024)
+[36] Abbaspourazad,S.,Elachqar,O.,Miller,A.C.,Emrani,S.,Nallasamy,U.,Shapiro,
+I.:Large-scaletrainingoffoundationmodelsforwearablebiosignals.arXivpreprint
+arXiv:2312.05409 (2023)
+[37] Wan, Z., Yu, Q., Mao, J., Duan, W., Ding, C.: Openecg: Benchmarking ecg
+foundationmodelswithpublic1.2millionrecords.arXivpreprintarXiv:2503.00711
+(2025)
+[38] Christensen, M., Vukadinovic, M., Yuan, N., Ouyang, D.: Vision–language founda-
+tion model for echocardiogram interpretation. Nature Medicine 30(5), 1481–1488
+(2024)
+[39] Argu¨ello-Prada, E.J., Villota Ojeda, A.V., Villota Ojeda, M.Y.: Non-invasive
+prediction of cholesterol levels from photoplethysmogram (ppg)-based features
+using machine learning techniques: a proof-of-concept study. Cogent Engineering
+12(1), 2467153 (2025)
+[40] Wang,M.,Kataria,S.,Ni,J.,Buchman,T.G.,Grunwell,J.,Mai,M.,Jin,W.,Clark,
+M.,Brown,S.,Fundora,M.,etal.:Aunifiedaiapproachforcontinuousmonitoring
+of human health and diseases from intensive care unit to home with physiological
+foundation models (uniphy+). arXiv preprint arXiv:2509.16348 (2025)
+[41] Wang, M., Yan, R., Li, C., Kataria, S., Hu, X., Clark, M., Ruchti, T., Buchman,
+T.G., Bhavani, S.V., Lee, R.J.: Estimating clinical lab test result trajectories from
+ppg using physiological foundation model and patient-aware state space model–a
+uniphy+ approach. arXiv preprint arXiv:2509.16345 (2025)
+[42] Torres-Soto,J.,Ashley,E.A.:Multi-taskdeeplearningforcardiacrhythmdetection
+in wearable devices. NPJ digital medicine 3(1), 116 (2020)
+[43] Shashikumar, S.P., Shah, A.J., Li, Q., Clifford, G.D., Nemati, S.: A deep learning
+approach to monitoring and detecting atrial fibrillation using wearable technology.
+In:2017IEEEEMBSInternationalConferenceonBiomedical&HealthInformatics
+(BHI), pp. 141–144 (2017). Ieee
+40
+[44] Anwar, T., Zakir, S.: Machine learning based real-time diagnosis of mental stress
+usingphotoplethysmography.In:JournalofBiomimetics,BiomaterialsandBiomed-
+ical Engineering, vol. 55, pp. 154–167 (2022). https://doi.org/10.4028/p-01r9mn .
+Trans Tech Publ
+[45] Beh, W.-K., Wu, Y.-H., et al.: Maus: A dataset for mental workload assessmenton
+n-back task using wearable sensor. arXiv preprint arXiv:2111.02561 (2021)
+[46] Mehrgardt, P., Khushi, M., Poon, S., Withana, A.: Pulse transit time ppg dataset.
+PhysioNet 10, 215–220 (2022)
+[47] Siam, A.I., Abd El-Samie, F., Abu Elazm, A., El-Bahnasawy, N., Elbanby, G.:
+Real-world ppg dataset (2019) https://doi.org/10.17632/yynb8t9x3d.1
+[48] Garde, A., Dehkordi, P., Karlen, W., Wensley, D., Ansermino, J.M., Dumont,
+G.A.: Development of a screening tool for sleep disordered breathing in children
+using the phone oximeter™. PloS one 9(11), 112959 (2014)
+[49] Pimentel, M.A.F., Johnson, A.E.W., Charlton, P.H., Birrenkott, D., Watkinson,
+P.J., Tarassenko, L., Clifton, D.A.: Toward a robust estimation of respiratory
+rate from pulse oximeters. IEEE Transactions on Biomedical Engineering 64(8),
+1914–1923 (2017) https://doi.org/10.1109/TBME.2016.2613124
+[50] Moody,B.,Moody,G.,Villarroel,M.,Clifford,G.D.,Silva,I.:MIMIC-IIIWaveform
+Database (version 1.0). PhysioNet (2020). https://doi.org/10.13026/c2607m .
+https://doi.org/10.13026/c2607m
+[51] Mol, A., Meskers, C.G., Niehof, S.P., Maier, A.B., Wezel, R.J.: Pulse transit
+time as a proxy for vasoconstriction in younger and older adults. Experimental
+gerontology 135, 110938 (2020)
+[52] Lee, H., Chung, H., Lee, J.: Motion artifact cancellation in wearable photo-
+plethysmography using gyroscope. IEEE Sensors Journal 19(3), 1166–1175 (2019)
+https://doi.org/10.1109/JSEN.2018.2879970
+[53] Nemcova, A., Vargova, E., Smisek, R., Marsanova, L., Smital, L., Vitek, M.:
+Brno university of technology smartphone ppg database (but ppg): Annotated
+dataset for ppg quality assessment and heart rate estimation. BioMed Research
+International 2021(1), 3453007 (2021)
+[54] Drew, B.J., Harris, P., Z`egre-Hemsey, J.K., Mammone, T., Schindler, D., Salas-
+Boni, R., Bai, Y., Tinoco, A., Ding, Q., Hu, X.: Insights into the problem of alarm
+fatigue with physiologic monitor devices: a comprehensive observational study of
+consecutive intensive care unit patients. PloS one 9(10), 110274 (2014)
+[55] Liang, Y., Chen, Z., Liu, G., Elgendi, M.: A new, short-recorded photoplethys-
+mogram dataset for blood pressure monitoring in china. Scientific data 5(1), 1–7
+41
+(2018)
+[56] Mieloszyk, R., Twede, H., Lester, J., Wander, J., Basu, S., Cohn, G., Smith,
+G., Morris, D., Gupta, S., Tan, D., et al.: A comparison of wearable tonome-
+try, photoplethysmography, and electrocardiography for cuffless measurement of
+blood pressure in an ambulatory setting. IEEE Journal of Biomedical and Health
+Informatics 26(7), 2864–2875 (2022)
+[57] Liu, Z.-D., Li, Y., Zhang, Y.-T., Zeng, J., Chen, Z.-X., Cui, Z.-W., Liu, J.-K.,
+Miao, F.: Cuffless blood pressure measurement using smartwatches: a large-scale
+validation study. IEEE Journal of Biomedical and Health Informatics 27(9),
+4216–4227 (2023)
+[58] Toye, P.-J.: Vital videos: A dataset of videos with ppg and blood pressure ground
+truths. arXiv preprint arXiv:2306.11891 (2023)
+[59] Johnson, A.E., Pollard, T.J., Shen, L., Lehman, L.-w.H., Feng, M., Ghassemi,
+M., Moody, B., Szolovits, P., Anthony Celi, L., Mark, R.G.: Mimic-iii, a freely
+accessible critical care database. Scientific data 3(1), 1–9 (2016)
+[60] Bachmann,P.,Gedon,D.,Gustafsson,F.K.,Ribeiro,A.H.,Lampa,E.,Gustafsson,
+S., Sundstr¨om, J., Sch¨on, T.B.: Evaluating regression and probabilistic methods
+for ecg-based electrolyte prediction. Scientific Reports 14(1), 15273 (2024)
+[61] Pimentel, M.A., Johnson, A.E., Charlton, P.H., Birrenkott, D., Watkinson, P.J.,
+Tarassenko, L., Clifton, D.A.: Toward a robust estimation of respiratory rate from
+pulse oximeters. IEEE Transactions on Biomedical Engineering 64(8), 1914–1923
+(2016)
+[62] Saeed, M., Villarroel, M., Reisner, A.T., Clifford, G., Lehman, L.-W., Moody,
+G., Heldt, T., Kyaw, T.H., Moody, B., Mark, R.G.: Multiparameter intelligent
+monitoringinintensivecareii:apublic-accessintensivecareunitdatabase.Critical
+care medicine 39(5), 952–960 (2011)
+[63] Schmidt, P., Reiss, A., Duerichen, R., Marberger, C., Van Laerhoven, K.: Intro-
+ducing wesad, a multimodal dataset for wearable stress and affect detection. In:
+Proceedingsofthe20thACMInternationalConferenceonMultimodalInteraction,
+pp. 400–408 (2018)
+[64] Reiss, A., Indlekofer, I., Schmidt, P., Van Laerhoven, K.: Deep ppg: Large-scale
+heart rate estimation with convolutional neural networks. Sensors 19(14), 3079
+(2019)
+[65] Neshitov, A., Tyapochkin, K., Smorodnikova, E., Pravdin, P.: Wavelet analysis
+and self-similarity of photoplethysmography signals for hrv estimation and quality
+assessment. Sensors 21(20), 6798 (2021)
+42
+[66] Carlson,C.,Turpin,V.-R.,Suliman,A.,Ade,C.,Warren,S.,Thompson,D.E.:Bed-
+basedballistocardiography:Datasetandabilitytotrackcardiovascularparameters.
+Sensors 21(1), 156 (2020)
+[67] Kim, S., Hamilton, R., Pineles, S., Bergsneider, M., Hu, X.: Noninvasive intracra-
+nial hypertension detection utilizing semisupervised learning. IEEE Transactions
+on Biomedical Engineering 60(4), 1126–1133 (2012)
+[68] Rajajee, V.: Noninvasive intracranial pressure monitoring: are we there yet?
+Neurocritical Care 41(2), 332–338 (2024)
+[69] Kemp, B., Zwinderman, A.H., Tuk, B., Kamphuisen, H.A., Oberye, J.J.: Analysis
+of a sleep-dependent neuronal feedback loop: the slow-wave microcontinuity of
+the eeg. IEEE Transactions on Biomedical Engineering 47(9), 1185–1194 (2000)
+[70] Chen, T., Kornblith, S., Norouzi, M., Hinton, G.: A simple framework for con-
+trastivelearningofvisualrepresentations.In:InternationalConferenceonMachine
+Learning, pp. 1597–1607 (2020). PmLR
+[71] Chowdhury,M.H.,Shuzan,M.N.I.,Chowdhury,M.E.,Mahbub,Z.B.,Uddin,M.M.,
+Khandakar,A.,Reaz,M.B.I.:Estimatingbloodpressurefromthephotoplethysmo-
+gram signal and demographic features using machine learning techniques. Sensors
+20(11), 3127 (2020)
+[72] Im, S., Oh, J., Choi, E.: Labtop: A unified model for lab test outcome prediction
+on electronic health records. arXiv preprint arXiv:2502.14259 (2025)
+[73] Allen, J.: Photoplethysmography and its application in clinical physiological
+measurement. Physiological measurement 28(3), 1 (2007)
+[74] Charlton, P.H., Birrenkott, D.A., Bonnici, T., Pimentel, M.A., Johnson, A.E.,
+Alastruey, J., Tarassenko, L., Watkinson, P.J., Beale, R., Clifton, D.A.: Breathing
+rate estimation from the electrocardiogram and photoplethysmogram: A review.
+IEEE reviews in biomedical engineering 11, 2–20 (2017)
+[75] Park, J., Seok, H.S., Kim, S.-S., Shin, H.: Photoplethysmogram analysis and
+applications: an integrative review. Frontiers in physiology 12, 808451 (2022)
+[76] Leeuwen, F.D., Bhattacharyay, S., Carriero, A., Moyer, E.J., Moberg, R.: Predict-
+ing the trajectory of intracranial pressure in patients with traumatic brain injury:
+evaluation of a foundation model for time series. arXiv preprint arXiv:2410.14333
+(2024)
+[77] Zhai, S., Likhomanenko, T., Littwin, E., Busbridge, D., Ramapuram, J., Zhang,
+Y.,Gu,J.,Susskind,J.M.:Stabilizingtransformertrainingbypreventingattention
+entropy collapse. In: International Conference on Machine Learning, pp. 40770–
+40803 (2023). PMLR
+43
+[78] Lee, S.A., Akamatsu, K.: Foundation models for physiological signals: Opportuni-
+ties and challenges (2025)
+[79] Narayanswamy, G., Liu, X., Ayush, K., Yang, Y., Xu, X., Liao, S., Garrison, J.,
+Tailor, S., Sunshine, J., Liu, Y., et al.: Scaling wearable foundation models. arXiv
+preprint arXiv:2410.13638 (2024)
+[80] Erturk*, E., Kamran*, F., Abbaspourazad, S., Jewell, S., Sharma, H., Li, Y.,
+Williamson, S., Foti*, N.J., Futoma*, J.: Beyond sensor data: Foundation models
+of behavioral data from wearables improve health predictions. In: ICML (2025).
+https://arxiv.org/abs/2507.00191v1
+[81] Nolin-Lapalme, A., Sowa, A., Delfrate, J., Tastet, O., Corbin, D., Kulbay, M.,
+Ozdemir, D., No¨el, M.-J., Marois-Blanchet, F.-C., Harvey, F., et al.: Founda-
+tion models for generalizable electrocardiogram interpretation: comparison of
+supervised and self-supervised electrocardiogram foundation models. medRxiv
+(2025)
+[82] Bedi, S., Cui, H., Fuentes, M., Unell, A., Wornow, M., Banda, J.M., Kotecha, N.,
+Keyes, T., Mai, Y., Oez, M., et al.: Medhelm: Holistic evaluation of large language
+models for medical tasks. arXiv preprint arXiv:2505.23802 (2025)
+[83] Karargyris, A., Umeton, R., Sheller, M.J., Aristizabal, A., George, J., Wuest,
+A., Pati, S., Kassem, H., Zenk, M., Baid, U., et al.: Federated benchmarking
+of medical artificial intelligence with medperf. Nature machine intelligence 5(7),
+799–810 (2023)
+Appendix A Attention visualization
+Here, we visualize the exact attention patterns obtained by the generalist and the
+specialist model. We visualized attention entropy plots earlier in Fig. 8. The raw
+attention values are presented here in Fig. A1 and Fig. A1. We present here the
+attention maps for both models for a positive AF arrhythmia patient.
+44
+Fig. A1: Attention maps by layer and head for positive AF arrhythmia patient using
+the generalist MOMENT model.
+45
+Fig. A2: Attention maps by layer and head for positive AF arrhythmia patient using
+the specialist PPG-GPT model.
+46

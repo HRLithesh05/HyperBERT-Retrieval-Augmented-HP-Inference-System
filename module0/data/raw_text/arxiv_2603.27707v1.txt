@@ -1,0 +1,881 @@
+Low-Rank Adaptation Reduces Catastrophic
+Forgetting
+in Sequential Transformer Encoder Fine-Tuning
+Controlled Empirical Evidence and Frozen-Backbone
+Representation Probes
+Ashish Pandey
+ashishpanday9818@gmail.com
+March 2026
+Abstract
+Sequential fine-tuning of pretrained language encoders often overwrites previously acquired capabil-
+ities, but the forgetting behavior of parameter-efficient updates remains under-characterized. We
+present a controlled empirical study of Low-Rank Adaptation (LoRA) in sequential transformer
+encoder fine-tuning together with companion representation probes that test a frozen-backbone ex-
+planationofitsrobustness. Infivefull-validationBERT-basererunsonanRTE→MRPC→CoLA
+→ SST-2 sequence, full fine-tuning yields 19.9%±4.8% average forgetting, whereas standard LoRA
+(r=8,query/valuemodules)yields0.6%±1.4%(pairedt-test,p=0.002,Cohen’sd =3.12). Task-
+z
+level analyses show that this reduction is not merely an aggregate effect. Secondary full-validation
+experimentsonRoBERTa-baseshowthesamequalitativepattern,andthestrongestElasticWeight
+Consolidation baseline remains at 15.5%±1.4% forgetting. A six-task extension reveals that low
+average forgetting can still hide strong task-level heterogeneity, especially on MRPC. Fine-grained
+freezing ablations show a marked forgetting drop once frozen parameters exceed roughly 95%, with
+classifier-onlyandshallow-adapterbaselinesapproachingstandardLoRA.Companiontask-similarity
+probesinGPT-2andRoBERTathenshowthesamedirectionalstoryinrepresentationspace: frozen-
+backbone regimes preserve substantially higher inter-task similarity than full fine-tuning, gradual
+unfreezing weakens that stability, and full fine-tuning exhibits its clearest layer-wise divergence at
+the final transformer layer. Taken together, these results support a restrained mechanistic inter-
+pretation: LoRA appears to help largely because strong backbone freezing preserves a more stable
+shared feature scaffold than full fine-tuning. We therefore position standard LoRA as both a strong
+empirical baseline for sequential encoder adaptation and a useful probe of how selective plasticity
+shapes interference in transformer continual learning.
+Keywords: Catastrophic forgetting · Continual learning · Low-rank adaptation · Parameter-efficient
+fine-tuning · Transformer encoders · Task-invariant representations
+1 Introduction
+Catastrophicforgetting—thetendencyofneuralnetworkstooverwritepreviouslylearnedrepresentations
+whentrainedonnewtasks—remainsoneofthemostpersistentobstaclestodeployingpretrainedlanguage
+models in sequential adaptation settings [13]. When a pretrained encoder fine-tuned on Task A is
+subsequently fine-tuned on Task B, the shared parameters shift toward B at the cost of A, producing
+measurable accuracy regressions that compound with each additional task.
+The difficulty is structural. Full fine-tuning grants the optimizer unrestricted access to all model pa-
+rameters, and nothing in the standard training objective penalizes interference with previously learned
+representations. Classicalcontinual-learningremedies—EWC[4],replaybuffers[11],progressivearchitec-
+tures[15]—eachintroduceexplicitanti-forgettingmachinery,buttheyalsoaddhyperparameters,storage
+overhead, or architectural complexity that limits practical adoption.
+Parameter-efficientfine-tuning(PEFT)methodssuchasLoRA[3]freezethepretrainedbackboneand
+learnlow-rankupdatesinasmalltrainablesubspace. Thisfrozen-backbonedesignimplicitly restrictsthe
+degrees of freedom available to the optimizer, raising a natural question: does constraining the trainable
+subspace alone materially reduce catastrophic forgetting, even without any continual-learning-specific
+algorithm? Despite the rapid adoption of LoRA variants in continual-learning pipelines [8, 19, 25], no
+1
+6202
+raM
+92
+]GL.sc[
+1v70772.3062:viXra
+priorstudyisolatesthisquestionunderacontrolledempiricalprotocolthatcleanlyseparatesconfirmatory
+evidence from exploratory screening—nor connects the empirical finding to a mechanistic explanation
+grounded in representation stability.
+We address this gap with a controlled empirical study that measures catastrophic forgetting un-
+der standard LoRA versus full fine-tuning in sequential transformer encoder adaptation, together with
+companion representation probes that test a frozen-backbone explanation. Our design enforces strict
+protocol separation: the headline result derives exclusively from five full-validation BERT-base reruns,
+whileearlierscreeningsweepsandsecondaryexperimentsare reportedtransparentlyassupporting—not
+confirmatory—evidence.
+Contributions.
+• Confirmatory forgetting reduction. In five paired BERT-base reruns under a consistent full-
+validationprotocol, standardLoRA(r=8, query/value)reducesaverageforgettingfrom19.9%±4.8%
+to 0.6%±1.4%—a 97.2% relative reduction (paired t-test, p=0.002, Cohen’s d =3.12).
+z
+• Multi-level robustness evidence. Task-level breakdowns, a RoBERTa-base replication, an EWC
+baseline comparison, and a six-task extension collectively show that the reduction is not confined to a
+single aggregate statistic, model, or task sequence—though it is not uniform across all tasks.
+• Freezing–forgetting mechanism link. A fine-grained freezing ablation reveals a sharp transition:
+forgetting drops markedly once more than ∼95% of parameters are frozen, linking the main result to
+the size of the trainable subspace rather than to any LoRA-specific inductive bias.
+• Representation-level evidence. Companion task-similarity probes in GPT-2 and RoBERTa show
+that frozen-backbone regimes preserve substantially higher inter-task similarity than full fine-tuning,
+with gradual unfreezing systematically degrading that stability (Figure 1).
+• Protocol transparency as methodology. By explicitly separating confirmatory, secondary,
+and exploratory evidence tiers, we demonstrate a reporting template that prevents mixed-protocol
+overclaiming—a common pitfall in sequential fine-tuning studies.
+The novelty of this paper is therefore methodological and interpretive rather than algorithmic. We
+do not propose a new continual-learning method. Instead, we provide a tightly audited estimate of
+how much standard LoRA reduces forgetting under one consistent protocol, then use freezing-based
+comparisons and representation probes to narrow the best-supported explanation for that reduction.
+2 Related Work
+2.1 Catastrophic Forgetting and Continual Learning
+Catastrophic forgetting has been studied for decades [13]. Classical mitigation strategies include reg-
+ularization methods such as Elastic Weight Consolidation (EWC) [4], Synaptic Intelligence [22], and
+Learning without Forgetting [7]; replay-based methods such as Gradient Episodic Memory and exem-
+plar replay [11, 14]; and architectural methods such as Progressive Networks and parameter-isolation
+schemes[12,15]. Theseapproachesprovidestrongbaselinesbuttypicallyrequireeitherexplicitcontinual-
+learningobjectives, task-specificstorage, orarchitecturalchanges—leavingopenthequestionofwhether
+implicit structural constraints, such as freezing most parameters, can achieve comparable forgetting
+reduction without dedicated anti-forgetting machinery.
+2.2 Parameter-Efficient Fine-Tuning
+PEFT methods adapt pretrained models while updating a small number of task-specific parameters.
+LoRA [3] is the most widely used low-rank approach. Subsequent variants include AdaLoRA [24],
+DoRA [9], RS-LoRA [5], and quantization-aware approaches such as QLoRA and LoftQ [2, 6]. These
+methodsareprimarilymotivatedbyefficiency, buttheirfrozen-backbonestructurealsomakesthemnat-
+uralcandidatesforsequentialadaptation. However,thePEFTliteratureoverwhelminglyevaluatesthese
+methods on single-task accuracy; their behavior under sequential adaptation—and specifically whether
+the frozen backbone itself drives forgetting reduction—remains systematically under-studied.
+2
+2.3 PEFT for Continual Learning
+Several recent papers study LoRA or related PEFT mechanisms directly in continual-learning settings.
+O-LoRAenforcesorthogonalityacrosslow-rankupdates[19]. Prompt-basedmethodssuchasL2P,Dual-
+Prompt, and CODA-Prompt adapt prompts instead of the full backbone [16, 20, 21]. InfLoRA analyzes
+interference-free low-rank adaptation [8]. More recent work includes C-LoRA [25], LoRI [23], replay
+combined with LoRA for NLU [1], drift-resistant LoRA subtraction in exemplar-free continual learning
+[10], and a 2026 geometric account of forgetting in low-rank adaptation [17].
+Our paper differs from the above work on three axes. First, we study standard LoRA without
+any continual-learning-specific modifications, isolating the implicit frozen-backbone effect. Second, we
+enforce strict protocol separation between confirmatory and exploratory evidence, preventing mixed-
+protocoloverclaiming. Third,weconnecttheempiricalresulttoamechanisticinterpretationviafreezing
+ablations and representation probes, rather than only reporting aggregate forgetting scores.
+2.4 Task-Invariant Representations and Mechanistic Explanations
+Multi-task and transfer-learning research has long suggested that stable shared features can improve ro-
+bustnessacrosstasks,whiletask-specificdriftindeeperlayerscanproduceinterference. Recentcontinual-
+learning work on PEFT increasingly frames the problem interms of geometric separation, orthogonality,
+replay, or constrained subspaces rather than only aggregate forgetting scores. Our manuscript takes a
+narrower step in that direction. We do not claim a complete mechanistic proof, but we do test whether
+therepository’sstrongestevidenceismoreconsistentwithafrozen-backboneaccountthanwithapurely
+low-rank one. The language of task-invariant representations is therefore used here as an interpretation
+of the observed freezing pattern, not as a fully established theorem about all LoRA behavior.
+3 Experimental Methodology
+3.1 Sequential Protocol and Forgetting Metric
+Our main task order is RTE → MRPC → CoLA → SST-2, using GLUE [18]. After each task is trained,
+we evaluate the current model on every task seen so far. For a task T , forgetting is the drop between
+i
+its post-training peak and its accuracy after later tasks:
+F(T )=Acc (after training T )−Acc (after training T ), j >i. (1)
+i i i i j
+Average forgetting over prior tasks is
+N−1
+1 (cid:88)
+F = F(T ). (2)
+N −1 i
+i=1
+Positive values indicate forgetting; negative values indicate backward transfer.
+3.2 Evidence Tiers and Protocol Taxonomy
+The central methodological choice in this paper is to separate confirmatory runs from exploratory ones.
+Earlier experiments in the repository used validation[:200] slices and were useful for screening, but
+they are not merged with the confirmatory statistics reported here. In particular, the older BERT seeds
+42–44 are not combined with the full-validation reruns 45–49.
+3.3 Models, Hyperparameters, and Statistics
+TheconfirmatorystudyusesBERT-base-uncasedwitheitherfullfine-tuningorLoRA(r =8,query/value
+modules). Secondary experiments use RoBERTa-base, EWC, 6-task sequential adaptation, and freezing
+ablations under the settings summarized in Table 1. Across these runs, training uses three epochs,
+learning rate 2×10−5, batch size 16, AdamW, warmup 100 steps, and weight decay 0.01. We report
+meanandstandarddeviationoverseeds,andforthemainBERTcomparisonwecomputeapairedt-test
+and Cohen’s d directly from the confirmatory reruns.
+z
+3
+Table 1: Protocol taxonomy used in this paper. Only the confirmatory BERT row supplies the main
+headline result.
+Study Role Validation Training caps Seeds
+BERTfullFT SST-2capped
+vs.LoRA Confirmatory Fullvalidation at2,000 45–49
+RoBERTa
+fullFT SST-2capped
+vs.LoRA Secondary Fullvalidation at2,000 42–44
+SST-2capped
+EWCbaseline Secondary Fullvalidation at2,000 42–44
+6-task SST-2,
+LoRA QNLIcapped
+extension Secondary Fullvalidation at2,000 42–44
+Rank/module/ validation
+quant.sweeps Exploratory [:200] Screeningsetup 42–44
+Fine-grained
+freezing SST-2capped
+ablation Exploratory Fullvalidation at2,000 42–44
+(a) Full Fine-Tuning (b) LoRA: Frozen Backbone
+All layers trainable Frozen backbone adL ao pR tA ers 16
+L11 L11 14
+12
+10
+8 L5 L5
+6
+4
+L0 L0 2
+19.9% avg forgetting 0.6% avg forgetting
+0
+86 88 90 92 94 96 98 100
+% frozen parameters
+)%(
+gnittegrof
+egarevA
+(c) The 95% Freezing Cliff
+14.8%
+~95%
+transition
+5.2%
+2.63.1%
+Figure 1: Paper overview. Left: full fine-tuning leaves the entire backbone trainable and suffers high
+forgetting under unconstrained drift. Middle: LoRA freezes the backbone and routes task-specific adap-
+tation through small low-rank updates, preserving a more stable shared scaffold. Right: the empirical
+freezing ablation shows a sharp forgetting drop once the frozen fraction crosses roughly 95%.
+3.4 Interpretive Scope
+Theframinginthispaperdistinguishesbetweenevidencethatinformsmechanismandafullmechanistic
+proof. TheconfirmatoryBERTrerunsestablishthatstandardLoRAstronglyreducesaverageforgetting
+under the audited protocol. The freezing studies, classifier-only baselines, and shallow-adapter variants
+then ask which architectural constraint best matches that reduction. This lets us compare a frozen-
+backbone hypothesis against a weaker low-rank-only story. It also forces us to be explicit about what
+the current paper still does not establish decisively: a uniquely causal mechanism, a gradient-geometry
+explanation that survives alternative probes, or long-horizon continual adaptation under matched seeds.
+3.5 Companion Mechanism Probes
+Totestthefrozen-backboneinterpretationmoredirectly,weadditionallyuseaverifiedcompanionexperi-
+mentrepositorythatmeasurestasksimilarityinrepresentationspace. Theseprobesarekeptanalytically
+separatefromtheconfirmatoryBERTforgettingstatistics: theyusepartlydifferentarchitectures(GPT-2
+and RoBERTa), sometimes fewer tasks, and were designed to discriminate between mechanism hypothe-
+ses rather than to extend the main five-seed benchmark. In these probes, task similarity denotes cosine
+similarity between task centroids extracted from hidden-state activations, with higher values indicating
+that sequentially adapted tasks continue to occupy a more shared representation space. We use these
+studies only as explanatory evidence about freezing, gradual unfreezing, orthogonality, and layer-wise
+drift.
+Figure 1 summarizes the paper’s central argument before the detailed results: the empirical gap
+between full fine-tuning and LoRA is large, and the freezing transition suggests that the main driver is
+strong backbone preservation rather than unconstrained parameter drift.
+4
+25
+20
+15
+10
+5
+0
+Full FT LoRA
+)%(
+gnittegrof
+egarevA
+Confirmatory BERT forgetting (full validation, seeds 45-49)
+19.9 +/- 4.8
+0.6 +/- 1.4
+45
+4469
+48
+47
+Figure 2: Seed-paired confirmatory BERT forgetting comparison from the audited full-validation reruns
+(seeds 45–49).
+Table 2: Confirmatory BERT-base forgetting statistics from the full-validation reruns (seeds 45–49).
+Earlier subset-validation runs are intentionally excluded.
+Method Mean Std Min Max Reduction
+Full fine-tuning 19.9% 4.8% 12.1% 25.0% —
+LoRA (r=8, qv) 0.6% 1.4% −2.0% 2.1% 97.2%
+4 Main Results
+4.1 Confirmatory BERT-Base Result
+Thecleanestevidenceinthispapercomesfromthefivefull-validationBERTreruns. Underthisconsistent
+protocol, full fine-tuning produces substantial forgetting:
+Full FT: 19.9%±4.8% , (3)
+while LoRA yields much lower average forgetting:
+LoRA: 0.6%±1.4% . (4)
+This corresponds to a 97.2% relative reduction. The paired comparison also favors LoRA under this
+protocol (t(4)=6.99, p=0.002, Cohen’s d =3.12).
+z
+Task-level averages show the same qualitative pattern. Under full fine-tuning, average forgetting is
+largest on MRPC (23.7 percentage points), followed by CoLA (21.4) and RTE (14.4). Under LoRA,
+MRPC forgetting is approximately zero on average, RTE forgetting is 3.3 points, and CoLA shows
+slight backward transfer. Figure 3a shows that the reduction is not confined to the aggregate statistic:
+forgetting is lower on each previously learned task, with the largest absolute gaps on MRPC and CoLA.
+The confirmatory reruns also show an accuracy trade-off: final average accuracy is 64.5% for full fine-
+tuning versus 59.5% for LoRA.
+Figure 4 makes the task-by-stage pattern explicit. Under full fine-tuning, forgetting accumulates
+quicklyforMRPCandCoLAafterlatertasks. TheLoRAheatmapremainsnearzeroexceptformodest
+RTE drift and slight CoLA backward transfer.
+4.2 Exploratory Configuration Context
+Earlierscreeningsweepsoverrank, moduletargeting, andquantizationusedvalidation[:200]andare
+therefore treated as exploratory only. Those runs suggested that r = 8 was a reasonable parameter-
+efficiency starting point, that targeting more linear layers could improve task accuracy, and that 4-
+bit quantization preserved accuracy in the screening setup while reducing memory footprint. Across
+5
+35
+30
+25
+20
+15
+10
+5
+0
+RTE MRPC COLA
+)%(
+gnittegrof
+level-ksaT
+Confirmatory BERT forgetting by task 25
+Full FT
+LoRA
+20
+15
+10
+5
+0
+After RTE After MRPC After CoLA After SST-2
+(a) Task-level forgetting. LoRA reduces forgetting on
+all previously learned tasks.
+)%(
+sksat
+roirp
+no
+gnittegrof
+egarevA
+Confirmatory BERT forgetting trajectory across the sequence
+Full FT
+LoRA
+(b)Stage-wiseaverageforgettingtrajectoryacrossthe
+confirmatory BERT sequence.
+Figure3: Task-levelandstage-wiseforgettingintheconfirmatoryBERTreruns(seeds45–49). (a)LoRA
+reduces forgetting on every individual task. (b) The gap between methods widens progressively as more
+tasks are added.
+RTE
+MRPC
+COLA
+SST2
+After
+RTE
+After
+MRPC
+After
+COLA
+After
+SST2
+Evaluation stage
+ksaT
+Full fine-tuning LoRA
+0.0 12.0 15.6 14.4 RTE 0.0 2.9 3.1 3.2 20
+15
+10
+0.0 15.1 23.7 MRPC 0.0 0.0 0.0 5
+0
+0.0 21.4 COLA 0.0 -1.6
+0.0 SST2 0.0
+After
+RTE
+After
+MRPC
+After
+COLA
+After
+SST2
+Evaluation stage
+)%(
+kaep
+gniniart-tsop
+ot
+evitaler
+gnittegroF
+Figure 4: Mean task-by-stage forgetting in the confirmatory BERT reruns. Each cell reports forgetting
+relative to that task’s post-training peak, averaged across seeds 45–49.
+the appendix sweeps, the configuration story is internally consistent: larger rank improves screening
+accuracy at rising parameter cost (Figure 9a), all-linear targeting improves screening accuracy relative
+toquery/value-onlytargeting(Figure9b),and4-bitquantizationpreservesthesamequalitativeordering
+whileloweringmemory(Figure10a). Weretainthesesweepsasmotivationforfutureconfirmatorywork,
+not as headline forgetting evidence. The detailed exploratory plots are included in Section A.
+5 Secondary Evidence
+5.1 RoBERTa Replication
+Thefull-validationRoBERTareplicationsupportsthesamequalitativepicture: forgettingremainsmuch
+lower with standard LoRA than with full fine-tuning.
+5.2 EWC Baseline
+We also ran a separate full-validation EWC baseline on the same 4-task order. The strongest EWC
+setting in the repository reaches 15.5%±1.4% forgetting with 67.0% final average accuracy. This is
+higher forgetting than the confirmatory LoRA reruns, but we treat the comparison as contextual rather
+than paired, because the EWC runs use a different seed set.
+5.3 Six-Task Extension
+The 6-task extension adds QNLI and WNLI. Average forgetting remains low relative to full fine-tuning,
+butthetask-levelbreakdownisheterogeneousenoughthatwedonottreatthissectionascleanscalability
+evidence.
+6
+Table 3: Secondary full-validation RoBERTa-base replication (n=3 seeds).
+Method Forgetting Final Avg. Reduction
+Accuracy
+Full fine-tuning 24.2% ± 2.2% 64.8% —
+LoRA (r=8, qv) 1.7% ± 1.0% 59.3% 92.8%
+Table 4: Secondary EWC baseline under the same task order and training setup. The BERT LoRA row
+is included only as confirmatory context, not as a paired same-seed comparison.
+Method n Forgetting Final Avg.
+Accuracy
+BERT LoRA 5 0.6% ± 1.4% 59.5%
+(confirmatory)
+EWC (λ=100) 6 16.4% ± 1.2% 66.2%
+EWC (λ=1000) 3 16.2% ± 1.2% 66.2%
+EWC (λ=5000) 3 15.5% ± 1.4% 67.0%
+A stage-wise view clarifies where the average changes occur. Forgetting stays close to zero through
+SST-2, then jumps sharply once QNLI is introduced and remains elevated after WNLI (Figure 6b).
+6 Freezing and Representation Evidence for a Frozen-Backbone
+Hypothesis
+Thefine-grainedfreezingablationusesfullvalidationandthereforecarriesmoreweightthanthescreening
+sweeps, but we still treat it as secondary evidence rather than as a second confirmatory headline. Its
+purpose is not to replace the main BERT comparison; instead, it asks which part of the LoRA design
+best matches the forgetting reduction. The main pattern is clear: forgetting decreases markedly once
+more than 95% of parameters are frozen.
+This ablation is consistent with a frozen-backbone interpretation of the main result, but it does not
+by itself prove that attention weights are the unique locus of interference. We therefore frame it as
+suggestive evidence about where forgetting becomes easier to control, not as a mechanistic proof.
+Read together, the freezing rows suggest a more specific interpretation than the original empirical
+paper alone could support. High-forgetting partially unfrozen configurations (86.5% and 93.0% frozen)
+behave much more like full fine-tuning than like standard LoRA, whereas classifier-only and shallow-
+adapter baselines remain close to the standard LoRA regime once the frozen fraction approaches 100%.
+This pattern is more naturally explained by a strong frozen-backbone constraint than by low-rank pa-
+rameterization alone. In that sense, the repository’s evidence points toward a task-invariant-subspace
+hypothesis: when almost all backbone parameters are fixed, later tasks appear to reuse a more stable
+shared feature scaffold instead of overwriting it.
+Thecompanionmechanismprobesstrengthenthisinterpretationbymeasuringtasksimilaritydirectly
+ratherthaninferringitonlyfromforgettingcurves. Inafour-taskGPT-2probe, afullyfrozenbackbone
+reachestasksimilarity0.9988versus0.8935forfullfine-tuningwhileretainingcompetitivemeanaccuracy
+(0.671 vs. 0.701). A gradual-unfreezing probe then shows monotonic erosion as more layers are released:
+tasksimilarityfallsfrom0.9982inthehead-onlyregimeto0.9943and0.9911underprogressivelybroader
+schedules, then collapses to 0.8542 under full fine-tuning. A dedicated layer-wise representation analysis
+shows that both regimes remain highly similar through most layers, but full fine-tuning exhibits its
+clearestdropatthefinallayer(0.9902versus0.9973forLoRA).Orthogonal-regularizationsweepsremain
+effectively flat (0.9775–0.9778), suggesting that generic update decorrelation alone does not recreate the
+same preservation effect. The broader direction is also visible in RoBERTa (0.9321 vs. 0.6383), GPT-2
+Medium (0.9994 vs. 0.9967), and an eight-seed GPT-2 validation where LoRA maintains higher task
+similarity than full fine-tuning (0.9973±0.0016 vs. 0.9897±0.0069, p = 0.013; see Figure 11 for the
+compact robustness summary).
+7
+25
+20
+15
+10
+5
+0
+Full FT LoRA
+)%(
+gnittegrof
+egarevA
+RoBERTa replication
+20.0
+17.5
+15.0
+12.5
+10.0
+7.5
+5.0
+2.5
+0.0
+100 1000 5000
+EWC lambda
+)%(
+gnittegrof
+egarevA
+EWC baseline with BERT references
+BERT Full FT (19.9%)
+BERT LoRA (0.6%)
+Figure 5: Secondary cross-checks. Left: RoBERTa full fine-tuning versus LoRA. Right: EWC forgetting
+by λ with confirmatory BERT reference lines.
+Table 5: LoRA under 4-task and 6-task full-validation protocols. The 6-task result has low average
+forgetting but large MRPC forgetting.
+Setting n Avg. Final Avg. MRPC
+Forgetting Accuracy Forgetting
+4-task BERT
+LoRA reference 5 0.6% ± 1.4% 59.5% −0.3 to 0.5
+pts
+6-task BERT LoRA 3 5.6% ± 0.8% 53.8% 35.8–37.5 pts
+7 Computational Footprint
+The repository’s directly audited profiling logs are limited to one exploratory 4-bit LoRA configuration,
+so we report them only as deployment context and not as a cross-method speedup claim. In that setup,
+training takes 11.95 ± 1.12 seconds per epoch, peak memory is 0.46 ± 0.11 GB, inference latency is
+53.72±4.62 ms, throughput is 18.74 samples/s, and the trainable parameter count is 296,450 (0.44%
+of the quantized model). These values should be read together with the exploratory quantization figure
+in the appendix: they show that the all-linear/4-bit configuration can operate at sub-gigabyte memory
+scale, but they are peripheral to the paper’s main empirical and mechanistic claims.
+8 Discussion
+8.1 What the Confirmatory Result Does and Does Not Show
+The strongest claim supported by the repository is that standard LoRA substantially reduces average
+forgetting in the audited 4-task BERT setting. That claim is robust to the stricter protocol audit: even
+after discarding the older subset-validation seeds, the confirmatory reruns still show a large reduction in
+forgetting. However, the result does not imply that forgetting is solved in general, nor that every task is
+uniformly protected.
+8.2 Accuracy-Forgetting Trade-off
+The confirmatory reruns show that forgetting reduction is not free. Full fine-tuning reaches higher final
+averageaccuracythanLoRA(64.5%vs.59.5%),evenafterforgetting. The6-taskextensionreinforcesthe
+same point: average forgetting can remain low while individual tasks deteriorate sharply. For practical
+continual-learning deployments, average forgetting should therefore be reported together with task-level
+breakdowns and final average accuracy.
+8.3 Limitations
+We identify five principal limitations, each with its scope of impact and a path toward resolution:
+• Task and architecture scope. The confirmatory claim rests on BERT-base encoder-only classifica-
+tion over four GLUE tasks. This restricts direct generalization to decoder models, generative tasks,
+8
+30
+20
+10
+0
+RTE MRPC COLA SST2 QNLI
+)%(
+gnittegrof
+level-ksaT
+Six-task LoRA run shows heterogeneous forgetting
+8
+6
+4
+2
+0
+2
+After
+RTE
+After
+MRPC
+After
+COLA
+After
+SST2
+After
+QNLI
+After
+WNLI
+(a) Task-level forgetting. MRPC is the clear outlier.
+)%(
+sksat
+roirp
+no
+gnittegrof
+egarevA
+Six-task LoRA forgetting trajectory
+Mean across seeds
+43
+4424
+(b) Average-forgetting trajectory. Faint lines show in-
+dividual seeds.
+Figure6: Six-taskLoRAextension. (a)MRPCdominatestask-levelforgettingdespitelowaveragevalues.
+(b) Forgetting stays near zero through SST-2, then jumps sharply once QNLI is introduced.
+Table6: Exploratoryfull-validationfreezingablation(n=3seeds). Thepatternsuggestsamarkeddrop
+in forgetting once freezing exceeds roughly 95%, but we do not interpret this as identifying a unique
+causal mechanism.
+Trainable
+Configuration Frozen Avg. For- Params Role
+% getting
+Freezelayers0–9, High-forgetting
+train10–11 86.5% 14.8% 14.8M reference
+Freezelayers0–10, High-forgetting
+train11 93.0% 13.2% 7.7M reference
+Freeze0–10+
+layer-11attention 95.1% 5.2% 5.3M Markeddrop
+Classifier-only
+Freezeall12layers 99.5% 3.1% 592K baseline
+Adapter
+LoRAonlayer11only 100.0% 2.9% 26K baseline
+Adapter
+LoRAonlayers10–11 100.0% 2.9% 51K baseline
+LoRAonalllayers 99.7% 2.6% 296K StandardLoRA
+orlongertasksequences. Path forward: extendingtheconfirmatoryprotocoltoGPT-2-scaledecoders
+and ≥10-task sequences with matched seeds.
+• Single LoRA configuration. The headline uses r=8 on query/value modules only. Different ranks,
+target modules, or variants (AdaLoRA, DoRA) may shift the forgetting–accuracy trade-off. Path
+forward: a factorial sweep over rank × target module × LoRA variant under the same full-validation
+protocol.
+• Architecture mismatch in mechanism probes. The companion task-similarity and layer-wise
+probes use GPT-2 and RoBERTa—architecturally distinct from the confirmatory BERT benchmark.
+They therefore strengthen interpretation rather than extend the confirmatory result. Path forward:
+replicating the mechanism probes within the same BERT-base encoder used for the headline compari-
+son.
+• No replay or advanced CL baselines. We compare only against EWC and vanilla full fine-tuning.
+Replay-augmentedorrecentPEFT-CLmethods(O-LoRA,InfLoRA)arenotincludedunderamatched
+seed protocol. Path forward: integrating these baselines into the same confirmatory framework.
+• Screening data leakage risk. Therepositorycontainsearliervalidation[:200]sweeps. Although
+we do not pool these with confirmatory statistics, their existence requires transparent disclosure to
+avoidaccidentalmixed-protocolclaims. Pathforward: archivingscreeningrunsinaseparaterepository
+branch with explicit metadata tags.
+9
+16
+14
+12
+10
+8
+6
+4
+2
+86 88 90 92 94 96 98 100
+Frozen parameters (%)
+)%(
+gnittegrof
+egarevA
+Forgetting drops once freezing exceeds roughly 95%
+Standard freezing
+LoRA variants
+Figure 7: Fine-grained freezing ablation. Average forgetting falls sharply once freezing exceeds roughly
+95% of parameters.
+8.4 Frozen-Backbone Bottleneck Hypothesis
+The evidence in this paper supports a simple three-part design hypothesis rather than a completed
+mechanistic theory. First, strong freezing acts as an architectural bottleneck: once most parameters are
+frozen, later tasks lose the degrees of freedom needed to freely rewrite earlier solutions. Second, that
+bottleneck appears to preserve a shared feature scaffold. The freezing ablations suggest that forgetting
+falls most sharply when adaptation is pushed toward classifier-only or shallow-adapter regimes, which
+is exactly where most of the pretrained backbone is reused rather than rewritten. Third, the remaining
+plasticity becomes localized. The system can still adapt, but the cost-benefit trade-off shifts toward
+limited task-specific heads or adapter paths rather than full-model drift.
+This hypothesis is narrower than the mechanism paper’s original claims, but it now rests on more
+than forgetting summaries alone. The companion repository contributes direct task-similarity, gradual-
+unfreezing,andlayer-wiseanalysesthatallpointinthesamedirection: strongerfreezingpreservesamore
+shared representation space, while full fine-tuning induces substantially larger drift and concentrates its
+clearestdivergenceinthedeepestlayer. Evenso,westillstopshortofclaimingauniquecausalmechanism
+becausethedirectprobesremainexploratory, usepartlydifferentarchitecturesandtasksubsets, anddo
+not isolate every alternative explanation.
+8.5 Interpretation
+The observed pattern is consistent with recent theoretical work that links forgetting in low-rank adap-
+tation to the geometry of task subspaces [17]. Our empirical findings also align qualitatively with the
+broader literature showing that task isolation, replay, orthogonality, or stronger freezing can all reduce
+interference [1, 10, 19, 23, 25]. The companion probes sharpen that interpretation in two useful ways.
+First, orthogonal-regularization sweeps leave task similarity almost unchanged, which weakens a generic
+update-decorrelation explanation. Second, direct representation probes show that stronger freezing and
+smallertrainablesubspacesmovethesystemtowardhighertasksimilarity,whilefullfine-tuningproduces
+the clearest late-layer divergence. The interpretation developed here is therefore stronger than a pure
+benchmark report but weaker than a full mechanistic proof: standard LoRA appears to reduce forget-
+tinglargelybecausefrozen-backboneconstraintspreserveamoretask-invariantfeaturescaffoldthanfull
+fine-tuning. We do not claim to have established the unique causal mechanism, only to have identified
+the frozen-trainable-subspace boundary as the best-supported explanation in the current repositories.
+9 Conclusion
+Afterseparatingconfirmatoryfull-validationevidencefromearlierexploratoryruns,thecentralempirical
+resultremains: infiveBERT-basereruns,standardLoRAreducesaverageforgettingfrom19.9%to0.6%.
+Secondary full-validation experiments on RoBERTa and EWC support the same qualitative story, while
+10
+    
+    
+    
+    
+    
+    
+    
+    
+    
+ ) U R ] H Q  ) X O O  ) 7
+ E D F N E R Q H
+ \ W L U D O L P L V  N V D 7
+ + H D G  R Q O \  I U H H ] L Q J  S U H V H U Y H V  W D V N  V L P L O D U L W \
+           
+    
+    
+    
+    
+           
+    
+    
+ D F F         D F F       
+    
+ + H D G  R Q O \              ) X O O  ) 7
+ \ W L U D O L P L V  N V D 7
+ 3 U R J U H V V L Y H  X Q I U H H ] L Q J  H U R G H V  V L P L O D U L W \
+                          
+     
+     
+     
+     
+     
+     
+     
+            
+ \ F D U X F F D  Q D H 0
+     
+     
+     
+     
+     
+     
+     
+                         
+ 7 U D Q V I R U P H U  O D \ H U
+ \ W L U D O L P L V  N V D 7
+ & R P S D Q L R Q  P H F K D Q L V P  S U R E H V  I U R P  W K H  Y H U L I L H G  U H S R
+ ) X O O  ) 7  G L Y H U J H V  P R V W  D W  W K H  I L Q D O  O D \ H U   / R 5 $  U H P D L Q V  P R U H  V W D E O H
+ / D \ H U     J D S        
+ / R 5 $   U    
+ ) X O O  ) 7
+Figure 8: Companion mechanism probes from the verified second repository. Top left: direct task-
+similarity comparison between a frozen backbone and full fine-tuning in a four-task GPT-2 probe. Top
+right: task similarity degrades steadily as more layers are unfrozen. Bottom: layer-wise task similar-
+ity remains high in both regimes, but full fine-tuning shows its largest drop at the final transformer
+layer. These probes are exploratory and architecture-mismatched to the main BERT benchmark, so
+they strengthen interpretation rather than change the confirmatory headline result.
+the 6-task, freezing, and companion representation probes show that the picture is more nuanced than
+a single average can capture.
+The main lesson of this paper is therefore twofold. Standard LoRA is a useful empirical baseline for
+sequential transformer-encoder adaptation, and the strongest current explanation for that robustness is
+the frozen-backbone constraint it imposes on later task learning. Protocol transparency still matters
+because mixing exploratory and confirmatory evidence can easily overstate certainty, but an equally
+importantlessonismechanistic: oncedirecttask-similarityandlayer-wiseprobesareadded,theevidence
+increasinglypointstorepresentationpreservationratherthanlowrankalone. Wehopethispaperisuseful
+both as a controlled empirical result about low-rank adaptation and as a more interpretable account of
+why selective parameter freezing can matter in continual fine-tuning.
+Acknowledgments
+This research received no external funding. Large language models were used to assist with language
+editingandmanuscriptdrafting; allideas,analyses,verificationofclaims,andfinalresponsibilityforthe
+content remain with the author. The code, experiment configurations, and summary results supporting
+this study are available from the corresponding author upon reasonable request.
+References
+[1] Zeinab Borhanifard, Heshaam Faili, and Yadollah Yaghoobzadeh. Combining replay and LoRA for
+continual learning in natural language understanding. Computer Speech & Language, 90:101737,
+2025. doi: 10.1016/j.csl.2024.101737. URL https://doi.org/10.1016/j.csl.2024.101737.
+[2] TimDettmers,ArtidoroPagnoni,AriHoltzman,andLukeZettlemoyer.QLoRA:Efficientfinetuning
+of quantized LLMs. In Advances in Neural Information Processing Systems (NeurIPS), volume 36,
+2023.
+11
+[3] Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang,
+and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In International Confer-
+ence on Learning Representations (ICLR), 2022.
+[4] JamesKirkpatrick,RazvanPascanu,NeilRabinowitz,JoelVeness,GuillaumeDesjardins,AndreiA.
+Rusu,KieranMilan,JohnQuan,TiagoRamalho,AgnieszkaGrabska-Barwinska,etal. Overcoming
+catastrophic forgetting in neural networks. Proceedings of the National Academy of Sciences, 114
+(13):3521–3526, 2017.
+[5] Lingchen Kong, Shixuan Duan, Shuai Ye, Bin Bi, Chengming Li, Yukun Zuo, Min Zhang, and
+Yongbin Zheng. RS-LoRA: Rank-stabilized low-rank adaptation. arXiv preprint arXiv:2405.12712,
+2024.
+[6] Xiaodong Li et al. LoftQ: LoRA-fine-tuning-aware quantization for large language models. arXiv
+preprint arXiv:2310.08987, 2023.
+[7] Zhizhong Li and Derek Hoiem. Learning without forgetting. In European Conference on Computer
+Vision (ECCV), 2016.
+[8] Bing Liang and Jiaxing Li. InfLoRA: Interference-free low-rank adaptation for continual learning.
+In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2024.
+[9] Shih-Yang Liu, Chien-Yi Wang, Hongxu Yin, Pavlo Molchanov, Yu-Chiang Frank Wang, Kwang-
+TingCheng,andMin-HungChen.DoRA:Weight-decomposedlow-rankadaptation.InInternational
+Conference on Machine Learning (ICML), 2024.
+[10] XuanLiuandXiaobinChang. LoRAsubtractionfordrift-resistantspaceinexemplar-freecontinual
+learning. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2025.
+doi: 10.1109/CVPR52734.2025.01426. URL https://doi.org/10.1109/CVPR52734.2025.01426.
+[11] David Lopez-Paz and Marc’Aurelio Ranzato. Gradient episodic memory for continual learning. In
+Advances in Neural Information Processing Systems (NeurIPS), 2017.
+[12] ArunMallyaandSvetlanaLazebnik.PackNet: Addingmultipletaskstoasinglenetworkbyiterative
+pruning. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2018.
+[13] Michael McCloskey and Neal J. Cohen. Catastrophic interference in connectionist networks: The
+sequential learning problem. In Psychology of Learning and Motivation, volume 24, pages 109–165,
+1989.
+[14] Sylvestre-Alvise Rebuffi, Alexander Kolesnikov, Georg Sperl, and Christoph H. Lampert. iCaRL:
+Incremental classifier and representation learning. In IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR), 2017.
+[15] AndreiA.Rusu,NeilC.Rabinowitz,GuillaumeDesjardins,HubertSoyer,JamesKirkpatrick,Koray
+Kavukcuoglu, Razvan Pascanu, and Raia Hadsell. Progressive neural networks. arXiv preprint
+arXiv:1606.04671, 2016.
+[16] James Seale Smith, Leonid Karlinsky, Vyshnavi Gribber, Harsh Brando, Rogerio Feris, and Zsolt
+Kira. CODA-Prompt: Continualdecomposedattention-basedpromptingforrehearsal-freecontinual
+learning. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 2023.
+[17] Brady Steele. Subspace geometry governs catastrophic forgetting in low-rank adaptation. arXiv
+preprint arXiv:2603.02224, 2026. URL https://arxiv.org/abs/2603.02224.
+[18] Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R. Bowman.
+GLUE: A multi-task benchmark and analysis platform for natural language understanding. In
+International Conference on Learning Representations (ICLR) Workshop, 2018.
+[19] Yufei Wang, Aman Agarwal, and Christopher D. Manning. Orthogonal subspace learning for lan-
+guage model continual learning. In Findings of the Association for Computational Linguistics
+(EMNLP), 2023.
+12
+[20] Zifeng Wang, Zizhao Zhang, Sayna Ebrahimi, Ruoxi Sun, Han Zhang, Chen-Yu Lee, Xiaoqi Ren,
+and Guolong Su. DualPrompt: Complementary prompting for rehearsal-free continual learning. In
+European Conference on Computer Vision (ECCV), 2022.
+[21] ZifengWang,ZizhaoZhang,Chen-YuLee,HanZhang,RuoxiSun,XiaoqiRen,GuolongSu,Vincent
+Perot, Jennifer Dy, and Tomas Pfister. Learning to prompt for continual learning. In IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR), 2022.
+[22] FriedemannZenke,BenPoole,andSuryaGanguli. Continuallearningthroughsynapticintelligence.
+In International Conference on Machine Learning (ICML), 2017.
+[23] Juzheng Zhang, Jiacheng You, Ashwinee Panda, and Tom Goldstein. LoRI: Reducing cross-task
+interferenceinmulti-tasklow-rankadaptation. arXivpreprintarXiv:2504.07448,2025. URLhttps:
+//arxiv.org/abs/2504.07448.
+[24] Qingru Zhang, Minshuo Chen, Alexander Bukharin, Pengcheng He, Yu Cheng, Weizhu Chen, and
+Tuo Zhao. AdaLoRA: Adaptive budget allocation for parameter-efficient fine-tuning. In Interna-
+tional Conference on Learning Representations (ICLR), 2023.
+[25] Xin Zhang, Liang Bai, Xian Yang, and Jiye Liang. C-LoRA: Continual low-rank adaptation for
+pre-trained models. arXiv preprint arXiv:2502.17920, 2025. URL https://arxiv.org/abs/2502.
+17920.
+A Exploratory Screening Figures
+This appendix collects exploratory figures that informed configuration selection together with one com-
+panionrobustnessfigurefromtheverifiedsecondrepository. Thefirstfourfiguresusevalidation[:200]
+screening; training logs are limited to one exploratory 4-bit LoRA configuration, so we report them only
+as deployment context and not as a cross-method speed comparison.
+85
+80
+75
+70
+65
+60
+55
+5 10 15 20 25 30
+LoRA rank
+)%(
+ycarucca
+gnineercs
+naeM
+Exploratory rank sweep (validation[:200])
+80
+70
+1181K 60
+591K
+296K
+148K 50
+40
+30
+20
+10
+0
+Q+V Q+K+V All linear
+(a) Rank sweep. Accuracy improves with larger rank
+but parameter count rises quickly.
+)%(
+ycarucca
+gnineercs
+naeM
+Exploratory module-targeting sweep (validation[:200])
+1340K
+296K 443K
+(b) Module-targeting sweep. All-linear targeting im-
+proves accuracy over query/value.
+Figure 9: Exploratory configuration sweeps on validation[:200].
+13
+80
+60
+40
+20
+0
+Q+V 4-bit Q+V 8-bit All-linear 4-bit All-linear 8-bit
+)%(
+ycarucca
+gnineercs
+naeM
+Exploratory quantization sweep (validation[:200])
+0.46 GB 0.53 GB
+0.40 GB 0.48 GB
+80
+60
+40
+20
+0
+RTE MRPC COLA SST2
+(a) Quantization sweep. 4-bit preserves qualitative
+ranking while reducing memory.
+)%(
+ycarucca
+noitadilav
+ksat-elgniS
+Single-task full fine-tuning baseline (validation[:200])
+2.43 GB
+2.42 GB
+2.42 GB
+2.42 GB
+(b)Single-taskfullfine-tuningbaselinefromthescreen-
+ing setup.
+Figure 10: Exploratory quantization and baseline context from validation[:200].
+    
+    
+    
+    
+    
+    
+    
+    
+    
+ 5 R % ( 5 7 D  * 3 7    * 3 7  
+ 0 H G L X P    V H H G
+ \ W L U D O L P L V  N V D 7
+ 5 H S U H V H Q W D W L R Q  V W D E L O L W \  S H U V L V W V  D F U R V V  S U R E H V
+      
+ / R 5 $
+ ) X O O  ) 7       
+      
+      
+      
+      
+      
+      
+      
+              
+ 2 U W K R J R Q D O  U H J X O D U L ] D W L R Q 
+ \ W L U D O L P L V  N V D 7
+ 2 U W K R J R Q D O  U H J X O D U L ] D W L R Q  V W D \ V  H V V H Q W L D O O \  I O D W
+     
+     
+     
+     
+     
+     
+     
+ \ F D U X F F D  Q D H 0
+  
+  
+  
+ 
+ 
+ 5  6  &  5  &  6  &  6  5
+     J Q L W W H J U R I  H J D U H Y $
+ & R P S D Q L R Q  U R E X V W Q H V V  S U R E H V  I U R P  W K H  Y H U L I L H G  V H F R Q G  U H S R V L W R U \
+ / R 5 $  N H H S V  O R Z H U  I R U J H W W L Q J  D F U R V V  W D V N  R U G H U L Q J V
+ / R 5 $
+ ) X O O  ) 7
+ ) X O O  ) 7  P H D Q
+ / R 5 $  P H D Q
+Figure 11: Companion robustness probes. Left: task similarity across RoBERTa, GPT-2 Medium, and
+eight-seed GPT-2. Right: orthogonal regularization effect. Bottom: forgetting across task orderings.
+14

@@ -1,0 +1,949 @@
+From BERT to LLMs：Comparing and Understanding
+Chinese Classifier Prediction in Language Models
+ZiqiZhang,JianfeiMa,EmmanueleChersoni,JieshunYou,ZhaoxinFeng
+DepartmentofLanguageScienceandTechnology,TheHongKongPolytechnicUniversity
+{blameredens.zhang, jianfei-mark.ma,
+jieshun.you, zhaoxinbetty.feng}@connect.polyu.hk,
+emmanuele.chersoni@polyu.hk
+Abstract
+Syntactic Structure
+这 Dem.
+Pron.
+Classifiers are an important and defining fea- This or ✅
+ture of the Chinese language, and their cor-
+Num <CL> Head Noun
+rectpredictioniskeytonumerouseducational
+applications. Yet, whether the most popu-
+lar Large Language Models (LLMs) possess
+Sortal Classifier Measure Word
+properknowledgetheChineseclassifiersisan
+issuethathaslargelyremainunexploredinthe
+NaturalLanguageProcessing(NLP)literature.
+个 碗
+To address such a question, we employ vari- 张 Individual Container 瓶
+Classifier Measure Word ousmaskingstrategiestoevaluatetheLLMs’
+场 克
+intrinsic ability, the contribution of different Event Standard
+次 Classifier Measure Word 年
+sentenceelements,andtheworkingoftheat-
+种 Kind Approx. 堆
+tentionmechanismsduringprediction. Besides,
+Classifier Measure Word
+样 群
+we explore fine-tuning for LLMs to enhance
+theclassifierperformance.
+Figure 1: This figure elaborates on correct syntactic
+OurfindingsrevealthatLLMsperformworse
+structuresoftheChineseclassifiersystem,thetypesof
+thanBERT,evenwithfine-tuning. Thepredic-
+Chineseclassifiers,andcorrespondingexamples,where
+tion,asexpected,greatlybenefitsfromthein-
+Num,CL,Dem. Pron.,andApprox. standfornumeral,
+formationaboutthefollowingnoun,whichalso
+classifier,demonstrativepronoun,andapproximation,
+explainstheadvantageofmodelswithabidi-
+respectively. Notably, several classifier examples on
+rectionalattentionmechanismsuchasBERT.
+bothsidesareaccompaniedbyiconsthatillustratethe
+approximatemeaningstheyconvey. Adetailedexplana-
+tionisprovidedinAppendixC.
+1 Introduction
+Chinese classifiers constitute a morphosyntac-
+tic category that semantically marks noun tone. Impropercollocationscanresultinsemantic
+classes(AhrensandHuang,2016). Theyprecedea orpragmaticviolations(Chan,2019).
+headnounandcombinewithnumeralsordemon- Inthenaturallanguageprocessing(NLP)litera-
+strativepronounstoconveyquantityorfrequency ture, therehasbeenextensiveexplorationofNat-
+withinnounphrases(LiandThompson,1989). As ural Language Understanding (NLU) using Pre-
+illustratedinFigure1,suchlinguisticdevicescon- trained Language Models (PLMs) (Wang et al.,
+structacomplexsystemdescribingdifferentseman- 2022)andLargeLanguageModels(LLMs)(Chang
+ticfeaturesofheadnounsthattheyprecede(Huang et al., 2024; Ma et al., 2025). However, all cur-
+and Shi, 2016). The large classifier inventory in rentstudiesonChineseclassifiersonlyincludebe-
+Chinese often allows different classifiers to com- havioursoftraditionalmodelsforclassifierpredic-
+binewiththesameheadnoun,conveyingdistinct tionorselectionwithlimitedinterpretabilityefforts
+semantic nuances (Shi, 2014; Huang and Chen, (Peineltetal.,2017;Järnforsetal.,2021),whileto
+2014). Forexample,bothindividualclassifiers“个” the best of our knowledge, there is no evaluation
+and“位”canmodifythenounofpeople,whilethe study with more recent autoregressive LLMs. In
+formerisamoregenericone,thelatterisrestricted additiontotheinterestinevaluatingLLMsonthis
+tohighly-regardedprofessionsandconveysapolite essentialcomponentofChinesegrammar,itshould
+5202
+voN
+2
+]LC.sc[
+2v35281.8052:viXra
+bekeptinmindthatlearningclassifiersystemshas However, recent computational studies of the
+beenproventobeparticularlychallengingforlearn- prediction task remain scarce. Existing studies
+ersofChineseasL2(Liang,2008;Liu,2018),and most focus on early approaches, covering SVMs
+thusNLPtechnologieswitharobustknowledgeof (GuoandZhong,2005)andWord2Vecembeddings
+classifierswouldbeapreciousresourcetodevelop (Peineltetal.,2017),lateraugmentedwithmutual
+educationaltools. informationmetrics(Liuetal.,2019).
+Given the above-mentioned gap in the litera- TheTransformersmarkedaturningpoint. But
+ture,weaddressthefollowingresearchquestions: only Järnfors et al. (2021) demonstrated BERT’s
+How do LLMs perform in this classifier predic- superiorperformanceafterfine-tuning,thoughre-
+tion? What are the semantic contributions of the vealingpersistentdeficienciesinimplicationcover-
+differentelementsofasentencetotheprocessof ingpolitenessandpluralmarkers. Thislimitation
+selectingaclassifier,andcanthisbeobservedfrom motivatesinvestigatingwhethermodernLLMs’en-
+theattentionmechanismofthemodel? hancedcontextualawarenessandlinguisticknowl-
+With this goal in mind, we establish a control edgecanachievemorerobustclassifierprediction.
+taskbyiterativelyinsertingvariousclassifiersinto
+2.2 AttentionMechanisminLexical
+ablankclassifierpositionwithinsentenceandrank-
+Semantics
+ingthembasedontheirLanguageModel(LM)log
+probabilities. Withthesamesetups,werandomly BERT’s bidirectional attention provides compre-
+extractsentencesamplesandmaskthetokenofthe hensivecontextualawarenessbyprocessingboth
+classifier and then fine-tune the models to exam- leftandrightcontextsoftargetwords(Devlinetal.,
+inehowwelltheycanperform. Finally,wecarry 2019). This architectural advantage has been ap-
+outadditionalanalysisbymodifyingthemodel’s plied to LLMs and empirically validated across
+attentionmask, inordertomakethemignorethe NLPtasks,likesyntacticparsingandnamedentity
+surrounding words in the sentence and quantify recognition(BehnamGhaderetal.,2024;Springer
+theirinformationcontributiontotaskperformance. et al., 2025). Building on this foundation, (Feng
+ThecontroltaskshowsthatBERT(Devlinetal., etal.,2025)demonstratesthatbidirectionalarchi-
+2019)andLLMsachievegoodaccuracyinthepre- tecturesparticularlyexcelinsemantictasksrequir-
+diction,yettheformerexhibitsadistinctadvantage ingprecisecontextresolutionwiththeframework
+andhigherimprovementpotentialwithfine-tuning. constructedbyBehnamGhaderetal.(2024).
+Duetothestrongsemanticlinkbetweenclassifiers WhileautoregressiveLLMsareinherentlycon-
+andheadnouns,modelsexhibitahighdependency strainedbyunidirectionalattention,theirsubstan-
+onthecorrespondingheadnounduringprediction. tiallyexpandedpretrainingcorporaandenhanced
+Intriguingly,theresultsalsoconfirmanadditional world knowledge (Wei et al., 2022; Brown et al.,
+(albeitweak)contributionfromtheremainingcon- 2020)mightoffercompensatoryadvantagesacross
+textual information. The same experiment also variousNLUtasks. However,specifically,forChi-
+revealsthatthebidirectionalattentionmechanism nese classifier prediction, the trade-off effect of
+playsacriticalrole,despitethebiggerparameters thisarchitecturaldichotomyonclassifiersremains
+andtrainingdatasizeofautoregressiveLLMs. unexamined. Furthermore,howbidirectionalatten-
+tionboostsBERT’saccuracyandhowheadnouns
+2 RelatedWork impact the performance of bidirectional models
+bothrequireinvestigation.
+2.1 ChineseClassifiers
+2.3 MaskingStrategiesforProbing
+Chinese classifiers serve as obligatory syntactic
+elementsbridgingnumeralsandheadnouns,form- Maskingstrategiesenablecontrolledexperiments
+inggrammaticallycompletenounphrases(Liand by selectively processing target regions to assess
+Thompson, 1989) while encoding semantic fea- performancechangesorpredictedoutput(Petroni
+tures,includingshapeandfunction,andtaxonomic et al., 2019; Kassner and Schütze, 2020; Zhong
+categorization(Lakoff,1986;Croft,1994). Current et al., 2021). One of the typical approaches is
+researchonthiselementcentersontheusagepat- tomodifyLMs’attentionmasks,zeroingselected
+ternsacrossdiversepopulationgroups(Zhanand token weights to study attention mechanisms’ ef-
+Levy, 2018; Shi, 2021) and its nuanced idiosyn- fects(Liongetal.,2024). Inthecomputationallin-
+crasies(Liuetal.,2019). guisticsdomain,thisapproachhelpsassessspecific
+linguisticcomponents’contributions. Forinstance, ingforevaluation. Thedetailedworkflowisdemon-
+Methenitietal.(2020)showedthatmaskingnon- stratedinFigure2.
+verballinguisticelementsimprovesBERT’salign-
+mentwithhumanintuitionsforrolefillers, while
+3.1 DatasetConstructions
+Choetal.(2021)demonstratedsimilarbenefitsfor
+eventlocationpredictionbymaskingcontextand
+WeemploytheChineseClassifierDataset(Peinelt
+forcingattentiononverbphrases.
+et al., 2017), a comprehensive resource with an-
+Followingthepreviouswork,wemaskthetarget
+notatedclassifier-nounpairsinsententialcontexts,
+classifier to trigger the model’s prediction at this
+convenienttoadaptclassifierpredictiontasks. This
+positionandadjusttheattentionmasktoexamine
+datasetcontains681,104sentences,encompassing
+howeffectivelycontext-basedattentioncontributes
+172distinctclassifiersthatnearlycovertheentire
+tothetargetclassifier.
+commonlyusedMandarinclassifiers. Additionally,
+theStanfordconstituentparser(LevyandManning,
+2.4 ClassifierRankingbyLogProbability
+2003) was applied to annotate the head noun in
+LogProbability(LogProb)hasbeenproveneffec- eachsentence. Althoughclassifiersexhibitdiverse
+tive for various token-level tasks like assessing pairingsinpragmaticcontexts,theirsyntacticcom-
+grammatical correctness and semantic plausibil- ponentcombinationsarehighlyfixed,assupported
+ity,whereitsoutputsoftenalignwithhumanjudg- by (Li and Thompson, 1989), suggesting that a
+ments and outperform direct prompting (Hu and relatively small number of examples is sufficient
+Levy,2023;Kaufetal.,2024). toeffectivelyevaluatetheiraccurateusageandpre-
+Weacknowledgethatthismetricisnotwithout diction. Due to this and computational resource
+limitations. Itisknowntobesensitivetoconfound- limitations,weinitiallyrandomlysampled11,986
+ingvariablessuchaswordfrequency1 andoutput sentencesthatspanallclassifiersandpreservetheir
+length(Salazaretal.,2020;Holtzmanetal.,2021). original distribution. After manual screening to
+Buttheyaredifficulttoisolateduetotheuneven remove69erroneouscases(e.g.,annotationerrors
+distributionnatureofpre-trainingdata. Despitethis orsyntacticanomalies),weobtained11,917valid
+sensitivity,LogProbalsoberecognizedasthero- sentences for further processing. These sampled
+bustchoiceforcheckthecertaintyofLMs’output instancesweresplitintotrainingandtestsetsatan
+because its validity and superiority for semantic 85:15ratiotosupportfine-tuneandevaluation.
+tasksarestronglysupportedbyKaufetal.(2024).
+Tospecificallymitigatetheinfluenceofoutput
+3.2 BERTClassifierPrediction
+length,we insert classifier candidates into a sen-
+tencetocomputetheaverageLogProbofeachfilled
+Masked language modeling To evaluate
+sentence to directly obtain the score without any
+BERT’sperformanceinChineseclassifierpredic-
+redundantgenerationInthisframework,thecandi-
+tion, we utilize the BERT-base-chinese model
+datethatyieldsthehighestsentence-levelLogProb
+through masked language modeling (MLM).
+isconsideredthebestfit.
+Our approach computes the conditional prob-
+ability of candidate classifiers at the masked
+3 Methodology
+position, accommodating both single-token
+Thisstudyevaluatestheperformanceoftwotypes classifiers (e.g., “个”) and two-token classifiers
+of LMs in Chinese classifier prediction: (1) the (e.g., “档子”). Given a tagged sentence X =
+model with bidirectional attention mechanisms, (x ,...,<CL>,<h>,headnoun,</h>,...,x ),
+1 n
+BERT,withmasked languagemodelingandfine- where <CL> is the placeholder for the classifier
+tuning; and (2) autoregressive LLMs, including and <h>, </h> demarcate the head noun, we
+localdeployments(Qwen3-1.7B,4B,8Bandcor- replace<CL>withoneortwo“[MASK]”tokens
+respondingfine-tunedversions)andfull-parameter basedontheclassifier’stokenization. Wecalculate
+APIs(DeepSeek-R1andGPT-4). Duetothecom- the log probability for each candidate classifier
+plexmappingbetweenheadnounsandclassifiers, c ∈ C,whereC isasetof172classifiers,encom-
+weobtainaccuracybasedonlogprobabilityrank- passing both single-character and two-character
+classifiers.
+1Theanalysisofeffectforwordfrequencyonaccuracyis
+attachedinAppendixD Forsingle-tokenclassifiers,thelogprobability
+Sample sentence Attention Masking
+那 里 有 一 ？ 猫 吗
+Original AttentionMask
+1 1 1 1 1 1 1
+Is there a cat? <CL>
+那 里 有 一 ？ 猫 吗
+只 群
+Replace
+<CL> ……
+滩 袋
+172Classifiers Dataset Mask After Head Noun
+1 1 1 1 1 1 0
+API
+Fine-tuning
+Context Mask
+0 0 0 0 1 1 0
+Head Noun Mask
+只 群 滩 袋
+1 1 1 1 1 0 1
+a group pool bag Top-3 Comparison
+只 Mask After Classifier
+Log Prob Ground Truth 1 1 1 1 1 0 0
+0.53 0.44 0.01 0.005 ……
+Figure2: Thisfigureshowstheworkflowoftheproject. Asdenotedbypurplearrows,thegivensamplesentence
+isinputintoLMsforprediction. Thesentencesinthedatasetvaryinlength(andarenotnecessarilylimitedto7
+tokensasintheexampleshowninthefigure),whileclassifiersmayconsistofeitheroneortwoChinesecharacters.
+ofaclassifierciscomputedas: probabilityfailstoincorporatecrucialinformation
+about the subsequent noun or other sentence ele-
+(cid:16) (cid:0) (cid:1) (cid:17)
+logP(c|X)=log softmax BERT(X (c))
+f [I1] c ments. This lack of right-context access renders
+(1) token-levelprobabilitiesunreliableforourtask.
+whereX (c)isthesentencewith<CL>replaced
+f With locally deployed Qwen3, we replace the
+byclassifierc,I denotesthepositionofthesingle
+1 emptyclassifierposition(indicatedwithanunder-
+"[MASK]" token, and softmax(·) represents the
+c score) in each sentence with each of 172 candi-
+probabilityofclassifierc.
+dateclassifiersandusetheIncrementalLMScorer
+For two-token classifiers, where c = (c 1,c 2), fromtheminicons2 toextractthelogprobability
+thejointlogprobabilityiscalculatedas:
+ofeachfilledsentencebyaveragingthetoken-level
+logP(c|X)=(cid:80)2 log(cid:16) softmax(cid:0)
+BERT(X (c))
+(cid:1) (cid:17) logprobabilities.Itcanberepresentedas:
+m=1 f [Im] cm
+(2)
+whereI isthepositionofthem-th[MASK]token
+m T
+1 (cid:88)
+(m = 1,2),andsoftmax(·) cm istheprobabilityof logP(S c|X) = log(P(w t|w <t,X f(c)))
+T
+them-thtokenofclassifierc. Thejointlogproba-
+t=1
+bilitysumsthelogprobabilitiesofbothmaskposi- (3)
+tions,accuratelycapturingthecombinedlikelihood whereS c isthesentencewithclassifiercinserted,
+ofthetwotokens. X f(c)isthesentencewith<CL>replacedbyc,T
+Fine-tuning Weusethefulltrainingsetover3 isthetotalnumberoftokens,w t isthet-thtoken,
+epochswiththeAdamWoptimizer(learningrate: and w <t is the preceding context. This approach
+2×10−5)withearlystoppingstrategy. evaluatestheoverallcoherenceofthesentencewith
+theinsertedclassifier,averagingthelogprobabili-
+3.3 LLM-BasedClassifierPrediction tiesofalltokenstonormalizeforsentencelength.
+Sentencelogprobability UnlikeBERT,weuti- PromptingviaAPI Forthefull-parametermod-
+lize sentence-level log probabilities for classifier elsDeepSeek-R1andGPT-4,wedesignedprompts
+rankingduetotheautoregressivenatureofLLMs.
+2miniconsisaPythonlibraryforefficientprobabilityscor-
+Sincetheycanonlyaccessleftwardcontextwhen
+ingoftransformer-basedlanguagemodels.Pleaserefertoits’
+predicting the classifier token, the isolated token githublink:https://github.com/kanishkamisra/minicons
+to guide them to generate the most probable Chi- discriminativeability. Extendingthisrangefurther
+nese classifier for each given sentence with an woulddilutethemetric’spracticalsignificance,as
+emptyclassifierposition. Todiminishextraneous lower-rankedcandidatesareincreasinglyunlikely
+reasoningandmaintaindiversityofresponses,we tobecontextuallyappropriate.
+configuredthetemperatureto0,top-pto0.9,and
+4 ExperimentalResultsandAnalyses
+maximum token length to 32. To ensure unique-
+ness,outputsarefurtherrefinedusingaset-based
+4.1 CanLLMsBeGoodClassifierGuessers?
+deduplicationmethod.
+For GPT-4, we set logprobs parameter to be
+Model Accuracy R-rank
+trueintheAPIcall, enablingthemodeltoreturn
+thelogarithmicprobabilitiesofeachoutputtoken.
+BERT MLM 62.31 1.8298
+Thus,wecanensurethatpredictedclassifierscan
+BERT-ft 69.54 1.6676
+besortedbytheirlog-probabilityindescendingor-
+derasQwen. DeepSeek-R1API,however,doesnot GPT-4 50.70 2.1408
+supportLogProbextraction. Hence,weperformre- DeepSeek-R1 59.64 1.9400
+peatedgenerationswithmultiplecandidateoutputs Qwen3-1.7B 31.80 2.7821
+andselectthefirstresultcontainingthreedistinct
+Qwen3-1.7B-ft 39.03 2.5107
+single-characterclassifiersasformalselections.
+Qwen3-4B 33.46 2.7270
+Metrics Predictions were evaluated using two
+Qwen3-4B-ft 47.69 2.2698
+metrics: Accuracy and R-Rank. Accuracy mea-
+surestheproportionofsampleswherethemodel’s Qwen3-8B 39.03 2.5107
+toppredictedclassifiermatchesthecorrectclassi- Qwen3-8B-ft 39.94 2.4861
+fier. R-Rank, based on previous work (Camacho-
+Colladosetal.,2018;Pengetal.,2022),evaluates Table 1: Results of accuracy and R-rank of different
+the model’s nuanced understanding of classifier LMsforChineseclassifierprediction. “MLM”stands
+selection by considering the rank of the correct for “Masked Language Modeling”, and “ft” denotes
+classifierwithinthetop3predictions. Specifically, “Fine-tuning”.
+foreachsamplei,wedefinerank astherankof
+i
+thecorrectclassifieramongthetop3predictions, TheresultsinTable1demonstrateBERT’ssu-
+or 4 if it is not among them. These metrics are periorperformance,achievingboththehighestac-
+definedasfollows: curacyandtheoptimalR-rankscores,suggesting
+itseffectivenessinChineseclassifierprediction. In
+n
+1 (cid:88) (cid:16) (cid:17) contrast, autoregressive LLMs, including GPT-4
+Accuracy = 1 y = yl[0] (4)
+n i i andtheQwen3variants,generallyunderperform,
+i=1
+withmostmodelsfailingtosurpass0.5accuracy
+where n is the total number of samples, y is the
+i andexhibitingR-rankvaluesbetween2and3. No-
+correct classifier for the i-th sample, yl[0] is the
+i tably, Deepseek-R1 is an exception, achieving a
+model’s top predicted classifier for the i-th sam-
+competitiveR-rankandhigheraccuracythanother
+ple,and1(cid:0)
+y =
+yl[0](cid:1)
+isanindicatorfunctionthat
+i i LLMs, though it still falls short of BERT’s per-
+returns1ifthetoppredictionmatchesthecorrect
+formance. Whilescalingmodelparametersyields
+classifier,and0otherwise.
+marginalimprovements,eventhelargestmodelsin
+n thisstudy,Deepseek-R1andGPT-4,donotclose
+1 (cid:88)
+R-rank = rank (5) thegapwithBERT.Thissuggeststhatarchitectural
+i
+n
+i=1 differences (e.g., masked language modeling vs.
+wherenisthetotalnumberofsamples,andrank autoregressivegeneration)mayplayamorecritical
+i
+istherankofthecorrectclassifierforthei-thsam- rolethanparametersizeinthistask.
+plewithinthemodel’stop3predictions(1,2,or3),
+4.2 CanLLMswithFine-tuningClosethe
+or4ifitisnotinthetop3. Thechoiceofatop-3
+PerformanceGaptoBERT?
+cutoffforR-rankwasdeliberate. Giventhatmany
+Chinesenounscollocatewithmultipleclassifiers, Different sizes of Qwen3 models exhibit signifi-
+evaluating the top-3 candidates provides a suffi- cant improvements in both accuracy and R-rank
+cientlybroadandpracticalassessmentofamodel’s afterfine-tuninginTable1. Interestingly,thescal-
+ingeffectofmodelparametersdoesnotalignwith ingmorecomplexitemslikethecontainer-contents
+the default models’ performance trends, and the relationshipandquantifyingabstractconcepts.
+Qwen3-4B-ftachievesoptimalperformanceinboth ThesimilarperformancepatternsbetweenLLMs
+metricsamongtheQwen3variants. and BERT, coupled with LLMs’ overall weaker
+However,whilefine-tuningleadstosubstantial results, suggest that neither their expanded pre-
+performancegains,theenhancedQwen3-4Bmodel trainingdatascalenortheirenhancedcapabilities
+onlyreachesaccuracylevelscomparabletoGPT-4, from larger parameters lead to improved predic-
+still falling significantly short of BERT’s perfor- tionperformance. Thispersistentperformancegap
+mance. Furthermore,whenapplyingthesamefine- maywarrantfurtherinvestigationintoarchitectural
+tuningproceduretoBERT,weobserveaninverse differences,particularlyinattentionmechanisms.
+relationshipbetweenthetwometrics. Despitethis,
+4.4 HowLMs’AttentionMechanisms
+thefine-tunedLLMsfailtomatchBERT’sperfor-
+ContributetoPrediction?
+manceineithermetric,suggestingthatfine-tuning
+alonemaybeinsufficienttoovercomeLLMs’in-
+herentlimitationsinclassifierpredictiontasks. AttentionMaskType TokenVisibilityPattern
+4.3 CanLLMsBalancePrediction [CLS]那里有一
+Standard
+PerformanceamongClassifierTypes? [MASK]猫吗? [SEP]
+WhileLLMscurrentlytrailBERTinoverallperfor- [CLS]那里有一
+MaskAfterHeadNoun
+mance,theirpotentialtoleveragevastpre-training [MASK]猫00[SEP]
+data to address BERT’s key limitations, particu-
+[CLS]0000[MASK]
+larly inconsistent performance across task types ContextMask
+猫吗? [SEP]
+andweakerfine-grainedsemanticdiscrimination,
+warrantsfurtherinvestigation. Thismotivatesour
+[CLS]那里有一
+HeadNounMask
+detailedanalysisofclassifierperformanceacross [MASK]0吗? [SEP]
+differenttasktypesandmodels. [CLS]那里有一
+MaskAfterClassifier
+AsillustratedinFigure3, weevaluatemodels’ [MASK]000[SEP]
+accuracy per classifier type (R-rank with similar
+trends). Contrary to expectations, LLMs fail to Table2: Tokenvisibilitypatternsunderdifferentmask-
+performmorebalancedorsuperiorsemanticpreci- ingstrategytypes. Thepositionswith0scorrespondto
+sionandR-rankthanBERTdespitetheirbroader tokensintheinputforwhichthemodel’sattentionis
+pretraining;inmanycases,theylagbehind. blocked(insteadof0inthetextsequence).
+For sortal classifiers, the individual classifiers
+yield the highest accuracy across models, likely Giventheclassifiers’strongdependenceontheir
+duetotheirrelianceonexplicithead-nounfeatures, head nouns, the differences in attention mecha-
+straightforward classification logic, and high fre- nisms between BERT and LLMs, and the above
+quency in training data. However, event classi- analysis, we further investigate how the architec-
+fiers reveal only a marginal gap between BERT tural distinctions account for the gaps. We select
+and LLMs, suggesting comparable challenges in BERTasourbaselinereferenceandemploy4dif-
+modeling event semantics for both of them. No- ferent attention masking types distinct from the
+tably, BERT’s strong performance in kind classi- standard attention masking for BERT MLM. Ex-
+fiers, paired with LLMs’ decline, highlights the amplesandcomparisonsareshowninFigure3.
+latter’stypologicalunderstandingdeficits. Inspired by Metheniti et al. (2020), we design
+The performance of LMs’ measure classifiers four masking strategies by zeroing out tokens in
+reveals an important distinction, while standard BERT’sattentionmask,showninTable2.
+measureclassifiersachieverelativelystrongresults The results of adjusting attention masking in
+across all models due to their rigid syntactic pat- Table3showanobviousdeclinetrendinbothac-
+terns, both BERT and LLMs struggle with con- curacy and R-rank. The minor decrease in per-
+tainer and approximate classifiers. This perfor- formance for Mask After Head Noun and Con-
+mancedichotomysuggeststhatwhilemodelscan textMaskindicatesthatdirectionalcontextualin-
+effectively learn predictable, formulaic relation- formation (excluding the head noun) contributes
+ships,theyfacefundamentalchallengesinmodel- marginally to prediction. Based on the changes
+BERT_MLM BERT_ft Deepseek-R1 GPT4 Qwen3_1.7b_base
+Qwen3_1.7b_ft Qwen3_4b_base Qwen3_4b_ft Qwen3_8b_base Qwen3_8b_ft
+100 4
+90 3.5
+80 3 70
+60 2.5
+50 2
+40 1.5
+30 1 20
+10 0.5
+0 0
+ycaruccA knar-R
+Individual Classifier
+100 4
+90 3.5
+80 3 70
+60 2.5
+50 2
+40 1.5
+30 1 20
+10 0.5
+0 0
+ycaruccA knar-R
+Kind Classifier
+100 4
+90 3.5
+80 3 70
+60 2.5
+50 2
+40 1.5
+30 1 20
+10 0.5
+0 0
+ycaruccA knar-R
+Event Classifier
+100 4
+90 3.5
+80 70 3
+60 2.5
+50 2
+40 1.5
+30 20 1
+10 0.5
+0 0
+ycaruccA knar-R
+Container Measure Word
+100 4
+90 3.5
+80 3 70
+60 2.5
+50 2
+40 1.5
+30 1 20
+10 0.5
+0 0
+ycaruccA knar-R
+Standard Measure Word
+100 4
+90 3.5
+80 3 70
+60 2.5
+50 2
+40 1.5
+30 1 20
+10 0.5
+0 0
+ycaruccA knar-R
+Approximate Measure Word
+Figure3: Thefine-grainedanalysisofthesixtypesofclassifiers’predictionsamongtheproposedLMs. Theblack
+polylinerepresentstheR-rankvalue(thelower,thebetter);thebarchartsindifferentcolorsrepresenttheaccuracy
+ofspecificmodelsinthistypeofclassifier(thehigher,thebetter). The“ft”inmodelnamesrepresentsthattheLMs
+haveappliedafine-tuningstrategy.
+inbothmetrics,thetextaftertheheadnounhasa attentionforefficientmodeling. Thisexplainswhy
+greater influence on R-rank, while the preceding increasingtheparameterandtrainingdatasizefail
+contentaffectsaccuracymoresignificantly. to compensate for the inherent limitations of the
+attentionalmechanism.
+AttentionMaskType Accuracy R-rank
+5 ErrorCaseAnalysis
+Standard 62.31 1.8298
+MaskAfterHeadNoun 60.92 1.8929
+AlthoughcurrentLMs,particularlyBERT,exhibit
+ContextMask 58.35 1.9272
+strongcapabilitiesinChineseclassifierprediction,
+HeadNounMask 33.19 2.6670
+theirvaryingperformanceacrossdifferentmodels
+MaskAfterClassifier 25.59 2.9443
+and various classifier categories underscores per-
+sistentchallenges. Tobetterunderstandtheseerror
+Table3: PerformanceforBERTwithvariousattention
+patterns, we systematically analyze two primary
+maskingstrategies.
+typesoffailures,aimingtoempiricallyinvestigate
+theunderlyingcausesofthesespecificerrors.
+When the head noun is masked, the perfor-
+manceplummetscomparedtothestandardcondi-
+5.1 UnabletoCaptureFine-grained
+tion,highlightingthehighdependencyofclassifier
+PragmaticPreferences
+predictiononlanguagemodels. However,further
+maskingtheprecedingcontextrevealsaninterest- Currentlanguagemodelsdemonstratesystematic
+ing pattern where accuracy experiences a signifi- shortcomings in aligning with pragmatic prefer-
+cant drop, R-rank performance shows a slight re- enceswhenselectingclassifiers,consistentlyfavor-
+bound. ThisscenariomirrorsLLM’sunidirectional ingstatisticallyfrequentbutstylisticallyinappropri-
+attentionmechanism. Withthescaleof110Mpa- ateoptions. AsillustratedinTable4,themodels’
+rameters,BERTachievesonlyaround25%accu- universal top prediction of “件” (piece) in a col-
+racyandarankingscorenear3. Thisresultunder- loquialnegative-affectcontext,followedbyother
+scoresthecriticalroleofthebidirectionalattention genericorsemanticallymismatchedclassifierslike
+mechanism,whichdoublestheaccuracywhilere- “种”(kind)and“回”(occasion),revealstheirinabil-
+ducingtherankingscorebyone. itytointegrateregister,affectivetone,andhabitual
+Thestrongdependencyontheheadnounandthe semanticsintoclassifierchoice. Whileallmodels
+partialdependenceonprecedingcontextsinclassi- recognizegrammaticalvalidity,theydivergeinsub-
+fierpredictionseemtostrictlyrequirebi-directional sequenterrors. Qwen3persistswithgenericclassi-
+Model Predictions CarrierSentence Model Predictions CarrierSentence
+BERT 件,种,回 早起这件事是要多痛 BERT 笔,支,把 后来抽奖,又抽到一笔笔,
+虽不算好,总比什么都没
+苦有多痛苦。 有的人强。
+Qwen3 件,个,桩 早起这件事是要多痛 Qwen3 支,把,枝 后 来 抽 奖,又 抽 到
+苦有多痛苦。
+一支笔,虽 不 算 好,总
+比什么都没有的人强。
+GPT-4 件,桩,回 早起这件事是要多痛 GPT-4 支,件,份 后来抽奖,又抽到一支笔,
+苦有多痛苦。 虽不算好,总比什么都没
+有的人强。
+Ds-r1 件,桩,种 早起这件事是要多痛
+Ds-r1 支,管,杆 后来抽奖,又抽到一支笔,
+苦有多痛苦。 虽不算好,总比什么都没
+有的人强。
+Table4: Themodels’responsesdemonstratethefailure
+tocapturefine-grainedpragmaticpreferences.Themost Table 5: With similar descriptions and settings as
+appropriatecandidateis“档子”.BERTandQwen3re- Table 4. This table demonstrates the LMs may
+sultsareselectedfromthetopthreeresultsofthebase not check all the context for classifier selection.
+andfine-tuningmodelswiththebestperformance. Ds- The English translation of the carrier sentence
+r1denotesDeepseek-R1. TheEnglishtranslationofthe is “Later in the raffle, I drew one pen, not
+carriersentenceis“Gettingupearly,thisthingisas great, but better than nothing”. The proper
+painfulasitget”. classifier is “盒”(box). The classifiers’ meanings
+are“支”(stick),“把”(grasp),“枝”(branch),“件”(piece),“
+份”(portion),“管”(pipe),and“杆”(rod).
+fiers,full-parameterLLMsincorrectlyshifttoward
+event classifiers, and BERT shows partial aware-
+ness of categorical distinctions, yet all share the
+thattypicallyinvolvesmoreprizesunlessexplicitly
+criticalfailuretoprioritizethepragmaticallyopti-
+statedotherwise.
+mal“档子”,whichuniquelysatisfiescolloquialism,
+negativeaffect,andabstracthabitualsemantics. ThecomparativeperformanceofDeepseek-R1,
+Thisconsistentneglectofstylisticandaffective whichgeneratedBERTs’subsequentsimilarcan-
+dimensions underscores that LMs treat classifier didates. Whiletheseproperlymatchthesemantic
+selection as a frequency-driven grammatical task requirements for slender objects, they also over-
+rather than a pragmatic negotiation between lin- looktheunlikelihoodofthesingle-penrafflesce-
+guisticconstraintsandcommunicativeintent. The nario. More alarmingly, Qwen and GPT exhibit
+hierarchyoferrorfromgrammaticalcorrectnessto evenmoreseverelimitations,producingcompletely
+semanticcoherencetopragmaticappropriateness unacceptableclassifier-nouncombinationsintheir
+exposes their inability to progress beyond coarse secondarypredictions. Thisdegradationinperfor-
+statisticalpatternstowardfine-grainedsociolinguis- mancehighlightshowadvancedLLMsfrequently
+ticcompetence. failtoprogressbeyondbasicnoun-classifiermatch-
+ingtoconsiderbroadercontext.
+5.2 HardlyFurtherCheckWholeContext
+Whileallmodelsdemonstratebasicgrammatical
+Currentlanguagemodelsdemonstrateaconcerning competence in noun-classifier pairing, their abil-
+tendencytomakeclassifierpredictionsbasedonlo- itytoincorporatepragmaticconsiderationsvaries
+calnoun-classifierassociationsratherthanholistic significantly. Themostsophisticatedmodels(like
+context evaluation. This limitation becomes evi- Deepseek-R1)atleastmaintaingrammaticalaccu-
+dentwhenexaminingBERT’sperformanceinthe racy,whereasothers(particularlyQwenandGPT)
+rafflescenario,whereitstopprediction“笔”(pen) degradetoproducingoutrighterrorswhenforced
+reveals a fundamental misunderstanding. While beyond their primary predictions. This indicates
+“一笔笔”couldtheoreticallyformapluralclassi- current LMs lack robust mechanisms for contex-
+fierformoney, thisinterpretationcompletelydis- tual integration, instead relying on progressively
+regards the actual context of awarding pens as a weakerfallbackstrategieswhentheirinitialpredic-
+prize. Itssubsequentpredictions,thoughgrammat- tionsprovecontextuallyinadequate. Themodels’
+ically correct for describing individual pens, still consistentfailuretoquestiontheplausibilityofthe
+failtoaccountforthepragmaticimplausibilityof single-pen raffle scenario particularly illustrates
+awardingjustonepeninarafflesetting,ascenario theirlimitedcapacityforreal-worldreasoning.
+6 Conclusions andthusconfoundingfactorsmayhavebeenintro-
+ducedasaconsequence. Accordingly,differences
+OurstudycomparestheperformanceofBERTand
+seenacrosssentencesandmodelscannotbesepa-
+LLMs in Chinese classifier prediction, revealing
+ratedfullyfromvariationsinsentenceformat,with
+thatLLMsstillunderperformcomparedtoBERT,
+thepossibleconsequenceofreducingtheobjectiv-
+andhighlightingthecriticalroleofattentionmech-
+ityandinterpretabilityofthefindings.
+anisms. WhileadvancedLLMspossessstrengths
+Third, the evaluation dataset includes annota-
+suchasrichworldknowledgeandfine-grainedse-
+tionambiguities,especiallyinidentifyingthehead
+mantic sensitivity, our results prove that BERT,
+noun. Imperfect or inconsistent annotation may
+with or without fine-tuning, achieves better per-
+corrupt the training as well as the evaluation per-
+formanceinthetask. Strikingly,whenpreceding
+formance,introducingnoiseandpotentialbiasinto
+attentionismasked,BERT’sperformancedeclines
+thereportedresults.
+sharply,evenfallingbelowthatofQwen3-1.4B.
+Finally,thisstudydoesnotexplorethefullspec-
+ThisexplainswhyLLMswithextensiveknowl-
+trumoffine-grainedsemanticdistinctionspresent
+edge bases still demonstrate a significant perfor-
+within the Chinese classifier system. Subtle nu-
+mancegapevenwhenusingenhancedpromptsor
+ancesbetweenclassifierusage. Forexample,those
+fine-tuning. The inherent limitation lies in their
+dependent on pragmatic or context-specific cues
+unidirectionalattentionmechanism,whichfunda-
+remainunder-investigatedandcouldrepresentim-
+mentallyconstrainstheireffectivenessforthistask.
+portantdirectionsforfurtheranalysis.
+These findings highlight the critical role of bidi-
+Future work may address these limitations by
+rectionalattentionandsuggestthatfutureresearch
+standardizing evaluation metrics, curating high-
+shouldfocusonnewstrategiestoenhablebidirec-
+qualityannotateddata,andperformingamorein-
+tionalattentioninLLMs,inordertocombinethe
+depthanalysisofclassifiersubtypedistinctions.
+strengths of both architectures and advance Chi-
+neseclassifierpredictionperformance.
+References
+EthicsStatement
+Kathleen Ahrens and Chu-Ren Huang. 2016. Classi-
+fiers. In Chu-Ren Huang and Dingxu Shi, editors,
+Wedonotforeseeanyethicalrisksrelatedtoour
+AReferenceGrammarofChinese,ReferenceGram-
+research.
+mars,pages169–198.CambridgeUniversityPress,
+Cambridge,England.
+Limitations
+Parishad BehnamGhader, Vaibhav Adlakha, Marius
+Thoughthisresearchprovidesinsightsonthecom- Mosbach, Dzmitry Bahdanau, Nicolas Chapados,
+andSivaReddy.2024. LLM2Vec: Largelanguage
+parativeperformanceofBERTandLLMsforChi-
+Modelsaresecretlypowerfultextencoders. arXiv
+neseclassifierprediction,therearealsolimitations
+preprintarXiv:2404.05961.
+thatshouldbeacknowledged.
+First,theevaluationmethodologyofBERTand TomB.Brown,BenjaminMann,NickRyder,Melanie
+Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind
+LLMshastobedifferentduetoarchitecturalfor-
+Neelakantan,PranavShyam,GirishSastry,Amanda
+mula differences. Specifically, BERT, as an En-
+Askell, Sandhini Agarwal, Ariel Herbert-Voss,
+coder,allowssingle-tokenlogprobabilityretrieval Gretchen Krueger, Tom Henighan, Rewon Child,
+for tokens that have been masked, but Decoder Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu,
+Clemens Winter, and 12 others. 2020. Language
+modellikeDeepSeekcannotproducelogprobabil-
+modelsarefew-shotlearners. InProceedingsofthe
+ity for a single token and only provide sentence-
+34thInternationalConferenceonNeuralInformation
+levelaveragelogprobabilityinstead. Furthermore, ProcessingSystems,NIPS’20,RedHook,NY,USA.
+thereareLLMAPIsthatdonotevenprovidetoken- CurranAssociatesInc.
+level log probabilities, thereby inevitably adding
+Jose Camacho-Collados, Claudio Delli Bovi, Luis
+dissimilaritiesinthemodelbeingassessed’sperfor-
+Espinosa-Anke, Sergio Oramas, Tommaso Pasini,
+mance,acrossarchitectures. EnricoSantus,VeredShwartz,RobertoNavigli,and
+Second, the log probability measurements uti- HoracioSaggion.2018. SemEval-2018Task9: Hy-
+pernymDiscovery. InProceedingsofSemEval.
+lizedinourmodelformshavebeenshowntobea
+functionofsentencelengthandwordfrequencies.
+Shiao-huiChan.2019. Anelephantneedsaheadbut
+Sentencelengthsinthispiecewerenotheldfixed, a horse does not: An erp study of classifier-noun
+agreementinmandarin. JournalofNeurolinguistics, Jani Järnfors, Guanyi Chen, Kees van Deemter, and
+52:100852. Rint Sybesma. 2021. Using BERT for Choosing
+ClassifiersinMandarin. InProceedingsofthe14th
+Yupeng Chang, Xu Wang, Jindong Wang, Yuan Wu, InternationalConferenceonNaturalLanguageGen-
+Linyi Yang, Kaijie Zhu, Hao Chen, Xiaoyuan Yi, eration, pages 172–176, Aberdeen, Scotland, UK.
+CunxiangWang,YidongWang,WeiYe,YueZhang, AssociationforComputationalLinguistics.
+YiChang,PhilipS.Yu,QiangYang,andXingXie.
+2024. Asurveyonevaluationoflargelanguagemod- NoraKassnerandHinrichSchütze.2020. Negatedand
+els. ACM Transactions on Intelligent Systems and misprimed probes for pretrained language models:
+Technology,15(3). Birdscantalk,butcannotfly. InProceedingsofthe
+58thAnnualMeetingoftheAssociationforCompu-
+WonIkCho, EmmanueleChersoni, Yu-YinHsu,and tationalLinguistics,pages7811–7818,Online.Asso-
+Chu-RenHuang.2021. ModelingtheInfluenceof ciationforComputationalLinguistics.
+VerbAspectontheActivationofTypicalEventLo-
+cationswithBERT. InFindingsoftheAssociation CarinaKauf,EmmanueleChersoni,AlessandroLenci,
+forComputationalLinguistics: ACL-IJCNLP2021, EvelinaFedorenko,andAnnaAIvanova.2024. Log
+pages2922–2929,Online.AssociationforComputa- probabilitiesareareliableestimateofsemanticplau-
+tionalLinguistics. sibilityinbaseandinstruction-tunedlanguagemod-
+els. InProceedingsofthe7thBlackboxNLPWork-
+WilliamCroft.1994. Semanticuniversalsinclassifier shop: AnalyzingandInterpretingNeuralNetworks
+systems. Word,45(2):145–171. forNLP,pages263–277,Miami,Florida,US.Asso-
+ciationforComputationalLinguistics.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+KristinaToutanova.2019. Bert: Pre-trainingofdeep GeorgeLakoff.1986. Classifiersasareflectionofmind.
+bidirectionaltransformersforlanguageunderstand- InNounClassesandCategorization, pages13–51.
+ing. InProceedingsofthe2019Conferenceofthe JohnBenjaminsPublishingCompany,Amsterdam.
+NorthAmericanChapteroftheAssociationforCom-
+putationalLinguistics: HumanLanguageTechnolo- RogerLevyandChristopherD.Manning.2003. Isit
+gies,Volume1(LongandShortPapers),pages4171– hardertoparseChinese,ortheChinesetreebank? In
+4186,Minneapolis,Minnesota.AssociationforCom- Proceedingsofthe41stAnnualMeetingoftheAssoci-
+putationalLinguistics. ationforComputationalLinguistics,pages439–446,
+Sapporo,Japan.AssociationforComputationalLin-
+Zhaoxin Feng, Jianfei Ma, Emmanuele Chersoni, Xi- guistics.
+aojing Zhao, and Xiaoyi Bao. 2025. Learning to
+lookattheotherside: Asemanticprobingstudyof Charles N. Li and Sandra A. Thompson. 1989. Man-
+wordembeddingsinllmswithenabledbidirectional darin Chinese: A Functional Reference Grammar.
+attention. InProceedingsoftheAnnualMeetingof UniversityofCaliforniaPress.
+theAssociationforComputationalLinguistics: ACL
+2025.AssociationforComputationalLinguistics. NealSzu-YenLiang.2008. Theacquisitionofchinese
+shapeclassifiersbyl2adultlearners. InProceedings
+Hui Guo and Huayan Zhong. 2005. Chinese Classi- ofthe20thNorthAmericanConferenceonChinese
+fier Assignment Using SVMs. In Proceedings of Linguistics(NACCL-20),volume1,pages309–326.
+theFourthSIGHANWorkshoponChineseLanguage
+Processing. KhaiJietLiong,HongqiuWu,andHaiZhao.2024. Un-
+veilingvulnerabilityofself-attention. InProceedings
+AriHoltzman,PeterWest,VeredShwartz,YejinChoi, ofthe2024JointInternationalConferenceonCompu-
+and Luke Zettlemoyer. 2021. Surface form com- tationalLinguistics,LanguageResourcesandEvalu-
+petition: Why the highest probability answer isn’t ation(LREC-COLING2024),pages17225–17236,
+alwaysright. InProceedingsofthe2021Conference Torino,Italia.ELRAandICCL.
+onEmpiricalMethodsinNaturalLanguageProcess-
+ing,pages7038–7051,OnlineandPuntaCana,Do- Jie Liu. 2018. The L2 Acquisition of Chinese Classi-
+minican Republic. Association for Computational fiers: ComprehensionandProduction. Ph.D.thesis,
+Linguistics. MichiganStateUniversity.
+JenniferHuandRogerLevy.2023. Promptingisnot ShijiaLiu,HongyuanMei,AdinaWilliams,andRyan
+a substitute for probability measurements in large Cotterell. 2019. On the idiosyncrasies of the man-
+languagemodels. arXivpreprintarXiv:2305.13264. darinchineseclassifiersystem. InProceedingsofthe
+2019ConferenceoftheNorthAmericanChapterof
+Chu-RenHuangandDingxuShi,editors.2016. ARef- theAssociationforComputationalLinguistics: Hu-
+erenceGrammarofChinese. CambridgeUniversity man Language Technologies, Volume 1 (Long and
+Press,Cambridge,England. ShortPapers),pages4100–4106,Minneapolis,Min-
+nesota.AssociationforComputationalLinguistics.
+ShupingHuangandJenn-YeuChen.2014. Theeffects
+ofnumeralclassifiersandtaxonomiccategorieson JianfeiMa,ZhaoxinFeng,HuachengSong,Emmanuele
+chineseandenglishspeakers’recallofnouns. Jour- Chersoni, and Zheng Chen. 2025. Reasoning or
+nalofEastAsianLinguistics,23(1):27–42. memorization? investigating LLMs’ capability in
+restoringChineseInternethomophones. InProceed- Jason Wei, Yi Tay, Rishi Bommasani, Colin Raffel,
+ingsofthe3rdWorkshoponTowardsKnowledgeable Barret Zoph, Sebastian Borgeaud, Dani Yogatama,
+FoundationModels(KnowFM),pages120–139,Vi- MaartenBosma,DennyZhou,DonaldMetzler,EdH.
+enna, Austria. Association for Computational Lin- Chi, Tatsunori Hashimoto, Oriol Vinyals, Percy
+guistics. Liang,JeffDean,andWilliamFedus.2022. Emer-
+gentabilitiesoflargelanguagemodels. Transactions
+EleniMetheniti,TimVandeCruys,andNabilHathout. on Machine Learning Research. Survey Certifica-
+2020. Howrelevantareselectionalpreferencesfor tion.
+transformer-based language models? In Proceed-
+ingsofthe28thInternationalConferenceonCom- Meilin Zhan and Roger Levy. 2018. Comparing the-
+putationalLinguistics,pages1266–1278,Barcelona, ories of speaker choice using a model of classifier
+Spain(Online).InternationalCommitteeonCompu- productioninMandarinChinese. InProceedingsof
+tationalLinguistics. the2018ConferenceoftheNorthAmericanChap-
+teroftheAssociationforComputationalLinguistics:
+NicolePeinelt,MariaLiakata,andShu-KaiHsieh.2017. HumanLanguageTechnologies,Volume1(LongPa-
+ClassifierGuesser: A Context-based Classifier Pre- pers), pages 1997–2005, New Orleans, Louisiana.
+dictionSystemforChineseLanguageLearners. In AssociationforComputationalLinguistics.
+ProceedingsoftheIJCNLP2017,SystemDemonstra-
+ZexuanZhong,DanFriedman,andDanqiChen.2021.
+tions,pages41–44,Tapei,Taiwan.Associationfor
+Factual probing is [MASK]: Learning vs. learning
+ComputationalLinguistics.
+to recall. In Proceedings of the 2021 Conference
+of the North American Chapter of the Association
+BoPeng,EmmanueleChersoni,Yu-YinHsu,andChu-
+for Computational Linguistics: Human Language
+RenHuang.2022. DiscoveringFinancialHypernyms
+Technologies,pages5017–5033,Online.Association
+byPromptingMaskedLanguageModels. InProceed-
+forComputationalLinguistics.
+ings of the LREC Financial Narrative Processing
+Workshop.
+A ExperimentSettings
+Fabio Petroni, Tim Rocktäschel, Sebastian Riedel,
+A.1 Hardware
+Patrick Lewis, Anton Bakhtin, Yuxiang Wu, and
+AlexanderMiller.2019. Languagemodelsasknowl-
+All experiments were conducted using a single
+edge bases? In Proceedings of the 2019 Confer-
+NVIDIAA100GPUwith40GBofdedicatedmem-
+enceonEmpiricalMethodsinNaturalLanguagePro-
+cessingandthe9thInternationalJointConference ory and a single NVIDIA H20 GPU with 96GB
+onNaturalLanguageProcessing(EMNLP-IJCNLP), ofmemory,hostedonasystemequippedwithan
+pages2463–2473,HongKong,China.Association AMDEPYC9K8496coreprocessor(16vCPUs)
+forComputationalLinguistics.
+and 150 GB of system RAM. Each experimental
+run was configured to have a duration exceeding
+JulianSalazar,DavisLiang,ToanQ.Nguyen,andKa-
+trinKirchhoff.2020. Maskedlanguagemodelscor- threehours.
+ing. InProceedingsofthe58thAnnualMeetingof
+theAssociationforComputationalLinguistics,pages A.2 ExperiementSetup
+2699–2712,Online.AssociationforComputational
+This study involves Transformers packages with
+Linguistics.
+version4.55.2(HuggingFace)andplatformofPy-
+EdwardRuoyangShi.2021. Schizophreniathroughthe Torchwithversion2.8.0.
+lensofChineseclassifier: Apreliminarystudy. In
+Proceedingsofthe35thPacificAsiaConferenceon A.3 PromptsUsage
+Language,InformationandComputation,pages392–
+We utilized the the prompt shown in table 6 to
+401,Shanghai,China.AssociationforComputational
+Lingustics. make our model inference and fine tune. Due to
+thetaskisChineseclassifierprediction,wedirectly
+YeliShi.2014. Comparisonofindividualclassifiersand
+apply Chinese as the target language for prompt,
+collective classifiers between chinese and english.
+theEnglishversionisalsoattachedtothetablefor
+TheoryandPracticeinLanguageStudies,4(9).
+reference.
+Jacob Mitchell Springer, Suhas Kotha, Daniel Fried,
+GrahamNeubig,andAditiRaghunathan.2025. Rep- B InstructionandStatisticsofClassifier
+etition improves language model embeddings. In Annotation
+TheThirteenthInternationalConferenceonLearn-
+ingRepresentations. ForthesakeofsystematicinvestigationofChinese
+measure words in the experiment, the quantifiers
+HaifengWang, JiweiLi, HuaWu, Eduard Hovy, and
+are sorted into six classes: individual classifier,
+YuSun.2022. Pre-trainedlanguagemodelsandtheir
+applications. Engineering(Beijing). eventclassifier,kindclassifier,containerclassifier,
+PromptType PromptText
+AsaprofessionalnativespeakerofChinese,pleasecompletethetaskoffilling
+inthemissingmeasurewords. AChinesesentencelackingameasureword
+willbeinput. Pleaseidentifyandselectonlyonesingle-charactermeasure
+wordthatbestfitsthepositionindicatedbytheunderscore“_”inthe
+English sentence,accordingtotherulesofChinesemeasurewordusage. Eachsentence
+containsonlyoneunderscore. Pleasenotethatthefinaloutputshouldonly
+includethemeasurewordyouselected,withoutanyadditionalinformation.
+Sentencelackingameasureword:
+Outputmeasureword:
+你作为一个专业的中文母语者，现请你完成补全量词的任务。现在会输入一个
+缺乏量词的中文句子，请根据中文量词搭配规范，在输入的缺乏量词的句子
+中，在短下划线“_”的位置，找出且仅找出一个最合适这个位置的单字量
+Chinese 词，每一个句子只存在一个下划线，请注意最后的结果只输出你选择的量词，
+而没有其他的任何信息。
+缺乏量词的句子：
+输出的量词：
+Table6: Thedemonstrationofpromptsusedinboththeinferenceandfine-tuningstagesisprovidedbelow. The
+Englishversionisadirect,literaltranslationoftheprimarilyusedChineseversion.
+standardmeasureword,andapproximatemeasure ClassifierType Count Frequency(%)
+word. Itwashand-annotatedby3nativeChinese
+Individualclassifier 1173 62.79
+speakerswithresearchbackgroundinChineselin-
+KindClassifier 247 13.22
+guistics.
+EventClassifier 180 9.64
+ContainerMeasure 134 7.17
+To assess the reliability and the objectivity of
+Standard 57 3.05
+thisannotation,wecalculatedtheInter-Annotator
+ApproximateMeasure 77 4.12
+Agreement (IAA) through the application of Co-
+hen’s kappa to a randomly selected sample of Table7: Thecountandfrequencyof6differenttypesof
+500classifiertokens. WetherebyreachedtheIAA classifiersintestset
+scoreof82.68%,theexistenceofwhichindicates
+highannotatoragreementandtherobustnessofour
+C ChineseClassifierCategoriesand
+schemeofclassifier categorization. Forexample,
+EventClassifierhadbeenusedinthecountingof Explanation
+actionoreventoccurrences. Itdoesclassifyevents
+In Chinese, classifiers are a crucial grammatical
+andnotphysicalobjects. Therefore,thedictionex-
+amplelike"场","次","趟"canbecategorizedinto categoryusedinnounphrasestomarknounclasses
+or quantify nouns. They can be broadly divided
+EventClassifier. Finally,wegotthestatisticsabout
+intotwomaintypes: sortalclassifiersandmeasure
+the the Count and Frequency for each classifier
+words.
+type,whichcanbeseeninTable7. Itpresentsthe
+frequenciesofthesixclassifiertypesonthetestset Sortalclassifiersprimarilyservetohighlightin-
+innumbers. Theextremeimbalanceoffrequency herentcharacteristicsoftheheadnoun,categoriz-
+often (e.g., Individual classifiers as the majority, ing it based on shape, function, or other salient
+Approximate/Standardclassifiersastheminority) properties. They are further classified into three
+offersinvaluablebackgroundinunderstandingthe subtypes:
+fine-grained model performance investigation by Individualclassifiersclassifyconcreteorabstract
+classifiertype. Itindicatesthedegreeofdifficulty objectsbasedontheirnaturalunits,suchas只for
+and availability of data for each of the classifier animals(e.g.,一只猫"acat")or张forflatobjects
+typesduringtheevaluationprocess. (e.g.,一张纸"apieceofpaper").
+Event classifiers enumerate occurrences of 100
+events, like 次 for instances of actions (e.g., 一 90
+次会议 "one meeting") or 场 for performances 80
+(e.g.,一场比赛"amatch"). 70
+60
+Kindclassifierscategorizenounsbytyperather
+50
+thanindividualinstances,suchas种forkinds(e.g.,
+40
+三种动物"threetypesofanimals").
+30
+Ontheotherhand,measurewordsfocusonquan- 20
+tifyingthenounratherthanclassifyingitsinherent 10
+features. Theyinclude: 0
+Containermeasurewords,whichdenotequantity
+Group 1Group 2Group 3Group 4Group 5Group 6Group 7Group 8Group 9Group 10Group 11Group
+12
+basedoncontainers(e.g.,碗"bowl"in一碗饭"a
+bowlofrice").
+Standardmeasurewords,whichusefixedunits
+ofmeasurement(e.g.,米"meter"in三米长"three
+meterslong").
+Approximationmeasurewords,whichindicate
+vague quantities (e.g.,些 "some" in 一些问题
+"someproblems").
+D Relationshipofclassifierfrequencyand
+accuracy
+Group NoC Count Proportion(%)
+Group1 1 677 34.95
+Group2 1 113 5.83
+Group3 1 102 5.27
+Group4 4 120 6.20
+Group5 10 116 5.99
+Group6 15 120 6.20
+Group7 15 120 6.20
+Group8 15 120 6.20
+Group9 15 120 6.20
+Group10 21 118 6.09
+Group11 40 120 6.20
+Group12 34 91 4.70
+Table8: Thistabledemonstratestherankbasedonthe
+frequencyofclassifiersfromthehighestfrequencyof
+group1tolowestfrequencygroup12anddistributionof
+theclassifiers. TheNoC(numberofcategories)demon-
+stratehowmanycategoriesofclassifiersinthisgroup.
+Toexploretherelationshipbetweenclassifiers’
+frequency and accuracy, we sorted and grouped
+theclassifiersthatappearedinChineseClassifier
+Dataset (Peinelt et al., 2017) based on their fre-
+quency of occurrence. With the grouping results
+summarizedinTable8,wefirstassigntheclassifier
+exhibitingthehighestfrequencytoGroup1. The
+classifiers with the second and third highest fre-
+quenciesarethenplacedintoGroup2andGroup3,
+)%(
+ycaruccA
+DeepSeek_R1 BERT_MLM
+BERT_ft GPT4
+Qwen3_8b_base Qwen3_8b_ft
+Qwen3_4b_base Qwen3_4b_ft
+Qwen3_1.7b_base Qwen3_1.7b_ft
+Figure 4: Line chart of accuracy for used models in
+groupsdividedbyclassifierfrequencyfromhightolow.
+The dashed line represents the fine-tuned model, and
+thesolidlinerepresentstheoriginalmodel.
+respectively. Toachieveamorebalanceddistribu-
+tionacrosscategories,andconsideringthatGroups
+2 and 3 are of appropriate scale to accommodate
+additionalclassifiers,weestablishacountthresh-
+oldof 120for groupassignment. Any remaining
+classifiersthatmeetthisthresholdaresequentially
+allocated to subsequent groups in the processing
+order. We then separately aggregated the results
+of all applied models on the test set according to
+thesegroupings, as shown inFigure 4. It can be
+observed that, overall, the accuracy of language
+models in predicting quantifiers decreases as the
+frequencyofquantifiersinthedatasetdeclines,in-
+dicating the prediction of classifier (or LogProb
+ranking)areinfluencedbythewordfrequency.

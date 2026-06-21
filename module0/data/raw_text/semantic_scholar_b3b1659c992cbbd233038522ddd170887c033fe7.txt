@@ -1,0 +1,394 @@
+Mixed-Phoneme BERT: Improving BERT with Mixed Phoneme and
+Sup-Phoneme Representations for Text to Speech
+GuangyanZhang1,KaitaoSong2,XuTan2,∗,DaxinTan1,YuziYan3,
+YanqingLiu4,GangWang4,WeiZhou5,TaoQin2,TanLee1,ShengZhao4
+1 DepartmentofElectronicEngineering,TheChineseUniversityofHongKong
+2 MicrosoftResearchAsia3 TsinghuaUniversity4 MicrosoftAzureSpeech5 ZhejiangUniversity
+gyzhang@link.cuhk.edu.hk, {kaitaosong, xuta}@microsoft.com
+Abstract are usually time-consuming tasks that require language ex-
+pertise [14]. Recently, leveraging contextual representations
+Recently, leveraging BERT pre-training to improve the learnedfromunlabeledtextdatatoimprovetheTTSmodelhas
+phoneme encoder in text to speech (TTS) has drawn increas- becomearisingtopic[10,15–18],whichisalsothefocusofour
+ing attention. However, the works apply pre-training with paper.
+character-based units to enhance the TTS phoneme encoder,
+Pre-trained language models (e.g., BERT [19]) have
+which is inconsistent with the TTS fine-tuning that takes
+achieved state-of-the-art performance in solving natural lan-
+phonemes as input. Pre-training only with phonemes as in-
+guage processing tasks. Recent works [10,17,18,20] have
+put can alleviate the input mismatch but lack the ability to
+applied the BERT model as an auxiliary encoder for the TTS
+modelrichrepresentationsandsemanticinformationduetolim-
+system. The auxiliary BERT encoder extracts additional text
+ited phoneme vocabulary. In this paper, we propose Mixed-
+featuresforcharacter-basedunits(e.g.,character[21],subword
+PhonemeBERT,anovelvariantoftheBERTmodelthatuses
+[19,22]),whichenablestheTTSsystemtogeneratespeechwith
+mixed phoneme and sup-phoneme representations to enhance
+betterpronunciationandexpressiveness. Thosemethodshave
+the learning capability. Specifically, we merge the adjacent
+to face the challenge that the pre-training with the character-
+phonemes into sup-phonemes and combine the phoneme se-
+basedunitsisinconsistentwiththeTTSfine-tuningtakingpure
+quence and the merged sup-phoneme sequence as the model
+phoneme as the input. The inconsistency will bring several
+input,whichcanenhancethemodelcapacitytolearnrichcon-
+problems: 1) The alignment between phoneme and charac-
+textual representations. Experiment results demonstrate that
+ter information might be unstable(e.g., misalignment between
+ourproposedMixed-PhonemeBERTsignificantlyimprovesthe
+phoneme and character sequence), making the TTS phoneme
+TTS performance with 0.30 CMOS gain compared with the
+encoder fail to leverage the pre-trained text features. 2) The
+FastSpeech 2 baseline. The Mixed-Phoneme BERT achieves
+auxiliaryBERTencoderwithtextinputwillalsobringlonger
+3×inferencespeedupandsimilarvoicequalitytotheprevious
+training/inferencetimeandmorecomputingresources.Besides,
+TTSpre-trainedmodelPnGBERT.
+using phoneme and the auxiliary encoder simultaneously will
+Index Terms: Text to Speech, Pre-training, BERT, Sup-
+resultinlargermodelparameters.Someworks[23,24]attempt
+Phoneme,Mixedrepresentation
+toenhancetheTTSphonemeencoderwithcharacterinforma-
+1. Introduction tiondirectlyratherthanintroducinganauxiliaryBERTmodel.
+Sincethemodelstillneedscharacter-basedunitsasanextrain-
+Inrecentyears,neuraltexttospeech(TTS) [1–7]hasdemon- put,inconsistencyandcorrespondingdrawbacksstillexist.
+strated significant successes in producing natural-sounding
+Sowhatifwepre-trainthephonemeencoderwithonlythe
+speech. Specifically, the non-autoregressive TTS systems [5]
+phonemeastheinput?Wenotethatthesizeofthephonemedic-
+havereceivedincreasingattentionduetotheiradvancedability
+tionaryisonlyaround200,anddirectlyusingsuchasmalldic-
+in generating stable mel-spectrograms with fast speed. How-
+tionarywouldnotconveycontextualsemanticinformationef-
+ever, existingnon-autoregressiveTTSstillretainssomeflaws,
+fectively[25].Toenhancetherepresentationcapacityofmodel
+like the “one-to-many” mapping between text and speech. In
+input and avoid the problem of inconsistency between pre-
+[6,8,9], the information from the ground truth speech data,
+training and fine-tuning, we propose Mixed-Phoneme BERT,
+e.g. pitch, duration, is incorporated in model training to alle-
+a novel variant of the BERT model to handle TTS tasks.
+viatethe“one-to-many”problem. Itwasnotedthatthegener-
+The Mixed-Phoneme BERT model merges phoneme and sup-
+atedspeechstilltendstocarryflatprosodysincethephoneme
+phoneme sequences into a new sequence. The sup-phoneme
+sequencedoesnotcontainadequateinformationforpredicting
+tokensareobtainedbyapplyingthelearntByte-PairEncoding
+naturalprosody[10].
+In order to handle this problem, some works have tried (BPE) [26]rulestowords. Comparedwiththephonemedic-
+toenrichthephonemesequenceinputwithsyntacticinforma- tionary,whichisusuallytoosmall,thedictionarysizeofsup-
+tion and linguistic features [11–13]. However, this strategy phonemeismuchlarger,producingrepresentationswithbetter
+hastwomaindisadvantages: i)itneedsseveralseparatedtext semantics. Themixed-PhonemeBERTemploysMaskedLan-
+pre-processing modules (e.g., POS tagger and syntax parser), guageModellingobjectiveforpre-trainingonlarge-scaleunla-
+possibly leading to error propagation from one module to the beledtextcorpora. Inordertopreventtheinformationleakage
+subsequentones;ii)designingandlabellinglinguisticfeatures problem,apre-processeddataalignmentandconsistentmask-
+ingstrategyareintroduced,whichrequireourMixed-Phoneme
+∗WorkdoneduringthefirstauthorisinterningatMicrosoft.Cor- BERT model to predict the masked sup-phoneme tokens and
+respondingauthor:XuTan,xuta@microsoft.com. allphonemetokenscorrespondingtothemaskedsup-phoneme
+2202
+luJ
+91
+]SA.ssee[
+3v09171.3022:viXra
+tokenssimultaneously.Thepre-trainedMixed-PhonemeBERT sup-phonemetokenbasedonthenumberofitscorresponding
+servesasthephonemeencoderforTTSfine-tuning.Experiment phonemetokens.Theoverallmixedphonemeandsup-phoneme
+resultsindicatethattheMixed-PhonemeBERTmodelcansig- representations for each input sentence are formed by sum-
+nificantlyimprovetheTTSperformanceoverthebaselineFast- mingupthecorrespondingup-sampledsup-phonemesequence,
+speech2modelandalleviatetheflatprosodyproblem.Ablation phonemesequenceandpositionembeddings.Thephonemese-
+studiesalsovalidatetheeffectivenessofusingthesup-phoneme quenceisusedtoenhancethepronunciationfortheTTStask,
+informationintheinputrepresentations. whilethesup-phonemesequencecanbringsemanticandcon-
+textualinformationforthemodel.
+2. Mixed-PhonemeBERT
+2.3. Pre-training
+2.1. Overview
+TheproposedMixed-PhonemeBERTmodelisspecificallyde- Thepre-trainingprocedureforMixed-PhonemeBERTissimi-
+signed for the TTS tasks, which is composed of two stages: lartothatfortheoriginalBERT,whichappliesself-supervised
+pre-training and TTS fine-tuning, just as shown in Figure 1. learningonunlabeledtextfortraining. Duringpre-training, a
+Wefirstpre-trainMixed-PhonemeBERTonlargeamountsof certain percentage of input tokens are randomly selected and
+unlabeled text data, then employ paired speech-text for TTS replacedwiththespecialtokenMASK,andthenthemaskedto-
+fine-tuning.Specifically,theinputrepresentationtotheMixed- kensarepredictedbytheMaskedLanguageModelling(MLM)
+Phoneme BERT comprises two different types of tokens de- objective.
+rivedfromtext,namelyphonemesandsup-phonemes. Inpre- As aforementioned, the phoneme and sup-phoneme se-
+training,thesup-phonemetokensandcorrespondingphoneme quencesareusedtorepresentthesametextcontent. Ifrandom
+tokensaremaskedrandomlytomakepredictions. AttheTTS maskingisappliedtothetwosequencesindependently,anin-
+fine-tuningstage,thetokensequenceswithoutanymaskingare formationleakageproblemmayoccursuchthatthemodeltends
+used as input, and the pre-trained BERT model serves as the toinferthemaskedtokensinonesequencethroughthecorre-
+phonemeencoderofTTS.Moredetailsaregiveninthefollow- spondingunmaskedtokensintheothersequence. Asaresult,
+ingsections. the model cannot effectively capture contextual information,
+and the learned representations will be useless. To avoid this
+2.2. MixedPhonemeandSup-PhonemeRepresentations problem,weapplyaconsistentmaskingstrategytomasksup-
+phonemeandphonemesequence,whichisifasup-phonemeto-
+MostexistingTTSsystemsusethephonemesequencetorep-
+kenischosentobemasked,itscorrespondingphonemetokens
+resent the input text. Only phoneme inputs can only provide
+willalsobemasked.Followingpreviousworks[22],15%ofthe
+pronunciation while lacking the ability to capture contextual
+sup-phoneme tokens (except special tokens) in each sequence
+representations. Moreover, directlyusingwordsorothersim-
+aremaskedatrandom. Ifasup-phonemetokenischosentobe
+ilar types as the TTS model inputs will lead to large size of
+masked,itisgiven: i)80%chanceofkeepingtheMASKsym-
+token inventory, which is undesirable for model training, and
+bol; ii)10%chancetobereplacedbyarandomsup-phoneme
+thederivedout-of-vocabularyproblemmayalsohinderthesys-
+token;iii)10%chanceofremainingunchanged.
+tem’soperation.Therefore,amixedrepresentationofphoneme
+andsup-phonemesequencesisproposedforpre-trainingofthe Additionally, two masking strategies are evaluated, i.e.,
+Mixed-Phoneme BERT. A sup-phoneme refers to a group of with or without whole word masking [28]. When the whole
+neighbouring phonemes and does not necessarily correspond wordmaskingisused,ifamaskedsup-phonemetokenbelongs
+or relate to a lexical word. Inspired by the success of byte- toaword,allsup-phonemetokensthatmakeupthatwordare
+pair encoding (BPE) in handling the out-of-vocabulary prob- maskedtogether. Thistechniquecompelsthemodelexplicitly
+lem[26],weapplyBPEtoencodeeachwordintooneormore torecoverthewholeword,makingtheMLMpre-trainingtask
+sup-phonemetoken(s)andthusobtainthefinalsup-phoneme. morechallenging.
+Byte-PairEncoding(BPE)isfirstintroducedforwordseg- The MLM objective is used to predict the masked tokens
+mentationin[26]. In[26], eachwordisrepresentedasase- with cross-entropy loss. The final hidden vectors of the en-
+quence of characters. While in this paper, each word can be codercorrespondingtothemaskedphonemetokensareselected
+seenasasequenceofphonemes,andphonemeisthebasicunit for the masked phoneme tokens classification. Then the hid-
+forBPElearning. TheBPEalgorithmconsistsoflearningand den vectors of the masked phoneme tokens are aggregated to
+encodingstages. DuringBPElearning[27], eachwordinthe thesup-phonemelevelbyaveragepoolingforthemaskedsup-
+trainingcorpusisconvertedtoasequenceofphonemes.Abase phonemetokensclassification.Thesup-phonemeandphoneme
+vocabularythatconsistsofBPEmergerulesislearntiteratively. levelcross-entropylossesareaddedtogetherasthefinalobjec-
+Thislearningprocessrepeatsuntilthebasevocabularyreaches tive.
+thepre-definedsize. ThelearnedBPErulescanbeappliedto
+3. ExperimentalSetup
+encodeawordintothesup-phonemetoken(s)attheencoding
+process. The encoding process is greedy (utilizing large sup-
+3.1. Datasets
+phonemetokensasmuchaspossible)anddeterministic.
+Due to our design, the sup-phoneme has a larger dictio- 3.1.1. Pre-trainingData
+nary size than the phoneme, thus supporting higher represen-
+tationcapacityinrepresentingwordsemantics. Inaddition,we Pre-trainingdataisusedtotraintheMixed-PhonemeBERTand
+can easily align each sup-phoneme token to its corresponding learnBPEbasevocabulary. Thepre-trainingdataiscomposed
+phoneme tokens, which is beneficial for us to mix phoneme ofWMTnewsandWikipediacorpora,including83millionsen-
+andsup-phonemerepresentations. Moreindetail,whengiven tencesfromtheWMTnewsandWikipediacorpora.Thedataset
+thetextinput,consideringthesup-phonemesequenceareusu- is divided into 81M sentences for training, 1M for validation,
+ally shorter than the phoneme sequence, we up-sample each and1Mfortesting.
+Figure1: Pre-trainingandTTSfine-tuningofMixed-PhonemeBERT.Theposition,phoneme,andsup-phonemeembeddingsareillustratedindifferentcolors. Atokenin
+purplemeansthatmaskingisapplied.Twoexamplewordsegments,i.e.,“hello”and“world”,areshown.“hello”consistsoftwosup-phonemeunits,hh-ahandl-ow.The
+sup-phonemeunitl-owismaskedduringpre-training.
+3.1.2. TTSFine-tuningData lectedforthesubjectivetest,withatleast15nativejudgesfor
+the five-score MOS test and 12 judges for Comparison MOS
+WechoosetheLJSpeechcorpusasthebenchmarktoevaluate
+(CMOS)[30]foreachtestcase.TheCMOSgapover0.05sug-
+the pre-trained Mixed-Phoneme BERT model during the TTS
+gestsasignificantgain. Wealsoprovidesomedemosofsyn-
+fine-tuning stage. The LJSpeech contains approximately 24
+thesizedaudiosforreference.1.
+hoursofaudioofEnglishspeechandcorrespondingtexttran-
+scriptionsfromonefemalespeaker. 4. ResultsandAnalyses
+3.2. ModelConfigurations 4.1. TTSPerformanceEvaluation
+3.2.1. Pre-trainingConfigurations In Table 1, different TTS systems are compared to show the
+performance of pre-trained Mixed-Phoneme BERT. We com-
+The Mixed-Phoneme BERT is made up of 8 feed-forward pare the MOS and CMOS scores of audio samples gener-
+Transformer (FFT) blocks [5] with a hidden size of 512 and ated by the following systems: i) GT: ground-truth original
+8 self-attention heads. Training of Mixed-Phoneme BERT speech; ii)GT(Mel+PWG):copysynthesisbyParallelWave-
+was done on 24 Tesla V100-16GB GPUs, following the im- GAN vocoder with ground-truth mel-spectrograms; iii) FS2:
+plementation and configuration suggested in [22]. The model FastSpeech2withthedefaultsettingsin[6]; iv)FS2w/opre-
+was trained with a batch size of 3072 sequences and a maxi- trainedMPBERT:FastSpeech2withMixed-PhonemeBERT
+mumlengthof512tokensfor220,000steps,approximately40 as the phoneme encoder, which is not pre-trained; v) FS2 w/
+epochs. TheBPEbasedictionarywasbuiltusingpre-training pre-trained MP BERT: FastSpeech 2 with pre-trained Mixed-
+textdata.TwodifferentsizesoftheBPEbasedictionary,3,000 PhonemeBERTasthephonemeencoder.TheMixed-Phoneme
+and30,000,wereattemptedinthisstudy. BERTispre-trainedwiththewholewordmaskingstrategy.The
+basedictionarysizefortheBPEmergeruleslearningis30,000.
+3.2.2. TTSFinetuningConfigurations
+Table1:TTSPerformanceEvaluation.TheMOSwith95%confidenceintervals.
+After pre-training, the downstream TTS system based on
+the FastSpeech 2 [6] is warm-started on the text and mel-
+CMOS CMOS (vs. FS2 w/o
+spectrogram pairs. FastSpeech 2 is an end-to-end non- Method MOS (vs.FS2) pre-trainedMPBERT)
+autoregressive TTS approach, which consists of three compo-
+GT 4.17±0.07 - -
+nents: aphonemeencodernetworkthatencodesphonemese- GT(Mel+PWG) 4.02±0.08 - -
+quenceasthetextrepresentation,avariancepredictorthatpre- FS2 3.75±0.06 0.00 -
+dictstheprosodicvarianceinformation,andadecoderthatpro- FS2 w/o pre-trained MP
+3.90±0.08 0.18 0.00
+ducespredictedmel-spectrograms.Wereplacethephonemeen- BERT
+coderinFastSpeech2withtheMixed-PhonemeBERT,andits FS2 w/ pre-trained MP 4.04±0.07 0.30 0.18
+BERT
+parametersareinitializedfromthepre-trainedmodel.Theother
+componentsofFastSpeech2followtheoriginalstructure,and
+theparametersareinitializedrandomly. Itcanbeseenthatusingpre-trainedMixed-PhonemeBERT
+The TTS front-end normalizes the sentences and converts as the phoneme encoder (FS2 w/ pre-trained MP BERT) can
+themintophonemesequences. TheParallelWaveGAN(PWG) significantly improve the voice quality for Fastspech 2 com-
+[29] is used to generate speech waveform from the predicted paredwiththesystemsFS2w/opre-trainedMPBERTandFS2.
+mel-spectrograms. Fromthecommentsfromtheraters, wefindtheimprovement
+onFS2w/pre-trainedMPBERT mainlyresultsfromthemore
+3.2.3. SubjectiveEvaluationConfigurations expressive and appropriate prosody for the generated speech.
+It is also shown that system FS2 w/o pre-trained MP BERT
+All the subjective tests are evaluated via our internal crowd-
+sourcedlisteningtestplatform. Total60textsentencesarese- 1https://speechresearch.github.io/mpbert
+demonstratesbetterTTSperformancethantheFS2system.The 4.2.2. TheEffectivenessofFine-TuningStrategy
+improvementisbelievedtoresultfromtheextrasup-phoneme
+In this section, three pre-trained Mixed-Phoneme BERT with
+informationinthesysteminputs.
+different fine-tuning strategies are also investigated: i) MP
+4.1.1. ComparedwiththePnGBERT BERT: 15% of input tokens are masked for the MLMpredic-
+tionevaluation. Themixedphonemeandsup-phonemerepre-
+WeevaluatethevoicequalityandinferencelatencyofMixed-
+sentationsareusedforTTSfine-tuning;ii)MPBERTw/osup-
+Phoneme BERT compared with the recent TTS pre-trained
+phoneme: For MLM prediction evaluation, the masking ratio
+model, PnG BERT [24], which has a similar number of
+forphonemetokensis15%,whileallsup-phonemetokensare
+modelparametersandtrainingstepstoMixed-PhonemeBERT.
+masked. Then,themaskedphonemetokensandcorresponding
+We show the CMOS results and inference speedup for mel-
+sup-phonemetokensarepredictedfromtheremainedunmasked
+spectrogramgenerationinTable2.ComparedwithPnGBERT,
+phoneme tokens in input. During the TTS fine-tuning stage,
+ourmodelspeedsupmel-spectrograminferencegenerationby
+onlythephonemerepresentationsareused; iii)MPBERTw/o
+3×. TheCMOSgainoftheproposedmodeloverPnGBERT
+phoneme: For MLM prediction evaluation, the masking ratio
+is 0.03, showing that our proposed model performs on par or
+forthesup-phonemetokensis15%,whiletheentirephoneme
+slightlybetterwithPnGBERT.Wealsofoundthatthetraining
+sequence is masked. Furthermore, we only use sup-phoneme
+timeofPnGBERTisaboutthreetimeslongerthantheMixed-
+representationsasinputsatTTSfine-tuningstage.
+PhonemeBERT2.
+Table4:EvaluationsfortheMixed-PhonemeBERTwiththreedifferentfine-tuning
+Table2:RTFdenotesthereal-timefactor,whichisthetime(inseconds)required strategies.Maskedtokenspredictionaccuracy(MLMAcc),measuredatphoneme
+forthesystemtosynthesizeaone-secondwaveform. Thetrainingandinference andsup-phonemelevel.
+latencytestisconductedonaserverwith1NVIDIAV100GPU.
+Method MLMAcc(phoneme) MLMAcc(sup-phoneme) CMOS
+Method InferenceSpeed(RTF) InferenceSpeedup CMOS
+MPBERT 70.55% 70.43% 0
+PnGBERT 3.99×10−2 - 0.00
+-phoneme 59.78% 54.44% -0.10
+MPBERT 1.32×10−2 3× 0.03
+-sup-phoneme 29.24% 25.65% -0.11
+The results for MLM prediction evaluation and TTS per-
+4.2. AblationStudies
+formanceareshowninTable4. Itshowsthatbothmaskedto-
+4.2.1. TheEffectivenessofMixedPhonemeandSup-Phoneme ken prediction accuracy and TTS performance drop when the
+Representations phonemeorsup-phonemerepresentationsarenotused.Specif-
+ically, we find the performance degradation is severer when
+The effectiveness of using mixed representations in Mixed-
+theMixed-PhonemeBERTonlyusesphonemeratherthansup-
+PhonemeBERTisevaluatedwiththemaskedtokensprediction
+phoneme representations, suggesting the effectiveness of sup-
+on the test set and TTS performance, shown in Table 3. The
+phonemerepresentations.
+pre-trainedmodelsareappliedtopredictthemaskedinputto-
+kens,andthemaskingratioforinputtokensis15%,whichisthe 4.2.3. AnalysisonMaskingStrategy
+sameasthetrainingtime.Twopre-trainedmodelsareinvolved
+Wealsostudytheeffectofthemaskingstrategyontheperfor-
+for evaluation: i) Phoneme BERT: The Phoneme BERT only
+manceoftheMixed-PhonemeBERT,asshowninTable5.The
+uses phoneme representations as model input; ii) MP BERT:
+subjectiveevaluationresultsshowthatthewholewordmasking
+Mixed-Phoneme BERT using proposed mixed representations
+strategyincreasesTTSperformance.Thework[24]alsoshows
+asmodelinput.
+asimilardiscovery. Weconsiderthatwhentherepresentation
+capacityofthemodelinputisnotchanged,increasingthediffi-
+Table3:EvaluationsfortheMixed-PhonemeBERTandPhonemeBERT.Masked cultyoftheMLMpredictiontasktosomeextentmightimprove
+tokenspredictionaccuracy(MLMAcc),measuredatphonemeandsup-phoneme
+theperformanceofthedownstreamTTStask.
+level.
+Table5:EvaluationsfortheMixed-PhonemeBERTwithdifferentinputmasking
+Method MLMAcc(phoneme) MLMAcc(sup-phoneme) CMOS strategies.Maskedtokenspredictionaccuracy(MLMAcc),measuredatphoneme
+PhonemeBERT 45.40% - 0.00 andsup-phonemelevel.WWMmeanswholewordmasking.
+MPBERT 70.55% 70.43% 0.13
+Strategy MLMAcc(phoneme) MLMAcc(sup-phoneme) CMOS
+w/WWM 70.55% 70.43% 0.00
+It is shown that proposed mixed representations can help
+w/oWWM 74.69% - -0.08
+thepre-trainedmodelsignificantlyimprovethemaskedtokens
+predictionaccuracy.Thesubjectiveevaluationresultsshowthat
+usingpre-trainedMixed-PhonemeBERTwithmixedrepresen- 5. Conclusion
+tationsasinputismoreeffectivefortheTTSfine-tuningthan
+usingPhonemeBERTonlywithphonemerepresentations.The ThispaperproposedMixed-PhonemeBERT,anovelvariantof
+objectiveandsubjectiveimprovementsshouldresultfromthat the BERT model to handle TTS tasks. Specifically, we intro-
+the sup-phoneme enhance the representation capacity of the duce mixed phoneme and sup-phoneme representations as to
+Mixed-PhonemeBERT. the input of the Mixed-Phoneme BERT. The mixed represen-
+tations can enhance the representation capacity of the model
+whileavoidingtheinconsistencybetweenpre-trainingandfine-
+2AlthoughPnGBERTandourMixed-PhonemeBERTaretrained
+tuning. The subjective evaluations show that the pre-trained
+withthesamesteps,PnGBERTconcatenatescharacterandphoneme
+sequencetogetherasalongerone,whichresultsinlongerone-stepfor- Mixed-Phoneme BERT can improve the performance of Fast-
+wardtime. Speech2significantlyandenjoyfastinferencespeed.
+6. References
+[21] H.ElBoukkouri, O.Ferret, T.Lavergne, H.Noji, P.Zweigen-
+baum, andJ.Tsujii, “Characterbert: Reconcilingelmoandbert
+[1] X. Tan, T. Qin, F. Soong, and T.-Y. Liu, “A survey on neural
+forword-levelopen-vocabularyrepresentationsfromcharacters,”
+speechsynthesis,”arXivpreprintarXiv:2106.15561,2021.
+inInternationalConferenceonComputationalLinguistics,2020,
+[2] X.Tan, J.Chen, H.Liu, J.Cong, C.Zhang, Y.Liu, X.Wang, pp.6903–6915.
+Y. Leng, Y. Yi, L. He et al., “Naturalspeech: End-to-end text
+[22] Y. Liu, M. Ott, N. Goyal, J. Du, M. Joshi, D. Chen, O. Levy,
+to speech synthesis with human-level quality,” arXiv preprint
+M. Lewis, L. Zettlemoyer, and V. Stoyanov, “Roberta: A
+arXiv:2205.04421,2022.
+robustly optimized bert pretraining approach,” arXiv preprint
+[3] Y. Wang, R. Skerry-Ryan, D. Stanton, Y. Wu, R. J. Weiss, arXiv:1907.11692,2019.
+N.Jaitly,Z.Yang,Y.Xiao,Z.Chen,S.Bengioetal.,“Tacotron:
+[23] K.Kastner,J.F.Santos,Y.Bengio,andA.Courville,“Represen-
+Towardsend-to-endspeechsynthesis,”inProc.Interspeech,Aug.
+tationmixingforttssynthesis,”inProc.ICASSP. IEEE,2019,
+2017,pp.4006–4010.
+pp.5906–5910.
+[4] J.Shen, R.Pang, R.J.Weiss, M.Schuster, N.Jaitly, Z.Yang,
+Z. Chen, Y. Zhang, Y. Wang, R. Skerrv-Ryan, R. A. Saurous, [24] Y.Jia,H.Zen,J.Shen,Y.Zhang,andY.Wu,“PnGBERT:Aug-
+Y.Agiomvrgiannakis,andY.Wu,“Naturalttssynthesisbycon- mentedBERTonPhonemesandGraphemesforNeuralTTS,”in
+ditioning wavenet on mel spectrogram predictions,” in Proc. Proc.Interspeech2021,2021,pp.151–155.
+ICASSP,2018,pp.4779–4783. [25] S. Ding, A. Renduchintala, and K. Duh, “A call for prudent
+[5] Y.Ren,Y.Ruan,X.Tan,T.Qin,S.Zhao,Z.Zhao,andT.-Y.Liu, choiceofsubwordmergeoperationsinneuralmachinetransla-
+“Fastspeech:Fast,robustandcontrollabletexttospeech,”inProc. tion,”inProceedingsofMachineTranslationSummitXVII:Re-
+NIPS,2019,pp.3171–3180. searchTrack,2019,pp.204–213.
+[6] Y.Ren,C.Hu,X.Tan,T.Qin,S.Zhao,Z.Zhao,andT.-Y.Liu, [26] R.Sennrich,B.Haddow,andA.Birch,“Neuralmachinetransla-
+“Fastspeech2: Fastandhigh-qualityend-to-endtexttospeech,” tionofrarewordswithsubwordunits,”inProc.ACL,2016,pp.
+inProc.ICLR,2021. 1715–1725.
+[7] G.Zhang, Y.Leng, D.Tan, Y.Qin, K.Song, X.Tan, S.Zhao, [27] T.Wolf,J.Chaumond,L.Debut,V.Sanh,C.Delangue,A.Moi,
+and T. Lee, “A study on the efficacy of model pre-training P. Cistac, M. Funtowicz, J. Davison, S. Shleifer et al., “Trans-
+in developing neural text-to-speech system,” arXiv preprint formers: State-of-the-artnaturallanguageprocessing,” inProc.
+arXiv:2110.03857,2021. EMNLP,2020,pp.38–45.
+[8] I.Elias,H.Zen,J.Shen,Y.Zhang,Y.Jia,R.Skerry-Ryan,and [28] Y.Cui, W.Che, T.Liu, B.Qin, Z.Yang, S.Wang, andG.Hu,
+Y.Wu,“ParallelTacotron2: ANon-AutoregressiveNeuralTTS “Pre-trainingwithwholewordmaskingforchinesebert,”arXiv
+Model with Differentiable Duration Modeling,” in Proc. Inter- preprintarXiv:1906.08101,2019.
+speech,2021,pp.141–145.
+[29] R. Yamamoto, E. Song, and J.-M. Kim, “Parallel wavegan: A
+[9] G.Zhang, Y.Qin, D.Tan, andT.Lee, “ApplyingtheInforma- fastwaveformgenerationmodelbasedongenerativeadversarial
+tionBottleneckPrincipletoProsodicRepresentationLearning,” networks with multi-resolution spectrogram,” in Proc. ICASSP.
+inProc.Interspeech,2021,pp.3156–3160. IEEE,2020,pp.6199–6203.
+[10] T.Kenter,M.Sharma,andR.Clark,“Improvingtheprosodyof
+[30] P.C.Loizou,“Speechqualityassessment,”inMultimediaanaly-
+rnn-basedenglishtext-to-speechsynthesisbyincorporatingabert
+sis,processingandcommunications. Springer,2011,pp.623–
+model,”inProc.Interspeech,2020,pp.4412–4416.
+654.
+[11] P. A. Taylor, Text-to-speech synthesis. Cambridge University
+Press,2009.
+[12] H.ZenandH.Sak,“Unidirectionallongshort-termmemoryre-
+currentneuralnetworkwithrecurrentoutputlayerforlow-latency
+speechsynthesis,”inProc.ICASSP. IEEE,2015,pp.4470–4474.
+[13] Z.Wu,O.Watts,andS.King,“Merlin: Anopensourceneural
+networkspeechsynthesissystem.”inSSW,2016,pp.202–207.
+[14] G. Zhang, Y. Qin, and T. Lee, “Learning syllable-level dis-
+creteprosodicrepresentationforexpressivespeechgeneration,”
+inProc.Interspeech,2020,pp.3426–3430.
+[15] P.Wang,Y.Qian,F.K.Soong,L.He,andH.Zhao,“Wordem-
+beddingforrecurrentneuralnetworkbasedttssynthesis,”inProc.
+ICASSP. IEEE,2015,pp.4879–4883.
+[16] Y.-A.Chung,Y.Wang,W.-N.Hsu,Y.Zhang,andR.Skerry-Ryan,
+“Semi-supervisedtrainingforimprovingdataefficiencyinend-
+to-end speech synthesis,” in Proc. ICASSP. IEEE, 2019, pp.
+6940–6944.
+[17] T.Hayashi,S.Watanabe,T.Toda,K.Takeda,S.Toshniwal,and
+K. Livescu, “Pre-trained text embeddings for enhanced text-to-
+speechsynthesis.”inProc.Interspeech,2019,pp.4430–4434.
+[18] G.Xu,W.Song,Z.Zhang,C.Zhang,X.He,andB.Zhou,“Im-
+provingprosodymodellingwithcross-utterancebertembeddings
+forend-to-endspeechsynthesis,”inProc.ICASSP. IEEE,2021,
+pp.6079–6083.
+[19] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,“Bert: Pre-
+training of deep bidirectional transformers for language under-
+standing,”inProc.NAACL,2019,pp.4171–4186.
+[20] Y.Xiao,L.He,H.Ming,andF.K.Soong,“Improvingprosody
+withlinguisticandbertderivedfeaturesinmulti-speakerbased
+mandarinchineseneuraltts,”inProc.ICASSP. IEEE,2020,pp.
+6704–6708.

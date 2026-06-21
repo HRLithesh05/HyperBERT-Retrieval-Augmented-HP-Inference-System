@@ -1,0 +1,1305 @@
+Supervised Fine-Tuning or Contrastive Learning?
+Towards Better Multimodal LLM Reranking
+ZiqiDai1∗,XinZhang1,2∗,MingxinLi,YanzhaoZhang,DingkunLong
+PengjunXie,MeishanZhang1,WenjieLi2,MinZhang1
+1HarbinInstituteofTechnology,Shenzhen 2TheHongKongPolytechnicUniversity
+{ziqi.dai, zhangxin2023}@stu.hit.edu.cn
+Releaseathttps://github.com/vec-ai/lychee-rerank-mm
+ABSTRACT
+Ininformationretrieval,trainingrerankingmodelsmainlyfocusesontwotypesofob-
+jectives: metriclearning(e.g.,contrastivelosstoincreasethepredictedscoresonrele-
+vantquery-documentpairs)andclassification(binarylabelpredictionofrelevancevs.
+irrelevance). For BERT-style encoders, various studies have shown that contrastive
+learning(CL)canbemoreeffectivethandiscriminative(classification)learning. How-
+ever,forlargelanguagemodels(LLMs),classificationviasupervisedfine-tuning(SFT),
+which predicts “yes” (resp. “no”) token for relevant (resp. irrelevant) pairs, appears
+morepromisingasitalignswellwiththegenerativenatureofLLMs. Thisdivergence
+raises a central question: which objective is intrinsically better suited to LLM-based
+reranking, and what mechanism underlies the difference? In this work, we conduct a
+comprehensivecomparisonandanalysisbetweenCLandSFTforreranking,takingthe
+universalmultimodalretrieval(UMR)astheexperimentalplayground. Wefirstdecom-
+posetheobjectivesintotwocomponents:weight,whichcontrolsthemagnitudeofthose
+updates, anddirection, whichguidesthemodelupdates, thenpresentaunifiedframe-
+work for understanding their interactions. Through probing experiments, we find that
+SFTprovidesasubstantiallystrongerweightingschemethanCL,whereasthepreferred
+scoringdirectionshowsnoclearwinner. Takentogether,theseresultspointtoaconsis-
+tentadvantageofSFToverCLforLLMreranking. Tofurthervalidateourfindings,we
+conductlarge-scaletrainingwithSFTandpresentnewstate-of-the-artrerankersonthe
+MRBbenchmark. WealsoprovideablationsonSFTsettingsandexpectourfindingsto
+benefitfutureresearchandapplicationsinthisarea.
+1 INTRODUCTION
+Rerankingisacrucialstepintheretrievalpipeline(Linetal.,2022),aimingtorefinetheinitialre-
+sultsobtainedfromtheprevioussearchstagebyreorderingthembasedontheirrelevancetoagiven
+query. Inrecentyears,theintegrationofLargeLanguageModels(LLMs)intorerankingtechniques
+hasshownpromisingresultsintextretrieval(Maetal.,2024b)andhasgraduallybecomethestan-
+dard approach (Sharifymoghaddam et al., 2025). When extending to the multimodal setting (Liu
+et al., 2023; Wei et al., 2025), multimodal LLMs (MLLMs) also become the promising backbone
+choice(Linetal.,2025;Zhangetal.,2025a)astheirstrongmultimodalunderstandingcapabilities.
+Current widely used rerankers are typically in the point-wise setting (Lin et al., 2022), which in-
+dependentlyscoreseachquery-candidatepairandranksthecandidates. Thesimplearchitectureof
+point-wise rerankers makes them easy and efficient to applicate in real-world scenarios, and there
+emergesvariousopen-sourcestate-of-the-art(SOTA)models(Chenetal.,2024;Zhangetal.,2024),
+particularlyLLM-basedones(Sharifymoghaddametal.,2025;Zhangetal.,2025b). Totrainsuch
+rerankers1,onestraightforwardapproachfollowsthepre-LLMpracticeofcontrastivelearning(CL)
+(Nogueiraetal.,2019;Zhangetal.,2024),computingInfoNCEloss(Oordetal.,2018)onepredicted
+relevancescores. Anotherapproachistodirectlyperformsupervisedfine-tuning(SFT)(Nogueira
+etal.,2020;Zhangetal.,2025b), whichoptimizesthemodeltopredictthenexttoken(“true/yes”
+∗Equalcontribution
+1Throughoutthiswork,rerankingprimarilyreferstopoint-wisererankingsetting.
+1
+5202
+tcO
+61
+]LC.sc[
+1v42841.0152:viXra
+Instruction …
+𝒑 𝑶+ 𝑶+,𝑶−,…,𝑶− →𝟏
+Query … 𝟎 𝟎 𝟏 𝑵
+MLLM
+LM Contrastive Learning
+Reranker
+head
+Document … 𝒑 “𝒚𝒆𝒔” 𝒊𝒏𝒔,𝒒,𝒅+ →𝟏
+Assistant: 𝒑 “𝒏𝒐” 𝒊𝒏𝒔,𝒒,𝒅− →𝟏
+PositiveOutput NegativeOutput Supervised Fine-Tuning
+Figure 1: Comparison of Supervised Fine-Tuning (SFT) and Contrastive Learning (CL) for the
+MLLMreranker.
+for relevant, “false/no” for irrelevant) and takes the “true/yes” token probability as the relevance
+score. The illustration of them is shown in Figure 1. Before the emergence of LLMs, contrastive
+learning was the dominant approach for leveraging BERT-style encoders due to its strong perfor-
+mance(Nogueiraetal.,2019;Zhangetal.,2024). However,SFTarenowwidelyappliedtoLLMs
+(Nogueiraetal.,2020;Zhangetal.,2025b)andappearstodelivercompetitiveresults. Thisraisesa
+naturalresearchquestion: whichobjectiveisintrinsicallybetterforLLMreranking,andwhy?
+Meanwhile, research on multimodal reranking remains largely restricted to single datasets or nar-
+rowlydefinedtasks(Xuetal.,2025),limitingthegeneralizabilityofexistingapproaches. Building
+onrecentadvancesinuniversalmultimodalretrieval(Zhangetal.,2025a),ourobjectiveistodevelop
+auniversalmultimodalrerankingmodelthatcanconsistentlyadaptacrossdiversemodalities.
+Inthiswork,weaimtoexplorethequestionbyprovidingatheoreticalanalysisandempiricalcom-
+parisonofthetwoapproachesontheuniversalmultimodalretrievaltaskastestbed. Wefirstdesign
+theGeneralMultimodalReranker(GMR,§3.1), andthenanalyzethetwotrainingapproachesand
+decomposetheirlossfunctions(§3.3)intoweightanddirection. Basedonthis,weimplementauni-
+fiedframeworkforCLandSFTlossesandconductexperimentstocompareandanalysisthem(§4).
+Tomakecomprehensiveevaluationsofmultimodalreranking,wecompileanewunifiedbenchmark
+calledMRB(multimodalrerankingbenchmark,§5).
+Through analysis and comparison, we find that SFT consistently outperforms CL for LLM-based
+rerankers, and: (1)Theweightcomponent, ratherthanthedirection, accountsforthemostperfor-
+mance gap; (2) A larger weight improves robustness to numerical errors in training, where SFT
+intrinsicallyassignslargerweightsthanCL;(3)Thefunctionofweightisainput-specificguidance:
+down-weightalready-well-learnedinputpairsandup-weighthardorunder-fitpairs;(4)Thenative
+SFT direction is almost optimal, whereas CL can be further improved by tuning its direction ma-
+trix. To further validate the potential of SFT, we train two reranking models (i.e., GMR-3B and
+GMR-7B),whichsetnewstate-of-the-artresultsonMRB.Wewillreleasecode,dataandmodelsto
+facilitatefutureresearchinthisarea. Ourcontributionsare:
+• We provide a unified analysis of SFT and CL for LLM-based reranking, showing that SFT
+intrinsicallyoutperformsCL.Bydecomposingthelossintoweightanddirectioncomponents,
+werevealthatSFT’sweighttermdeliversstrongeroptimizationsignals.
+• We introduce the MRB benchmark, comprising 40 datasets across single-, cross-, and fused-
+modalretrieval,offeringacomprehensiveevaluationforuniversalmultimodalreranking.
+• We develop GMR models, instruction-aware multimodal LLM rerankers trained on 1.5M di-
+versepairs. GMR-3BandGMR-7Bachievestate-of-the-artresultsonMRB,highlightingthe
+effectivenessofSFTandprovidingstrongbackbonesforfutureresearch.
+2 RELATED WORK
+RerankingwithLargeLanguageModel. Rerankingimprovesretrievaloutputqualitybyjointly
+modelingthequeryandretrievedcandidatesandreorderthecandidates(Linetal.,2022). Inrecent
+years, reranking is dominated by methods based on pretrained language models (Nogueira et al.,
+2
+2019; 2020), with LLM-based approaches becoming particularly prominent in the latest advance-
+ments (Ma et al., 2024b; Zhuang et al., 2024; Sharifymoghaddam et al., 2025). Compared to the
+widelystudiedlist-wisereranking(Renetal.,2025;Liuetal.,2025),inthiswork,wefocusonthe
+more straightforward and widely used point-wise approach (Zhang et al., 2024; Guo et al., 2025),
+whichscoreseachquery-candidatepairindependentlyandranksthecandidates.
+Trainingpoint-wisererankershastraditionallyreliedoncontrastivelearning(CL)(Nogueiraetal.,
+2019;Zhangetal.,2024),whichisalsoaverifiedchoiceforLLM-basedmodels(Maetal.,2024b).
+However,forsuchgenerativelanguagemodels,asupervisedfine-tuning(SFT)approach(Nogueira
+etal.,2020)seemstobemorealignedwiththemodelnature,asitdirectlyoptimizesthemodelto
+predict the next token (“true/yes” for relevant, “false/no” for irrelevant) based on the input query
+and candidate, rather than relying on a contrastive loss that compares the relevant and irrelevant
+candidates. Thereisnoclearconsensusonwhichapproachisbetteryet. Tobridgethissignificant
+research gap, we conduct a theoretical analysis with empirical comparison of the two approaches,
+anddemonstratethatSFToutperformsCLintermsofperformance.
+Multimodal Information Retrieval. Multimodal Retrieval aims to retrieve relevant candidates
+fromandbasedonmodalitiesbeyondtext(Wangetal.,2024),whichinvolvesvarioussub-taskssuch
+asimage-textretrieval(Caoetal.,2022)andcomposedimageretrieval(Songetal.,2025). Recent
+advancements in this field have been shifted to a more generalized view, exploring the universal
+multimodalretrieval(UMR)(Liuetal.,2023;Weietal.,2025;Zhangetal.,2025a)whichcompile
+a wide range of datasets and tasks into a unified benchmark. Retrievers (Lin et al., 2025; Zhang
+et al., 2025a) driven by multimodal LLMs have shown significant improvements in understanding
+andprocessingmultimodaldata,enablingmoreeffectiveretrievalacrossdifferentmodalities.While
+thererankingstageiscrucialforenhancingtheprecisionofretrievalsystem,ithasbeenlessstudied
+inUMR(Linetal.,2025). Inthiswork,weinvestigatehowtobuildbetterLLMrerankingmodels,
+presentingstate-of-the-artMLLM-basedrerankersforUMR.
+3 METHOD
+Inthisworkweanalyzethecontrastivelearning(CL)andsupervisedfine-tuning(SFT)approaches
+toreranking,takingthemultimodalretrievalastheexperimentalplayground. Wefirstintroduceour
+rerankingmodel(§3.1),trainingbyCLorSFT(§3.2),andthenpresentourtoolsforanalysis(§3.3).
+3.1 RERANKERIMPLEMENTATION
+Our general multimodal reranker (namely GMR) follows the conventional design of LLM-based
+point-wise reranking models. We employ a strong MLLM as the backbone, which could process
+diverseinputmodalities,encompassingimages,text,andmultimodalcombinations.
+Instruction-AwareReranking. Givenqueryq anddocumentd, wesetaninstructioninstode-
+scribe detailed task objectives, which has proven highly effective in MLLM-based multimodal re-
+trieval(Linetal.,2025;Zhangetal.,2025a). Forexample, intheVisualDocumentRetrievaltask
+(Maetal.,2024a;Faysseetal.,2025),weuseaninstruction“Findascreenshotthatrelevanttothe
+user’squestion.” toguidethemodeltobetterevaluatetherelevancebetweenqueryandvisualdocu-
+ment.WelistallinstructionsofourmodelinAppendixD.3.Theinputsareintheformof(ins,q,d)
+andformattedintothetemplateshowninFigure6beforebeingfedintotheMLLMbackbone.
+Relevance Score Computation. In the SFT setting, given the task instruction ins, query q and
+documentd,ourrerankerassessestheprobabilityofthenexttokenbeingeither“yes”or“no”tobe
+therelevancescoreσ. Thisprocesscouldbeformallyexpressedas:
+eP(“yes”|{ins,q,d})
+σ(ins,q,d)= , (1)
+eP(“yes”|{ins,q,d})+eP(“no”|{ins,q,d})
+where P(“yes”|{ins,q,d}) and P(“no”|{ins,q,d}) represent the probabilities of the next token
+being “yes” or “no”, respectively, given the document and query as context. With such relevance
+scores,wecouldrerankallretrievedcandidatesmoreprecisely. Thismethodismorealignedtothe
+generativenatureofMLLMandthusallowsustoleverageitspowerfulunderstandingabilitywhile
+3
+providing a effective scoring mechanism for reranking purposes. In the CL setting, the relevance
+scoreisthe“yes”probabilityonly:
+σ(ins,q,d)=P(“yes”|{ins,q,d}). (2)
+3.2 RERANKERTRAINING
+Inreranking,eachdataexamplecontainsonequeryq,onerelevantdocument(positive)d+,andsev-
+0
+eralirrelevantdocuments(negatives,theselectionisdescribedinAppendixC.3){d−,d−,...,d−}.
+1 2 N
+AsshowninFigure1,weexplorebothCLandSFTbasedtraining.
+•ContrastiveLearning: Withrelevancescoreσ fromEquation2,wecomputetheInfoNCEloss
+(Oordetal.,2018)foreachexample:
+exp(σ(ins,q,d+))
+LCL =−log 0 . (3)
+exp(σ(ins,q,d+))+(cid:80) exp(σ(ins,q,d−))
+0 i i
+• Supervised Fine-Tuning: The objective is predicting correct next token (relevance label) for
+each input pair, independently. We reorganize one example into multiple triples (ins,q,d ), each
+i
+corresponding to a different d. Then predict the likelihood of “yes” and “no” for each triplet and
+computeper-tripletcross-entropylosswiththetokenofground-truthlabell:
+LSFT =−log(p(l|P({“yes”,“no”}|{ins,q,d }))), (4)
+i i
+where P({“yes”,“no”}|{ins,q,d}) denotes the likelihood of “yes” and “no”. The relevance label
+lis“yes”forpositivedocumentsand“no”fornegatives. Thislossencouragesthemodeltoassign
+higherprobabilitiestocorrecttokens,therebyimprovingtherankingperformance.
+3.3 LOSSFUNCTIONDECOMPOSITION
+We analyze two reranking loss functions by decomposing them into two key components: weight
+anddirection. Withthisdecomposition,weperformprobingexperimentsin§4.
+Basic Notation. We denote the SFT-style data instance with positive (resp. negative) doc as
+o+ = {ins,q,d+} (resp. o− = {ins,q,d−},i = 1,2,...,N). The reranker is conceptualized
+0 0 j i
+astwocomponents: amappingfunctionf(·|θ)(parameterizedbyθ)thatconvertso tothefeature
+i
+representation h = f(o |θ), and a transformation My that maps h into “yes” token likelihood
+i i i
+scoresy(h )=h ·My. Andthe“no”tokenscoresncouldbecomputedsimilarlybyMn.
+i i
+UnifiedView. From§3.2,theSFTlossiscalculatedseparatelyforeachpositiveornegativedocof
+anexample,whiletheCLlossiscomputedinanintegratedmanneracrossallpositiveandnegative
+docsofthesameexample.Toenableafaircomparison,weadoptthetotallossL({o }N ,θ)overan
+i i=0
+entireexample(withonepositiveandN negatives)astheunitofanalysis. Sowehavethegradient
+∂L ∂L ∂h+ (cid:88) ∂L ∂h−
+= 0 + i , (5)
+∂θ ∂h+ ∂θ ∂h− ∂θ
+0 i i
+whereh+isthefeatureofpositivedocandh−isthatofi-thnegative.
+0 i
+Tounderstandtheinfluenceofpositiveandnegativesonthemodel,wecalculatethepartialderivative
+of the loss function with respect to the hidden state. For CL, we only use “yes” token, and by
+substitutingthespecificloss(Equation3)intothegradient,weobtainthepartialderivatives:
+∂LCL (cid:80) exp(sy(h−))
+− = j i My, (6)
+∂h+ exp(sy(h+))+(cid:80) exp(sy(h−))
+0 0 i i
+∂LCL exp(sy(h−))
+− =− i My. (7)
+∂h− exp(sy(h+))+(cid:80) exp(sy(h−))
+i 0 i i
+InSFT,wefirstmergetheEquation4ofmultiplepairsinoneexampleintothetotalloss
+exp(sy(h+))
+(cid:88)
+exp(sn(h−))
+LSFT =−log 0 − log i .
+exp(sy(h+))+exp(sn(h+)) exp(sy(h−))+exp(sn(h−))
+0 0 i i i
+4
+Thenwehavepartialderivatives
+∂LSFT exp(sn(h+))
+− = 0 (M −M ), (8)
+∂h+ exp(sy(h+))+exp(sn(h+)) y n
+0 0 0
+∂LSFT exp(sy(h−))
+− =− i (M −M ). (9)
+∂h− exp(sy(h−))+exp(sn(h−)) y n
+i i i
+ThecompletederivationoftheaboveprocessisprovidedintheAppendixA.2.
+Loss Decomposition. As above gradients looks
+Algorithm1UnifiedRerankingLoss
+similar, we can break them down into two parts:
+weight and direction. They reflect the differences Require: inputsO ←{o+, ...,o−}
+0 n
+betweenCLandSFT. Ensure: lossvalueL
+1: M←lm head(“yes”,“no”)
+• Weight W is a scalar that controls the magnitude
+2: logits←M·f(O|θ)
+of the updates. From Equation 6 - 9, we obtain the
+//—weightbranch—————————-
+weightsasshownbelow:
+3: ifweight=“sft”then
+(cid:80) exp(sy(h−)) 4: s←Softmax(logits)[0].detach()
+W C+ L = exp(sy(h+ 0 ei x)) p+ (sy(cid:80) (hi −ex )i )p(sy(h− i )), (10) 5 6:
+:
+W W+
+−
+← ←W Ws s+ −f ft t← ←1 s[− 1:]s[0]
+W− = i , (11) 7: else ▷weight=“cl”
+CL exp(sy(h+ 0))+(cid:80) iexp(sy(h− i )) 8: s←Softmax(logits[0]).detach()
+exp(sn(h+)) 9: W+ ←W+ ←1−s[0]
+W S+
+FT
+=
+exp(sy(h+
+0))+ex0
+p(sn(h+
+0)), (12)
+10: W−
+←Wc c−l
+l
+←s[1:]
+11: endif
+exp(sy(h−))
+W− = i . (13) //—directionbranch———————-
+SFT exp(sy(h− i ))+exp(sn(h− i )) 12: M y ←logits[:,0]; M n ←logits[:,1]
+13: ifdirection=“sft”then
+ComparedwithCL,W onlyfocusonthesingle
+document,withouttheiS nF teT
+ractionswithallnegatives
+14: D+ ←D s+
+ft
+←M n[0]−M y[0]
+ofthesamequerylikeCL. 15: D− ←D s− ft ←M y[1:]−M n[1:]
+16: else ▷direction=“cl”
+•DirectionD isavectorthatcontrolsthedirection 17: D+ ←D c+
+l
+←−M y[0]
+o tif onmo frd oe mlu tp hd eat pe os s. iF tir vo em dE +q fu oa rtio Cn L6 ia sn Dd +8,th =ed Mirec-
+,
+18: D− ←D c−
+l
+←M y[1:]
+CL y 19: endif
+and that of SFT is D S+ FT = M y − M n. While //—————————————————-
+fromEquation7and9,directionfromnegativesare
+20:
+L←mean(cid:0) W+D++(cid:80) W−D−(cid:1)
+D C− L =−M y andD S− FT =−(M y−M n). Appar- 21: returnL i i i
+ently,forbothCLandSFT,theupdatedirectionsof
+positiveandnegativesareopposite.
+Insummary,CLandSFTsharesimilardirectioncomponents,andwebelievethatdifferinginitializa-
+tions2 areinsufficienttoaccountforperformancedifferences. Incontrast,CLcomputestheweight
+usingallpositiveandnegativedocumentswithinasample,whileSFTassignsweightsindependently
+perdocument,makingthisthelikelykeyfactorinperformancevariation.
+Unified Framework Building on the above decomposition, we propose a unified reranking loss
+framework(URL),withpseudo-codeprovidedinAlgorithm1.Thisframeworkallowsustoindepen-
+dently analyze weight and direction, thereby facilitating a deeper understanding of the differences
+between the two training paradigms through controlled adjustments during computation. We then
+validateouranalysisthroughprobingexperimentsinthefollowing§4.
+4 ANALYSIS
+In this section, we continue and validate the analysis in §3.3 through probing experiments. We
+choose universal multimodal retrieval as the testbed, compiling a new benchmark (MRB §5.1) in-
+cludes single-modal tasks (text-to-text, image-to-image), cross-modal tasks (e.g., text-to-image),
+as well as fused-modal tasks (either the query or the document could consist of text + image).
+2M comparedtoM −M .
+y y n
+5
+58
+57
+56
+OriginalURLOriginalURL
+.freP
+We defer the description of experiment settings and evaluation
+benchmarkto§5.1.
+n.s.
+SFT CL
+GeneralEmpiricalComparison. WefirsttrainbothCLandSFT n.s.
+rerankerswiththeoriginalimplementationandourURLframework
+to(1)findthewinnerinpractice,and(2)verifythatURLfaithfully
+reproducestheoriginalimplementation,supportingthesubsequent
+Figure 2: Performance com-
+analyses built on URL. As shown in Figure 2, under the identical
+parisonoftheoriginalimple-
+setting, SFT consistently outperforms CL. Meanwhile, URL yields
+mentationsandourURL.
+statistically indistinguishable performance to the original. It thus
+couldbetrustedinthefollowinganalysis.
+Weight W Dominates Performance. To investigate why
+D D ∆
+SFToutperformsCL,wefirstdissectthecontributionofweight SFT CL D
+anddirection. InTable1,wetrainthemodelwithallcombina- W 58.09 57.88 ▼0.21
+SFT
+tions by URL. We observe that the improvements from weight W 56.99 56.40 ▼0.59
+CL
+(i.e.,∆ W)ismoresignificantthanthatofdirection(∆ D). This ∆
+W
+▼1.10 ▼1.48
+suggests that the weight W is the dominant factor in the per-
+formancegapbetweenSFTandCL,guidingustofocusonthe Table 1: MRB results of all loss
+weight in the following section. However, the direction also componentscombinations, where
+contributestothegap,whichisinvestigatedin§4.2. the weight W delivers the domi-
+nantinfluenceonperformance.
+4.1 FUNCTIONOFWEIGHT
+TofigureoutwhyW islesseffectivethatW andwhatisthefunctionofW,westartfromthe
+CL SFT
+observationof(Chenetal.,2021).Insmall-batchCLtrainingwithInfoNCE,gradientswouldshrink
+to very small scale, close to random precision errors, and thus cease to provide effective learning
+guidance. We suppose this is more salient in reranking where the small batch size is common3.
+ThenwevalidatetheirfindingsbytrainingaCLmodelwithfullyhalf-precisionlosscomputation,
+whichyieldsdegradedperformancecomparedtoprecision-safetraining(refertoAppendixB.2).
+Backtoourframework,W controlsthestepsofmodelupdates,orsaythegradientscale.According
+to Chen et al. (2021), W should be small in the training process. And we expect W to be
+CL SFT
+largerthanW toprovidebetteroptimizationsignalasSFTpresentsbetterperformance. Toverify
+CL
+this,weplottheW ofCLandSFTintraininginFigure3,whereW indeedshowrelativelysmall
+CL
+values. SFTprovideslarger(better)W thanCL,therebyachievingstrongerempiricalperformance.
+Equation10to12alsoshowsthatW islargerthanW ,sincethedenominatorofW involves
+SFT CL CL
+asumofallnegativeswhilethedenominatorofW onlyaddsupcurrentinstance.
+SFT
+1.0
+0.8
+0.6
+0.4
+0.2
+0.0
+0 500 1000 1500 2000 2500
+Training Step
+sthgieW
+egarevA
+SFT Pos Weight
+SFT Neg Weight
+CL Pos Weight
+CL Neg Weight
+Figure3: EvolutionofpositivesandnegativesaverageweightsduringtrainingforSFTandCL.
+3Considerabatchofinstances,{O ,...,O },isforwardsimultaneouslyduringtrainingwithknegatives
+1 j
+persample.Whiledenseretrievalcanachievethenegativesizeofj·(k+1)perinstances,rerankingmodels’are
+limitedtok+1.Furthermore,theincreasednumberofinputtokensatthererankingstage,comparedtodense
+retrieval,imposesadditionalconstraintsonmemoryusage,resultinginareductioninthevalueofnegativesize.
+6
+Next,weinvestigatethefine-grainedfunctionofW. Tocreateacleaneranalysissetting,wefixthe
+directioninURLasD unchanged,asitperformsbetter. Wefirstsetweightsofbothpositiveand
+SFT
+negativestothefixedconstant1asabaseline(W )following(Chenetal.,2021):
+base
+W+ =1,W− = exp(s(h− j )) ,(cid:88) W− =1. (14)
+j (cid:80) exp(s(h−)) j
+j j
+AlthoughtheearlieranalysissuggeststhatthelargerW ispreferable,thisvalue1neverappearsin
+Figure 3, so we expect this setting to perform poorly. The experiment in Table 2 also align this.
+Hence,wesupposethatW shouldbeinareasonablerange. Meanwhile,thefailureofconstantW
+indicates that instance-specific adjustment is necessary: the model should update less on already-
+masteredinstancesandmoreonthoseithasnotyetgrasped.
+Weadoptthepredictedrelevancescoressasaguideandapply
+No. Method Avg ∆
+amaskingrule:ifapositivescoreishighenough,i.e.,s(h )>
+0
+1−τ,(or,conversely,anegativescoreislowenough,s(h j)< 1 W
+Base
+49.47 –
+τ), we set W+ = 0 (resp. W j− = 0) to halt further learning 2 +τ mask 56.57 ▲7.10
+onthatinstance. Inaddition,wefurthersetW CLandW SFTto 3 +W 56.23 ▲6.76
+CL
+the baseline and conduct training under the same conditions. 4 +W 58.19 ▲8.72
+The results are shown in Table 2, we can see that the simple SFT
+masking rule can provide strong performance, comparable to
+Table 2: Evaluation of weight
+CL.ThisindicatesbothCLandSFTfollowtheaboveinstance-
+properties.∆denotesperformance
+specificweightfeature. Moredetailsoftheexperimentcanbe
+gainrelativetoW .
+foundintheAppendixB.2. Base
+4.2 SEARCHINGBETTERDIRECTION
+ResultsinTable1indicatethatthedirectioncomponentalsoaffectsmodelperformance,butitisnot
+thedominantfactor. Hereweconductadditionalexperimentsandtrytofindabetterdirection.
+60
+58
+56
+2 4 8 16
+#Tokens in SFT
+.freP Does adding more tokens improve performance? SFT-based 57.97 57.9 58.02
+trainingisactuallyabinaryclassificationonthetokenlabels,where
+57.88
+D only involves “yes” and “no” tokens. One natural question
+SFT
+iswhetheraddingmoretokens(e.g.,“true”,“false”,“maybe”,etc.)
+during training couldimprove thedirection componentand model
+Figure 4: Results with dif-
+performance? Toinvestigatethis,werandomlyselect10,000train-
+ferent token numbers in SFT.
+inginstancesandidentifythetop16tokenswiththehighestlogits
+The setting with 2 tokens is
+fromthemodel’soutput,including“yes”and“no”. Foracompre-
+thestandardSFTtraining.
+hensivelistofthesetokensanddetails,pleaserefertotheAppendix
+B.3. We then train the model using this expanded token set. Figure 4 presents the results, which
+indicatethatincreasingthenumberoftokensdoesnotsignificantlyimpactmodelperformance.This
+resultsuggeststhatusingonly“yes”and“no”tokensissufficientforeffectiveSFT.
+Is it possible to learn a better direction? The direction
+Weight Direction Perf. ∆
+components, in essence, corresponds to the token embed-
+dingsoftheLLM,whicharepre-trainedandkeepingfrozen W D SFT 58.09 –
+during training. Before LLM, CL-based rerankers often SFT D Rand. 56.75 ▼1.34
+learnascore-projectionmatrixfromscratch.Toseewhether
+D 56.40 –
+this still helps, we implement the random-initialized learn- W CL DCL 57.72 ▲1.32
+ableweightD inURL.Table3showsthat,forCLmod- Rand.
+Rand.
+els,itdoesimproveperformance,yetstilltrailsbehindSFT.
+Table 3: Performance comparison of
+For SFT models, however, the strategy hurts performance.
+SFT and CL directions against ran-
+Thisisinlinewiththeintuition:SFTistrainedtopredictthe
+dominitializationD .
+“yes/no” tokens, so replacing the weight with a randomly- Rand.
+initializedprojectionwilllossthesemanticsignalfromthepre-trainedtokenembeddings.
+7
+Model Size Single-Modal Cross-Modal Fused-Modal Avg
+T→T I→I T→I T→VD I→T T→IT IT→T IT→I IT→IT ALL
+(14) (1) (4) (5) (5) (2) (4) (2) (3) (40)
+GME-2B 2.21B 49.59 30.75 48.46 66.39 52.62 77.02 39.88 36.70 66.89 52.54
+Qwen3 4.02B 60.49 – – – – – – – – –
+Jina-m0 2.21B 55.36 27.50 59.46 73.13 55.43 74.95 27.82 37.65 51.54 54.36
+MonoQwen 2.21B 48.89 12.59 58.73 71.29 19.62 76.46 14.35 31.75 35.83 44.20
+GMR-3B 3.75B 59.22 29.76 58.85 72.38 63.06 81.96 48.81 43.97 79.08 61.40
+GMR-7B 8.29B 61.08 32.83 61.18 72.94 66.61 84.55 53.29 47.39 82.19 63.85
+Table4:PerformanceofdifferentmodelsonMRB.Eachcolumncorrespondstoataskcategory,with
+thenumberoftestsetsindicatedinparentheses. EvaluationmetricsareprovidedinAppendixE.1.
+We adopt GME-2B as the retrieval backbone, while all other models rerank the top-100 retrieved
+candidates. indicatesthebestresultinrerankingmodels,and indicatesthesecond-best.
+5 EXPERIMENTS
+5.1 SETTINGS
+TrainingDataset Todevelopauniversalmultimodalrerankingmodel, wefollowthesettingsof
+GME and curate training data from three categories: single-modal data (T→T, I→I), cross-modal
+data (I↔T, T→VD), and fused-modal data (IT↔T, IT→I, IT→IT). In total, we compile approxi-
+mately 1.5 million training instances from diverse sources, including M-BEIR (Wei et al., 2025),
+ViDoRe (Faysse et al., 2025), ImageNet-1K (Deng et al., 2009), E-VQA (Mensink et al., 2023),
+and MS MARCO (Nguyen et al., 2016). To ensure fairness and efficiency in the comparative ex-
+periments reported in §4, we additionally construct a balanced and category-representative subset
+consistingofabout270Ksamplesdrawnfromthefulltrainingdataset. Themodels,GMR-3Band
+GMR-7B,aretrainedonthecompletedatasettoachieveoptimalperformance,whereasthemodels
+evaluatedin§4aretrainedontheconstructedsubset. DetailscouldbefoundinAppendixC.1.
+MRB Benchmark To facilitate a more rigorous evaluation of model performance, we construct
+theMRBbenchmark,whichcomprises40testdatasetssourcedfromBEIR(Kamallooetal.,2024),
+UMRB(Zhangetal.,2025a),ViDoRe(Faysseetal.,2025;Mace´etal.,2025),andMIEB(Xiaoetal.,
+2025). Collectively, thesedatasetsspandiversemodalities, domains, andtasktypes, ensuringthat
+thebenchmarkprovidesacomprehensiveandrepresentativeassessmentofmodelgeneralization.To
+more clearly highlight performance differences among models, we exclude test datasets on which
+GME-2Bexhibitsexceptionallyhighperformance. AdetaileddescriptionoftheMRBbenchmark
+compositionisprovidedinAppendixC.2.
+TrainingConfiguration WeadopttheQwen2.5-VL-Instruction(Team,2025)modelseriesasthe
+backboneofourmultimodallargelanguagemodel(MLLM),andconducttrainingatboth3-billion
+(3B)and7-billion(7B)parameterscales.Forefficientadaptation,weemployLow-RankAdaptation
+(LoRA)witharankof16andalearningrateof1e-4.Asevidencedbythecomparativeresultsin§4,
+withinthedomainofmultimodalLLMreranking,SFTconsistentlyoutperformsCL.Consequently,
+weadoptSFTasthetrainingstrategyforourGMRseriesmodels.
+Duringtraining,wesetthemaximuminputlengthto3,200tokens. Eachtrainingsampleispaired
+with16negativeinstancesfortheGMR-3BandGMR-7Bmodels,andwith4negativeinstancesfor
+themodelsmentionedin§4. Regardingtheselectionofnegatives,weemploytwostrategies: Ran-
+domSelectionandHardMining,maintainingabalancedratioof1:1betweenthem. Furtherdetails
+onthenegativesamplingstrategyareprovidedinAppendixC.3. TooptimizeGPUmemoryusage,
+we train the model using bfloat16 precision. All experiments were conducted on eight NVIDIA
+A100GPUs,eachequippedwith80GBofmemory.
+Baselines WeadoptGME-2Bastheretrievalbackbonetogeneratecandidateresultsforeachtask.
+Specifically,thetop-100retrievedcandidatesareretained,andallrerankingmodelsaresubsequently
+evaluatedonthiscandidatepool. Fortheexperimentdescribedin§4,wereorderthetop-25candi-
+datestobalancefairnesswithefficiency. Ourmethodiscomparedagainstthreerepresentativetypes
+of reranking systems: (1) A representative textual model : Qwen3-Reranker (Zhang et al., 2025b)
+8
+(Qwen3), exemplifying recent advancements in text-based reranking. (2) A versatile multimodal
+reranking model: Jina-rerank-m04(Jina-m0). This model natively supports single-modal tasks and
+cross-modaltasks. LeveragingtheflexibilityofitsMLLMarchitecture,weextenditsapplicationto
+fused-modaltasksbyadoptingitsinputtemplate. Thespecificsoftheseadaptationsaredetailedin
+AppendixD.4. (3)Acutting-edgevisualdocumentrerankingmodel: MonoQwen2-VL-v0.1(Chaf-
+fin&Lac,2024)(MonoQwen). SimilartoourapproachwithJina-rerank-m0,weevaluatethismodel
+acrossalltasktypes. TheinputtemplatesusedisprovidedinAppendixD.5.
+This comprehensive evaluation benchmarks our method against leading models across diverse
+modalitiesandtasktypes,enablingathoroughassessmentofitseffectiveness.
+5.2 MAINRESULTS
+59
+58
+2 4 8 16
+#Neg in SFT
+.freP
+Wefirst examinethe effectof the numberof negatives. InSFT,
+58.68
+wherequery–candidatesimilarityisformulatedasabinaryclas-
+sification task, the number of negatives directly affects model 57.97 58.08
+performance. Toidentifyanappropriatesettingunderourcom-
+putationalbudget, weexperimentwithvaryingnumbersofneg- 57.78
+atives(Figure5). Performanceconsistentlyimproveswithmore
+negatives,peakingat16. Moreover,SFToutperformsCLacross
+all settings (Appendix E.2). Based on these results, we set the
+Figure 5: Results with different
+number of negatives to 16 in training. Given the impact of ran-
+numbersofnegativeinSFT.
+dominitializationonperformance(§4.2),wealsoconductanab-
+lationonfreezingtheLMhead(AppendixE.3)andfindthathasnoeffectonSFTperformance.
+Wenextexaminetheevaluationresults. Table4presentsacomprehensiveoverviewofthebaseline
+systems’ performance. The reported scores are averaged across the respective sub-tasks and are
+organizedaccordingtotheretrievalmodality: Single-Modal,Cross-Modal,andFused-Modal. For
+completeness,theoverallmicro-averagescoreacrossallsub-tasksisprovidedinthefinalcolumn.
+Achieve state-of-the-art performance in universal multimodal reranking. Analyzing the aver-
+age metrics, our smaller model, GMR-3B, exhibits superior results compared to the fused-modal
+rerankingmodel(Jina-Rerank-m0). ThelargerGMR-7Bfurtherelevatesthisperformance, under-
+scoringtheefficacyinaddressinguniversalmultimodalrerankingchallenges.
+Rivalandsurpassleadingtextualreranker. Weconductacomparativeanalysiswiththestate-of-
+the-arttextualrerankingmodel,Qwen3-Reranker,whichisspecificallyoptimizedfortheT→Ttask
+within the Single-Modal category and comprises approximately 4 billion parameters. Our smaller
+model exhibited similar performance metrics when evaluated against models of similar parameter
+scale. Notably, our larger model surpass the performance of Qwen3-Reranker, providing strong
+empiricalevidencefortheefficacyofourproposedmethodology.
+Adaptseamlesslytovisual-documentreranking.Wecomparewiththevisualdocumentreranking
+model, MonoQwen2-VL-v0.1, which is specifically tailored for the T→VD task. Our proposed
+modelsdemonstrateperformancemetricsthataresurpassthoseofthistask-specificbaseline,which
+suggestsapromisingdirectionfordevelopingmoreefficientandadaptableinformationre-reanking
+systemsthatcanseamlesslyhandlediversemodalitieswithinasinglearchitecture.
+6 CONCLUSION
+Insummary,ourstudyshowsthatsupervisedfine-tuning(SFT)consistentlyoutperformscontrastive
+learning(CL)forLLM-basedreranking.Bydecomposingthelossintoweightanddirectioncompo-
+nents,wefindthattheweighttermprimarilydrivesperformancegainsbystrengtheningoptimization
+signals and providing input-specific guidance. While SFT’s directional component is nearly opti-
+mal, CL requires learning a score-projection matrix to achieve comparable results. Building on
+theseinsights,wedeveloptheGMR-3BandGMR-7Bmodels,whichsetnewstate-of-the-artresults
+on the MRB benchmark covering 40 datasets. By releasing MRB, our models, and code, we pro-
+vide a solid foundation for future research in large-scale multimodal retrieval and universal LLM
+reranking,underscoringbothmethodologicalandpracticalsignificance.
+4https://huggingface.co/jinaai/jina-reranker-m0
+9
+REFERENCES
+MinCao,ShipingLi,JuntaoLi,LiqiangNie,andMinZhang. Image-textretrieval: Asurveyonre-
+centresearchanddevelopment. InProceedingsoftheThirty-FirstInternationalJointConference
+onArtificialIntelligence,IJCAI-22,pp.5410–5417,72022. doi: 10.24963/ijcai.2022/759. URL
+https://doi.org/10.24963/ijcai.2022/759. SurveyTrack.
+AntoineChaffinandAure´lienLac. Monoqwen: Visualdocumentreranking,2024. URLhttps:
+//huggingface.co/lightonai/MonoQwen2-VL-v0.1.
+Jianlyu Chen, Shitao Xiao, Peitian Zhang, Kun Luo, Defu Lian, and Zheng Liu. M3-embedding:
+Multi-linguality, multi-functionality, multi-granularity text embeddings through self-knowledge
+distillation. InFindingsoftheAssociationforComputationalLinguistics: ACL2024,pp.2318–
+2335, Bangkok, Thailand, August 2024. URL https://aclanthology.org/2024.
+findings-acl.137/.
+Junya Chen, Zhe Gan, Xuan Li, Qing Guo, Liqun Chen, Shuyang Gao, Tagyoung Chung, Yi Xu,
+BelindaZeng,WenlianLu,FanLi,LawrenceCarin,andChenyangTao. Simpler,faster,stronger:
+Breaking the log-k curse on contrastive learners with flatnce, 2021. URL https://arxiv.
+org/abs/2107.01152.
+JiaDeng,WeiDong,RichardSocher,Li-JiaLi,KaiLi,andLiFei-Fei.Imagenet:Alarge-scalehier-
+archicalimagedatabase. In2009IEEEConferenceonComputerVisionandPatternRecognition,
+pp.248–255,2009. doi: 10.1109/CVPR.2009.5206848.
+Manuel Faysse, Hugues Sibille, Tony Wu, Bilel Omrani, Gautier Viaud, CELINE HUDELOT,
+and Pierre Colombo. Colpali: Efficient document retrieval with vision language models. In
+The Thirteenth International Conference on Learning Representations, 2025. URL https:
+//openreview.net/forum?id=ogjBpZ8uSi.
+Fang Guo, Wenyu Li, Honglei Zhuang, Yun Luo, Yafu Li, Le Yan, Qi Zhu, and Yue Zhang.
+Mcranker: Generating diverse criteria on-the-fly to improve pointwise llm rankers. In Pro-
+ceedings of the Eighteenth ACM International Conference on Web Search and Data Mining,
+pp. 944–953, Hannover, Germany, 2025. doi: 10.1145/3701551.3703583. URL https:
+//doi.org/10.1145/3701551.3703583.
+EhsanKamalloo, NandanThakur, CarlosLassance, XueguangMa, Jheng-HongYang, andJimmy
+Lin. Resources for brewing beir: Reproducible reference models and statistical analyses. In
+Proceedingsofthe47thInternationalACMSIGIRConferenceonResearchandDevelopmentin
+Information Retrieval, SIGIR ’24, pp. 1431–1440, New York, NY, USA, 2024. Association for
+ComputingMachinery. ISBN9798400704314. doi: 10.1145/3626772.3657862. URLhttps:
+//doi.org/10.1145/3626772.3657862.
+JimmyLin, RodrigoNogueira, andAndrewYates. Pretrainedtransformersfortextranking: Bert
+andbeyond. SpringerNature,2022.
+Sheng-ChiehLin,ChankyuLee,MohammadShoeybi,JimmyLin,BryanCatanzaro,andWeiPing.
+MM-EMBED:UniversalmultimodalretrievalwithmultimodalLLMS. InTheThirteenthInter-
+nationalConferenceonLearningRepresentations,2025.URLhttps://openreview.net/
+forum?id=i45NQb2iKO.
+QiLiu,BoWang,NanWang,andJiaxinMao. Leveragingpassageembeddingsforefficientlistwise
+reranking with large language models. In Proceedings of the ACM on Web Conference 2025,
+pp.4274–4283,SydneyNSW,Australia,2025. doi: 10.1145/3696410.3714554. URLhttps:
+//doi.org/10.1145/3696410.3714554.
+ZhenghaoLiu,ChenyanXiong,YuanhuiyiLv,ZhiyuanLiu,andGeYu. Universalvision-language
+denseretrieval:Learningaunifiedrepresentationspaceformulti-modalretrieval.InTheEleventh
+InternationalConferenceonLearningRepresentations,2023. URLhttps://openreview.
+net/forum?id=PQOlkgsBsik.
+10
+Xueguang Ma, Sheng-Chieh Lin, Minghan Li, Wenhu Chen, and Jimmy Lin. Unifying multi-
+modal retrieval via document screenshot embedding. In Yaser Al-Onaizan, Mohit Bansal, and
+Yun-Nung Chen (eds.), Proceedings of the 2024 Conference on Empirical Methods in Natu-
+ral Language Processing, pp. 6492–6505, Miami, Florida, USA, November 2024a. Associa-
+tion for Computational Linguistics. doi: 10.18653/v1/2024.emnlp-main.373. URL https:
+//aclanthology.org/2024.emnlp-main.373/.
+Xueguang Ma, Liang Wang, Nan Yang, Furu Wei, and Jimmy Lin. Fine-tuning llama for multi-
+stagetextretrieval. InProceedingsofthe47thInternationalACMSIGIRConferenceonResearch
+and Development in Information Retrieval, pp. 2421–2425, Washington DC, USA, 2024b. doi:
+10.1145/3626772.3657951. URLhttps://doi.org/10.1145/3626772.3657951.
+Quentin Mace´, Anto´nio Loison, and Manuel Faysse. Vidore benchmark v2: Raising the bar for
+visualretrieval,2025. URLhttps://arxiv.org/abs/2505.17166.
+Thomas Mensink, Jasper Uijlings, Lluis Castrejon, Arushi Goel, Felipe Cadar, Howard Zhou, Fei
+Sha, Andre´ Araujo, and Vittorio Ferrari. Encyclopedic vqa: Visual questions about detailed
+propertiesoffine-grainedcategories. In2023IEEE/CVFInternationalConferenceonComputer
+Vision(ICCV),pp.3090–3101,2023. doi: 10.1109/ICCV51070.2023.00289.
+Tri Nguyen, Mir Rosenberg, Xia Song, Jianfeng Gao, Saurabh Tiwary, Rangan Majumder, and
+Li Deng. MS MARCO: A human generated machine reading comprehension dataset. CoRR,
+abs/1611.09268,2016. URLhttp://arxiv.org/abs/1611.09268.
+RodrigoNogueira,WeiYang,KyunghyunCho,andJimmyLin. Multi-stagedocumentrankingwith
+bert. arXivpreprintarXiv:1910.14424,2019.
+Rodrigo Nogueira, Zhiying Jiang, Ronak Pradeep, and Jimmy Lin. Document ranking with
+a pretrained sequence-to-sequence model. In Findings of the Association for Computational
+Linguistics: EMNLP 2020, pp. 708–718, Online, November 2020. doi: 10.18653/v1/2020.
+findings-emnlp.63. URL https://aclanthology.org/2020.findings-emnlp.
+63/.
+AaronvandenOord,YazheLi,andOriolVinyals. Representationlearningwithcontrastivepredic-
+tivecoding. arXivpreprintarXiv:1807.03748,2018.
+RuiyangRen,YuhaoWang,KunZhou,WayneXinZhao,WenjieWang,JingLiu,Ji-RongWen,and
+Tat-SengChua. Self-calibratedlistwisererankingwithlargelanguagemodels. InProceedingsof
+theACMonWebConference2025,pp.3692–3701,SydneyNSW,Australia,2025. doi: 10.1145/
+3696410.3714658. URLhttps://doi.org/10.1145/3696410.3714658.
+Sahel Sharifymoghaddam, Ronak Pradeep, Andre Slavescu, Ryan Nguyen, Andrew Xu, Zijian
+Chen, Yilin Zhang, Yidi Chen, Jasper Xian, and Jimmy Lin. RankLLM: A python package for
+rerankingwithllms. arXiv:2505.19284,2025.
+XuemengSong,HaoqiangLin,HaokunWen,BohanHou,MingzhuXu,andLiqiangNie. Acom-
+prehensivesurveyoncomposedimageretrieval. arXivpreprintarXiv:2502.18495,2025.
+Qwen Team. Qwen2.5-vl, January 2025. URL https://qwenlm.github.io/blog/
+qwen2.5-vl/.
+TianshiWang,FenglingLi,LeiZhu,JingjingLi,ZhengZhang,andHengTaoShen. Cross-modal
+retrieval: A systematic review of methods and future directions. Proceedings of the IEEE, 112
+(11):1716–1754,2024. doi: 10.1109/JPROC.2024.3525147.
+CongWei,YangChen,HaonanChen,HexiangHu,GeZhang,JieFu,AlanRitter,andWenhuChen.
+Uniir: Training andbenchmarking universal multimodal information retrievers. In Proceedings
+ofthe18thEuropeanConferenceonComputerVision,pp.387–404,Milan,Italy,2025.
+ChenghaoXiao,IsaacChung,ImeneKerboua,JamieStirling,XinZhang,Ma´rtonKardos,Roman
+Solomatin,NouraAlMoubayed,KennethEnevoldsen,andNiklasMuennighoff. Mieb: Massive
+imageembeddingbenchmark,2025. URLhttps://arxiv.org/abs/2504.10471.
+11
+Mingjun Xu, Jinhan Dong, Jue Hou, Zehui Wang, Sihang Li, Zhifeng Gao, Renxin Zhong, and
+HengxingCai. Mm-r5: Multimodalreasoning-enhancedrerankerviareinforcementlearningfor
+documentretrieval. arXivpreprintarXiv:2506.12364,2025.
+XinZhang,YanzhaoZhang,DingkunLong,WenXie,ZiqiDai,JialongTang,HuanLin,Baosong
+Yang, Pengjun Xie, Fei Huang, Meishan Zhang, Wenjie Li, and Min Zhang. mGTE: Gen-
+eralized long-context text representation and reranking models for multilingual text retrieval.
+In Proceedings of the 2024 Conference on Empirical Methods in Natural Language Process-
+ing: Industry Track, pp. 1393–1412, Miami, Florida, US, November 2024. URL https:
+//aclanthology.org/2024.emnlp-industry.103/.
+XinZhang,YanzhaoZhang,WenXie,MingxinLi,ZiqiDai,DingkunLong,PengjunXie,Meishan
+Zhang, Wenjie Li, and Min Zhang. Bridging modalities: Improving universal multimodal re-
+trievalbymultimodallargelanguagemodels. InProceedingsoftheComputerVisionandPattern
+RecognitionConference(CVPR),pp.9274–9285,June2025a.
+Yanzhao Zhang, Mingxin Li, Dingkun Long, Xin Zhang, Huan Lin, Baosong Yang, Pengjun Xie,
+AnYang,DayihengLiu,JunyangLin,etal. Qwen3embedding: Advancingtextembeddingand
+rerankingthroughfoundationmodels. arXivpreprintarXiv:2506.05176,2025b.
+Shengyao Zhuang, Honglei Zhuang, Bevan Koopman, and Guido Zuccon. A setwise approach
+foreffectiveandhighlyefficientzero-shotrankingwithlargelanguagemodels. InProceedings
+of the 47th International ACM SIGIR Conference on Research and Development in Informa-
+tion Retrieval, pp. 38–47, Washington DC, USA, 2024. doi: 10.1145/3626772.3657813. URL
+https://doi.org/10.1145/3626772.3657813.
+12
+APPENDIX
+A METHOD DETAILS
+A.1 GMRINPUTTEMPLATE
+Following a chat-based template, The prompt formulates a binary classification task by providing
+themodelwithaspecificInstruction,Query,andDocumentforevaluationasshoninFigure6.
+<|im_start|>system:
+Judge whether the Document meets the requirements based on the Query and the
+Instruct provided. Note that the answer can only be "yes" or "no". <|im_end|>
+<|im_start|> user :
+<Instruction>: {Instruction}
+<Query>: {Query}
+<Document>: {Document} <|im_end|>
+<|im_start|> assistant :
+Figure6: ThestructuredinputtemplateforGMRseriesmodels.
+A.2 LOSSFUNCTIONDECOMPOSITION
+Inthissection,weelaborateonthederivationprocessoftheequationin§3.3.
+• Equation6:
+∂LCL ∂LCL ∂sy(h+)
+− =− 0
+∂h+ ∂sy(h+) ∂h+
+0 0 0
+=−∂(−log exp(σ(ins,qe ,x dp + 0( )σ )+(in (cid:80)s i,q e, xd p+ 0 () σ) (ins,q,d−
+i
+))) ∂sy(h+ 0)
+∂sy(h+) ∂h+
+0 0
+=
+∂(log exp(sy(he + 0x )p )+(s (cid:80)y( ih e+ 0 x) p) (sy(h−
+i
+))) ∂sy(h+ 0)
+∂sy(h+) ∂h+
+0 0
+=
+exp(sy(h+ 0))+(cid:80) iexp(sy(h−
+i
+))
+·
+∂( exp(sy(he + 0x )p )+(s (cid:80)y( ih e+ 0 x) p) (sy(h−
+i
+)))
+·
+∂sy(h+ 0)
+exp(sy(h+)) ∂sy(h+) ∂h+
+0 0 0
+exp(sy(h+))+(cid:80) exp(sy(h−)) (cid:80) exp(sy(h−))
+= 0 i i · i i
+exp(sy(h+)) (exp(sy(h+))+(cid:80) exp(sy(h−)))2
+0 0 i i
+∂exp(sy(h+)) ∂sy(h+)
+· 0 · 0
+∂sy(h+) ∂h+
+0 0
+exp(sy(h+))+(cid:80) exp(sy(h−)) (cid:80) exp(sy(h−))
+= 0 i i · i i
+exp(sy(h+)) (exp(sy(h+))+(cid:80) exp(sy(h−)))2
+0 0 i i
+∂sy(h+)
+·exp(sy(h+))· 0
+0 ∂h+
+0
+(cid:80) exp(sy(h−)) ∂sy(h+)
+= j j 0
+exp(sy(h+))+(cid:80) exp(sy(h−)) ∂h+
+0 j j 0
+(cid:80) exp(sy(h−))
+= j j M (15)
+exp(sy(h+))+(cid:80) exp(sy(h−)) y
+0 j j
+13
+• Equation7:
+∂LCL ∂LCL ∂sy(h−)
+− =− i
+∂h− ∂sy(h−) ∂h−
+i i i
+=−∂(−log exp(σ(ins,qe ,x dp + 0( )σ )+(in (cid:80)s i,q e, xd p+ 0 () σ) (ins,q,d−
+i
+))) ∂sy(h−
+i
+)
+∂sy(h−) ∂h−
+i i
+=
+∂(log exp(sy(he + 0x )p )+(s (cid:80)y( ih e+ 0 x) p) (sy(h−
+i
+))) ∂sy(h−
+i
+)
+∂sy(h−) ∂h−
+i i
+exp(sy(h+))+(cid:80) exp(sy(h−)) exp(sy(h+))
+= 0 i i ·(− 0 )
+exp(sy(h+)) (exp(sy(h+))+(cid:80) exp(sy(h−)))2
+0 0 i i
+∂sy(h−)
+·exp(sy(h−))· i
+i ∂h+
+0
+exp(sy(h−)) ∂sy(h−)
+=− i i
+exp(sy(h+))+(cid:80) exp(sy(h−)) ∂h−
+0 j i i
+exp(sy(h−))
+=− i M (16)
+exp(sy(h+))+(cid:80) exp(sy(h−)) y
+0 j i
+• Equation8:
+∂LSFT ∂LSFT ∂sy(h+) ∂LSFT ∂sn(h+)
+− =− 0 − 0
+∂h+ ∂sy(h+) ∂h+ ∂sn(h+) ∂h+
+0 0 0 0 0
+∂(−log(p(“yes”|P({“yes”,“no”}|{ins,q,d }))))∂sy(h+)
+=− i 0
+∂sy(h+) ∂h+
+0 0
+∂(−log(p(“yes”|P({“yes”,“no”}|{ins,q,d }))))∂sn(h+)
+− i 0
+∂sn(h+) ∂h+
+0 0
+∂(log eP(“yes”|{ins,q,d}) )∂sy(h+)
+= eP(“yes”|{ins,q,d})+eP(“no”|{ins,q,d}) 0 +
+∂sy(h+) ∂h+
+0 0
+∂(log eP(“yes”|{ins,q,d}) )∂sn(h+)
+eP(“yes”|{ins,q,d})+eP(“no”|{ins,q,d}) 0
+∂sn(h+) ∂h+
+0 0
+=∂(log exp(sy(e hx + 0p )( )s +y( eh x+ 0 p() s) n(h+ 0))) ∂sy(h+ 0)
+∂sy(h+) ∂h+
+0 0
++
+∂(log exp(sy(e hx + 0p )( )s +y( eh x+ 0 p() s) n(h+ 0))) ∂sn(h+ 0)
+∂sn(h+) ∂h+
+0 0
+exp(sn(h+)) ∂sy(h+)
+= 0 0
+exp(sy(h+))+exp(sn(h+)) ∂h+
+0 0 0
+exp(sn(h+)) ∂sn(h+)
+− 0 0
+exp(sy(h+))+exp(sn(h+)) ∂h+
+0 0 0
+exp(sn(h+)) ∂sy(h+) ∂sn(h+)
+= 0 ( 0 − 0 )
+exp(sy(h+))+exp(sn(h+)) ∂h+ ∂h+
+0 0 0 0
+exp(sn(h+))
+= 0 (M −M ) (17)
+exp(sy(h+))+exp(sn(h+)) y n
+0 0
+14
+• Equation9:
+∂LSFT ∂LSFT ∂sy(h−) ∂LSFT ∂sn(h−)
+− =− i − i
+∂h− ∂sy(h−) ∂h− ∂sn(h−) ∂h−
+i j i i i
+∂(−log(p(“no”|P({“yes”,“no”}|{ins,q,d }))))∂sy(h−)
+=− i i
+∂sy(h−) ∂h−
+i i
+∂(−log(p(“no”|P({“yes”,“no”}|{ins,q,d }))))∂sn(h−)
+− i i
+∂sn(h−) ∂h−
+i i
+∂(log eP(“no”|{ins,q,d}) )∂sy(h−)
+= eP(“yes”|{ins,q,d})+eP(“no”|{ins,q,d}) i +
+∂sy(h−) ∂h−
+i i
+∂(log eP(“no”|{ins,q,d}) )∂sn(h−)
+eP(“yes”|{ins,q,d})+eP(“no”|{ins,q,d}) i
+∂sn(h−) ∂h−
+i i
+=∂(log exp(sy(e hx − ip( )s )+n( eh x− i p() s) n(h−
+i
+))) ∂sy(h−
+i
+)
+∂sy(h−) ∂h−
+i i
++
+∂(log exp(sy(e hx − ip( )s )+n( eh x− i p() s) n(h−
+i
+))) ∂sn(h−
+i
+)
+∂sn(h−) ∂h−
+i i
+exp(sy(h−)) ∂sy(h−) ∂sn(h−)
+=− i ( i − i )
+exp(sy(h−))+exp(sn(h−)) ∂h− ∂h−
+i i i i
+exp(sy(h−))
+=− i (M −M ) (18)
+exp(sy(h−))+exp(sn(h−)) y n
+i i
+B ANALYSIS EXPERIMENT
+B.1 THEINFLUENCEOFPRECISIONONCL
+We validate the findings of FlatNCE by performing full
+Method Precision Avg ∆
+half-precision training during loss function computation
+onthecontrastivelearning(CL)model. Specifically, we FP16 56.09 -
+CL
+configurethemodeltouseBF16foraccuracy,andinthe FP32 56.40 ▲0.31
+losscomputationprocess(refertoAlgorithm1),wecon-
+trolallothervariableswhilevaryingtheprecisionofthe Table 5: Impact of precision on Con-
+weight computations between FP16 and FP32 to assess trastiveLearning’sperformance.
+theirimpactonmodelperformance.Theresultsshowthat
+FP32precisionyieldsbetterperformancethanFP16precision,confirmingthatcomputationalpreci-
+sionsignificantlyaffectstheeffectivenessofcontrastivelearning.
+B.2 FUNCTIONOFWEIGHT
+To investigate the role of the weight, we first define s(h i) = Method τ Avg
+exp(sy(hi))
+. Since s(h ) is bounded within [0,1],
+exp(sy(hi))+exp(sn(hi)) i 1e-2 55.07
+prior experience with embedding models suggests that an ap- w/τ mask 1e-3 56.57
+propriatescalingfactorisnecessarytoacceleratemodelconver- 1e-4 55.89
+gence. Therefore, we introduce a temperature parameter β =
+5×10−2intoEquation14,yieldingW− = exp(s(h− j)/β) . In Table 6: The performance of the
+j (cid:80) exp(s(h−)/β)
+j modelunderdifferentvaluesofτ.
+addition, for experiments involving the masking rule, we vary
+τ ∈ 10−2,10−3,10−4 toidentifytheconfigurationthatachievesoptimalperformance. Fortheex-
+perimentwithW ,wefollowEquation10and11,consistentwiththerequirementsofcontrastive
+CL
+learning,wherethepositiveandnegativeweightsmustsatisfytheconstraintW+ = (cid:80) W−. Since
+directly setting W = W W would violate this condition, we instead use W =
++WCL Base CL +WCL
+15
+W for comparison with W . For the experiment with W , we aim to demonstrate that
+CL Base SFT
+W caneffectivelyenhancetheperformanceofW . FollowingEquation12and13, weset
+SFT Base
+W =W W andevaluateitsimpactonmodelperformance.
++WSFT Base SFT
+B.3 THEINFLUENCEOFTOKENSELECTION
+To examine whether introducing additional tokens during training can enhance the directionality
+component and improve model performance, we randomly sample 10,000 instances together with
+their corresponding positives and negatives. Based on the model outputs, we identify the top 16
+tokenswiththehighestaveragelogits,whichinclude“yes”and“no.”Theremainingtokensinthis
+set are: {“No,” “Yes,” “NO,” “YES,” “The,” “None,” “In,” “Answer,” “This,” “To,” “Not,” “not,”
+“There,”“-no”}.
+C EXPERIMENT SETTING
+C.1 TRAININGDATASETS
+Ourtrainingdatasetiscuratedfromdiversesources,
+including M-BEIR, ViDoRe, ImageNet-1K, E-
+VQA, and Ms Marco. These datasets cover a wide
+array of domains, ensuring that the model is ex-
+posed to varied and representative examples across
+different tasks. To ensure balanced representation
+acrosstaskdomains,wesample100kinstancesfrom
+ImageNet-1K and integrated them into our training
+corpus.
+In total, our training dataset consists of approxi-
+mately 1.5 million instances, which are distributed
+across various domains to ensure robust learning.
+Thedetaileddistributionofthedataacrossthesedo-
+mainsiscarefullyvisualizedinFigure7. Figure7:Theproportionofthetrainingdata.
+Toensureafaircomparisonbetweensupervisedfine-tuningandcontrastivelearning,weconstructa
+balanced,category-representativesubsetofapproximately270Ksamplesfromourtrainingdataset,
+andthedetailscouldbefoundinTable7.
+Class Task Datasets Number
+T→T(2) WebQA†MsMarco 30000
+Single-Modal(4)
+I→I(2) Nights†ImageNet-1K 30000
+T→I(2) Fashion200k†VisualNews† 29958
+Cross-Modal(6)
+T→VD(1) ViDoRe 30000
+I→T(3) Fashion200k†MScoco†VisualNews† 30882
+T→IT(2) EDIS†WebQA† 30000
+Fused-Modal(11) IT→T(3) LLava†OVEN†Remuq† 30382
+IT→I(2) CIRR†FashionIQ† 29528
+IT→IT(3) E-VQAOVEN† 30000
+Table7: Thedetailsofsubtrainset. †meansthattheybelongtotheM-BEIRdataset.
+16
+C.2 MRBBENCHMARK
+Sinceoverlysimpletasksfailtoeffectivelydifferentiatetheperformanceofvariousrerankmodels,
+we exclude the dataset on which the GME-2B model achieves exceptionally high performance.
+DetaileddescriptionsofMRBBenchmarkareprovidedinTables8and9.
+Class Task Datasets
+ArguAna†Climate-FEVER†CQADupStack†DBPedia†
+T→T(14) FIQA2018†HotpotQA†MSMARCO†NFCorpus†NQ†
+Single-Modal(15)
+Quora†SCIDOCS†SciFact†Touche2020†TRECCOVID†
+I→I(1) Nights∗
+T→I(4) VisualNews∗Fashion200k∗Memotion⋆HatefulMemes⋆
+TAT-DQA†ArxivQA†DocVQA†
+Cross-Modal(14) T→VD(5)
+MITTissueInteraction†WorldEconomicReports†
+VisualNews∗Fashion200K∗
+I→T(5)
+Memotion⋆GLDv2⋆HatefulMemes⋆
+T→IT(2) WebQA∗EDIS∗
+IT→T(4) OVEN∗INFOSEEK∗OKVQA∗VizWiz⋆
+Fused-Modal(11)
+IT→I(2) FashionIQ∗CIRR∗
+IT→IT(3) OVEN∗E-VQA∗INFOSEEK∗
+Table8: AnoverviewofdatasetsinMRB.†meansitbelongtoBEIR.∗ meansitbelongtoUMRB.
+†meansitbelongtoViDoRe. ⋆meansitbelongtoMIEB.
+C.3 NEGATIVESELECTION
+The quality and diversity of negatives greatly affect the final performance of the reranker. Overly
+simple negatives can make the model lack the ability to distinguish hard negatives from positives,
+whileoverlydifficultdocumentsareverylikelytobefalsenegativesthatgivethemodelincorrect
+updatesignal. Therefore,weadopttwostrategiestoselectnegatives: (1)RandomSelection. Ran-
+domly select irrelevant document as negatives to enhance the generalization ability of the model.
+(2)HardMining. Foreachqueryineverydataset,weuseGME-2Btosearchforthecorrespond-
+ing documents to obtain the top 100, and randomly select k irrelevant samples from them as hard
+negatives to improve the reranking performance. We employ this set of hard negatives for all the
+models trained in this paper. While training, we always maintain the ratio of random negatives to
+hardnegativesat1:1tobalancethediversityandqualityofthedata.
+D MODEL SETTINGS
+D.1 GME-2B
+WeemploytheGME-2Bmodelasthefoundationalretrievalmodel, generatingtheinitialretrieval
+results that serve as the input to our diverse reranking approaches. Recognizing that the GME se-
+riesmodelsleverageinstructionfine-tuning,weincorporatetask-specificinstructionsintotheinput
+querytoenhancetheretrievalmodel’sperformance.
+AligningwiththeUMRBbenchmark,wecuratethespecificinstructionsforeachtask,ascompre-
+hensivelydetailedinTable13.
+D.2 QWEN3-RERANKER
+Parallelingourapproach,Qwen3-RerankerleveragesLargeLanguageModelsforpoint-wisererank-
+ing within a singular contextual framework. To facilitate instruction-following capabilities, the
+modelincorporatestask-specificinstructionsdirectlyintotheinputcontext. ByutilizingtheLLM’s
+inherentchattemplate,thesimilarityassessmentisreframedasabinaryclassificationparadigm.
+17
+Name Type Categ. Eval Candidates EvalQuery EvalCandidate
+Samples Nums avg.chars avg.chars
+ArguAna Single-Modal T→T 1406 8,674 192.98 166.80
+Climate-FEVER Single-Modal T→T 1,535 5,416,593 20.13 84.76
+CQADupStack Single-Modal T→T 13,145 457,199 8.59 129.09
+DBPedia Single-Modal T→T 400 4,635,922 5.39 49.68
+FiQA2018 Single-Modal T→T 648 57,638 10.77 132.32
+HotpotQA Single-Modal T→T 7,405 5,233,329 17.61 46.30
+MSMARCO Single-Modal T→T 6,980 8,841,823 5.96 55.98
+NFCorpus Single-Modal T→T 323 3,633 3.30 232.26
+NQ Single-Modal T→T 3,452 2,681,468 9.16 78.88
+Quora Single-Modal T→T 10,000 522,931 9.53 11.44
+SCIDOCS Single-Modal T→T 1,000 25,657 9.38 176.19
+SciFact Single-Modal T→T 300 5,183 12.37 213.63
+Touche2020 Single-Modal T→T 49 382,545 6.55 292.37
+TRECCOVID Single-Modal T→T 50 171,332 10.60 160.77
+Nights Single-Modal I→I 2,120 40,038 - -
+VisualNews Cross-Modal T→I 19,995 542,246 18.78 -
+Fashion200k Cross-Modal T→I 1,719 201,824 4.89 -
+HatefulMemes Cross-Modal T→I 1000 10000 10.42 -
+Memotion Cross-Modal T→I 697 6988 14.77 -
+TAT-DQA Cross-Modal T→VD 1,646 277 12.44 -
+ArxivQA Cross-Modal T→VD 500 500 17.12 -
+DocVQA Cross-Modal T→VD 451 500 8.23 -
+WER Cross-Modal T→VD 58 452 13.05 -
+MITTI Cross-Modal T→VD 160 1016 13.91 -
+VisualNews Cross-Modal I→T 20,000 537,568 - 18.53
+Fashion200k Cross-Modal I→T 4,889 61,707 - 4.95
+GLDv2 Cross-Modal I→T 1704 674 - 3.18
+Memotion Cross-Modal T→I 697 6988 - 14.67
+HatefulMemes Cross-Modal I→T 1000 10000 - 11.53
+WebQA Fused-Modal T→IT 2,511 403,196 16.43 12.83
+EDIS Fused-Modal T→IT 3,241 1,047,067 20.07 15.53
+OVEN Fused-Modal IT→T 50,004 676,667 6.52 82.13
+INFOSEEK Fused-Modal IT→T 11,323 611,651 8.76 91.49
+OKVQA Fused-Modal IT→T 5,046 114,516 8.09 102.55
+VizWiz Fused-Modal IT→T 4319 2091 7.17 -
+FashionIQ Fused-Modal IT→I 6,003 74,381 11.70 -
+CIRR Fused-Modal IT→I 4,170 21,551 11.01 -
+OVEN Fused-Modal IT→IT 14,741 335,135 5.91 94.76
+EVQA Fused-Modal IT→IT 3,743 68,313 9.38 211.12
+INFOSEEK Fused-Modal IT→IT 17,593 481,782 7.94 96.00
+Table9: TasksinMRB.FollowingUMRB,Wecountthenumberofdatasetsundereachtasktype,
+thenumberofevaluationinstances,thesizeofthecandidateset,andtheaveragelengthofthetext.
+Specifically, for T → T tasks, we set task-specific instructions the same as GME, as comprehen-
+sivelyillustratedinTable13.
+D.3 GMR
+InourGMRseriesmodels,weincorporatetheretrievalinstructionsintotheinputcontext,yielding
+twoadvantages. Primarily, thisapproacheliminatestheneedfortask-specificinstructionredesign
+atthererankingstage,enablingseamlessinstructiontransferfromtheretrievalphase.
+Moreover,bystrategicallyintegratinginstructionsintothecontextualinput,weeffectivelyguidethe
+model’s comprehension, facilitating enhanced task understanding and robust instruction-following
+capabilities. The comprehensive instruction sets for both training and testing phases are meticu-
+louslydetailedinTables10and13,respectively.
+D.4 JINA-RERANK-M0
+Jina-rerank-m0 demonstrates inherent capabilities for processing single-modal and cross-modal
+tasks. ByleveragingthearchitecturalflexibilityofMultimodalLargeLanguageModelframework,
+weextenditsoperationalscopetoencompassfused-modaltasksthroughainputtemplateadaptation.
+18
+Task Dataset QueryInstruction
+WebQA RetrievepassagesfromWikipediathatprovideanswerstothefollowingquestion.
+T→T
+MsMarco Givenaquestion,retrieverelevantpassagesthatanswerthequestion.
+Nights Findaday-to-dayimagethatlookssimilartotheprovidedimage.
+I→I
+ImageNet-1K Retrieveimagesofthesametypeastheoneinthequestion.
+Fashion200k Basedonthefollowingfashiondescription,retrievethebestmatchingimage.
+T→I
+VisualNews Identifythenews-relatedimageinlinewiththedescribedevent.
+T→VD ViDoRe Findascreenshotthatrelevanttotheuser’squestion.
+VisualNews Findacaptionforthenewsinthegivenphoto.
+I→T Fashion200k Findaproductdescriptionforthefashionitemintheimage.
+MSCOCO Findanimagecaptiondescribingthefollowingeverydayimage.
+WebQA FindaWikipediaimagethatanswersthisquestion.
+T→IT
+EDIS Findanewsimagethatmatchestheprovidedcaption.
+OVEN RetrieveaWikipediaparagraphthatprovidesananswertothegivenqueryabouttheimage.
+IT→T LLava Provideaspecificdecriptionoftheimagealongwiththefollowingquestion.
+Remuq Retrieveafact-basedparagraphthatprovidesananswertothegivenqueryabouttheimage.
+FashionIQ Findafashionimagethatalignswiththereferenceimageandstylenote.
+IT→I
+CIRR Retrieveaday-to-dayimagethatalignswiththemodificationinstructionsoftheprovidedimage.
+OVEN RetrieveaWikipediaimage-descriptionpairthatprovidesevidenceforthequestionofthisimage.
+IT→IT
+E-VQA DeterminetheWikipediaimage-snippetpairthatmatchesmyquestionaboutthisimage.
+Table10: Theinstructionsfortrainingdataset. WesettheinstructionsfortheGMRseriesmodels
+oneachtaskduringtrainingasshownintheTable.
+For text and image-modal inputs, Jina-rerank-m0 organizes Query/Document configurations, as
+comprehensively illustrated in Table 11. Building upon this foundational template, we design a
+inputorganizationstrategyforfused-modalscenarios,representedintheFusedconfiguration.
+Ultimately,themodel’sinputisstandardizedtothecanonicalformat:“{Document}\n{Query}”.
+Query Document
+Text
+**Query**:\n{query} **Document**:\n {doc}
+Image
+**Query**: **Document**:
+<visionstart><imagepad><visionend> <visionstart><imagepad><visionend>
+Fused
+**Query**: **Document**:
+<visionstart><imagepad><visionend>{query} <visionstart><imagepad><visionend>{doc}
+Table11: TheinputtemplateofJina-rerank-m0. Werefertoit’sformatsettingsforTextandImage
+tosettheinputformatoffused-modaldata,thenformattheinputas“{Document}\n{Query}”.
+D.5 MONOQWEN2-VL-V0.1
+AnalogoustoourmethodapproachwithJina-rerank-m0,weconductacomprehensiveevaluationof
+MonoQwen2-VL-v0.1 across the full spectrum of task types. Given that MonoQwen2-VL-v0.1 is
+exclusivelytrainedandtestedontheT→VDtask, itsinputconfigurationisspecificallytailoredto
+thisparticularscenario,asillustratedinTable12.
+Notably, since MonoQwen2-VL-v0.1 does not incorporate additional instructions during training
+andlacksinherentinstruction-followingcapabilities,weleveragetheestablishedT→VDinputtem-
+platetouniformlyconfiguretheinputsforallothertasks, asshownundertheOthersinTable12.
+InputFormat
+T→VD {doc}\nAssert the relevance of the previous image document to the following
+query, answer True or False. The query is: {query}
+Others {doc}\nAssert the relevance of the previous document to the following
+query, answer True or False. The query is: {query}
+Table12: TheinputtemplateofMonoQwen2-VL-v0.1. T→VDistheoriginalinputformatofit,
+andwedesigntheinputformatsforothertasksbasedonthisformat,asshowninOthers.
+19
+Task Dataset QueryInstruction
+ArguAna Givenaclaim,finddocumentsthatrefutetheclaim.
+Climate-FEVER Givenaclaimaboutclimatechange,retrievedocumentsthatsupportorrefutetheclaim.
+CQADupStack Givenaquestion,retrievedetailedquestiondescriptionsfromStackexchange
+thatareduplicatestothegivenquestion.
+DBPedia Givenaquery,retrieverelevantentitydescriptionsfromDBPedia.
+T→T
+FiQA2018 Givenafinancialquestion,retrieveuserrepliesthatbestanswerthequestion.
+HotpotQA Givenamulti-hopquestion,retrievedocumentsthatcanhelpanswerthequestion.
+MSMARCO Givenawebsearchquery,retrieverelevantpassagesthatanswerthequery.
+NFCorpus Givenaquestion,retrieverelevantdocumentsthatbestanswerthequestion.
+NQ Givenaquestion,retrieveWikipediapassagesthatanswerthequestion.
+Quora Givenaquestion,retrievequestionsthataresemanticallyequivalenttothegivenquestion.
+SCIDOCS Givenascientificpapertitle,retrievepaperabstractsthatarecitedbythegivenpaper.
+SciFact Givenascientificclaim,retrievedocumentsthatsupportorrefutetheclaim.
+Touche2020 Givenaquestion,retrievedetailedandpersuasiveargumentsthatanswerthequestion.
+TRECCOVID GivenaqueryonCOVID-19,retrievedocumentsthatanswerthequery.
+I→I Nights Findaday-to-dayimagethatlookssimilartotheprovidedimage.
+VisualNews Identifythenews-relatedimageinlinewiththedescribedevent.
+T→I Fashion200k Basedonthefollowingfashiondescription,retrievethebestmatchingimage.
+Memotion
+Retrievethememebasedonthegivencaption.
+HatefulMemes
+TAT-DQA
+ArxivQA
+T→VD DocVQA Findascreenshotthatrelevanttotheuser’squestion.
+MITTI
+WER
+VisualNews Findacaptionforthenewsinthegivenphoto.
+Fashion200k Findaproductdescriptionforthefashionitemintheimage.
+I→T
+GLDv2 Retrievethenameofthelandmarkbasedonthegivenimage.
+Memotion
+Retrievethecaptionbasedonthegivenmeme.
+HatefulMemes
+WebQA FindaWikipediaimagethatanswersthisquestion.
+T→IT
+EDIS Findanewsimagethatmatchestheprovidedcaption.
+OVEN RetrieveaWikipediaparagraphthatprovidesananswertothegivenqueryabouttheimage.
+IT→T INFOSEEK FindaparagraphfromWikipediathatanswersmyquestionaboutthisimage.
+OKVQA Retrievedocumentsthatprovideananswertothequestionalongsidetheimage.
+VizWiz Retrievethecorrectanswerforaquestionaboutanimage.
+FashionIQ Findafashionimagethatalignswiththereferenceimageandstylenote.
+IT→I
+CIRR Retrieveaday-to-dayimagethatalignswiththemodificationinstructionsoftheprovidedimage.
+OVEN RetrieveaWikipediaimage-descriptionpairthatprovidesevidenceforthequestionofthisimage.
+IT→IT
+INFOSEEK FindanimageandsubjectdescriptionfromWikipediathatanswersmyquestionaboutthisimage.
+E-VQA Obtainillustrateddocumentsthatcorrespondtotheinquiryalongsidetheprovidedimage.
+Table 13: The instructions for different tasks. We set the instructions for the GME-2B and GMR
+seriesmodelsoneachtaskasshownintheTable. WERmeansWorldEconomicReports,andMITTI
+meansMITTissueInteraction.
+20
+E MAIN RESULT
+E.1 DETAILEDRESULTS
+Weevaluateallmodelsdescribedin§5onourbenchmark. Theevaluationmetricsandthedetailed
+resultsforeachdatasetarereportedinTable14.
+Model
+Class Dataset
+GME-2B Qwen3 MonoQwen Jina-m0 GMR-3B GMR-7B
+ArguAna† 47.11 86.00 50.93 56.07 80.42 84.49
+SCIDOCS† 22.65 26.42 18.31 22.12 25.49 28.77
+TRECCOVID† 79.11 87.83 79.84 85.36 87.23 85.56
+Quora† 87.35 88.16 82.71 87.98 89.51 89.91
+SciFact† 66.53 79.83 74.94 79.18 77.52 79.70
+NFCorpus† 36.90 41.88 38.29 40.99 40.51 40.81
+T→T(14) Climate-FEVER† 32.15 49.08 19.78 34.33 50.14 50.26
+FiQA2018† 46.35 56.25 44.11 50.72 54.79 59.64
+HotpotQA† 70.45 82.66 71.64 80.49 82.86 83.84
+DBPedia† 43.17 52.69 41.75 49.60 52.99 53.96
+Touche2020† 33.18 43.00 36.71 38.40 32.17 37.26
+NQ† 51.22 63.33 49.08 62.06 62.49 66.48
+MSMARCO† 40.79 44.57 35.57 43.09 45.90 47.60
+CQADupStack† 37.25 45.18 40.83 44.66 47.10 46.81
+I→I(1) Nights⋆ 30.75 - 12.59 27.50 29.76 32.83
+Fashion200k∗ 25.77 - 29.14 29.38 25.01 27.57
+HatefulMemes† 52.09 - 74.93 76.57 75.07 75.19
+T→I(4)
+Memotion† 77.41 - 93.47 93.40 93.17 93.52
+VisualNews⋆ 38.55 - 37.39 38.48 42.16 48.44
+TAT-DQA† 71.23 - 79.99 82.05 83.23 84.00
+DocVQA† 56.44 - 57.51 61.69 61.48 62.87
+T→VD(5) ArxivQA† 84.21 - 87.61 89.38 88.99 90.99
+WER† 58.78 - 63.00 63.47 62.13 61.00
+MITTI† 61.29 - 68.32 69.07 66.06 65.82
+Fashion200k∗ 27.67 - 7.55 17.14 26.22 29.80
+HatefulMemes† 57.85 - 32.27 80.90 81.21 81.23
+I→T(5) Memotion† 80.01 - 44.74 94.84 96.08 96.68
+GLDv2† 59.28 - 5.72 59.21 68.68 76.74
+VisualNews⋆ 38.28 - 7.83 25.05 43.12 48.60
+WebQA⋆ 83.03 - 87.30 87.14 86.98 87.46
+T→IT(2)
+EDIS⋆ 71.00 - 65.63 62.76 76.95 81.64
+OKVQA∗ 29.71 - 20.13 30.34 37.71 40.09
+VizWiz† 29.56 - 5.11 20.36 35.96 41.29
+IT→T(4)
+INFOSEEK⋆ 39.77 - 23.97 36.84 59.17 63.01
+OVEN⋆ 60.46 - 8.18 23.74 62.41 68.78
+FashionIQ∗ 26.57 - 21.41 25.97 30.70 33.32
+IT→I(2)
+CIRR⋆ 46.83 - 42.09 49.33 57.24 61.46
+INFOSEEK⋆ 44.61 - 35.39 53.28 73.89 76.31
+IT→IT(3) E-VQA⋆ 79.11 - 55.81 61.21 84.66 86.08
+OVEN⋆ 76.96 - 16.28 40.12 78.68 84.17
+Table 14: Detailed scores of each model on various datasets on MRB. Qwen3 stands for Qwen3-
+Reranker,MonoQwenstandsforMonoQwen2-VL-v0.1,Jina-m0standsforJina-Reranker-m0.WER
+meansWorldEconomicReports,andMITTImeansMITTissueInteraction.Forthedatasetsdenoted
+with⋆, wereporttheRecall@5metric. Correspondingly, theRecall@10metricisadoptedforthe
+datasets marked with ∗. Furthermore, the NDCG@5 score is utilized for the †-annotated datasets,
+whiletheNDCG@10scoreisreportedforthosedesignatedwith†.
+21
+E.2 THEINFLUENCEOFTHENUMBEROFNEGATIVE
+59.0
+58.5
+58.0
+57.5
+57.0
+56.5
+56.0
+55.5
+2 4 8 16
+#Neg
+.freP
+In§5.2,weexaminetheeffectofincorporatingnegatives
+insupervisedfine-tuning(SFT)andobservedthat,within
+the limits of available computational resources, increas-
+ing the number of negative examples consistently im-
+proved model performance. The best performance was
+achievedwhenthenumberofnegativeexamplesreached
+SFT 16. For comparison, we further conduct experiments on
+the role of negatives in contrastive learning. As shown CL
+in Figure 8, the results indicate that, similar to SFT, a
+larger number of negative examples leads to better per-
+formance. Nevertheless,theoverallperformanceofcon-
+trastive learning remains lower than that of supervised Figure 8: Average performance of the
+fine-tuning. numberofnegativespersample.
+E.3 THEINFLUENCEOFTHEFROZENOFLMHEAD
+In§4,weobservethatSFTcanexploitsemanticsignalsfrom
+-F -NF ∆
+pre-trained token embeddings, whereas CL must learn the f
+score-projectionmatrixfromscratch. Toruleoutthepotential SFT 57.97 57.94 ▼0.03
+influence of freezing the language modeling (LM) head pa-
+CL 55.95 57.20 ▲1.25
+rameters,weconductanablationstudyonLMheadparameter
+freezing, withtheresultspresentedinTable15. Thefindings
+Table 15: Impact of frozen of the
+show that freezing or unfreezing the LM head has no effect
+LM head on performance. -F de-
+onSFT.Incontrast,CLachievesbetterperformancewhenthe
+notes frozen, while -NF denotes
+LMheadparametersarenotfrozen. Theseresultssuggestthat
+notfrozen.
+SFTeffectivelyleveragesthesemanticinformationembedded
+inpre-trainedtokenofLLM,whileCLrequiresrelearningthescore-projectionmatrix.
+F LIMITATION
+In this work, we introduce MRB, a benchmark designed for training and evaluating multimodal
+rerankingtasks. Toaddressthischallenge,weinvestigatestrategiesforadoptingMultimodalLarge
+LanguageModels(MLLMs)intogeneral-purposemultimodalrerankingmodels,andproposeGMR,
+arerankingmodelcapableofhandlingcandidatesacrossdifferentmodalities. Despitethesecontri-
+butions,ourworkhasthefollowinglimitations:
+• Single-language constraint. Although the backbone model, Qwen2.5-VL-Instruction, supports
+multiplelanguages,wetrainedandevaluatedGMRexclusivelyinEnglish. Consequently,theper-
+formanceofGMRinotherlanguagesremainsunexplored.
+•Single-imageconstraintforqueriesanddocuments. Forreasonsoftrainingefficiencyandlimited
+availability of relevant data, both queries and candidates in MRB are restricted to a single image
+foreachqueryanddocument. Asaresult,thebenchmarkcannotassessperformanceoninterleaved
+inputsthatinvolvemultipleimagesandtexts.
+22

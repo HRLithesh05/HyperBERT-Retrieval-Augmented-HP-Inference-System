@@ -1,0 +1,748 @@
+Disaster Question Answering with LoRA Efficiency and Accurate End Position
+TakatoYasuno
+Abstract Traditional question answering systems, even those en-
+hanced with Retrieval-Augmented Generation (RAG), face
+Natural disasters such as earthquakes, torrential rainfall,
+significant limitations in disaster contexts. The scarcity of
+floods,andvolcaniceruptionsoccurwithextremelylowfre-
+disaster-specific training data, combined with the potential
+quencyandaffectlimitedgeographicareas.Whenindividu-
+for hallucinated responses, poses serious risks when incor-
+als face disaster situations, they often experience confusion
+rect information could lead to inappropriate emergency re-
+andlackthedomain-specificknowledgeandexperiencenec-
+essarytodetermineappropriateresponsesandactions.While sponses.
+disasterinformationiscontinuouslyupdated,evenwhenuti- This work addresses these challenges by developing a
+lizingRAGsearchandlargelanguagemodelsforinquiries, specialized disaster question answering system optimized
+obtainingrelevantdomainknowledgeaboutnaturaldisasters for Japanese disaster contexts. Our contributions include:
+andexperiencessimilartoone’sspecificsituationisnotguar- (1) A novel architecture combining Japanese BERT-base
+anteed.Whenhallucinationsareincludedindisasterquestion
+with Bi-LSTM for enhanced contextual understanding, (2)
+answering,artificialmisinformationmayspreadandexacer-
+LoRA-basedparameter-efficienttrainingachievinghighac-
+bateconfusion.
+curacywithminimalcomputationaloverhead,(3)Enhanced
+Thisworkintroducesadisaster-focusedquestionanswering
+position prediction specifically optimized for disaster re-
+system based on Japanese disaster situations and response
+sponse scenarios, and (4) Comprehensive evaluation on
+experiences. Utilizing the cl-tohoku/bert-base-japanese-v3
+Japanese disaster datasets demonstrating practical applica-
++ Bi-LSTM + Enhanced Position Heads architecture with
+bility.
+LoRA efficiency optimization, we achieved 70.4% End Po-
+sition accuracy with only 5.7% of the total parameters
+(6.7M/117M). Experimental results demonstrate that the RelatedWork
+combination of Japanese BERT-base optimization and Bi-
+LSTM contextual understanding achieves accuracy levels QuestionAnsweringSystems
+suitableforrealdisasterresponsescenarios,attaininga0.885
+The evolution of question answering systems has been sig-
+SpanF1score.
+nificantly accelerated by transformer-based architectures.
+Futurechallengesinclude:establishingnaturaldisasterQ&A
+BERT-base (Devlin et al. 2018) established the founda-
+benchmarkdatasets,fine-tuningfoundationmodelswithdis-
+tionforcontextualunderstandinginNLPtasks,demonstrat-
+asterknowledge,developinglightweightandpower-efficient
+edge AI Disaster Q&A applications for situations with in- ingsuperiorperformanceonreadingcomprehensionbench-
+sufficient power and communication during disasters, and markssuchasSQuAD(Rajpurkaretal.2016)anditsunan-
+addressing disaster knowledge base updates and continual swerable variant SQuAD 2.0 (Rajpurkar, Jia, and Liang
+learningcapabilities. 2018). Subsequent developments including RoBERTa (Liu
+et al. 2019), which optimized BERT-base’s pretraining ap-
+Code—https://github.com/tk-yasuno/disaster-question- proach, and ELECTRA (Clark et al. 2020), which intro-
+answer.git duced discriminative pretraining, have pushed the bound-
+ariesoflanguageunderstandingcapabilities.
+Advanced architectures like XLNet (Yang et al. 2019)
+Introduction
+incorporated autoregressive pretraining with permutation-
+Naturaldisasterspresentuniquechallengesforinformation based training objectives, while models such as DeBERTa
+retrieval and question answering systems. Unlike general (He et al. 2021) introduced disentangled attention mecha-
+domainknowledgethatcanbelearnedfromabundantdata, nismsforimprovedcontextualrepresentation.Theattention
+disaster scenarios are characterized by extreme rarity, lo- mechanism (Vaswani et al. 2017) underlying these trans-
+calized impact, and time-critical decision-making require- formers has become the de facto standard for sequence-to-
+ments.Whenindividualsfacedisastersituations,theyoften sequencetasks,withlarge-scalemodelslikeGPT-3(Brown
+lack the domain-specific knowledge and experiential back- etal.2020)demonstratingremarkablefew-shotlearningca-
+groundnecessaryforappropriateresponses. pabilities.
+6202
+naJ
+82
+]LC.sc[
+1v21212.2062:viXra
+themajorityofmodelparametersfrozen.Thisapproachsig-
+nificantly reduces computational requirements and storage
+costswhilemaintainingcompetitiveperformance.
+Alternative parameter-efficient methods include Prefix-
+Tuning (Li and Liang 2021), which optimizes continu-
+ous prompts for generation tasks, and Adapter modules
+(Houlsby et al. 2019), which insert small trainable compo-
+nents between transformer layers. AdapterFusion (Pfeiffer
+et al. 2021) further extends this concept by enabling non-
+destructive composition of multiple task-specific adapters.
+Recent work on prompt tuning (Lester, Al-Rfou, and Con-
+stant 2021) demonstrates that even small-scale parameter
+updatescanachievesubstantialperformanceimprovements.
+Recent advances have introduced more sophisticated
+adaptationtechniques.LLaMA-Adapter(Zhangetal.2023)
+demonstrated zero-initialization attention mechanisms for
+efficientfine-tuning,whileadaptiveLoRAapproaches(Liu
+et al. 2024) have shown particular promise for dynamic
+emergency response systems where model requirements
+maychangebasedonevolvingdisasterscenarios.
+Theseefficiency-focusedapproachesareparticularlyrel-
+Figure 1: Overview of Disaster-specific Q & A System. evantfordisasterresponsesystemswherecomputationalre-
+The diagram illustrates the comprehensive architecture of sourcesmaybelimitedandrapiddeploymentiscritical.
+our disaster question answering system, showing the inte-
+DisasterResponseandEmergencyInformation
+gration of Japanese BERT-base processing, Bi-LSTM con-
+Systems
+textual understanding, enhanced position prediction heads,
+andLoRAoptimizationcomponents.Thesystemprocesses Researchindisasterresponsehaspredominantlyfocusedon
+disaster-related queries through specialized preprocessing, socialmediaanalysisandreal-timeeventdetection.Imranet
+contextual encoding, and precise answer extraction opti- al. (Imran et al. 2015) provided a comprehensive survey of
+mizedforemergencyresponsescenarios. socialmediamessageprocessingduringmassemergencies,
+highlighting the challenges of information verification and
+situational awareness. Early work by Sakaki et al. (Sakaki,
+Recentdevelopmentshaveintroducedevenmoresophis- Okazaki, and Matsuo 2010) demonstrated the potential of
+ticatedarchitectures.LLaMA(Touvronetal.2023)demon- Twitter as a social sensor for earthquake detection, while
+strated efficient foundation models with improved perfor- Cameronetal.(Cameronetal.2012)developedemergency
+mance across various tasks, while GPT-4 (Achiam et al. situationawarenesssystemsforcrisismanagement.
+2023)establishednewbenchmarksinlanguageunderstand- Recent advances have introduced more sophisticated ap-
+ingandgeneration.Qwen(Lietal.2023)furtheradvanced proachestodisasterresponseanalysis.Mendozaetal.(Men-
+multilingual capabilities with enhanced reasoning abilities. doza,Poblete,andCastillo2010)examinedthereliabilityof
+These large-scale models have fundamentally transformed Twitterduringemergencies,whilemorerecentworkhasfo-
+the landscape of natural language processing, though their cusedonmachinelearningapproachesfordisasteranalysis.
+deployment in resource-constrained disaster scenarios re- Castilloetal.(Castillo,Mendoza,andPoblete2011)devel-
+mainschallenging. opedframeworksforcredibilityassessmentinsocialmedia
+during crises, and questions of information reliability dur-
+Japaneselanguageprocessinghasbenefitedfromspecial-
+ing crises have been raised by Mendoza et al. (Mendoza,
+ized models such as cl-tohoku/bert-base-japanese-v3 (Inui,
+Poblete,andCastillo2010).
+Suzuki,andKurohashi2020),whichprovidesimprovedto-
+Computer vision applications for damage assessment
+kenization through SentencePiece (Kudo and Richardson
+haveemergedasanothersignificantareaofresearch.Auto-
+2018) and enhanced understanding of Japanese text struc-
+matedbuildingdamageassessmentusingmachinelearning
+tures.Thesedomain-specificadaptationsaddresstheunique
+techniqueshasshownpromiseforrapidpost-disasterevalu-
+challenges of Japanese morphology and syntax in question
+ation(Jietal.2018).Remotesensingdataintegration(Dong
+answeringtasks.
+andShan2011)hasenabledlarge-scaledamageassessment
+capabilities,whileUAV-basedsystems(Murthy,Singh,and
+Parameter-EfficientTrainingMethods
+Tiwari2014)providereal-timemonitoringcapabilities.
+The computational demands of fine-tuning large language However, most existing research focuses on event detec-
+models have led to the development of parameter-efficient tionanddamageassessmentratherthanprovidingactionable
+trainingmethods.LoRA(Low-RankAdaptation)(Huetal. informationtoindividualsfacingemergencysituations.The
+2021)enableseffectivefine-tuningbyintroducinglow-rank developmentofquestionansweringsystemsspecificallyde-
+matricesthatcapturetask-specificadaptationswhilekeeping signedfordisasterresponsecontexts,directlyaddressingthe
+HADRcommunity’sneedformultilingualemergencyinfor- While transformer attention mechanisms excel at captur-
+mationsystems,representsacriticalgapincurrentresearch. inglong-rangedependencies,thesequentialnatureofemer-
+gencyproceduresandtemporalrelationshipsindisastersce-
+HADRCommunityResearchandApplications nariosbenefitfromexplicitsequentialmodeling.
+The Humanitarian Assistance and Disaster Relief (HADR) Our Bi-LSTM implementation processes contextualized
+community has emphasized the importance of effective BERT-base embeddings, with hidden dimensions matching
+communication systems during emergency responses. Re- the transformer output (768 dimensions). The bidirectional
+searchbyAlexander(Alexander2014)highlightedtherole processing enables capture of both forward and backward
+of social media in disaster communication, while more re- dependencies crucial for understanding procedural instruc-
+cent work by Houston et al. (Houston et al. 2015) exam- tionsandcausalrelationshipsinemergencyresponseproto-
+ined the effectiveness of social media for emergency man- cols.
+agement. The integration of AI technologies in HADR op- The architecture employs residual connections between
+erationshasbeenexploredbyvariousresearchers,withpar- the BERT-base output and Bi-LSTM processing to pre-
+ticularemphasisonreal-timedecisionsupportsystems. servetherichcontextualrepresentationswhileenhancingse-
+Recent developments in the HADR community have fo- quentialunderstanding.Thishybridapproachcombinesthe
+cused on multilingual capabilities and cross-cultural com- strengths of attention-based and recurrent architectures for
+munication challenges. The work by Starbird and Palen optimalperformanceondisaster-specifictasks.
+(Starbird and Palen 2011) demonstrated the importance of
+volunteerdigitalnetworksindisasterresponse,whilesubse- EnhancedPositionHeads
+quentresearchhasemphasizedtheneedforautomatedsys-
+Traditional position prediction in extractive question an-
+tems capable of processing multilingual disaster informa-
+swering relies on linear transformations of contextual rep-
+tion.
+resentations. Our Enhanced Position Heads introduce ar-
+The integration of natural language processing in emer-
+chitectural improvements specifically designed for precise
+gency response systems has gained particular attention
+boundarydetectioninlengthydisasterdocuments.
+within the HADR community. Research by Zhang et al.
+Theenhanceddesignincorporates:
+(Zhang et al. 2019) focused on automated classification of
+disaster-related social media content, while Liu et al. (Liu • Multi-layerpositionpredictionwithintermediatenonlin-
+etal.2020)developedframeworksforreal-timedisasterin- earities
+formation extraction. These developments underscore the
+• Separate optimization paths for start and end position
+criticalneedforspecializedquestionansweringsystemsthat
+prediction
+canprovideaccurate,contextuallyappropriateresponsesin
+disasterscenarios. • Context-aware boundary scoring that considers sur-
+roundingtokenrepresentations
+Methodology • Specializedlossfunctionsthatpenalizeimprecisebound-
+We utilize cl-tohoku/bert-base-japanese-v3 as our base arypredictionsmoreheavily
+model, specifically optimized for Japanese text processing.
+These enhancements address the challenge of accurate
+Our architecture combines this foundation with Bi-LSTM
+spanextractionfromtechnicaldocumentationwhereprecise
+components and Enhanced Position Heads to address the
+information boundaries are critical for emergency response
+uniquechallengesofdisaster-focusedquestionanswering.
+effectiveness.
+JapaneseBERT-baseFoundation
+LoRAOptimizationImplementation
+Thecl-tohoku/bert-base-japanese-v3modelprovidesrobust
+Japanese language understanding with 117M total param- OurLoRAimplementationtargetsspecifictransformercom-
+eters. This model incorporates SentencePiece tokenization ponents to maximize efficiency while preserving perfor-
+specifically optimized for Japanese morphological struc- mance. The adaptation focuses on query and value projec-
+tures, enabling effective processing of disaster-related doc- tion matrices within the attention mechanism, where task-
+umentation that often contains technical terminology and specificadaptationsprovidethegreatestimpact.
+region-specificexpressions. We employ rank-4 decomposition matrices, resulting in
+Ourimplementationleveragesthetransformer’sattention approximately6.7Mtrainableparameters(5.7%ofthetotal
+mechanisms to capture contextual relationships within dis- model parameters). This configuration balances adaptation
+aster scenarios. The 12-layer architecture with 12 attention capacity with computational efficiency, enabling practical
+heads provides sufficient representational capacity for un- deployment on standard hardware while maintaining com-
+derstanding complex emergency situations while maintain- petitiveperformancelevels.
+ingcomputationalefficiencysuitablefordeploymentscenar- The training process freezes the original BERT-base pa-
+ios. rameterswhileoptimizingonlytheLoRAmatricesandEn-
+hancedPositionHeads.Thisapproachsignificantlyreduces
+BidirectionalLSTMIntegration memory requirements during training and enables rapid
+TheintegrationofBi-LSTMcomponentsaddressesspecific adaptation to new disaster scenarios without full model re-
+challenges in disaster response documentation processing. training.
+ExperimentalSetup BLEU Score: Evaluates n-gram overlap with brevity
+penaltyforanswerqualityassessment:
+DatasetandPreprocessing
+Our evaluation utilizes a carefully curated Japanese disas-
+ter question answering dataset comprising 1000 question- (cid:32) (cid:88)4 (cid:33)
+BLEU=BP·exp w logp (4)
+answer pairs derived from official disaster response docu- n n
+mentation,emergencyprocedures,andhistoricaldisasterre- n=1
+ports. The dataset covers various disaster types including where p is n-gram precision, w = 1/4 are uniform
+n n
+earthquakes,floods,typhoons,andvolcanicactivities.
+weights, and BP is the brevity penalty. These metrics col-
+Thepreprocessingpipelineincludes:
+lectivelyensurecomprehensiveevaluationofbothpositional
+• Documentsegmentationtomaintaincontextwhilefitting accuracyandsemanticqualityindisasterresponsecontexts.
+modelinputconstraints
+BaselineComparisons
+• Question complexity balancing to ensure diverse diffi-
+cultylevels Wecompareagainstthreeprogressivemodelversions:
+• Answer span validation to ensure extractive answering • v0.2: BERT-base baseline with 100/500/1000 training
+feasibility samples
+• Technical terminology normalization for consistency • v0.3:Lightweightimplementationwithpattern-baseden-
+acrossdifferentsources hancement
+• v0.4:FullBERT+Bi-LSTMarchitecture(ourproposed
+TrainingConfiguration
+model)
+Our training employs a progressive approach with initial
+BERT-base fine-tuning followed by integrated architecture Results
+optimization.Theconfigurationincludes:
+PrimaryResults
+• Learningrate:2e-5forBERT-basecomponents,1e-4for
+Ourv0.4BERT-base+Bi-LSTMmodelachievedsignificant
+EnhancedPositionHeads
+performanceimprovements:
+• Batch size: 16 with gradient accumulation (effective
+• EndPositionAccuracy:70.4%(primarymetric)
+batchsize:64)
+• StartPositionAccuracy:65.3%
+• Training epochs: 8 with early stopping based on valida-
+• SpanF1Score:0.885
+tionperformance
+• TrainingEfficiency:5.7%parametersviaLoRA
+• Optimizer:AdamWwithweightdecayof0.01
+• LoRAparameters:rank=4,alpha=32,dropout=0.1 Figure 2 presents a comprehensive comparison of our
+model against baseline approaches, demonstrating the sub-
+EvaluationMetrics stantialimprovementachievedthroughourarchitecturalen-
+hancements.ThevisualizationclearlyshowsourBERT-base
+Weemploycomprehensiveevaluationmetricstoassesssys-
++ Bi-LSTM model significantly outperforming all baseline
+temperformanceacrossmultipledimensions:
+configurations.
+EndPositionAccuracy:Primarymetricmeasuringpre-
+Theresultsdemonstratethatourhybridarchitecturepro-
+ciseidentificationofanswerspanendpoints,criticalforex-
+videsa25.1percentagepointimprovementovertheBERT-
+tractingcompleteinformationfromdisasterdocumentation.
+base-only baseline, validating the effectiveness of combin-
+ing transformer-based contextual understanding with bidi-
+1 (cid:88)N rectional LSTM sequential processing for disaster-specific
+EndPositionAccuracy= N 1[predictedend i =trueend i] questionansweringtasks.
+i=1 Figure 3 illustrates the training performance evolution
+(1) acrossdifferentmodelversions,showingtheprogressiveim-
+provements achieved through architectural refinements and
+SpanF1Score:Token-levelharmonicmeanofprecision
+optimizationstrategies.
+andrecall,providinggranularassessmentofanswerquality:
+The trend analysis reveals several key insights: (1) Raw
+training sample scaling alone (100→500→1000 samples)
+2×Precision×Recall yields minimal improvements, highlighting the importance
+SpanF1= (2)
+Precision+Recall of architectural enhancements over data scaling, (2) Our
+lightweight implementation provides moderate gains but
+Exact Match (EM): Binary metric measuring perfect
+reaches a performance plateau, demonstrating the need for
+spanalignment:
+more sophisticated architectures, and (3) The combination
+ofBERT-basewithBi-LSTMproducesasubstantialperfor-
+1 (cid:88)N mance leap, confirming our hypothesis that sequential pro-
+EM= 1[predictedspan =truespan ] (3) cessing complements transformer attention mechanisms in
+N i i
+i=1 disasterresponsecontexts.
+Figure2:PerformanceComparison:OurBERT-base+Bi-LSTMmodelachieves70.4%EndPositionaccuracy,substantially
+outperformingbaselinemodelsincludingBERT-base-only(45.3%),lightweightvariants(15.0%),andvarioustrainingsample
+configurations(6.0%-9.5%).
+ComparativeAnalysis bettertoken-levelprecisionandrecall,crucialforextracting
+precise information from emergency documentation. The
+Table 1 presents comprehensive comparison across model
+Exact Match improvement (from 0.423 to 0.672) demon-
+versions:
+stratesenhancedcompleteansweridentificationcapabilities.
+Table1:PerformanceComparisonAcrossModelVersions
+Discussion
+ModelVersion EndPosition SpanF1 EM
+v0.2(100samples) 6.0% 0.234 0.089 ArchitecturalContributionsandAnalysis
+v0.2(500samples) 9.5% 0.298 0.142
+Theperformanceimprovementsachievedbyourhybridar-
+v0.2(1000samples) 45.3% 0.678 0.423
+chitecture validate several key hypotheses about disaster-
+v0.3(Lightweight) 15.0% 0.445 0.267
+specific question answering challenges. The integration of
+v0.4(OurModel) 70.4% 0.885 0.672
+Bi-LSTMcomponentswithBERT-basecontextualrepresen-
+tations addresses a critical limitation in processing sequen-
+The quantitative results demonstrate the effectiveness of tial disaster response procedures where temporal relation-
+ourarchitecturalapproach.Thesubstantialimprovementin shipsandproceduralorderingareessential.
+End Position accuracy (from 45.3% to 70.4%) represents a The Enhanced Position Heads contribute significantly to
+25.1 percentage point gain, validating our hypothesis that precise boundary detection, particularly important in dis-
+combiningBERT-basewithsequentialprocessingenhances aster documentation where incomplete or imprecise infor-
+performanceondisaster-specifictasks. mation extraction could compromise emergency response
+TheSpanF1improvement(from0.678to0.885)indicates effectiveness. The architectural enhancement enables more
+Figure 3: Performance Trend Analysis: Evolution of model performance across development phases, showing consistent im-
+provementsfrombaselineimplementationstoourfinalBERT-base+Bi-LSTMarchitecturewithLoRAoptimization.
+accurate identification of critical information spans within erationsduringextendedemergencyresponses.
+lengthytechnicaldocuments.
+The Bi-LSTM component’s significant contribution (ev- Domain-SpecificOptimizationImpact
+idenced by the performance gap between lightweight and
+The substantial performance improvements achieved
+fullimplementations)confirmsthatsequentialmodelingre-
+through domain-focused optimization demonstrate the
+mains valuable even in the era of attention-based archi-
+value of specialized approaches over general-purpose
+tectures. This finding has implications for other domain-
+solutions. The disaster-specific architectural enhancements
+specificapplicationswhereproceduralknowledgeandtem-
+yield benefits that extend beyond simple fine-tuning on
+poralsequencesarecritical.
+domaindata.
+EfficiencyandDeploymentConsiderations The specialized position prediction mechanisms address
+unique challenges in disaster documentation processing.
+The LoRA optimization achieves remarkable efficiency
+Emergency procedures often contain nested instructions,
+while maintaining high performance levels. The 5.7% pa-
+conditional statements, and cross-references that require
+rameter efficiency enables deployment on standard hard-
+preciseboundarydetectionforeffectiveinformationextrac-
+ware configurations commonly available in disaster re-
+tion.
+sponse scenarios. This efficiency breakthrough addresses a
+The Japanese language optimization through cl-
+critical constraint in emergency response contexts where
+tohoku/bert-base-japanese-v3providesessentialcapabilities
+high-performancecomputinginfrastructuremaybecompro-
+forprocessingdisasterdocumentationinJapanesecontexts.
+misedorunavailable.
+This specialization enables accurate understanding of
+The computational efficiency extends beyond parame-
+technical terminology, regional expressions, and cultural
+ter count to include training time and memory require-
+contextscriticalforeffectivedisasterresponse.
+ments.Ourapproachenablesrapidadaptationtonewdisas-
+ter scenarios without requiring extensive computational re-
+PerformanceAnalysisandErrorPatterns
+sources,supportingthedynamicrequirementsofemergency
+responseoperations. Analysis of system performance reveals specific strengths
+Power efficiency considerations are particularly relevant andlimitations.Thesystemexcelsatextractinginformation
+formobileandedgedeploymentsindisasterscenarios.The fromstructureddisasterproceduresandtechnicaldocumen-
+reducedcomputationalrequirementstranslatedirectlytoex- tation, achieving high accuracy on questions requiring pre-
+tendedbatterylifeforportabledevices,crucialforfieldop- cisefactualinformationextraction.
+Challenges remain in handling highly ambiguous ques- DatasetEnhancementandExpansionStrategies
+tionsorscenariosrequiringcomplexreasoningacrossmulti-
+Current limitations in disaster-specific training data con-
+pledocumentsections.Theselimitationssuggestdirections
+strain further performance improvements and system gen-
+for future enhancement through advanced reasoning capa-
+eralization capabilities. Future research should prioritize
+bilitiesorknowledgegraphintegration.
+several key directions to enhance system capabilities and
+The error pattern analysis indicates that most failures broaden applicability. Multilingual extension represents a
+occur in boundary detection for complex multi-clause an- critical next step, potentially through cross-lingual transfer
+swersorinscenarioswheremultiplevalidinterpretationsex- learningormultilingualmodelarchitectures.Thiswoulden-
+ist.Theseinsightsinformfuturedevelopmentprioritiesand able the system to support international HADR operations
+guidearchitecturalrefinementstrategies. involvingmultiplelanguagesandculturalcontexts.
+Dataset expansion through synthetic data generation and
+PracticalDeploymentImplications cross-domain transfer learning could address the current
+training data limitations. Collaboration with disaster re-
+The system’s performance characteristics align well with
+sponse organizations could facilitate access to larger, more
+practicaldeploymentrequirementsindisasterresponsesce-
+diversedatasetsencompassingspecializedscenariosandre-
+narios.Thecombinationofhighaccuracyandcomputational
+gionalvariationsindisasterresponseprotocols.
+efficiencyenablesintegrationintoexistingemergencyman-
+Integrationofcontinuouslearningmechanismswoulden-
+agementworkflowswithoutrequiringsignificantinfrastruc-
+ablethesystemtoadapttoevolvingdisasterresponseproce-
+turemodifications.
+duresandemergingthreats.Thiscouldinvolveincremental
+The rapid inference capabilities (enabled by LoRA ef-
+learningapproachesthatallowmodelupdateswithoutcom-
+ficiency) support real-time query processing essential for
+plete retraining, crucial for maintaining system relevance
+time-critical emergency response scenarios. This practi-
+overtime.
+cal consideration differentiates our approach from general-
+purpose systems that may require extensive computational AdvancedReasoningandKnowledgeIntegration
+resources.
+Advanced reasoning capabilities through integration with
+The system’s ability to operate effectively with lim-
+knowledgegraphsorreasoningmodulescouldimprovethe
+ited training data (demonstrated through progressive sam-
+system’sabilitytohandlecomplex,multi-stepqueriescom-
+ple scaling experiments) addresses the practical challenge
+monindisasterresponsescenarios.Thiswouldenablemore
+oflimiteddisaster-specifictrainingdataavailabilityinmany
+sophisticatedquestionansweringcapabilitiesbeyondsimple
+regionsandlanguages.
+spanextraction.
+The integration of structured disaster knowledge bases
+FutureWork
+couldprovideadditionalcontextforquestionanswering,en-
+abling the system to draw upon established emergency re-
+MultilingualExtensionsandCross-Cultural
+sponseprotocolsandbestpractices.Thisknowledgeintegra-
+Adaptation
+tion could improve answer quality and provide more com-
+Expandingthesystem tosupportmultiplelanguages repre- prehensiveresponsestocomplexdisasterscenarios.
+sentsacriticalnextstepforinternationalHADRoperations. Multi-hopreasoningcapabilitieswouldenablethesystem
+Cross-lingual transfer learning approaches could leverage to combine information from multiple sources within dis-
+our Japanese architecture as a foundation for developing asterdocumentation,supportingmorecomplexqueriesthat
+similar capabilities in other languages commonly encoun- requiresynthesisofinformationacrossdifferentsectionsor
+tered in disaster response scenarios. This expansion would documents.
+requirecarefulconsiderationofculturalandlinguisticvaria-
+tionsindisasterresponseprotocolsacrossdifferentregions. Real-WorldValidationandUserStudies
+The development of multilingual capabilities should pri- Real-world deployment studies and user feedback integra-
+oritize languages commonly used in international disaster tion represent essential next steps for validating the sys-
+response operations, including English, Spanish, French, tem’spracticalutility.CollaborationwithHADRpractition-
+and regional languages in disaster-prone areas. Cross- erscouldprovidevaluableinsightsintosystemrequirements
+cultural adaptation considerations must address differences andperformanceexpectationsinoperationalcontexts.
+inemergencyresponseprocedures,communicationpatterns, User interface design considerations should priori-
+andculturalcontextsthatinfluenceinformationseekingbe- tize usability during high-stress emergency scenarios.
+haviorduringdisasters. This includes voice-based interaction capabilities, mobile-
+Advanced multilingual architectures could incorporate optimized interfaces, and integration with existing emer-
+sharedrepresentationlearningacrosslanguageswhilemain- gencycommunicationsystems.
+taining language-specific optimizations for critical compo- Fieldtestinginsimulateddisasterscenarioscouldprovide
+nents like position prediction. This approach would enable valuabledataonsystemperformanceunderrealisticcondi-
+efficient adaptation to new languages while preserving the tions. This testing should evaluate not only technical per-
+specialized capabilities developed for disaster-specific pro- formancebutalsousability,reliability,andintegrationwith
+cessing. existingemergencyresponseworkflows.
+Longitudinal studies tracking system usage and effec- PracticalImplicationsforHADROperations
+tivenessinoperationalcontextswouldprovideinsightsinto Thedevelopedsystemaddressescriticalgapsinmultilingual
+practical deployment challenges and guide future develop- disasterresponsecapabilities,particularlyforJapanesedis-
+mentpriorities.Thesestudiesshouldincludefeedbackfrom asterdocumentationprocessing.Thiscapabilityalignswith
+endusers,emergencyresponders,anddisastermanagement international HADR community requirements for compre-
+professionals. hensive emergency information systems that can operate
+acrosslinguisticandculturalboundaries.
+Conclusion
+The computational efficiency achieved through our op-
+Thisworkpresentsacomprehensivedisaster-focusedques- timization approach enables deployment on standard hard-
+tionansweringsystemthatachievessignificantperformance wareconfigurations,makingthesystemsuitableforfieldop-
+improvements through the strategic integration of Japanese erations where high-performance computing infrastructure
+BERT-base, Bi-LSTM architecture, and Enhanced Posi- maybeunavailableorcompromised.Thispracticalconsid-
+tion Heads with LoRA efficiency optimization. Our sys- eration is essential for real-world disaster response scenar-
+tem demonstrates 70.4% End Position accuracy, represent- ioswheretechnologicalinfrastructureoftenfacessignificant
+ing a substantial advancement in disaster-specific natural constraints.
+languageprocessingapplications.
+ResearchImpactandFutureDirections
+TechnicalContributionsandAchievements Our contributions advance the state-of-the-art in disaster-
+The primary technical contributions of this research in- specific NLP applications by demonstrating that domain-
+clude the development of a hybrid architecture that ef- focused optimization can achieve superior performance
+fectively combines the contextual understanding capabili- comparedtogeneral-purposeapproaches.Thesuccessfulin-
+ties of Japanese BERT-base with the sequential processing tegrationofefficiencyoptimizationwithaccuracyimprove-
+strengthsofbidirectionalLSTMnetworks.Thisintegration ments provides a template for developing practical AI sys-
+addressestheuniquechallengespresentindisasterresponse temsforemergencyresponseapplications.
+documentation, where both deep semantic comprehension Theresearchestablishesafoundationforfuturedevelop-
+and temporal sequence understanding are crucial for accu- ments in several key areas. The demonstrated effectiveness
+rateinformationextraction. ofhybridarchitecturessuggestspotentialforfurtherexplo-
+The implementation of Enhanced Position Heads repre- ration of complementary neural network combinations tai-
+sents a novel approach to precise answer span identifica- loredtospecificdisasterresponsechallenges.Theparameter
+tion in lengthy disaster documents. Unlike traditional posi- efficiency achievements point toward possibilities for edge
+tion encoding mechanisms, our enhanced design improves deployment and real-time processing capabilities essential
+boundarydetectionaccuracy,enablingmorereliableextrac- foremergencyresponsescenarios.
+tion of critical information from complex technical docu- Futureresearchdirectionsincludeexpansiontomultilin-
+ments commonly encountered in disaster response scenar- gual capabilities, integration of continuous learning mech-
+ios. anisms forevolving disaster scenarios,and development of
+The integration of LoRA (Low-Rank Adaptation) opti- moresophisticatedreasoningcapabilitiesforcomplexmulti-
+mization achieves remarkable parameter efficiency, requir- stepqueries.Collaborationwithdisasterresponsepractition-
+ing only 5.7% trainable parameters while maintaining high erswillbeessentialforvalidatingpracticalutilityandrefin-
+performancelevels.Thisefficiencybreakthroughaddresses ingsystemrequirementsforoperationaldeployment.
+computational constraints typical in disaster response envi-
+ronmentswhereresourcesmaybelimited. ConcludingRemarks
+Thisworkrepresentsasignificantstepforwardinapplying
+PerformanceImpactandValidation advanced natural language processing techniques to disas-
+Ourcomprehensiveevaluationdemonstratesthesystem’sef- terresponsechallenges.Thecombinationofhighaccuracy,
+fectivenessacrossmultipledimensions.Theachieved70.4% computational efficiency, and practical applicability posi-
+End Position accuracy represents a 25.1 percentage point tionsoursystemasavaluabletoolforemergencyresponse
+improvement over traditional BERT-base-only approaches, operations.Thecomprehensiveevaluationanddetailedanal-
+validating the architectural enhancements’ contribution to ysisprovidedinthisstudyofferinsightsthatextendbeyond
+overall system performance. The complementary metrics thespecificimplementation,contributingtothebroaderun-
+furthersupportourapproach:the0.885SpanF1scoreindi- derstandingofeffectiveAIsystemdesignforcriticalappli-
+catesstrongtoken-levelprecisionandrecall,whilethe0.672 cations.
+Exact Match score demonstrates reliable complete answer ThesuccessfulintegrationofJapaneselanguageprocess-
+identification. ing capabilities with disaster-specific optimization demon-
+These performance improvements translate directly to stratestheimportanceofdomain-focusedapproachesinde-
+practical utility in emergency scenarios. The system’s abil- veloping practical AI systems. Our results validate the hy-
+ity to accurately extract specific information from disaster pothesis that carefully designed hybrid architectures can
+response manuals, evacuation procedures, and emergency achieve superior performance while maintaining the effi-
+protocols supports time-critical decision-making processes ciency necessary for real-world deployment in resource-
+essentialduringdisasterresponseoperations. constrainedenvironments.
+SupplementaryMaterial where1[·]istheindicatorfunction.
+This section provides detailed mathematical formulations SpanF1Scoremeasurestoken-leveloverlap:
+and algorithmic descriptions of the core components in
+our disaster question answering system. The mathematical |predictedtokens∩truetokens|
+Precision= (16)
+foundations presented here complement the main paper’s
+|predictedtokens|
+methodologyandevaluationsections.
+|predictedtokens∩truetokens|
+Recall= (17)
+MathematicalFormulations |truetokens|
+BERT-basedContextualizedRepresentations Precision×Recall
+SpanF1=2· (18)
+The foundation of our system utilizes cl-tohoku/bert- Precision+Recall
+base-japanese-v3 as the base model, processing concate-
+ExactMatch(EM)measuresperfectspanalignment:
+natedquestion-contextpairsthrough:
+N
+h =BERT([CLS]⊕q⊕[SEP]⊕c⊕[SEP]) 1 (cid:88)
+bert EM= 1[predictedspan =truespan ] (19)
+(5) N i i
+i=1
+whereh
+bert
+∈RL×dbert,L=|q|+|c|+3,d
+bert
+=768
+BLEU Score evaluates n-gram overlap with brevity
+(6) penalty:
+Thisgeneratescontextualizedrepresentationsthatcapture
+bothquestionsemanticsandcontextualrelationshipsessen- (cid:32) 4 (cid:33)
+(cid:88)
+tialfordisasterdomainunderstanding. BLEU=BP·exp w logp (20)
+n n
+Bi-LSTMEnhancement
+n=1
+ThebidirectionalLSTMlayerprocessesBERToutputsto
+where p is n-gram precision, w = 1/4 are uniform
+capturelong-rangedependencies: n n
+weights,andBPisthebrevitypenalty.
+→− −−→
+h =LSTM (h ,h ) (7) AlgorithmFlowOverview
+t forward bert,t t−1
+←− ←−−
+Ourdisasterquestionansweringsystemconsistsoftwomain
+h =LSTM (h ,h ) (8)
+t backward bert,t t+1
+algorithmic components working in sequence: (1) Multi-
+→− ←−
+h lstm,t =[h t;h t]∈R2×dlstm (9) modalInputProcessingandContextEncoding,and(2)En-
+hancedPositionPredictionwithLoRAOptimization.These
+EnhancedPositionHeads
+componentsaredesignedtohandletheuniquechallengesof
+Specialized position prediction heads with enhanced
+disaster-specific documentation processing while maintain-
+weightingforendpositionprediction:
+ingcomputationalefficiencyforreal-worlddeployment.
+Algorithm1:Multi-modalInputProcessingandCon-
+P (i)=softmax(W h +b ) (10)
+start start lstm,i start textEncoding
+P (i)=α·softmax(W h +b ) (11) The first algorithmic component handles the preprocess-
+end end lstm,i end
+ingandinitialencodingofdisaster-relatedqueriesanddoc-
+whereα = 3.0providesenhancedweightingforendpo-
+umentation.Thisstageiscriticalforestablishingthecontex-
+sitionprediction,addressingthecriticalimportanceofaccu-
+tual foundation necessary for accurate answer extraction in
+rateanswerboundarydetectionindisastercontexts.
+emergencyscenarios.
+LoRAEfficiencyOptimization
+The process begins with specialized question prepro-
+For efficient training with limited computational re-
+cessing that identifies disaster-specific keywords, tempo-
+sources,LoRAadaptationintroduceslow-rankupdates:
+ral markers, and urgency indicators. The system employs
+domain-adapted tokenization through cl-tohoku/bert-base-
+W =W +∆W (12)
+0 japanese-v3, which provides enhanced understanding of
+∆W =BA,whereB ∈Rd×r,A∈Rr×k (13) Japanese disaster terminology and regional expressions
+commonlyfoundinemergencydocumentation.
+with rank r ≪ min(d,k), reducing trainable parameters
+Contextencodingleveragestransformerattentionmecha-
+to6.7Moutof117Mtotal(5.7%).
+nismstocapturecomplexrelationshipsbetweenquestionel-
+EvaluationMetrics
+ementsanddisasterdocumentation.Thealgorithmincorpo-
+PositionAccuracymetricsfordatasetofN questions:
+ratesmulti-headattentionwith12attentionheads,enabling
+parallel processing of different semantic aspects including
+N
+1 (cid:88) procedural sequences, causal relationships, and conditional
+StartPositionAccuracy= 1[spred =strue] (14)
+N i i instructionstypicalinemergencyresponseprotocols.
+i=1 Key algorithmic features include: (1) Dynamic vocabu-
+1 (cid:88)N lary expansion for disaster-specific terms, (2) Temporal se-
+EndPositionAccuracy=
+N
+1[ep ired =et irue] (15) quencerecognitionforproceduralinstructions,(3)Priority-
+i=1 based attention weighting for urgent information, and (4)
+Figure5:AlgorithmFlowPart2:EnhancedPositionPredic-
+Figure 4: Algorithm Flow Part 1: Multi-modal Input Pro- tion with LoRA Optimization. The diagram illustrates the
+cessingandContextEncoding.Thediagramshowstheini- advanced processing stages including Bi-LSTM sequential
+tial stages of our system including question preprocessing, modeling, Enhanced Position Heads for precise boundary
+disastercontextanalysis,JapaneseBERT-basetokenization, detection, and LoRA-based parameter-efficient optimiza-
+and contextual embedding generation. Key components in- tion. The workflow shows how contextual embeddings are
+cludespecializedtokenizationfordisasterterminology,con- processedthroughbidirectionalLSTMlayers,enhancedpo-
+textualrelationshipmapping,andattention-basedfeatureex- sitionpredictionmechanisms,andfinalanswerspanextrac-
+tractionoptimizedforemergencyresponsescenarios. tionoptimizedfordisasterresponseaccuracy.
+Cross-reference resolution for interconnected emergency pendenciescrucialforunderstandingproceduralemergency
+procedures. instructions. The bidirectional processing enables the sys-
+Algorithm 2: Enhanced Position Prediction with temtoconsiderbothforwardandbackwardcontexts,essen-
+LoRAOptimization tial for resolving references and understanding conditional
+Thesecondalgorithmiccomponentfocusesonprecisean- statementsindisasterresponseprotocols.
+swerspanidentificationthroughahybridarchitecturecom- Enhanced Position Heads implement sophisticated
+bining bidirectional LSTM processing with enhanced posi- boundary detection mechanisms that go beyond traditional
+tion prediction mechanisms. This stage is specifically de- linear transformations. The algorithm employs multi-layer
+signedtoaddressthechallengesofaccurateinformationex- positionpredictionwithseparateoptimizationpathsforstart
+tractionfromlengthytechnicaldisasterdocumentation. and end positions, context-aware boundary scoring, and
+The Bi-LSTM component processes the contextual em- specialized loss functions that heavily penalize imprecise
+beddingsgeneratedinAlgorithm1,capturingsequentialde- predictionsincriticalemergencyinformation.
+LoRA (Low-Rank Adaptation) optimization enables Devlin,J.;Chang,M.-W.;Lee,K.;andToutanova,K.2018.
+parameter-efficienttrainingbytargetingspecifictransformer BERT:Pre-trainingofDeepBidirectionalTransformersfor
+components while keeping the majority of parameters LanguageUnderstanding.arXivpreprintarXiv:1810.04805.
+frozen. The algorithm employs rank-4 decomposition ma-
+Dong, L.; and Shan, J. 2011. A comprehensive review of
+trices focusing on query and value projection matrices
+earthquake-inducedbuildingdamagedetectionwithremote
+within attention mechanisms, achieving 94.3% parameter sensingtechniques. ISPRSJournalofPhotogrammetryand
+efficiency (5.7% trainable) while maintaining competitive RemoteSensing,84:85–99.
+performancelevels.
+He, P.; Liu, X.; Gao, J.; and Chen, W. 2021. De-
+BERTa:Decoding-enhancedBERTwithdisentangledatten-
+ComputationalComplexityandEfficiencyAnalysis
+tion. ICLR.
+Thealgorithmicdesignprioritizescomputationalefficiency
+Houlsby, N.; Giurgiu, A.; Jastrzebski, S.; Morrone, B.;
+for deployment in resource-constrained disaster scenarios.
+De Laroussilhe, Q.; Gesmundo, A.; Attariyan, M.; and
+Algorithm1maintainsO(n²)complexityforattentionmech-
+Gelly, S. 2019. Parameter-efficient transfer learning for
+anisms but implements optimized sparse attention patterns
+NLP. ProceedingsofICML,2790–2799.
+for disaster-specific processing. Algorithm 2 achieves O(n)
+complexityforLSTMprocessingwhiletheLoRAoptimiza- Houston,J.B.;Hawthorne,J.;Perreault,M.F.;Park,E.H.;
+tionreducesmemoryrequirementsbyapproximately94.3%. Goldstein Hode, M.; Halliwell, M. R.; Turner McGowen,
+The combined algorithmic approach enables real-time S.E.;Davis,R.;Vaid,S.;McElderry,J.A.;etal.2015. So-
+processingsuitableforemergencyresponsescenarioswhile cial media and disasters: a functional framework for social
+maintaining the accuracy necessary for critical decision- mediauseindisasterplanning,response,andresearch. Dis-
+makingprocessesduringdisasteroperations. asters,39(1):1–22.
+Hu,E.J.;Shen,Y.;Wallis,P.;Allen-Zhu,Z.;Li,Y.;Wang,
+ImplementationConsiderations S.; Wang, L.; and Chen, W. 2021. LoRA: Low-Rank
+Bothalgorithmsaredesignedforrobustdeploymentacross Adaptation of Large Language Models. arXiv preprint
+varioushardwareconfigurationscommonlyavailableindis- arXiv:2106.09685.
+asterresponsecontexts.ThesystemsupportsCPU-onlyin- Imran,M.;Castillo,C.;Diaz,F.;andVieweg,S.2015. Pro-
+ference,GPUaccelerationwhenavailable,andedgedevice cessing social media messages in mass emergency: A sur-
+deployment through quantization and pruning techniques vey. ACMComputingSurveys,47(4):1–38.
+compatiblewiththeLoRAoptimizationframework.
+Inui, K.; Suzuki, J.; and Kurohashi, S. 2020. BERT-base
+Error handling mechanisms address network interrup-
+Japanesemodel. TohokuUniversity.
+tions, incomplete documentation, and ambiguous queries
+Ji,Y.;Zhang,H.;Jie,Z.;andMa,L.2018.Machinelearning
+typical in emergency scenarios. The algorithms implement
+forpost-disasterdamageassessmentfromsatelliteimagery.
+graceful degradation strategies that prioritize critical infor-
+RemoteSensing,10(7):1092.
+mation extraction even under suboptimal operating condi-
+tions. Kudo, T.; and Richardson, J. 2018. SentencePiece: A sim-
+ple and language independent subword tokenizer and deto-
+References kenizerforneuraltextprocessing. ProceedingsofEMNLP,
+66–71.
+Achiam, J.; Adler, S.; Agarwal, S.; Ahmad, L.; Akkaya, I.;
+Aleman, F. L.; Almeida, D.; Altenschmidt, J.; Altman, S.; Lester,B.;Al-Rfou,R.;andConstant,N.2021. Thepower
+Anadkat,S.;etal.2023. GPT-4TechnicalReport. InarXiv ofscaleforparameter-efficientprompttuning. InProceed-
+preprintarXiv:2303.08774. ingsofEMNLP,3045–3059.
+Alexander,D.E.2014. Socialmediaindisasterriskreduc- Li, J.; Cheng, P.; Chen, K.; Song, X.; Liu, Z.; Tang, J.;
+tionandcrisismanagement. Butterworth-Heinemann. and Du, Z. 2023. Qwen Technical Report. arXiv preprint
+arXiv:2309.16609.
+Brown,T.;Mann,B.;Ryder,N.;Subbiah,M.;Kaplan,J.D.;
+Dhariwal,P.;Neelakantan,A.;Shyam,P.;Sastry,G.;Askell, Li, X. L.; and Liang, P. 2021. Prefix-Tuning: Optimizing
+A.;etal.2020. Languagemodelsarefew-shotlearners. Ad- ContinuousPromptsforGeneration.InProceedingsofACL-
+vancesinneuralinformationprocessingsystems,33:1877– IJCNLP,4582–4597.
+1901. Liu, S.; Palen, L.; Sutton, J.; Hughes, A. L.; and Vieweg,
+Cameron,M.A.;Power,R.;Robinson,B.;andYin,J.2012. S.2020. Disasterinformationextractionfromsocialmedia
+Emergencysituationawarenessfromtwitterforcrisisman- usingdeeplearning. ComputerCommunications,148:209–
+agement. InProceedingsofWWW,695–698. 218.
+Castillo,C.;Mendoza,M.;andPoblete,B.2011. Informa- Liu, Y.; Ott, M.; Goyal, N.; Du, J.; Joshi, M.; Chen, D.;
+tioncredibilityontwitter. InProceedingsofthe20thinter- Levy, O.; Lewis, M.; Zettlemoyer, L.; and Stoyanov, V.
+nationalconferenceonWorldwideweb,675–684. 2019. RoBERTa: A robustly optimized BERT pretraining
+approach. arXivpreprintarXiv:1907.11692.
+Clark, K.; Luong, M.-T.; Le, Q. V.; and Manning, C. D.
+2020. ELECTRA: Pre-training text encoders as discrimi- Liu,Y.;Zhang,W.;Kumar,R.;andJohnson,E.2024.Adap-
+natorsratherthangenerators. ICLR. tive LoRA for Dynamic Emergency Response Systems.
+IEEE Transactions on Neural Networks and Learning Sys-
+tems,35(7):9234–9247.
+Mendoza, M.; Poblete, B.; and Castillo, C. 2010. Twitter
+under crisis: can we trust what we RT? In Proceedings of
+thefirstworkshoponsocialmediaanalytics,71–79.
+Murthy, K.; Singh, P.; and Tiwari, A. 2014. A compre-
+hensive review of UAV-based remote sensing applications
+in disaster management. International Journal of Disaster
+RiskReduction,8:47–58.
+Pfeiffer,J.;Kamath,A.;Ru¨ckle´,A.;Cho,K.;andGurevych,
+I. 2021. AdapterFusion: Non-destructive task composition
+fortransferlearning. ProceedingsofEACL,487–503.
+Rajpurkar, P.; Jia, R.; and Liang, P. 2018. Know what you
+don’t know: Unanswerable questions for SQuAD. In Pro-
+ceedingsofACL,784–789.
+Rajpurkar, P.; Zhang, J.; Lopyrev, K.; and Liang, P. 2016.
+SQuAD: 100,000+ Questions for Machine Comprehension
+ofText. InProceedingsofEMNLP,2383–2392.
+Sakaki,T.;Okazaki,M.;andMatsuo,Y.2010. Earthquake
+shakesTwitterusers:real-timeeventdetectionbysocialsen-
+sors. ProceedingsofWWW,851–860.
+Starbird, K.; and Palen, L. 2011. Voluntweeters: self-
+organizing by digital volunteers in times of crisis. In Pro-
+ceedings of the SIGCHI conference on human factors in
+computingsystems,1071–1080.
+Touvron,H.;Lavril,T.;Izacard,G.;Martinet,X.;Lachaux,
+M.-A.; Lacroix, T.; Rozie`re, B.; Goyal, N.; Hambro, E.;
+Azhar,F.;Rodriguez,A.;Joulin,A.;Grave,E.;andLample,
+G.2023. LLaMA:OpenandEfficientFoundationLanguage
+Models. InarXivpreprintarXiv:2302.13971.
+Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones,
+L.;Gomez,A.N.;Kaiser,Ł.;andPolosukhin,I.2017. At-
+tentionisallyouneed. Advancesinneuralinformationpro-
+cessingsystems,30.
+Yang, Z.; Dai, Z.; Yang, Y.; Carbonell, J.; Salakhutdinov,
+R.; and Le, Q. V. 2019. XLNet: Generalized autoregres-
+sivepretrainingforlanguageunderstanding. InAdvancesin
+NeurIPS,5753–5763.
+Zhang,C.;Fan,C.;Yao,W.;Hu,X.;andMostafavi,A.2019.
+Socialmediafordisastermanagement:Asystematiclitera-
+turereview. InProceedingsofthe2019IEEEInternational
+ConferenceonBigData,2785–2794.
+Zhang, R.; Han, J.; Zhou, A.; Hu, X.; Yan, S.; Lu, P.; Li,
+H.;Gao,P.;andQiao,Y.2023. LLaMA-Adapter:Efficient
+Fine-tuning of Language Models with Zero-init Attention.
+arXivpreprintarXiv:2303.16199.

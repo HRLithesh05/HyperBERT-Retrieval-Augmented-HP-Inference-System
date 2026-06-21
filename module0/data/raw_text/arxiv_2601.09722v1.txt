@@ -1,0 +1,1001 @@
+ADMEDTAGGER: AN ANNOTATION FRAMEWORK FOR
+DISTILLATION OF EXPERT KNOWLEDGE FOR THE POLISH
+MEDICAL LANGUAGE
+FranciszekGórski AndrzejCzyz˙ewski
+MultimediaSystemsDepartment MultimediaSystemsDepartment
+GdanskUniversityofTechnology GdanskUniversityofTechnology
+Gdansk,80-233 Gdansk,80-233
+franciszek.gorski@pg.edu.pl andrzej.czyzewski@pg.edu.pl
+January16,2026
+ABSTRACT
+In this work, we present an annotation framework that demonstrates how a multilingual LLM
+pretrainedonalargecorpuscanbeusedasateachermodeltodistilltheexpertknowledgeneeded
+for tagging medical texts in Polish. This work is part of a larger project called ADMEDVOICE,
+withinwhichwecollectedanextensivecorpusofmedicaltextsrepresentingfiveclinicalcategories-
+Radiology,Oncology,Cardiology,Hypertension,andPathology. Usingthisdata,wehadtodevelopa
+multi-classclassifier,butthefundamentalproblemturnedouttobethelackofresourcesforannotating
+anadequatenumberoftexts. Therefore,inoursolution,weusedthemultilingualLlama3.1model
+toannotateanextensivecorpusofmedicaltextsinPolish. Usingourlimitedannotationresources,
+weverifiedonlyaportionoftheselabels,creatingatestsetfromthem. Thedataannotatedinthis
+waywerethenusedfortrainingandvalidationof3differenttypesofclassifiersbasedontheBERT
+architecture-thedistilledDistilBERTmodel,BioBERTfine-tunedonmedicaldata,andHerBERT
+fine-tunedonthePolishlanguagecorpus. Amongthemodelswetrained, theDistilBERTmodel
+achievedthebestresults,reachinganF1score>0.80foreachclinicalcategoryandanF1score>
+0.93for3ofthem. Inthisway,weobtainedaseriesofhighlyeffectiveclassifiersthatrepresentan
+alternativetolargelanguagemodels,duetotheirnearly500timessmallersize,300timeslowerGPU
+VRAMconsumption,andseveralhundredtimesfasterinference.
+Keywords LargeLanguageModels·Knowledgedistillation·BERTmodels·AIinmedicine·Polishlanguage·NLP
+datasets·Multiclassclassification·Radiology·Hypertension·Oncology·Cardiology·Pathology.
+5202
+ceD
+72
+]LC.sc[
+1v22790.1062:viXra
+APREPRINT-JANUARY16,2026
+1 Introduction Duringdevelopingthispublication,wewerelookingfor
+answerstothefollowingresearchquestions:
+RQ1: Can a large language model (LLM), pre-trained
+ADMEDVOICEisanR&Dprojectforthepolishhealth- onavastcorpusoftextualdatacoveringmanythematic
+care system which aim is to develop and implement a categories,effectivelydistillspecializedexpertknowledge
+solutionthroughwhichdoctorscanfilloutmedicalrecords fromaspecificdomainusingonlyafewtextualexamples?
+duringthecourseofamedicalinterview,createdescrip- RQ2: Can a large language model effectively distill
+tions(e.g.,radiological)asneeded,andprescribetreatment. knowledge in a natural language such as Polish, which
+Theusecaseoffillingoutofmedicalrecordscabeseenin is significantly less common and more complex than
+Figure1. Thesystemtobedevelopedwillautomatically English?
+generatetemplatesformedicalinterviewsanddescriptions RQ3: Can a student model from the BERT family
+of available diagnostic results. In Polish healthcare in- successfully learn a multiclass classification task solely
+stitutions, doctors are typically not assisted by medical fromdatawithdistilledlabels?
+secretariesormedicalassistants;therefore,theresponsi-
+bility for preparing descriptions of examinations, visits,
+In the following paper we present ADMEDTAGGER -
+or hospitalizations rests solely on the physician, which
+theannotationframeworkforknowledgedistillationfrom
+consumesasignificantamountoftime. Asaresult,doc-
+LargeLanguageModelstosmaller,BERT-basedmodels
+torshavelessopportunitytodevoteadequateattentionto
+for the task oexpert validation used to create evaluation
+theirpatients. Physiciansareawareofthisissue,yetare
+setsfclassificationofPolishmedicaltextsfromdifferent
+unable to avoid the growing demands of medical docu-
+clinicalcategories.
+mentation,theyspendanincreasingportionoftheirday
+at the computer. There is a clear need to explore ways ADMEDTAGGERisaresponsetorealclinicalneedsre-
+to support healthcare through modern technologies that quiringthedevelopmentofasystemforannotatingelec-
+leverageinformationsystems,especiallybyleveragingthe tronicpatientrecordsintostructuredclinicalforms. The
+latestadvancementsinartificialintelligence. learnedannotationscorrespondtoindividualrecordsinthe
+forms,allowingforthequickgenerationofreportsonthe
+Inthispaper,weaddresstheproblemofinsufficientlabeled
+courseofspecificclinicalsituationsinanautomaticman-
+data for classifying specialized medical data. This is a
+ner,thusfreeingphysiciansfromtheverytime-consuming
+prevalent issue in machine learning applications. Data
+procedure of preparing patient care notes and allowing
+labelingnotonlyrequirestimeandappropriatetools,but
+themtodevotesignificantlymoreattentiontothepatient.
+alsooftenqualifiedexpertswhowouldhandlethelabeling
+Our solution includes prompt structures for the teacher
+process. Unfortunately,theworkoftheseexpertsisoften
+model, annotatedtextsegmentation, trainingsetgenera-
+costly, and their time is limited. As a result, machine
+tion,expertvalidationusedtocreateevaluationsets,aswell
+learningteamsareunabletoobtainthenumberoflabelsto
+astrainmultiplestudentsmodels. Allofthiscomprisesa
+conductsupervisedtrainingofagivenmachinelearning
+frameworkforscalableannotationandexpertknowledge
+model.
+distillation,usedinthisworktotrainmedicaltextclassi-
+Therefore,theknowledgedistillationapproachisincreas- fiers. ADMEDTAGGER is part of the ADMEDVOICE
+inglybeingused,inwhichalargerAImodel-theteacher system,beingpreparedforimplementationinPolishmedi-
+isemployedtotrainasmallermodel-thestudent. Knowl- calfacilities.
+edge distillation (KD), first formalized by Hinton et al.
+[1], has evolved into a cornerstone technique for model
+compressionandknowledgetransfer. Severalworksand 2 Relatedworks
+surveyshavemappedthisevolvinglandscape[2],[3],[4],
+[5],[6],[7]. Gouetal. [8]providesystematicreview,cate-
+The introduction of BERT (Bidirectional Encoder Rep-
+gorizingKDmethodsfromperspectivesofknowledgecate-
+resentations from Transformers) by Devlin et al. [10]
+gories,trainingschemes,teacher-studentarchitectures,and
+revolutionized text classification. Fields et al. [11] pro-
+distillationalgorithms. KDalsohasapplicationforLLMs.
+videdacomprehensivesurveyexaminingtextclassification
+Xuetal. [9]presentedacomprehensivesurveyspecifically
+withtransformers. TheiranalysisrevealsthatwhileBERT-
+addressingKD’sroleintheLLMera,structuredaround
+basedmodelswith110-340Mparametersestablishednu-
+three foundational pillars: algorithm, skill, and vertical-
+merousbenchmarks,morerecentLLMslikeGPT-4have
+ization. TheirworkhighlightsKD’sdualfunction: trans-
+extendedcapabilities,particularlyinhandlinglongercon-
+ferringadvancedcapabilitiesfromproprietarymodelslike
+texts(upto8,192tokenscomparedtoBERT’s512). Sev-
+GPT-4toopen-sourcealternatives(e.g.,LLaMA,Mistral),
+eralstudieshaveinvestigatedspecificaspectsofBERTfor
+andenablingmodelcompressionandself-improvementin
+textclassification[12,13,14,15,16,17]. Jiangetal. [18]
+open-sourceLLMs.
+conductedacriticalreviewasking"AreWeReallyMaking
+Inthispaper,wepresentausecaseformedicaldataclassi- MuchProgressinTextClassification?"Theiranalysisre-
+fication,inwhichalargelanguagemodel(LLM)servesas vealedthatfine-tuneddiscriminativemodels(particularly
+theteachermodelandamodelfromtheBERTfamilyas encoder-onlytransformerslikeBERT,RoBERTa,andDe-
+thestudentmodel. BERTa)stilldefinethestate-of-the-artforsingle-labeland
+2
+APREPRINT-JANUARY16,2026
+consequenceofdifferencesbetweende-identifiedsource
+Clinical situation textandsyntheticallynon-de-identifiedtasktext. Wanget
+al. [28]comparedBERTimplementations(vanillaBERT,
+Recoding of the ASR BioBERT, and ClinicalBERT) for identifying complex
+clinical situation system
+medical concepts in narrative documents. Their results
+onthreelinguisticallycomplextasks(bariatricsurgerydis-
+Patient Physician
+cussions,statinnon-acceptance,andtobaccousedocumen-
+Transcription tation) revealed that domain-specific models (BioBERT
+of the clinical
+situation andClinicalBERT)achievedsuperiorperformanceoverall,
+thoughneitherconsistentlyoutperformedtheotheracross
+alltasks. ThereisalsoasetofpapersonemployingLLMs
+Unstructured inthebiomedicaldomainlike[29,30,31,32].
+transcription
+of the clinical SakaiandLam[33]introducedKDH-MLTC(Knowledge
+situation Distillation for Healthcare Multi-Label Text Classifica-
+tion),acomprehensiveframeworkleveragingmodelcom-
+pression and LLMs specifically for medical text. Their
+approachtransfersknowledgefromBERTtoDistilBERT
+throughsequentialtrainingadaptedformulti-labelclassi-
+Transformer
+fication, with hyperparameter optimization via Particle
+based
+text classifier Swarm Optimization (PSO). Experiments on the Hall-
+marks of Cancer (HoC) dataset achieved an F1 score
+of 82.70% on the largest dataset variant, demonstrating
+Strutured
+medical that knowledge distillation can maintain high accuracy
+report Splitting and classifying whilesignificantlyreducingmodelsizeandinferencetime.
+from the text into fields of Hasan et al. [34], referenced in the KDH-MLTC study,
+clinical medical report
+situation achievedstrongresultsusingDischargeBERTandCORe-
+BERTasteachermodelswithBERT-PKDasthestudent
+model, obtaining AUC scores ranging from 72.36% to
+86.95% across multiple clinical prediction tasks. These
+Figure1: DiagramoftheADMEDVOICEsystem. works demonstrated the viability of specialized clinical
+BERTvariantsasteachersfordistillationinmedicalcon-
+texts.
+multi-labeltextclassification. Surprisingly,despiterecent Cross-lingualtextclassificationhasemergedasacrucial
+advances in LLMs, methods based on in-context learn- techniqueforleveragingresourcesfromhigh-resourcelan-
+ingwithgenerativemodelsdonotgenerallyoutperform guagestoenableclassificationinlow-resourcelanguages.
+fine-tuned smaller language models (SLMs) in classifi- Multipleapproacheshavebeenproposedtoaddressthis
+cationtasks. Evenwithadvancedpromptingtechniques challenge [35, 36, 37, 38, 39, 40]. These works tested
+and ensemble methods, LLMs only marginally outper- manylanguageslikeJapanese,German,French,Chinese
+formencoder-onlySLMsonindividualdatasets,requiring orSpanish.
+ensemble approaches to match or slightly exceed SLM
+TherearenotsomanyworksonPolishlanguageespecially
+performance.
+for the medical domain. Mroczkowski et al. [41] intro-
+Thebiomedicaldomainhasseensubstantialdevelopment duced HerBERT, an efficiently pre-trained transformer-
+ofdomain-specificlanguagemodels[19,20,21,22,23,24, based language model specifically for the Polish. Her-
+25,26]. Leeetal. [19]introducedBioBERT,pre-trained BERT,trainedusingknowledgetransferfrommultilingual
+on PubMed abstracts and PMC full-text articles, which to monolingual models, achieved state-of-the-art results
+achieved state-of-the-art results on biomedical named ontheKLEJ(KompleksowaListaEwaluacjiJe˛zykowych)
+entity recognition, relation extraction, and question an- benchmarkacrossmultipledownstreamtasks. HerBERT’s
+swering. BioBERT’ssuccessdemonstratedthatdomain- architectureusestheBERT-baseconfigurationwithcareful
+specificpre-trainingsignificantlyimprovesperformance consideration of Polish linguistic characteristics, partic-
+onspecializedtaskscomparedtogeneral-domainBERT. ularly its rich inflectional morphology. The model has
+Alsentzeretal. [27]releasedClinicalBERT,specifically becomethefoundationforPolishNLPresearch,though
+trained on clinical notes from the MIMIC-III database. nomedical-domainvarianthasbeendeveloped. TheKLEJ
+Theirworkpresentedmultiplevariants: modelsinitialized (KompleksowaListaEwaluacjiJe˛zykowych)[42]bench-
+fromBERT-baseorBioBERT,andtrainedonallnotesor markprovidesnineevaluationtasksforPolishlanguage
+onlydischargesummaries. Bio+ClinicalBERT(initialized understanding,includingvarioustextclassificationchal-
+fromBioBERTandtrainedonallMIMICnotes)showed lenges. TheWroclawCorpusofConsumerReviewsSen-
+particular promise for clinical NLP tasks, though inter- timent(WCCRS)[43]includesmedicaldomainreviews
+estingly performed worse on de-identification tasks—a
+3
+APREPRINT-JANUARY16,2026
+butfocusesonsentimentanalysisratherthanmedicaltext 3 ADMEDTAGGER
+classification. WhiletheseresourcessupportgeneralPol-
+ish NLP development, specialized medical text corpora Inourwork,weencounteredtheproblemofhavingaccess
+remainlargelyunavailableduetodataprivacyrestrictions toarelativelylargeamountofdatabutlackingsufficient
+andlimitedannotationefforts. labels for the data classes. Labeling this data required
+specialists in the form of physicians from specific med-
+ThemostsignificantworkonPolishmedicaltextclassifi-
+icaldomains. However, theirtimewasseverelylimited,
+cationcomesfromresearchersatGórnos´la˛skieCentrum
+andtheywereunabletolabelasufficientamountofdata.
+Medyczne [44], who analyzed Polish electronic health
+Therefore, we needed a solution that would allow us to
+recordsfordiagnosispredictionincardiovasculardisease
+develop a series of multiclass classifiers with a limited
+patients. Using 50,465 hospitalization records, they ap-
+numberoflabeledsamples.
+pliedtransformerlanguagemodels(RoBERTaandBERT)
+trainedonPolishormultilingualdataformulti-labelICD- In this paper, we present the solution whose diagram is
+10 diagnosis classification. Their models achieved 70% shown in Figure 2. In our approach, we used the physi-
+accuracyusingonlypatientmedicalhistory(average132 cians’limitedtimetolabelonlysmallsubsetsofdatafrom
+words)and78%accuracywhenincorporatingadditional each specialization, then split these into a test set and a
+hospitalizationinformation. Thisworkdemonstratedthat fewcontextualexamples. Thecontextualexampleswere
+state-of-the-art NLP techniques can effectively process subsequentlyinsertedintothepromptofalargelanguage
+Polishclinicaltext,thoughtheabsenceofPolish-specific modeltoenablefew-shotcontextuallearning. TheLLM
+medicallanguagemodelslimitedperformancecompared wasusedastheteachermodelforlabelingtheremaining
+toEnglishmedicalNLPsystems. TheAssistMEDproject dataineachspecialization. Forthistask,weselectedthe
+[45],documentedinPolishArchivesofInternalMedicine, Llama3.1-70B model. Unlike classical pseudo-labeling,
+developed NLP tools for observational clinical research theteachermodeltransfersstructured,domain-specifican-
+dataretrievalfromPolishelectronichealthrecords. Their notation behavior derived from expert-designed clinical
+practicalusecasehighlightedseveralchallenges: limited formsandontologies.
+availabilityofPolishmedicalterminologies,insufficient
+NLPtoolsdesignedexplicitlyforPolishclinicaltext,and
+3.1 TeacherandStudentModels
+disappointingperformanceofgeneral-purposeLLMslike
+ChatGPTonPolishmedicallicensingexaminations. The
+Theknowledgedistillationapproachreliesontheoperation
+projectreliedprimarilyondictionary-basedandrule-based
+oftwomodels: ateachermodelandastudentmodel. In
+approachesratherthandeeplearning,reflectingthescarcity
+our solution, we chose to use a relatively large LLM as
+ofannotatedPolishmedicalcorpora. Zielonkaetal. [46]
+the teacher model—one pretrained on an extensive data
+presents work in which they evaluate LLMs in the task
+corpus that potentially includes not only many natural
+ofcategorizingmedicalinformationintocategoriessuch
+languagesotherthanEnglish,butalsocontentfromvarious
+as medications, diseases, symptoms, or procedures and
+thematicdomains,includingmedicaltexts. Therefore,we
+comparethemwithannotationsmadebymedicalexperts,
+selectedtheLlama3.1-70B-Instructmodel,amultilingual
+demonstratinghighconcordanceoftheGPT-4modelwith
+large model pretrained on a corpus of up to 15 trillion
+expertresponses. Czyz˙ewskietal. [47]presentsworkin
+tokens. Themodelisavailableasopenweightsandcan
+whichabroadcorpusofmedicalspeechrecordingsand
+be used locally. We used the Instruct version, which is
+transcriptionsfromphysiciansisdescribedandmadeavail-
+adaptedforhandlinginstruction-basedprompting.
+able,containingnamesofmedicationsanddiseasesspo-
+kenbyspecialistsfrommanyclinicalfields. Thiscorpus Asthestudentmodel,weselectedthreemodelsfromthe
+containsnearly15hoursofrecordingsfrom28different BERT family. The chosen models were: 1) HerBERT
+speakers,andwasadditionallyexpandedsyntheticallywith (HerBERT-base-cased)-explicitlytrainedonaPolishlan-
+anadditional83hoursofrecordings. Suchacorpusconsti- guagecorpus,2)BioBERT(BioBERT-base-cased-v1.1)-
+tutesapotentialdatasourcethatcanbeusedfortraining trainedonacorpusofEnglishmedicaltexts,and3)Distil-
+languagemodels. BERT(DistilBERT-base-multilingual-cased)-aspecially
+distilledmultilingualmodel. Allofthesemodelscontain
+Severalcriticalgapsemerge: 1)AbsenceofPolishmed-
+nomorethan134millionparameters. Thisselectional-
+icallanguagemodels,2)limitedKnowledgeDistillation
+lowedustoachievepotentiallyverylargecomputational
+fortasksforPolishmedicallanguage,3)scarcityofanno-
+cost reductions, shrinking the model size by more than
+tatedPolishmedicalcorporaand4)cross-lingualtransfer
+500timeswhilenarrowingitsfunctionalitytothetaskof
+potentialunexplored.
+multiclassclassificationofmedicaltexts.
+Inourworkwedemonstratetheframeworkforeffective
+KnowledgeDistillationfortheclassificationofthePolish 3.2 PromptConstruction
+medical texts, gathering a wide corpora of Polish medi-
+caltextsformanyclinicalcategories,exploringpotential The structure of the prompt used for every clinical situ-
+for cross-lingual transfer resulting in developing Polish ation is shown in Figure 3. It shows the example for a
+medicallanguagemodelsforclassificationtasks. radiologysituation,butforeveryotherclinicalsituation
+thestructureremainswithchangesonlytothelistoflabels
+4
+APREPRINT-JANUARY16,2026
+Database of
+me f sod c itr li uic ng aa ii tl cv it oaee l nnxts Un Mst ter eu d xc i tc stu alred T me La o Lc d Mh ee lr Un a ons f u n thp o ee ta r dtv i ai os tn aed Pre ma tn e edn xio tc st aa lted
+Database of
+preannotated
+medical texts
+Training Knowledge Student
+data distilation model
+medical training transformer
+texts based
+Subset of Validation of the
+preannotated annotations Validated Validation
+texts correctness medical on checked
+Group texts data
+of experts
+Figure2: DiagramofthewholeADMEDTAGGERmethodology.
+andIn-contextexamples. Thepromptconsistsof: thisclassimbalanceproblemwasaddressedduringtrain-
+System message: for each specialization, it contains a ingbyassigningweightstoeachclasswhentrainingthe
+brief description indicating which medical specialty the classificationmodel.
+modelshouldassumeandwhatlabels/classesareavailable
+forthatspecialization.
+3.4 Metrics
+In-contextexamples: demonstratinghowthetextshould
+beclassifiedintotherespectiveclassesandwhattheex-
+Wedecidedtoevaluateresultswiththefollowingmetics:
+pectedoutputformatshouldbe.
+F1score-isaharmonicmeanoftheprecisionandrecall,
+Medicaltext: inputtextthatneedstobeclassified.
+where an F1 score reaches its best value at 1 and worst
+scoreat0. Therelativecontributionofprecisionandrecall
+3.3 Datasets totheF1scoreareequal. Wecalculatethismetricforeach
+label,andfindtheirunweightedmean.
+AUROC - Area Under the Receiver Operating Charac-
+Inourwork,weusedmedicaldatasetsinPolish. Aspartof
+teristicCurve(ROCAUC)frompredictionscores. Here
+theproject,wecollectedatotalof143,756medicaltexts
+wealsocalculatethismetricforeachlabel,andfindtheir
+fromfiveclinicalscenarios: Cardiology,Radiology,On-
+unweightedmean.
+cology,Pathomorphology,andHypertensionbutlimited
+Accuracy - accuracy is simply the fraction of correct
+eachcategoryto5000sampleswhichgivesus21,073texts,
+classificationswith95%confidenceinterval.
+becausePathologyandHypertensiondidnotreach5000.
+Asaresult,weobtainedasubstantialsetofrealclinical
+textsrepresentingimportantareasofmedicine. Eachclini-
+calscenariodatasethasaseparatesetoftagsthatdenote
+4 Experiments
+specifictypesofinformationrelevanttodocumentingthe
+courseofthatclinicalcase. Duringtheknowledgedistil-
+lationstage,theteachermodelannotatesentiretextswith OurexperimentsfollowedthepipelineshowninFigure2.
+segmentscorrespondingtoindividualconcepts/tagsfrom First,theteachermodelpre-annotatedtextsforeachclini-
+the forms associated with each clinical scenario. Since calscenario.Fromthisannotatedset,weextractedasubset
+thetaskdesignedforthestudentmodelsismulticlasstext containingrepresentationsofalltagsforthegivenclini-
+classification, the full texts were divided during the dis- calscenario. Thissubsetwasthenvalidatedbymedical
+tillationstageintosegmentsthatcorrespondpreciselyto specialists—physiciansfromtherespectivefields—who
+agiventag/sectionoftheclinicalform. Thedetaileddis- reviewedtheannotationsandintroducedcorrectionswhere
+tributionoftagsinthetrainingandtestsetsisshownin errorsappeared. Thenextstepwastrainingallthreeclassi-
+thechartsinFigure4. Thesechartsclearlyshowthatin fiermodelsforeachclinicalscenario. Finally,eachtrained
+4outofthe5trainingdatasetsthereisapronouncedim- BERTclassifierwasevaluatedonthephysician-validated
+balance in the representation of specific tags. However, testsets.
+5
+APREPRINT-JANUARY16,2026
+You are a Radiologist whose job is to annotate fragments of medical text in
+natural language into the following categories:
+[BIRADS', 'GLANDULAR', 'GLANDULAR_ADIPOSE', 'ADIPOSE',
+'ADIPOSE_GLANDULAR', 'LEFT', 'L_BIRADS', 'BOTH', 'RIGHT',
+'DUCT_NOT_DILATED', 'DUCT_DILATED', 'R_BIRADS', 'NOTES',
+'NODES_NOT_SUSPICIOUS', 'NODES_SUSPICIOUS',
+'RECOMMENDATIONS']
+During the annotation process, remember to only annotate portions of the input
+text and not add any additional content. Please list the annotated texts as
+shown in the examples below:
+selpmaxe
+txetnoc-nI
+txet
+lacideM
+Input text:
+Breasts with a glandular structure. PP - no focal lesions were seen. PL - a small cyst measuring 5x2mm at 10 o'clock. No other focal lesions were
+seen. Milk ducts not dilated. Axillary fossa without lymphadenopathy, several
+reactive lymph nodes up to 5x9mm in the left armpit. BI-RADS 2 findings
+Annotation results:
+LEFT:
+PL - a small cyst measuring 5x2mm at 10 o'clock.
+No other focal lesions were seen.
+RIGHT:
+PP - no focal lesions were seen.
+No other focal lesions were seen.
+DUCT_NOT_DILATED:
+Milk ducts not dilated.
+NODES_NOT_SUSPICIOUS:
+Axillary fossa without lymphadenopathy, several reactive lymph nodes up to
+5x9mm in the left armpit.
+L_BIRADS:
+BI-RADS 2
+P_BIRADS:
+BI-RADS 2
+GLANDULAR:
+Breasts with rich glandular structure.
+Both breasts have a glandular-adipose structure with glandular tissue in the
+lateral and anterior regions. PL - a single simple cyst measuring approximately
+5x4mm at the 3 o'clock position. PP - several scattered small simple cysts
+measuring up to 5mm in diameter. No clear signs of infiltration were seen on
+ultrasound of either breast. The milk ducts were not dilated. The contours of the
+chest were smooth. The axillae were clear. BIRADS-2. Photographic
+documentation was provided - 2 photos. If the clinical picture is stable, I suggest
+a follow-up ultrasound in 8-12 months.
+egassem
+metsyS
+TrainingofclassifierswasconductedonasingleNVIDIA
+L40 GPU with batch_size=512, grad_acc_steps=1,
+Input Prompt for Radiology Clinical Type
+learning_rate=1e-6andnum_epochs=100.
+5 Evaluationresults
+Text
+ModelPerformanceAcrossClinicalDomains:
+InTable1wecanseetheresultsofDistilBERT,BioBERT,
+andHerBERTmodelsacrossfiveclinicaldomains,with
+Text DistilBERTconsistentlyoutperformingtheothermodelsin
+eachsettings. DistilBERTachievesthehighestF1scores,
+AUROCvaluesandaccuracieswithconfidenceintervals
+indicating stable and reliable performance. In these do-
+mains,BioBERTandHerBERThavewlowerresultsthan
+DistilBERT,withBioBERTexhibitingtheweakestresults
+overall. HerBERTperformsmoderately,consistentlysur-
+passingBioBERTyetremainingbelowDistilBERTonall
+reportedmetrics.
+InCardiology,DistilBERTshowsstrongperformance(F1
+score=0.97,AUROC=0.98,Accuracy=0.98),outper-
+forming both BioBERT and HerBERT. Similar patterns
+areobservedinHypertensionandRadiology,whereDis-
+tilBERT has higher F1 scores and narrower confidence
+intervals,suggestingrobustgeneralization. InPathology,
+thegapbetweenDistilBERTandtheothermodelsremains
+substantial,withDistilBERTachievinganF1scoreof0.93
+comparedto0.83–0.88forBioBERTandHerBERT.The
+Oncologydomainrepresentsanexception-allthreemod-
+elsachievenear-perfectclassificationperformance(F1≈
+0.99;AUROC≈1.00;Accuracy≈0.99). Thenearlyiden-
+ticalmetricsandoverlappingconfidenceintervalsindicate
+thatthemodelsbehaveequivalentlyinthisdomain.
+Overall, these results demonstrate that DistilBERT pro-
+Figure3: PromptconstructionfortheRadiologyClinical
+vides the most reliable and accurate performance in all
+Type.
+clinicaldomains,whileBioBERTunderperformsconsis-
+tently. TheresultsinOncologysuggeststhepresenceofan
+easierclassificationlandscapeorhighlydistinctiveclass
+4.1 ExperimentalSettings boundaries,leadingallmodelstoconvergetowardsimilar
+near-optimaldecisions.
+Allexperimentswereconductedonacomputingserverpur- Additionally, Figure5showstheconfusionmatricesob-
+chasedaspartoftheADMEDVOICEproject–Adaptive tained for the best-performing model - DistilBERT, for
+IntelligentSpeechProcessingSystemforMedicalPerson- eachclinicalscenario.
+nelwiththeStructuringofTestResultsandSupportofthe Interpretationof95%ConfidenceIntervals:
+Therapeutic Process, using 4 NVIDIA L40 GPUs, each The 95% confidence intervals for accuracy, reported in
+with48GBofVRAM,andanAMDEPYC75F332-Core the Table 1, provide important insight into the reliabil-
+Processor. The LLama3.1-70B-Instruct model required ityandstabilityofthemodels’performanceacrossclin-
+140GB of free disk space and the size of trained BERT ical domains. In all domains except Oncology, Distil-
+modelswas4.6GBpermodel,whichresultsin69GBof BERT not only achieves the highest point estimates of
+free disk space. All scripts were executed with Python accuracybutalsoshowsconsistentlynarrowconfidence
+3.10. The pretrained LLM and BERT weights were uti- intervals,indicatinglowvariabilityandhighcertaintyin
+lized through Hugging Face’s transformers library (ver- its performance. For example, in Cardiology the inter-
+sion4.33.1)andaccelerate(version0.33.0),withCUDA valspansonlyapproximately±0.006fromtheestimated
+12.1. ThemodelswereloadedusingtheAutoModelFor- accuracy(0.9730–0.9848),whereasthecorrespondingin-
+CausalLM,AutoModelForSequenceClassificationandAu- tervalsforBioBERTandHerBERTarewider. Thispattern
+toTokenizerclasseswiththeoptionsdevice_map="auto" suggeststhatDistilBERTnotonlyperformsbetteronav-
+andtorch_dtype=torch.bfloat16,enablingmulti-GPUinfer- eragebutdoessowithgreaterconsistencyacrosssamples.
+enceandreducedGPUmemoryusageforLLamamodel. A similar trend is observed in Hypertension, Radiology,
+6
+APREPRINT-JANUARY16,2026
+RADIOLOGY labels distribution HYPERTENSION labels distribution ONCOLOGY labels distribution
+RIL GE HFT T 394 782 1 14 47 78 8 OTHER_RECOMMENDATIONS 278 447 CONCLUSIONS 3852 19257
+NOD G AE DR L NDS AE
+IO
+PU_ NC N ODCO DO ST EM U _ EST L NM ___ A
+G
+GSS OE R UU
+L
+LTN R_
+A
+AL SS _D A D_
+_
+N
+NPPB BBDA I II
+D
+DN L CCI IIT IB R
+RR
+U
+UPO AI IIO OOO A AAO T
+L
+LTN D
+DD
+A
+AUUT ESEH D
+R
+RSSS S SSS E
+34 6819 11
+9111
+9
+01 111
+1 34
+46 587
+7
+6222 02 1 144 5393 9333 4 4778 94 1255 4 5 68 86585 1184 MEDICATION_REA M CD E OPD DH MI IT Y C MI SO A
+E
+DI LN C
+N
+I_A A ADHL L GAI_ _ S NTE E T
+I
+OX X OO SA A NR IM M Y
+S
+S 42 129
+12 92 20 21 132 2 5 542 405 47 329 ABDOMHE EA ND _A_A NN DD _O
+P
+C_ EN T HLHE EVC E SIK R
+S
+T
+3333 6688 8801 0400 111 881 8 349 9 910 9 484 36
+DUCT_ AD DIL IPA OTE SD E 23 56 17 51 T Tera si tn OTHER 7 110 T Tera si tn LYMPH_NODES 17 87 84 T Tera si tn
+CARDIOLOGY labels distribution PATHOLOGY labels distribution
+CONCLUSION 372 909 CROSS_SECTION_DESC 63 625
+VALVES 358 606 MATERIAL_DIMENSIONS 56 586
+CORONC AA RR YD _AIA RC TE_C
+R
+GTH
+I
+EREA NESM
+EA_A
+RB
+TO
+AME LR
+PR
+E
+_AS
+T
+N
+SA
+T_
+T
+TF
+H_
+_
+RIU
+ORS
+UN
+ET
+L
+CC
+OSH
+TT
+U
+GM
+UI
+L
+IO
+U
+RETN
+S
+SS E 12 16 62 02 022 882 68
+6933 355 64 27 711
+ADDITIONAS LE
+_M
+C
+MA
+T
+AT
+I
+TOE ENR R_I IA
+L
+CAM
+OL OL_
+CA
+_
+MDT
+A
+DE
+PE
+T
+IS
+M
+LR
+IOC
+M
+II
+E
+CA
+NR
+NA
+AL
+I
+_ R
+SP
+T_ NT
+I
+IGT
+A O
+OY
+I IO
+M N
+NNP
+N
+S
+SSEE
+2
+23444
+5
+51015
+11 61 7 49 65238
+382461
+TECHNICAL_INFORMATION 92 126 MARKING 23 122
+PULMONARY_ARTERY 50 96 T Tera si tn INKING 18 113 T Tera si tn
+Figure4: Datasets’labelsdistributionforeachclinicalcategory.
+andPathology,whereDistilBERTmaintainsnarrowerin- In Cardiology, Radiology, Hypertension and Pathology,
+tervals compared to both BioBERT and HerBERT. The model predictions differed across samples, resulting in
+comparativelybroaderintervalsforBioBERT,particularly large n_effective values (20–529). Consequently, the
+in domains where its performance is weak (e.g., Hyper- Wilcoxon test yielded highly significant differences be-
+tension: 0.4892–0.5413),indicategreatervariabilityand tweenallmodelpairs(p-valuesfrom10e-8to10e-79),in-
+lower confidence in the stability of the model’s predic- dicatingrobustandsystematicperformancedifferencesin
+tions. HerBERTtypicallyfallsbetweentwoothermodels- thesedomains. Incontrast,theOncologydataset—despite
+ismorestablethanBioBERTbutstillshowswiderinter- being the largest in absolute size - produced very small
+valsthanDistilBERT.TheOncologydomainagainisan effectivesamplesizes(n_effective=2–5). Thisindicates
+exception. All threemodels achieve nearly identical ac- that the models made almost identical correct/incorrect
+curacieswithextremelynarrowconfidenceintervals(e.g., decisionsonnearlyallOncologysamples. Asaresult,the
+0.9922–0.9946), reflectingveryhighconsistencyinpre- Wilcoxontesthasverylimitedpowerinthisdomain,with
+dictions. Thistightclusteringofintervalsreinforcesthe onlytheBioBERTvs. HerBERTcomparisonreachingsig-
+conclusionthatOncologyconstitutesacomparativelyeasy nificance(p=0.02). Theremainingnon-significantresults
+classificationscenarioinwhichmodelperformanceisboth shouldthereforebeinterpretednotasevidenceofequal
+uniformlyhighandhighlystable. performance,butasaconsequenceoftheextremelysmall
+numberofdisagreementcasesbetweenmodels.
+Takentogether,theconfidenceintervalanalysisstrength-
+enstheconclusionsdrawnfromthepointestimates: Distil- Overall, the statistical analysis reveals that meaningful
+BERTdeliversnotonlysuperioraccuracybutdoessowith modeldifferencesemergeclearlyindomainswheremod-
+greaterstatisticalcertaintyacrossmostclinicaldomains. elsdisagreeonasubstantialproportionofsamples. Indo-
+Thewidthoftheintervalscomplementsthehypothesisthat mainswherepredictionsarenearlyidentical,asobserved
+BioBERT’slowerperformanceisaccompaniedbygreater inOncology,theWilcoxontestlacksthesensitivitytode-
+instability,whileHerBERTremainscompetitiveyetconsis- tectdifferences,evenwhenthedatasetitselfislarge.
+tentlylessrobustthanDistilBERT.Theuniformlynarrow Impact of Knowledge Distillation on Computational
+intervalsinOncologyconfirmthedomain’sdistinctnature, Efficiency:
+inwhichallmodelsconvergetowardhighlyreliable,near- In Table 3, we observe measurements for each of the 3
+optimalclassificationoutcomes. classifiermodelsandtheteachermodel(Llama3.1)regard-
+Modelscomparisonwithnon-parametrictests: ingGPUVRAMmemoryconsumptionandinferencetime
+PairwiseWilcoxonsigned-ranktestswereappliedtocom- forthesameinputtext,whichwasdividedintoalllabels
+pare model performance across clinical domains. The (text field types) recognized within it. These measure-
+resultsfromtheTable2showsubstantialvariationinthe mentswereperformedforeachofthe5clinicalsituations.
+adequatesamplesizeusedbythetest(n_effective),which Themeasurementresultsshowedenormousdifferencesin
+reflectsnotthenumberofavailablesamplesbutthenumber bothVRAMconsumptionandinferencetimebetweenthe
+ofinstanceswheretwomodelsproducedifferentcorrect- Llama3.1modelandallBERTmodels. Inthecaseofthe
+nessoutcomes. Thisdistinctionisessentialforinterpreting Llama3.1model,thedemandforVRAMmemoryduring
+theOncologyresults. inferencewasveryhighandrangedbetween130and150
+7
+APREPRINT-JANUARY16,2026
+GB.Meanwhile,forBERTmodels,thisconsumptiondid DistilBERT,amodelthathasalreadyundergonegeneral
+not exceed 0.55 GB, and was the highest for the Distil- knowledgedistillation,2)BioBERT,amodelfine-tuned
+BERTmodels. Thisresultsinapproximatelya300-fold on medical data in English, and 3) HerBERT, a model
+differenceinVRAMconsumptionforclassifyingthesame fine-tuned on Polish language data. Our results showed
+text.SimilarlyunfavorabledifferencesinfavoroftheLLM theDistilBERTmodel’sunquestionableadvantageinas-
+occurinthecaseofinferencetime,althoughtheLlama3.1 similatingknowledgedistilledbytheLlama3.1LLMfor
+results are more varied here - the fastest inference took Polishmedicaltextclassification. Itappearsthatthecause
+place for Pathology - just under 25 seconds, while the ofthesedifferencesmaybethepretrainingstageofeach
+longestwasinthecaseofOncology,lastingover113sec- ofthesemodelsandthelanguagecorpuswasusedforthis
+onds. ForBERTmodels,inferencetimewasconsistently purpose. TheDistilBERTmodelismultilingual,trainedon
+lowandrarelyexceeded0.01seconds. Theexceptionhere aWikipediacorpuscontainingasmanyas104languages,
+wastheinferenceoftheDistilBERTmodelforCardiology. includingPolish. ThePolishlanguagecorpusisadump
+ofWikipediaarticles,andtherefore,itundoubtedlyalso
+These measurements demonstrate a clear advantage of
+includesacollectionofmedicaltexts.Thus,duringthepre-
+BERT models over large language models such as
+trainingphase,themodelwasexposedtomedicaldatain
+Llama3.1-70B.
+Polish. TheHerBERTmodelwaspretrainedonPolishlan-
+guagedata,butdevoidofanymedicaltexts,whichresulted
+5.1 Commonerrors in its weaker performance compared to the DistilBERT
+model. TheBioBERTmodeltypicallyachievestheworst
+TheDistilBERTmodel,despitebeingourbestperformer,
+resultsofthethree,becauseitisanEnglish-centricmodel,
+showsitshighesterrorrateintheHypertensioncategory,
+pretrainedonmedicaldata,butonlyinEnglish,whichmay
+where it achieves an F1 score of 0.81. From the Figure
+havecreatedsignificantbarriersinlearningPolishmedical
+5,weseethatthemodelstrugglesmostwiththeOTHER
+texts. Inthisway,weobtainedamodelthatcontainsover
+labelinthiscategory,achievingonly48%accuracy,mainly
+500 times fewer parameters, which translates to nearly
+confusingitwithADDITIONAL_EXAMlabelin30%of
+300timeslowerGPUVRAMrequirementsandtakeson
+cases. Whiletheexactcauseisn’tclear,thismightstem
+averageseveralhundredtimeslesstimeforinferencethan
+fromanimbalanceinthetrainingdatathatfavorsADDI-
+the Llama3.1 teacher model, while achieving very high
+TIONAL_EXAM.Themodelalsounderperformsonthe
+classification efficiency measures by F1 score, AUROC
+DIAGNOSISlabel,with81%accuracy,frequentlyconfus-
+andAccuracy.
+ingitwithMEDICAL_HISTORYlabelin13%ofcases.
+Thisparticularconfusionisunderstandable-bothlabels The inference parameters of the distilled classifiers we
+canlegitimatelyapplytocertaintextfragments,andinthis achieved,suchasexecutiontime<=0.01s,GPUVRAM
+casethedecisionwasmadebyateamofexperts,doctors consumption<=0.55GB,aswellastheireffectiveness,
+specializinginthegivenfield. Theclinicalcategorywith allow for the real implementation of our proposed sys-
+thesecondlowestF1scoreisRadiology. Here,theDistil- teminmedicalfacilities,forexample,fortasksinvolving
+BERTmodelmadethemostmistakesfortheL_BIRADS fillinginelectronichealthrecords(EHR).Theshortinfer-
+(left)andR_BIRADS(right)labels,achievingonly38% ence time ensures the possibility of real-time operation,
+and56%accuracyrespectively. Bothlabelsareconfused while the low computational requirements allow for in-
+witheachotherandwiththeBIRADS(both)label. An- ferenceonnon-specializedcomputerhardwareequipped
+othercommonmistakesoccurwithRIGHT(breast)label withonlyaCPUinsteadofaGPU.Additionally,BERT
+andDUCT_DILATED.Thelastclinicalcategorywhich modelstrainedforclassificationtasksguaranteerepeata-
+showssomesignificantlabelingerrorsisPathology,where bilityandstabilityofresults. Oursolutionisanalternative
+DistilBERTmodelhassomeproblemswithMARGINS tousinganLLMmodelasanexternalservice,ensuring
+and MARKING labels, having 78% and 80% accuracy "in-house"operation,solvingtheproblemofdatatransfer
+respectively. ThelabelMARGINShasbeenmistakenwith to external services, which allows for compliance with
+labelCOMPLICATIONSin11%ofcases. Fromtheanal- regulationsrelatedtopersonal/patientdataprotectionsuch
+ysisofthetestinputdatawecanseethatonceagainthese asthePolishGeneralDataProtectionRegulation(GDPR).
+twolabelswillfitthetextbutthedoctorschoosethelabel Theframeworkweproposedalsoreducescostsresulting
+MARGINSinsteadofMARKING. from payments associated with each use of such an ex-
+ternal LLM service for every inference, which radically
+reducestheoperatingcostsofthesystematlargescale.
+6 Conclusions
+Ofcourse,inoursolutionthereisariskofbiaspropagation
+fromtheteachermodels,thedependenceofqualityonthe
+Inourwork,wepresentedoneofthefirstknowledgedis-
+fitofthepromptusedbytheteacher,aswellastheneed
+tillationframeworksformedicaltextclassificationtasks
+forperiodicexpertvalidationofthedistilledlabels.
+in Polish under limited data labeling capabilities. Our
+method was tested across a wide range of medical do- We show that a pre-trained multilingual large language
+mains,utilizingdatafromasmanyas5differentfields- modellikeLlama3.1caneffectivelydistillspecializedex-
+hypertension,cardiology,pathology,oncology,andradi- pertknowledgefromaspecificdomainlikethemedical
+ology. We tested 3 different types of BERT models: 1)
+8
+APREPRINT-JANUARY16,2026
+DistilBERT BioBERT HerBERT
+ClinicalType F1score AUROC Accuracy 95%CI F1score AUROC Accuracy 95%CI F1score AUROC Accuracy 95%CI
+Cardiology 0.97 0.98 0.98 (0.9730–0.9848) 0.75 0.90 0.85 (0.8358–0.8654) 0.85 0.92 0.90 (0.8908–0.9153)
+Hypertension 0.81 0.90 0.82 (0.8040–0.8437) 0.49 0.78 0.52 (0.4892–0.5413) 0.53 0.79 0.56 (0.5375–0.5892)
+Radiology 0.87 0.93 0.90 (0.8890–0.9088) 0.75 0.87 0.78 (0.7625–0.7899) 0.79 0.88 0.82 (0.8062–0.8314)
+Pathology 0.93 0.97 0.94 (0.9109–0.9601) 0.83 0.91 0.85 0.8100–0.8830) 0.88 0.94 0.89 (0.8550–0.9189)
+Oncology 0.99 1.00 0.99 (0.9922–0.9945) 0.99 1.00 0.99 (0.9920–0.9943) 0.99 1.00 0.99 (0.9923–0.9946)
+Table1: ClassificationmetricsofthetrainedBERTmodelsonthedatalabeledbyLLM
+GENERAL_STRUCTURE
+TECHNICAL_INFORMATION
+PATHOLOGIES
+PULMONARY_ARTERY
+CORONARY_ARTERIES_AORTA_ISTHMUS
+CARDIAC_CHAMBERS_FUNCTION
+CONCLUSION
+TREATMENT_RESULTS
+VALVES
+GENERA TL E_ CS HT NR IU CC AT L_U IR NE FORM CAT OI RO PA ON T NH P AO U RL L Y_O M AG OI RNE TAS ER RI CY E A_ S RA _R DIAT AOE CRR _TY CA_ HI AST MH BEM RU SS _FUNCTIO CN O TN RC EL AU TSI MO EN NT_RESULTS VALVES
+Predicted labels
+slebal
+TG
+Cardiology 1.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 ADDITIONAL_EXAM
+0.00 1.00 0.00 0.00 0.00 0.00 0.00 0.00 0.00 PHYSICAL_EXAM
+0.00 0.00 0.95 0.02 0.00 0.00 0.00 0.02 0.01
+0.00 0.00 0.00 0.94 0.00 0.00 0.00 0.00 0.06 OTHER
+0.00 0.00 0.00 0.00 0.99 0.00 0.00 0.00 0.01 DIAGNOSIS
+0.01 0.00 0.00 0.00 0.00 0.99 0.00 0.00 0.00 MEDICAL_HISTORY
+0.01 0.01 0.01 0.00 0.00 0.00 0.97 0.01 0.00
+OTHER_RECOMMENDATIONS 0.00 0.01 0.01 0.02 0.00 0.01 0.03 0.93 0.00
+0.00 0.00 0.00 0.01 0.00 0.00 0.00 0.00 0.99 MEDICATION_RECOMMENDATIONS
+ADDITIONAL_EXA PM HYSICAL_EXAM OTHER DIAGNO MS EIS DI OC TA HL E_ RHI _S RT ME EO C DR O IY CM AM TIE ON ND _A RTI EO CN OS MMENDATIONS
+Predicted labels
+slebal
+TG
+Hypertension BIRADS 0.92 0.04 0.00 0.04 0.01 0.00 0.00 GLANDULAR
+GLANDULAR_ADIPOSE 0.00 0.87 0.01 0.12 0.00 0.00 0.00 ADIPOSE
+ADIPOSE_GLANDULAR
+0.30 0.07 0.48 0.00 0.04 0.09 0.02 LEFT L_BIRADS
+0.00 0.06 0.00 0.81 0.13 0.00 0.00 RB IO GHTH T
+DUCT_NOT_DILATED 0.00 0.00 0.00 0.04 0.96 0.00 0.00 DUCT_DILATED
+R_BIRADS
+0.07 0.06 0.00 0.00 0.01 0.85 0.00 NOTES NODES_NOT_SUSPICIOUS
+0.00 0.00 0.00 0.10 0.02 0.00 0.89 NODES_SUSPICIOUS RECOMMENDATIONS
+GLB AI G NR LA DA UD N LS D AU RL _ AA A DIR DI PP OO SS A EE _DI GP LO AS NE DULAR LE L_FT BIRAD DS UB CO TT _H NR OI TG _H DDIT UL CA TT _E DID L NA OT R DE _ ED B SI _R NA OD TS N_N OSO DUT ESE P S RIS _ EC SI CUO OSU MPIS MCI EO NU DS ATIONS
+Predicted labels
+slebal
+TG
+Radiology 0.970.000.000.000.000.000.030.000.000.000.000.000.000.000.000.00 0.000.980.020.000.000.000.000.000.000.000.000.000.000.000.000.00
+0.000.000.990.000.010.000.000.000.000.000.000.000.000.000.000.00 0.000.000.001.000.000.000.000.000.000.000.000.000.000.000.000.00
+0.000.000.000.020.980.000.000.000.000.000.000.000.000.000.000.00
+0.000.000.000.000.000.940.000.020.010.010.010.000.010.000.000.00 0.320.000.000.000.000.000.350.000.000.000.000.330.000.000.000.00
+0.000.000.000.000.000.000.000.990.000.000.000.000.000.000.000.00 0.000.000.000.000.000.170.000.020.790.000.000.000.010.000.000.00
+0.000.000.000.000.000.000.000.020.000.970.010.000.000.000.000.00 0.000.000.000.000.000.050.000.030.000.110.810.000.000.000.000.00
+0.200.000.000.000.000.000.240.000.000.000.000.560.000.000.000.00
+0.000.000.000.000.000.010.000.030.000.000.000.000.910.000.010.04 0.000.000.000.000.000.000.000.000.000.000.000.000.001.000.000.00
+0.000.000.000.000.000.000.000.000.000.000.000.000.000.050.950.00 0.000.000.000.000.000.000.000.000.000.000.000.000.000.000.000.99
+COMPLICATIONS
+MARGINS
+ADDITIONAL_MATERIAL_DIMENSIONS
+MATERIAL_DESCRIPTION
+MATERIAL_TYPE
+MATERIAL_DIMENSIONS
+SECTION_LOCATION_NAME
+CROSS_SECTION_DESC
+INKING
+MARKING
+AC DO DIM TP ILI OC NA AT LI _O MN AS TEM RIA AR LG _I MADN I TS EME RIN AS LI _O DN ES SCRIP MTI A MTO AEN TRI EA RIL S_ A ELT C_Y TP D IIE OM NE _N LSI OCO CAN T RS I OO SN S_ _N SA ECM TE ION_DESC INKING MARKING
+Predicted labels
+slebal
+TG
+Pathology
+0.98 0.00 0.00 0.00 0.00 0.00 0.00 0.02 0.00 0.00 HEAD_AND_NECK
+0.11 0.78 0.00 0.00 0.06 0.00 0.00 0.06 0.00 0.00
+0.00 0.00 0.87 0.04 0.00 0.04 0.00 0.04 0.00 0.00 OTHER
+0.02 0.00 0.00 0.96 0.02 0.00 0.00 0.00 0.00 0.00
+0.00 0.00 0.00 0.03 0.97 0.00 0.00 0.00 0.00 0.00 ABDOMEN_AND_PELVIS
+0.02 0.00 0.00 0.00 0.00 0.98 0.00 0.00 0.00 0.00 CHEST
+0.00 0.00 0.00 0.02 0.00 0.00 0.98 0.00 0.00 0.00
+0.00 0.00 0.03 0.03 0.00 0.00 0.00 0.95 0.00 0.00 CONCLUSIONS
+0.00 0.00 0.00 0.00 0.08 0.00 0.00 0.00 0.92 0.00
+0.00 0.00 0.04 0.04 0.04 0.00 0.00 0.04 0.04 0.80 LYMPH_NODES
+HEAD_AND_NECK O AT BH DE OR MEN_AND_PELVIS CHEST CONCLUSIONS LYMPH_NODES
+Predicted labels
+slebal
+TG
+1.0 1.0
+0.8 0.8 0.8
+0.6 0.6 0.6
+0.4 0.4 0.4
+0.2 0.2 0.2
+0.0 0.0 0.0
+Oncology 1.0
+1.00 0.00 0.00 0.00 0.00 0.00
+0.8 0.8
+0.00 1.00 0.00 0.00 0.00 0.00
+0.6 0.01 0.00 0.99 0.00 0.00 0.00 0.6
+0.4 0.02 0.00 0.00 0.98 0.00 0.00 0.4
+0.00 0.00 0.00 0.00 1.00 0.00
+0.2 0.2
+0.00 0.00 0.00 0.00 0.00 1.00
+0.0 0.0
+Figure5: DistilBERT’sconfusionmatricesforeachclinicalcategory.
+9
+APREPRINT-JANUARY16,2026
+domain. WeshowthatamultilingualLLMlikeLlama3.1
+canbeefficientlyapplyforknowledgedistillationinPolish
+language. FinallyweshowthatBERTmodels,especially
+DistilBERT,successfullylearnamulticlassclassification
+Model_1 Model_2 stat p_value n_effective tasksolelyfromdatawithdistilledlabels.
+Cardiology
+Acknowledgment
+BioBERT DistilBERT 480.0 3.43e-39 191
+BioBERT HerBERT 4065.5 2.72e-09 172
+DistilBERT HerBERT 768.0 6.25e-20 127 The Polish National Centre for Research and Develop-
+Oncology ment (NCBR) supported this research in the project:
+BioBERT DistilBERT 3.0 0.17 5 “ADMEDVOICE-Adaptiveintelligentspeechprocessing
+BioBERT HerBERT 0.0000 0.02 5 systemofmedicalpersonnelwiththestructuringoftest
+DistilBERT HerBERT 0.0 0.15 2 results and support of therapeutic process,” no. INFOS-
+Pathology TRATEG4/0003/2022.
+BioBERT DistilBERT 18.5 1.45e-08 36
+BioBERT HerBERT 246.0 0.01 40 References
+DistilBERT HerBERT 10.5 5.69e-05 20
+Radiology
+[1] GeoffreyHinton,OriolVinyals,andJeffDean. Dis-
+BioBERT DistilBERT 15635.0 2.03e-71 529 tilling the knowledge in a neural network. arXiv
+BioBERT HerBERT 42644.5 4.63e-11 492 preprintarXiv:1503.02531,2015.
+DistilBERT HerBERT 10830.0 3.39e-42 379
+[2] Amir M Mansourian et al. A comprehensive
+Hypertension
+survey on knowledge distillation. arXiv preprint
+BioBERT DistilBERT 1985.0 1.26e-79 396 arXiv:2503.12067,2025.
+BioBERT HerBERT 8977.5 8.99e-54 398
+DistilBERT HerBERT 2866.5 1.82e-08 146 [3] N Moslemi et al. A survey on knowledge distilla-
+Table 2: Pairwise Wilcoxon signed-rank test results for tion: Recentadvancements. ScienceDirect,Novem-
+modelaccuraciesacrossallclinicaltypes. ber2024.
+[4] ACMTransactionsTeam. Surveyonknowledgedis-
+tillationforlargelanguagemodels: Methods,evalua-
+tion,andapplication. ACMTransactionsonIntelli-
+gentSystemsandTechnology,2024.
+[5] Xiaohui Zhang, Wei Li, Jian Wang, et al. Coun-
+terclockwiseblock-by-blockknowledgedistillation
+forneuralnetworkcompression. ScientificReports,
+15(1):91152,2025.
+[6] MinaHemmatian,AliShahzadi,andSaeedMozaf-
+VRAMUsage[GB] fari. Uncertainty-based knowledge distillation
+ClinicalType Llama3.1 DistilBERT BioBERT HerBERT for bayesian deep neural network compression.
+International Journal of Approximate Reasoning,
+Cardiology 141.84 0.52 0.43 0.48
+173:109289,2024.
+Hypertension 159.59 0.52 0.43 0.48
+Radiology 141.71 0.55 0.46 0.50 [7] DavidEHernandez,TorbjörnNordling,etal. Knowl-
+Pathology 138.77 0.52 0.42 0.48
+edge distillation: Enhancing neural network com-
+Oncology 136.53 0.55 0.46 0.50
+pression with integrated gradients. arXiv preprint
+Inferencetime[s]
+arXiv:2503.13008,2025.
+ClinicalType Llama3.1 DistilBERT BioBERT HerBERT
+[8] Jianping Gou, Baosheng Yu, Stephen J Maybank,
+Cardiology 68.57 0.17 0.01 0.01
+andDachengTao. Knowledgedistillation: Asurvey.
+Hypertension 106.89 0.01 0.01 0.01
+Radiology 66.44 0.01 0.01 0.01 InternationalJournalofComputerVision,129:1789–
+Pathology 24.76 0.01 0.01 0.01 1819,2021.
+Oncology 113.30 0.01 0.01 0.01
+[9] Xiaohan Xu, Ming Li, Chongyang Tao, Tao Shen,
+Table 3: VRAM Usage and Inference time comparison
+ReynoldCheng,JinyangLi,CanXu,DachengTao,
+betweenTeacherLLMandstudentsBERTmodelsacross
+and Tianyi Zhou. A survey on knowledge distil-
+Clinicaldomains.
+lation of large language models. arXiv preprint
+arXiv:2402.13116,2024.
+[10] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+KristinaToutanova. Bert: Pre-trainingofdeepbidi-
+rectional transformers for language understanding.
+10
+APREPRINT-JANUARY16,2026
+In Proceedings of NAACL-HLT, pages 4171–4186, recordsfordiseaseprediction. npjDigitalMedicine,
+2019. 4(1):1–13,2021.
+[11] MFieldsetal. Asurveyoftextclassificationwith [24] ClinRaGenResearchTeam. Knowledge-augmented
+transformers:Howwide? howlarge?howlong?how multimodalclinicalrationalegenerationfordisease
+accurate? howexpensive? howsafe? IEEEAccess, diagnosiswithsmalllanguagemodels.arXivpreprint
+2024. arXiv:2411.07611,2025.
+[12] KarimGasmi. Improvingbert-basedmodelformed- [25] EunkyungKim,KaiHuang,YuXing,XiaoqianJiang,
+ical text classification with an optimization algo- et al. Attention mechanism with bert for content
+rithm.InAdvancesinComputationalCollectiveIntel- annotationandcategorizationofpregnancy-related
+ligence.ICCCI2022.CommunicationsinComputer questions on a community q&a site. In AMIA An-
+andInformationScience,volume1653,Cham,2022. nualSymposiumProceedings,volume2020,pages
+Springer. 625–634.AmericanMedicalInformaticsAssociation,
+2021.
+[13] S Patel et al. Survey of transformers and towards
+ensemblelearningusingtransformersfornaturallan- [26] Luca Putelli, Alfonso E Gerevini, Alberto Lavelli,
+guageprocessing. PMC,2024. TahirMehmood,andIvanSerina. Onthebehaviour
+of bert’s attention for the classification of medical
+[14] HusseinTAl-Natshehetal. Rethinkingofbertsen-
+reports. CEURWorkshopProceedings,3277,2022.
+tenceembeddingfortextclassification. NeuralCom-
+[27] EmilyAlsentzer,JohnMurphy,WilliamBoag,Wei-
+putingandApplications,August2024.
+HungWeng,DiJin,TristanNaumann,andMatthew
+[15] ChiSun,XipengQiu,YigeXu,andXuanjingHuang. McDermott. Publiclyavailableclinicalbertembed-
+Howtofine-tunebertfortextclassification? arXiv dings. In Proceedings of the 2nd Clinical Natural
+preprintarXiv:1905.05583,2019. LanguageProcessingWorkshop,pages72–78.ACL,
+[16] YuxinLi, WeiZhang, HaoWang, etal. Short-text 2019.
+sentimentclassificationmodelbasedonbertanddual- [28] GWangetal. Comparisonofbertimplementations
+streamtransformergatedattentionmechanism. Elec- fornaturallanguageprocessingofnarrativemedical
+tronics,14(19):3904,2025. documents. ScienceDirect,2020.
+[17] ImadElMaaroufi,YoussefMellah,KarimElKharki, [29] EthanTanneretal. Largelanguagemodelinfluence
+et al. Lnlf-bert: Transformer for long document ondiagnosticreasoning: Arandomizedclinicaltrial.
+classification with multiple attention levels. IEEE JAMANetworkOpen,7(10),2024.
+Access,2024.
+[30] Karan Singhal, Shekoofeh Azizi, Tao Tu, S Sara
+[18] JJiangetal. Arewereallymakingmuchprogress Mahdavi, Jason Wei, Hyung Won Chung, Nathan
+intextclassification? acomparativereview. arXiv Scales,AjayTanwani,HeatherCole-Lewis,Stephen
+preprintarXiv:2204.03954,2025. Pfohl,etal. Largelanguagemodelsencodeclinical
+knowledge. Nature,620(7972):172–180,2023.
+[19] Jinhyuk Lee, Wonjin Yoon, Sungdong Kim,
+Donghyeon Kim, Sunkyu Kim, Chan Ho So, and [31] ShuangWang,ZhenyuZhao,XiOuyang,QianWang,
+Jaewoo Kang. Biobert: A pre-trained biomedical andDinggangShen. Largelanguagemodelsfordis-
+language representation model for biomedical text easediagnosis: ascopingreview. npjArtificialIntel-
+mining. Bioinformatics,36(4):1234–1240,2020. ligence,1(1):11,2025.
+[20] Omid Rohanian, Mohammadmahdi Nouriborji, [32] ShuoLiu,YanglinPan,KejiaWang,XiaodongJia,
+Hannah Jauncey, Samaneh Kouchaki, Farhad etal.Applicationoflargelanguagemodelsindisease
+Nooralahzadeh, Lei Clifton, Laura Merson, and diagnosisandtreatment. ChineseMedicalJournal,
+DavidAClifton. Lightweighttransformersforclini- 2025.
+calnaturallanguageprocessing. NaturalLanguage [33] HajarSakaiandSarahSLam. Kdh-mltc:Knowledge
+Engineering,pages1–28,2023. distillationforhealthcaremulti-labeltextclassifica-
+[21] Kexin Huang, Jaan Altosaar, and Rajesh Ran- tion. arXivpreprintarXiv:2505.07162,2025.
+ganath. Clinicalbert: Modeling clinical notes and [34] MHasanetal. Medicalpredictionusingdischarge-
+predicting hospital readmission. arXiv preprint bertandcorebert. ReferencedinKDH-MLTC,2025.
+arXiv:1904.05342,2020.
+[35] GiannisKaramanolakis,DanielHsu,andLuisGra-
+[22] YifanPeng,ShankaiYan,andZhiyongLu. Transfer vano. Cross-lingualtextclassificationwithminimal
+learninginbiomedicalnaturallanguageprocessing: resourcesbytransferringasparseteacher. InFind-
+Anevaluationofbertandelmoontenbenchmarking ingsoftheAssociationforComputationalLinguistics:
+datasets. arXivpreprintarXiv:1906.05474,2019. EMNLP2020,pages3604–3622,2020.
+[23] LailaRasmy,YangXiang,ZiqianXie,CuiTao,and [36] YChoetal. Dsg-kd: Knowledgedistillationfrom
+DeguiZhi. Med-bert: pretrainedcontextualizedem- domain-specifictogenerallanguagemodels. arXiv
+beddingsonlarge-scalestructuredelectronichealth preprintarXiv:2409.14904,2024.
+11
+APREPRINT-JANUARY16,2026
+[37] ZiqingYangetal. Cross-lingualtextclassification
+with multilingual distillation and zero-shot-aware
+training. arXivpreprintarXiv:2202.13654,2022.
+[38] GKatsogiannis-MeimarakisandGKoutrika. Mul-
+tilingualtextcategorizationandsentimentanalysis:
+Acomparativeanalysisoftheutilizationofmultilin-
+gualapproachesforclassifyingtwitterdata. Neural
+ComputingandApplications,May2023.
+[39] MoritzLaurer,WoutervanAtteveldt,AndreuCasas,
+andKasperWelbers. Cross-lingualclassificationof
+political texts using multilingual sentence embed-
+dings. PoliticalAnalysis,31(3),January2023.
+[40] RavirajJoshietal. Universalcross-lingualtextclas-
+sification. arXiv preprint arXiv:2406.11028, June
+2024.
+[41] Robert Mroczkowski, Piotr Rybak, Alina
+Wróblewska, and Ireneusz Gawlik. Herbert:
+Efficiently pretrained transformer-based language
+modelforpolish.InProceedingsofthe8thWorkshop
+onBalto-SlavicNaturalLanguageProcessing,pages
+1–10, Kiyv, Ukraine, April 2021. Association for
+ComputationalLinguistics.
+[42] PiotrRybak,RobertMroczkowski,JanuszTracz,and
+IreneuszGawlik. Klej: Comprehensivebenchmark
+for polish language understanding. arXiv preprint
+arXiv:2005.00630,2020.
+[43] Jan Kocon´, Monika Zas´ko-Zielin´ska, Piotr
+Miłkowski, Arkadiusz Janz, and Maciej Piasecki.
+Wroclaw corpus of consumer reviews sentiment
+(WCCRS),2019. CLARIN-PLdigitalrepository.
+[44] Górnos´la˛skie Centrum Medyczne Research Team.
+Deep learning analysis of polish electronic health
+records for diagnosis prediction in patients with
+cardiovascular diseases. Personalized Medicine,
+12(6):869,May2022.
+[45] AssistMED Project Team. Practical use case of
+natural language processing for observational clin-
+ical research data retrieval from electronic health
+records: Assistmedproject. PolishArchivesofInter-
+nalMedicine,2024.
+[46] MartaZielonka,AndrzejCzyz˙ewski,DariuszSzplit,
+BeataGraff,AnnaSzyndler,MariuszBudzisz,and
+KrzysztofNarkiewicz. Machinelearningtoolsmatch
+physician accuracy in multilingual text annotation.
+ScientificReports,15(1):5487,2025.
+[47] Andrzej Czyz˙ewski, Sebastian Cygert, Karolina
+Marciniuk,MaciejSzczodrak,ArkadiuszHarasim-
+iuk, Piotr Odya, Marina Galanina, Piotr Szczuko,
+Boz˙enaKostek,BeataGraff,etal. Acomprehensive
+polish medical speech dataset for enhancing auto-
+maticmedicaldictation. ScientificData,12(1):1436,
+2025.
+12

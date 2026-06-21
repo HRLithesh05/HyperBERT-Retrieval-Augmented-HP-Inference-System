@@ -1,0 +1,367 @@
+The Multilingual Amazon Reviews Corpus
+PhillipKeung• YichaoLu• Gyo¨rgySzarvas• NoahA.Smith†‡
+•Amazon †UniversityofWashington ‡AllenInstituteforAI
+{keung,yichaolu,szarvasg}@amazon.com nasmith@cs.washington.edu
+{
+Abstract
+"review_id": "en_0000258",
+"reviewer_id": "reviewer_en_0010355",
+WepresenttheMultilingualAmazonReviews
+"product_id": "product_en_0000097",
+Corpus (MARC), a large-scale collection of "language": "en",
+Amazon reviews for multilingual text classi- "stars": 5,
+fication. The corpus contains reviews in En- "review_title": "Salad Spinner",
+"review_body": "Perfect for herbs and
+glish,Japanese,German,French,Spanish,and
+leafy vegetables!",
+Chinese, which were collected between 2015
+"product_category": "kitchen"
+and2019. Eachrecordinthedatasetcontains }
+thereviewtext,thereviewtitle,thestarrating,
+an anonymized reviewer ID, an anonymized
+Figure1: Ahypotheticalreviewfromourcorpus.
+productID,andthecoarse-grainedproductcat-
+egory (e.g., ‘books’, ‘appliances’, etc.) The
+corpus is balanced across the 5 possible star
+classification performance in one language can
+ratings, so each rating constitutes 20% of the
+be transferred to the same task in another, with-
+reviews in each language. For each language,
+there are 200,000, 5,000, and 5,000 reviews out target language supervision, as long as the
+in the training, development, and test sets, re- encoder was pretrained on a machine translation
+spectively. We report baseline results for su- task. In addition, contextual embeddings have
+pervisedtextclassificationandzero-shotcross- shownunexpectedcross-lingualbehaviorinclassi-
+lingual transfer learning by fine-tuning a mul-
+fication,NER,anddependencyparsingtasks(Wu
+tilingual BERT model on reviews data. We
+and Dredze, 2019; Keung et al., 2019; Conneau
+proposetheuseofmeanabsoluteerror(MAE)
+etal.,2019).
+insteadofclassificationaccuracyforthistask,
+since MAE accounts for the ordinal nature of AswithallotherareasinNLP,progressinmul-
+theratings. tilingualresearchreliesontheavailabilityofhigh-
+qualitydata. However,large-scalemultilingualtext
+1 Introduction
+classification datasets are surprisingly rare, and
+Textclassificationisoneofthefundamentaltasks existing multilingual datasets have some notable
+in natural language processing, and research in deficiencies.
+this area has been accelerated by the abundance The proprietary Reuters RCV1 (Lewis et al.,
+ofcorporaacrossdifferentdomains(e.g.,Twitter 2004)andRCV2(ReutersLtd.,2005)corporaand
+sentiment(PakandParoubek,2010),movieratings itsderivativeslikeMLDoc(SchwenkandLi,2018)
+(Maas et al., 2011), textual entailment (Bowman arerelativelysmall; inRCV2,eachlanguagehas
+etal.,2015),restaurantreviews(YelpInc.,2019), ∼37,000 training examples on average, and the
+amongmanyothers). smallestlanguageonlyhas1,794examples. RCV1
+The construction of multilingual classification and 2 are not easily accessible; a researcher who
+systems which handle inputs from different lan- wishestoacquirethedatawouldneedtoworkwith
+guages has been studied extensively in previous an organization that has obtained legal approval
+work (e.g., Bel et al., 2003; De Melo and Siers- fromReutersLtd.
+dorfer, 2007). More recently, researchers have TheXNLIdataset(Conneauetal.,2018)wasde-
+observed ‘zero-shot’ cross-lingual behavior (Lu signedforevaluatingzero-shotcross-lingualtrans-
+et al., 2018; Artetxe and Schwenk, 2019) where fer and does not contain training data for non-
+En De Es Fr Ja Zh
+Numberofproducts 196,745 189,148 179,076 183,345 185,436 164,540
+Numberofreviewers 185,541 171,620 150,938 157,922 164,776 132,246
+Averagecharacters/review 178.8 207.9 151.3 159.4 101.4 51.0
+Averagecharacters/reviewtitle 24.2 21.8 19.2 19.1 9.5 7.6
+Table1: Trainingcorpusstatistics. Weprovide200,000reviewsperlanguage.
+Englishlanguages. 2 Datapreparation
+The Yelp corpus (Yelp Inc., 2019) contains re-
+2.1 InclusionCriteria
+viewsfrominternationalmarketplaces,butthere-
+views from each marketplace can be written in We gathered the reviews from the marketplaces
+multiplelanguagesandthelanguageidentityisnot in the US, Japan, Germany, France, Spain, and
+provided. Furthermore, the Yelp corpus itself is ChinafortheEnglish,Japanese,German,French,
+refreshedfromtimetotime,andpreviousversions Spanish,andChineselanguages,respectively. We
+arenotmadeavailablefordownload,whichaffects considered reviews that were submitted between
+thereproducibilityofpublishedresults. November 1, 2015 and November 1, 2019. Only
+Several versions of the Amazon reviews cor- reviewswithverifiedpurchaseswereincluded.
+pusexisttoday. NeithertheversionfromNietal. Wetakenomorethan20reviewsfromthesame
+(2019) nor Amazon Inc. (2015) provide training, product, and no more than 20 reviews from the
+development, and test splits, and neither version same reviewer. Only products with at least 2 re-
+focusesonthemultilingualaspectofthereviews. viewswereincludedinthedataset. Reviewsmust
+PrettenhoferandStein(2010)provideAmazonre- beatleast20characterslong.
+viewsin4languages(i.e.,2,000trainingandtest
+reviews,alongwithavariablenumberofunlabeled 2.2 DataProcessing
+reviews),butthedatasetissmallbymodernstan-
+The language of a review does not necessarily
+dards.
+matchthelanguageofitsmarketplace(e.g.,reviews
+We address many of the above-mentioned lim-
+fromAmazon.deareprimarilywritteninGerman,
+itationsbyreleasingasubsetofAmazonreviews
+butcouldalsobewritteninEnglish,etc.). Forthis
+specificallytailoredforthetaskofmultilingualtext
+reason,weappliedalanguagedetectionalgorithm
+classification:
+(Bojanowskietal.,2017)todeterminethelanguage
+ofthereviewtext. Onlyreviewswritteninthetar-
+• We provide 200,000 reviews in the training
+get language were retained. Based on a manual
+setforeachofthelanguagesinthecorpus.
+reviewof200randomlyselectedreviewsperlan-
+• We apply language detection algorithms to guage,weobserved0,0,0,0,1,and0incorrectly
+ensurereviewsareassociatedwiththecorrect classifiedreviewsforEnglish,Japanese,German,
+languagewithhighprobability. French, Spanish, and Chinese, respectively. At a
+scorethresholdof0.8,thelanguagefilterremoved
+• We distribute the corpus on AWS Open
+4.9%, 0.2%, 1.2%, 2.4%, 3.8%, and 5.3% of the
+Datasetsforeasyaccessbyanyresearchgroup
+English,Japanese,German,French,Spanish,and
+fornon-commercialpurposes.
+Chinesecandidatereviews,respectively.
+• UnlikepreviousAmazonreviewsdatasets,we
+Wealsoappliedavocabulary-basedfilteronthe
+splitthedataintoclearlydefinedtraining,de-
+reviews. Ifareviewcontainsatokenthatdoesn’t
+velopment,andtestsets.
+occurinatleast20otherreviews,thenthereviewis
+excludedfromthedataset. WeusedJieba1 forChi-
+The Multilingual Amazon Reviews Corpus
+neseandKyTea2 forJapanesewordsegmentation.
+(MARC) can be found at https://registry.
+Thesegmenterswereonlyusedduringthefiltering
+opendata.aws/amazon-reviews-ml/. The
+process,andthetextprovidedinthedatasetisnot
+dataset description, code snippets, and li-
+segmentedortokenized.
+cense agreement can be retrieved at https:
+//docs.opendata.aws/amazon-reviews-ml/ 1https://github.com/fxsjy/jieba
+readme.html. 2http://www.phontron.com/kytea
+En De Es Fr Ja Zh Average
+Fine-grainedClassification
+Bodyonly 53.3 50.1 51.9 52.6 56.8 64.8 54.9
+Body,title&category 43.0 42.5 47.1 47.1 51.7 57.7 48.2
+BinarizedClassification
+Bodyonly 8.8 7.2 7.4 7.3 11.1 12.5 9.1
+Body,title&category 6.3 5.5 5.5 5.3 8.0 10.8 6.9
+(a)Fullysupervisedtask(MAE×100).Thelanguageofthetrainingandtestsetsarethesame.
+SourceLang. EnTest DeTest EsTest FrTest JaTest ZhTest Average
+En - 69.2 64.2 73.3 84.4 93.2 76.9
+De 81.3 - 66.9 71.7 88.9 87.1 79.2
+Es 73.6 68.4 - 65.7 92.5 85.2 77.1
+Fr 77.5 68.4 61.7 - 88.6 86.4 76.5
+Ja 78.5 77.6 71.5 82.4 - 83.8 78.8
+Zh 78.8 77.9 79.1 84.1 84.3 - 80.8
+(b)Zero-shotcross-lingualtransfertask(fine-grainedclassificationMAE×100).WetrainmBERTonsourcelanguagedataand
+testonnon-sourcelanguagedata.
+SourceLang. EnTest DeTest EsTest FrTest JaTest ZhTest Average
+En - 15.5 10.7 14.0 19.4 27.6 17.4
+De 15.3 - 11.4 14.6 23.6 21.6 17.3
+Es 12.0 14.7 - 11.4 21.2 22.3 16.3
+Fr 15.3 13.9 10.5 - 22.6 22.6 17.0
+Ja 15.4 17.8 12.9 16.8 - 21.1 16.8
+Zh 14.3 16.1 13.6 17.5 20.2 - 16.3
+(c)Zero-shotcross-lingualtransfertask(binarizedclassificationMAE×100).WetrainmBERTonsourcelanguagedataandtest
+onnon-sourcelanguagedata.
+EnTrain EnTest DeTest EsTest FrTest JaTest ZhTest Non-EnAverage
+6.25% 51.6 81.1 72.4 88.3 104.2 110.7 91.3
+12.5% 48.1 72.0 69.8 79.4 91.1 103.7 83.2
+25% 45.0 72.3 66.0 74.9 86.3 94.9 78.9
+50% 43.4 71.5 65.7 75.1 85.3 92.1 77.9
+100% 43.0 69.2 64.2 73.3 84.4 93.2 76.9
+(d)Amountofsourcelanguagetrainingdataversussame-languageandzero-shottransferperformance(fine-grained,MAE×100).
+ThetrainingdatacomesfromtheEnglishportionofthecorpusonly.
+Table2:mBERTclassificationmeanabsoluteerror(MAE×100).The‘fine-grained’classificationtaskpredictsthe
+5-starrating,whereasthe‘binarized’taskpredictswhetherthereviewisnegative(i.e.,1-2stars)orpositive(i.e.,
+4-5stars). Unlessotherwisestated,weusethereviewbody,reviewtitle,andproductcategoryasmBERTinputs.
+Wetruncateallreviewsat2,000characters. New- 3 CorpusCharacteristics
+lines and tabs in the body of the review were re-
+moved. Amazonproductratingsaregivenona5-starscale.
+SomeAmazonreviewscontainHTMLmarkup. Toavoidanyclassimbalanceissuesinthedataset,
+We used Lynx3 to render the reviews as UTF-8 we downsampled the reviews to ensure that each
+plain-text. star rating constituted exactly 20% of the corpus.
+Weprovide200,000,5,000,and5,000reviewsfor
+ProductandreviewerIDswereanonymizedby
+the training, development, and test sets, respec-
+mappingeachIDtoauniquerandomlygenerated
+tively.
+integer.
+We provide the product category labels for 30 In Table 1, we compile some of the important
+commonproducttypes,andallotherproductcate- statistics for the corpus. The number of unique
+goriesaremappedto‘other’. products and reviewers is broadly similar across
+differentlanguages.
+3https://lynx.invisible-island.net InFigure2,weshowthedistributionofproduct
+Figure2: Distributionofproductcategoriesacrossthetrainingdataindifferentlanguages.
+categoriesforeachlanguage. Thereissubstantial CLStokenforprediction. Wefine-tunedthemodel
+variationinthedistributionofproductcategories for 15 epochs with the Adam optimizer using a
+by language. Chinese reviews, most notably, are constantlearningrateof8×10−7. Weusedmini-
+heavilyskewedtowardsbooks. batchesof32reviews. Eachexperimentrequired
+∼10 hours to complete with a single GPU on an
+4 BaselineResults
+AWS p3.8xlarge instance with the MXNet Glu-
+onNLPframework. Wetruncatedthereviewbody
+InTable2,weprovidebaselinemeanabsoluteerror
+at180wordpiecesifitexceeded180wordpieces.
+(MAE)resultsforsupervisedandzero-shotmulti-
+lingualtextclassificationwithourcorpus,where
+4.2 SupervisedTextClassification
+(cid:80)n |y −yˆ|
+MAE(y,yˆ) = i=1 i i In Table 2a, we report our MAE on the fully su-
+n pervisedclassificationtask,wherethelanguagesof
+thetrainingandevaluationdataarethesame(i.e.,
+and y ,yˆ ∈ {1,2,3,4,5} are the true star rating
+i i
+trainonFrenchreviewsandtestonFrenchreviews,
+andthepredictedratingforthei-threviewrespec-
+etc.). We distinguish between the ‘fine-grained’
+tively. All of our baseline models are initialized
+classificationtask,wherewepredictonthe5-star
+withthecasedmultilingualBERT(mBERT)base
+scale,andthe‘binarized’classificationtask,where
+model (Devlin et al., 2019), which has 110M pa-
+wepredictwhetherthereviewergave1to2stars
+rameters.
+or4to5stars. Forthebinarizedtask,wedropthe
+Notethatthestarratingsforeachreviewareor-
+3-starreviewsinthetrainingandevaluationdata.
+dinal, and a 2-star prediction for a 5-star review
+Wealsodistinguishbetweenthecasewherethe
+shouldbepenalizedmoreheavilythana4-starpre-
+inputisthebodyofthereviewaloneandwherethe
+dictionfora5-starreview. However,previouswork
+inputisthereviewbodycombinedwiththereview
+onAmazonreviewsclassification(e.g.,Yangetal.,
+titleandproductcategory. Inthelattercase,weuse
+2016) used the classification accuracy as the pri-
+mBERTforsentencepairclassification,wherethe
+mary metric, which ignores the ordinal nature of
+first‘sentence’isthereviewbodyandthesecond
+the labels. We use MAE in our baselines as the
+‘sentence’isthereviewtitleconcatenatedwiththe
+primarymetricinstead. Wealsoreporttheclassifi-
+product category. The details for sentence pair
+cationaccuracyforcompleteness(Table3),butwe
+classificationcanbefoundinDevlinetal.(2019).
+encouragetheuseofMAEinfuturework.
+4.1 ExperimentalSetup 4.3 Zero-shotTextClassification
+We predict the reviewer’s rating using the text of In Tables 2b and 2c, we report zero-shot cross-
+thereview(andpossiblytheproductcategory)as lingualtransferMAEforfine-grainedandbinarized
+the input. Following the procedure described in classificationrespectively,whereweonlyfine-tune
+Devlinetal.(2019),weusedtheembeddingofthe mBERTondatafromonesourcelanguageandtest
+En De Es Fr Ja Zh Average
+Fine-grainedClassification
+Bodyonly 56.5 58.3 56.9 55.5 53.9 51.4 54.4
+Body,title&category 63.3 62.0 58.9 58.8 57.2 55.1 59.2
+(a)Fullysupervisedtask(classificationaccuracy).Thelanguageofthetrainingandtestsetsarethesame.
+SourceLang. EnTest DeTest EsTest FrTest JaTest ZhTest Average
+En - 48.1 48.0 45.4 39.0 39.7 44.0
+De 46.6 - 47.9 46.9 38.9 40.0 44.1
+Es 48.8 47.5 - 48.1 36.4 41.6 44.5
+Fr 48.1 47.1 49.5 - 36.4 40.0 44.2
+Ja 45.2 41.5 45.2 39.6 - 41.3 42.6
+Zh 44.6 43.2 43.5 41.8 40.0 - 42.7
+(b)Zero-shotcross-lingualtransfertask(fine-grainedclassificationaccuracy).WetrainmBERTonsourcelanguagedataandtest
+onnon-sourcelanguagedata.
+EnTrain EnTest DeTest EsTest FrTest JaTest ZhTest Non-EnAverage
+6.25% 59.1 44.2 45.5 40.7 35.8 36.6 40.5
+12.5% 61.7 46.5 45.6 45.0 37.8 38.3 42.6
+25% 62.9 46.6 47.6 45.5 38.1 38.5 43.2
+50% 63.2 47.4 47.7 45.6 38.6 39.9 43.9
+100% 63.3 48.1 48.0 45.4 39.0 39.7 44.0
+(c)Amountofsourcelanguagetrainingdataversussame-languageandzero-shottransferperformance(fine-grained,accuracy).
+ThetrainingdatacomesfromtheEnglishportionofthecorpusonly.
+Table 3: mBERT classification accuracy. The ‘fine-grained’ classification task predicts the 5-star rating. Unless
+otherwisestated,weusethereviewbody,reviewtitle,andproductcategoryasmBERTinputs.
+themodelonnon-sourcelanguages. Inourcross- thisisthelargestpublicbenchmarkdatasetforthe
+lingualexperiments,weusedthereviewbody,title, trainingandevaluationofmultilingualtextclassifi-
+andproductcategoryasinputs. cationmodels. Withthiswork,wesystematically
+Recent work by Conneau et al. (2019) recom- addressvariousgapsthatweidentifiedinexisting
+mendedreportingzero-shottransferresultsbyus- multilingual corpora: we apply careful sampling,
+ing the target development sets for model check- filtering, andtextprocessingtothedocumentsto
+point selection. In addition, Keung et al. (2020) minimize noise in the dataset, and we provide a
+showed that using the source language develop- large number of samples for training models in
+ment set to select the checkpoint can lead to sig- sixlanguageswithwell-definedtraining,develop-
+nificantvariationinzero-shottransferperformance ment,andtestsplits. Wediscussthedataprepara-
+and also recommended using the target develop- tionsteps,analyzethedistributionoftheimportant
+ment sets for checkpoint selection. Our results characteristicsofthecorpus,andpresentbaseline
+in Tables 2 and 3 follow their guidance, and we resultsforsupervisedandzero-shotcross-lingual
+usethetargetdevelopmentsettoselectthemodel text classification. With these contributions, we
+checkpointforeachlanguage. hopethatthiscorpuswillbeanimportantresource
+InTable2d,wevarytheamountofEnglishtrain- totheresearchcommunity.
+ingdatausedinmBERTfine-tuningandexamine
+the change in English test and non-English zero-
+shotMAE.IncreasingtheamountofEnglishtrain- Acknowledgments
+ing data is generally helpful, although there are
+clearlydiminishingreturns.
+Wethanktheanonymousreviewersfortheirinsight-
+fulfeedback. WealsothankPeterSchmiedeskamp
+5 Conclusion
+andSharonChiarellafortheirsupportintheprepa-
+We present a curated subset of Amazon reviews ration and release of this corpus. NAS acknowl-
+specificallydesignedtoaidresearchinmultilingual edgesNSFsupportundergrant1813153.
+text classification. To the best of our knowledge,
+References text categorization research. Journal of machine
+learningresearch,5(Apr):361–397.
+Amazon Inc. 2015. Amazon customer reviews
+dataset. https://registry.opendata.aws/ YichaoLu,PhillipKeung,FaisalLadhak,VikasBhard-
+amazon-reviews/. waj, Shaonan Zhang, and Jason Sun. 2018. A neu-
+ral interlingua for multilingual machine translation.
+Mikel Artetxe and Holger Schwenk. 2019. Mas-
+WMT.
+sively multilingual sentence embeddings for zero-
+shot cross-lingual transfer and beyond. Transac- Andrew L. Maas, Raymond E. Daly, Peter T. Pham,
+tions of the Association for Computational Linguis- Dan Huang, Andrew Y. Ng, and Christopher Potts.
+tics,7:597–610. 2011. Learning word vectors for sentiment analy-
+sis. In Proceedings of the 49th Annual Meeting of
+Nuria Bel, Cornelis HA Koster, and Marta Villegas.
+the Association for Computational Linguistics: Hu-
+2003. Cross-lingualtextcategorization. InInterna-
+man Language Technologies, pages 142–150, Port-
+tionalConferenceonTheoryandPracticeofDigital
+land, Oregon, USA.AssociationforComputational
+Libraries,pages126–139.Springer.
+Linguistics.
+PiotrBojanowski,EdouardGrave,ArmandJoulin,and
+Jianmo Ni, Jiacheng Li, and Julian McAuley. 2019.
+TomasMikolov.2017. Enrichingwordvectorswith
+Justifying recommendations using distantly-labeled
+subword information. Transactions of the Associa-
+reviewsandfine-grainedaspects. InProceedingsof
+tionforComputationalLinguistics,5:135–146.
+the 2019 Conference on Empirical Methods in Nat-
+uralLanguageProcessingandthe9thInternational
+Samuel R. Bowman, Gabor Angeli, Christopher Potts,
+Joint Conference on Natural Language Processing
+and Christopher D. Manning. 2015. A large anno-
+(EMNLP-IJCNLP),pages188–197.
+tatedcorpusforlearningnaturallanguageinference.
+InProceedingsofthe2015ConferenceonEmpirical
+AlexanderPakandPatrickParoubek.2010. Twitteras
+MethodsinNaturalLanguageProcessing(EMNLP).
+acorpusforsentimentanalysisandopinionmining.
+AssociationforComputationalLinguistics. InLREC,volume10,pages1320–1326.
+AlexisConneau, KartikayKhandelwal, NamanGoyal, Peter Prettenhofer and Benno Stein. 2010. Cross-
+Vishrav Chaudhary, Guillaume Wenzek, Francisco language text classification using structural corre-
+Guzma´n, Edouard Grave, Myle Ott, Luke Zettle- spondence learning. In Proceedings of the 48th
+moyer, and Veselin Stoyanov. 2019. Unsupervised Annual Meeting of the Association for Computa-
+cross-lingualrepresentationlearningatscale. arXiv tionalLinguistics,pages1118–1127,Uppsala,Swe-
+preprintarXiv:1911.02116.
+den.AssociationforComputationalLinguistics.
+Alexis Conneau, Ruty Rinott, Guillaume Lample, Ad- Reuters Ltd. 2005. Reuters corpus, volume 2, multi-
+inaWilliams,SamuelR.Bowman,HolgerSchwenk, lingualcorpus. https://trec.nist.gov/data/
+andVeselinStoyanov.2018. Xnli: Evaluatingcross- reuters/reuters.html.
+lingualsentencerepresentations. InProceedingsof
+the2018ConferenceonEmpiricalMethodsinNatu- HolgerSchwenkandXianLi.2018. Acorpusformul-
+ralLanguageProcessing.AssociationforComputa- tilingualdocumentclassificationineightlanguages.
+tionalLinguistics. InProceedingsoftheEleventhInternationalConfer-
+enceonLanguageResourcesandEvaluation,LREC
+Gerard De Melo and Stefan Siersdorfer. 2007. Multi- 2018, Miyazaki, Japan, May 7-12, 2018. European
+lingual text classification using ontologies. In Eu- LanguageResourcesAssociation(ELRA).
+ropeanConferenceonInformationRetrieval, pages
+541–548.Springer. Shijie Wu and Mark Dredze. 2019. Beto, bentz, be-
+cas: The surprising cross-lingual effectiveness of
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and bert. EMNLP.
+KristinaToutanova.2019. Bert:Pre-trainingofdeep
+bidirectional transformers for language understand- Zichao Yang, Diyi Yang, Chris Dyer, Xiaodong He,
+ing. NAACL. Alex Smola, and Eduard Hovy. 2016. Hierarchi-
+cal attention networks for document classification.
+Phillip Keung, Yichao Lu, and Vikas Bhardwaj. 2019. InProceedingsofthe2016conferenceoftheNorth
+Adversarial learning with contextual embeddings American chapter of the association for computa-
+forzero-resourcecross-lingualclassificationandner. tional linguistics: human language technologies,
+arXivpreprintarXiv:1909.00153. pages1480–1489.
+Phillip Keung, Yichao Lu, Julian Salazar, and Vikas Yelp Inc. 2019. Yelp open dataset. https://www.
+Bhardwaj. 2020. On the evaluation of contex- yelp.com/dataset.
+tualembeddingsforzero-shotcross-lingualtransfer
+learning. ArXiv,abs/2004.15001.
+David D Lewis, Yiming Yang, Tony G Rose, and Fan
+Li. 2004. Rcv1: A new benchmark collection for

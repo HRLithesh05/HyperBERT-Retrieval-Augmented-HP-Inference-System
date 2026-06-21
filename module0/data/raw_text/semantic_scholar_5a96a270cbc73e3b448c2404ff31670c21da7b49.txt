@@ -1,0 +1,576 @@
+Efficient Intent Detection with Dual Sentence Encoders
+github.com/PolyAI-LDN/polyai-models
+In˜igoCasanueva∗,TadasTemcˇinas,∗ DanielaGerz,MatthewHenderson,andIvanVulic´
+PolyAILimited
+London,UnitedKingdom
+{inigo,dan,matt,ivan}@poly-ai.com
+Abstract predefinedclasses,thatis,intents.1 Scalingintent
+detectors(aswellasconversationalsystemsingen-
+Building conversational systems in new do-
+eral) to support new target domains and tasks is
+mains and with added functionality requires
+averychallengingandresource-intensiveprocess
+resource-efficientmodelsthatworkunderlow-
+data regimes (i.e., in few-shot setups). Moti- (Wenetal.,2017;Rastogietal.,2019). Theneed
+vated by these requirements, we introduce in- forexpertdomainknowledgeanddomain-specific
+tent detection methods backed by pretrained labeleddatastillimpedesquickandwidedeploy-
+dualsentenceencoderssuchasUSEandCon- mentofintentdetectors. Inotherwords,onecrucial
+veRT.Wedemonstratetheusefulnessandwide
+challengeisenablingeffectiveintentdetectionin
+applicability of the proposed intent detectors,
+low-data scenarios typically met in commercial
+showingthat: 1)theyoutperformintentdetec-
+systems,withonlyseveralexamplesavailableper
+torsbasedonfine-tuningthefullBERT-Large
+model or using BERT as a fixed black-box intent(i.e.,theso-calledfew-shotlearningsetups).
+encoder on three diverse intent detection data Transferlearningontopofpretrainedsentence
+sets;2)thegainsareespeciallypronouncedin encoders (Devlin et al., 2019; Liu et al., 2019b,
+few-shotsetups(i.e.,withonly10or30anno-
+inter alia) has now established as the mainstay
+tatedexamplesperintent);3)ourintentdetec-
+paradigm aiming to mitigate the bottleneck with
+torscanbetrainedinamatterofminutesona
+scarcein-domaindata. However,directlyapplying
+single CPU; and 4) they are stable across dif-
+theomnipresentsentenceencoderssuchasBERT
+ferent hyperparameter settings. In hope of fa-
+cilitating and democratizing research focused to intent detection may be sub-optimal. 1) As
+onintentiondetection,wereleaseourcode,as shown by Henderson et al. (2019b), pretraining
+wellasanewchallengingsingle-domainintent on a general language-modeling (LM) objective
+detectiondatasetcomprising13,083annotated forconversationaltasksislesseffectivethancon-
+examplesover77intents.
+versational pretraining based on the responsese-
+1 Introduction lection task and conversational data (Henderson
+et al., 2019c; Mehri et al., 2019). 2) Fine-tuning
+Task-orientedconversationalsystemsallowusers
+BERTanditsvariantsisveryresource-intensiveas
+tointeractwithcomputerapplicationsthroughcon-
+it assumes the adaptation of the full large model.
+versation in order to solve a particular task with
+Moreover, in few-shot setups fine-tuning may re-
+well-defined semantics, such as booking restau-
+sultinoverfitting. Fromacommercialperspective,
+rants, hotels and flights (Hemphill et al., 1990;
+these properties lead to extremely slow, cumber-
+Williams, 2012; El Asri et al., 2017), providing
+some,andexpensivedevelopmentcycles.
+touristinformation(Budzianowskietal.,2018),or
+Therefore, in this work we propose to use ef-
+automatingcustomersupport(Xuetal.,2017).
+ficient dual sentence encoders such as Universal
+Intentdetectionisavitalcomponentofanytask-
+Sentence Encoder (USE) (Cer et al., 2018) and
+oriented conversational system (Hemphill et al.,
+ConveRT(Hendersonetal.,2019b)tosupportin-
+1990;Couckeetal.,2018). Inordertounderstand
+tent detection. These models are in fact neural
+theuser’scurrentgoal,thesystemmustleverageits
+intentdetectortoclassifytheuser’sutterance(pro- 1Forinstance,inthee-bankingdomainintentscanbelost
+videdinvariednaturallanguage)intooneofseveral cardorfailedtop-up(seeTable2).Theimportanceofintent
+detectionisalsoillustratedbythefactthatgettingtheintent
+∗Equalcontribution.TTisnowattheOxfordUniversity. wrongisthefirstpointoffailureofanyconversationalagent.
+architecturestailoredformodelingsentencepairs they require smaller amounts of domain-specific
+(Hendersonetal.,2019c;Humeauetal.,2020),and training data to adapt to a particular task and/or
+aretrainedonaconversationalresponseselection domain (Ruder et al., 2019). The adaptation is
+task. Assuch,theyinherentlyencapsulateconver- typically achieved by adding a task-specific out-
+sationalknowledgeneededfor(few-shot)intentde- put layer to a large pretrained sentence encoder,
+tection. WediscusstheiradvantageoverLM-based andthenfine-tuningtheentiremodel(Devlinetal.,
+encoders,andempiricallyvalidatetheusefulness 2019). However, the fine-tuning process is com-
+of conversational pretraining for intent detection. putationallyintensive(Zafriretal.,2019;Hender-
+WeshowthatintentdetectorsbasedonfixedUSE sonetal.,2019b),andstillrequiressufficienttask-
+andConveRTencodingsoutperformBERT-backed specificdata(AraseandTsujii,2019;Sanhetal.,
+intentdetectorsacrosstheboardonthreediverse 2019). As such, the standard full fine-tuning ap-
+intentdetectiondatasets,withprominentgainses- proachisbothunsustainableintermsofresource
+peciallyinfew-shotscenarios. Anotheradvantage consumption(Strubelletal.,2019),aswellassub-
+ofdualmodelsistheircompactness:2 wedemon- optimalforfew-shotscenarios.
+stratethatourstate-of-the-artUSE+ConveRTintent
+Dual Sentence Encoders and Conversational
+detectorscanbetrainedevenonaregularlaptop’s
+Pretraining. Arecentbranchofsentenceencoders
+CPUinonlyseveralminutes.
+moves beyond the standard LM-based pretrain-
+We also show that intent classifiers based on
+ing objective, and proposes an alternative objec-
+dualsentenceencodersarelargelyinvarianttohy-
+tive: conversational response selection, typically
+perparameter changes. This finding is extremely
+on Reddit data (Al-Rfou et al., 2016; Henderson
+importantforreal-lifelow-dataregimes: duetothe
+et al., 2019a). As empirically validated by Hen-
+invariance, the expensive hyperparameter tuning
+dersonetal.(2019c);Mehrietal.(2019),conver-
+stepcanbebypassed,andalimitednumberofan-
+sational(insteadofLM-based)pretrainingaligns
+notatedexamplescanbeuseddirectlyasadditional
+betterwithconversationaltaskssuchasdialogact
+trainingdata(insteadofheld-outvalidationdata).
+predictionornextutterancegeneration.
+Anothercontributionofthisworkisanewand
+Pretraining on response selection also allows
+challengingintentdetectiondatasetinthebanking
+for the use of efficient dual models: the neural
+domain,dubbedBANKING77. Itfollowsthevery
+responseselectionarchitecturesareinstantiatedas
+recentendeavorofprocuringhigh-qualityintentde-
+dual-encoder networks that learn the interaction
+tectiondata(Liuetal.,2019a;Larsonetal.,2019),
+betweeninputs/contextsandtheirrelevant(follow-
+butisverydifferentinnaturethantheotherdatasets.
+up) responses. Through such response selection
+Unlike prior work which scatters a set of coarse-
+pretrainingregimestheyorganicallyencodeuseful
+grainedintentsacrossamultitudeofdomains(i.e.,
+conversationalcuesintheirrepresentations.
+10+domains,seeTable1later),wepresentachal-
+In this work, we propose to use such efficient
+lengingsingle-domaindatasetcomprising13,083
+conversationaldualmodelsasthemainsourceof
+examplesover77fine-grainedintents. Werelease
+(general-purpose)conversationalknowledgetoin-
+the code as part of the growing PolyAI’s repos-
+formdomain-specificintentdetectors. Weempiri-
+itory: github.com/PolyAI-LDN/polyai-models.
+callydemonstratetheirbenefitsoverotherstandard
+The BANKING77 dataset is available at: github.
+sentenceencoderssuchasBERTintermsof1)per-
+com/PolyAI-LDN/task-specific-datasets.
+formance,2)efficiency,and3)applicabilityinfew-
+shot scenarios. We focus on two prominent dual
+2 Methodology: IntentDetectionwith
+modelstrainedontheresponseselectiontask: Uni-
+DualSentenceEncoders
+versalSentenceEncoder(USE)(Ceretal.,2018),
+PretrainedSentenceEncoders. Large-scalepre- and Conversational Representations from Trans-
+trainedmodelshavebenefitedawidespectrumof formers(ConveRT)(Hendersonetal.,2019b). For
+NLPapplicationsimmensely(Devlinetal.,2019; furthertechnicaldetailsregardingthetwomodels,
+Liuetal.,2019b;Radfordetal.,2019). Theircore werefertheinterestedreadertotheoriginalwork.
+strength lies in the fact that, through consuming
+IntentDetectionwithdualEncoders. Weimple-
+largegeneral-purposecorporaduringpretraining,
+ment a simple yet effective model (see §5 later)
+forintentdetectionwhichisbasedonthetwodual
+2Forinstance,ConveRTisonly59MBinsize,pretrained
+inlessthanadayon12GPUs(Hendersonetal.,2019b). models. Unlike with BERT, we do not fine-tune
+theentiremodel,butusefixedsentencerepresen- Dataset Intents Examples Domains
+tationsencodedbyUSEandConveRT.Wesimply
+HWU64 64 25,716 21
+stackaMulti-LayerPerceptron(MLP)withasin- CLINC150 150 23,700 10
+glehiddenlayerwithReLUnon-linearactivations BANKING77(ours) 77 13,083 1
+(Maasetal.,2013)ontopofthefixedrepresenta-
+Table1: Intentdetectiondatasets: keystatistics.
+tions,followedbyasoftmaxlayerformulti-class
+classification. Thissimpleformulationalsoallows
+ustoexperimentwiththecombinationofUSEand whichrequiresfine-graineddecisions,seeTable2
+ConveRTrepresentations: wecanfeedtheconcate- (e.g., reverted top-up vs. failed top-up). Further-
+natedvectorstothesameclassificationarchitecture more, as other examples from Table 2 suggest, it
+withoutanyfurtheradjustment. isnotalwayspossibletorelyonthesemanticsof
+individualwordstocapturethecorrectintent.3
+3 NewDataset: BANKING77
+4 ExperimentalSetup
+Inspiteofthecrucialroleofintentdetectioninany
+Few-Shot Setups. We conduct all experiments
+task-orientedconversationalsystem,publiclyavail-
+onthethreeintentdetectiondatasetsdescribedin
+ableintentdetectiondatasetsarestillfewandfar
+§3. Weareinterestedinwide-scalefew-shotintent
+between,evenforEnglish. Thepreviousstandard
+classificationinparticular: wearguethatthissetup
+datasetssuchasWebApps,AskUbuntu,theChat-
+mostcloselyresemblesthedevelopmentprocessof
+botCorpus(Braunetal.,2017)orSNIPS(Coucke
+a commercial conversational system, which typi-
+et al., 2018) are limited to only a small number
+callystartswithonlyasmallnumberofdatapoints
+ofclasses(< 10),whichoversimplifiestheintent
+whenexpandingtoanewdomainortask. Wesim-
+detectiontaskanddoesnotemulatethetrueenvi-
+ulate such low-data settings by sampling smaller
+ronmentofcommercialsystems. Therefore,more
+subsets from the full data. We experiment with
+recentworkhasrecognizedtheneedforimproved
+setupswhereonly10or30examplesareavailable
+andmorechallengingintentdetectiondatasets. 1)
+foreachintent,whileweusethesamestandardtest
+ThedatasetofLiuetal.(2019a),dubbed HWU64,
+setsforeachexperimentalrun.4
+contains25,716examplesfor64intentsin21do-
+mains. 2) The dataset of Larson et al. (2019), MLP Design. Unless stated otherwise (e.g., in
+dubbed CLINC150,spans150intentsand23,700 experimentswhereweexplicitlyvaryhyperparam-
+examplesacross10domains. eters),fortheMLPclassifier,weuseasingle512-
+However, the two recent English datasets are dimensionalhiddenlayer. Wetrainwithstochastic
+multi-domain,andtheexamplespereachdomain gradientdescent(SGD),withthelearningrateof
+maynotsufficientlycapturethefullcomplexityof 0.7 and linear decay. We rely on very aggressive
+eachdomainasencountered“inthewild”. There- dropout(0.75)andtrainfor500iterationstoreach
+fore,tocomplementtherecenteffortondatacollec- convergence. We show how this training regime
+tionforintentdetection,weproposeanewsingle- can improve the model’s generalization capabil-
+domain dataset: it provides a very fine-grained ity, and we also probe its (in)susceptibility to di-
+setofintentsinabankingdomain,notpresentin versehyperparametersetupslaterin§5. Low-data
+HWU64 and CLINC150. The new BANKING77 settingsarebalanced, whichisespeciallyeasyto
+datasetcomprises13,083customerservicequeries guaranteeinfew-shotscenarios.
+labeled with 77 intents. Its focus on fine-grained
+ModelsinComparison. Wecompareintentdetec-
+single-domain intent detection makes it comple-
+torssupportedbythefollowingpretrainedsentence
+mentary to the two other datasets: we believe
+encoders. First,intheBERT-FIXEDmodelweuse
+thatanycomprehensiveintentdetectionevaluation
+pretrainedBERTinthesamewayasdualencoders,
+shouldinvolvebothcoarser-grainedmulti-domain intheso-calledfeaturemode: wetreatBERTasa
+datasetssuchasHWU64andCLINC150,andafine-
+black-boxfixedencoderanduseittocomputeen-
+grainedsingle-domaindatasetsuchasBANKING77. codings/featuresfortrainingtheclassifier.5 Weuse
+ThedatastatisticsaresummarizedinTable1.
+Thesingle-domainfocusof BANKING77 witha
+3TheexamplesinBANKING77arealsolongeronaverage
+(12words)thaninHWU64(7words)orCLINC150(8).
+largenumberofintentsmakesitmorechallenging. 4Forreproducibility,wereleasealltrainingsubsets.
+Someintentcategoriespartiallyoverlapwithothers, 5WehavealsoexperimentedwithELMoembeddings(Pe-
+IntentClass ExampleUtterance
+CardLost Couldyouassistmeinfindingmylostcard?
+LinktoExistingCard Ifoundmylostcard.AmIstillabletouseit?
+RevertedTop-up Hey,Ithoughtmytopupwasalldonebutnowthemoneyisgoneagain–what’supwiththat?
+FailedTop-up Tellmewhymytopupwouldn’tgothrough?
+Table2: IntentclassesandexampleutterancesfromBANKING77.
+BANKING77 CLINC150 HWU64
+Model 10 30 Full 10 30 Full 10 30 Full
+BERT-FIXED 67.55 80.07 87.19 80.16 87.99 91.79 72.61 79.78 85.77
+BERT-TUNED 83.42 90.03 93.66 91.93 95.49 96.93 84.86 88.27 92.10
+USE 84.23 89.74 92.81 90.85 93.98 95.06 83.75 89.03 91.25
+CONVERT 83.32 89.37 93.01 92.62 95.78 97.16 82.65 87.88 91.24
+USE+CONVERT 85.19 90.57 93.36 93.26 96.13 97.16 85.83 90.16 92.62
+Table3:Accuracyscores(×100%)onallthreeintentdetectiondatasetswithvaryingnumberoftrainingexamples
+(10examplesperintent;30examplesperintent;Fulltrainingdata). Thepeakscorespercolumnareinbold.
+themean-pooled“sequenceouput”(i.e.,thepooled 5 ResultsandDiscussion
+mean of the sub-word embeddings) as the sen-
+tencerepresentation.6 Inthe BERT-TUNED model, Table3summarizesthemainresults;weshowthe
+we rely on the standard BERT-based fine-tuning accuracyscoresofallmodelsonallthreedatasets,
+regimeforclassificationtasks(Devlinetal.,2019) andfordifferenttrainingdatasetups. Asonecru-
+which adapts the full model. We train a softmax cialfinding,wereportcompetitiveperformanceof
+layerontopofthe[CLS]tokenoutput. Weusethe intentdetectorsbasedonthetwodualmodels,and
+Adamoptimizerwithweightdecayandalearning theirrelativeperformanceseemstoalsodependon
+rate of 4×10−4. For low-data (10 examples per the dataset at hand: USE has a slight edge over
+intent), mid-data (30 examples) and full-data set- CONVERT onHWU64,buttheoppositeholdson
+tingswetrainfor50,18,and5epochs,respectively, CLINC150. The design based on fixed sentence
+whichissufficientforthemodeltoconverge,while representations, however, allows for the straight-
+avoidingoverfittingorcatastrophicforgetting. forwardcombinationof USE and CONVERT.The
+Weusethetwopubliclyavailablepretraineddual resultssuggestthatthetwodualmodelsinfactcap-
+encoders: 1)themultilinguallargevariantof USE turecomplementaryinformation,asthecombined
+(Yangetal.,2019),7and2)thesingle-contextCON- USE+CONVERT-basedintentdetectorsresultin
+VERTmodeltrainedonthefull2015-2019Reddit peakperformanceacrosstheboard. Asdiscussed
+datacomprising654M(context,response)training later,duetoitspretrainingobjective,BERTiscom-
+pairs(Hendersonetal.,2019b).8 Inallexperimen- petitiveonlyinitsfine-tuningmodeofusage,and
+talruns,wecompareagainstthepretrainedcased cannot match other two sentence encoders in the
+BERT-large model: 24 Transformer layers, em- feature-based(i.e.,fixed)usagemode.
+beddingdimensionality1024,andatotalof340M
+Few-ShotScenarios. Thefocusofthisworkison
+parameters. Notethate.g. ConveRTismuchlighter
+low-data few-shot scenarios often met in produc-
+in its design and is also pretrained more quickly
+tion,whereonlyahandfulofannotatedexamples
+thanBERT(Hendersonetal.,2019b): itrelieson6
+per intent are available. The usefulness of dual
+Transfomerlayerswithembeddingdimensionality
+sentenceencoderscomestotheforeespeciallyin
+of512. Wereportaccuracyasthemainevaluation
+this setup: 1) the results indicate gains over the
+measureforallexperimentalruns.
+fine-tuned BERT model especially for few-shot
+scenarios, and the gains are more pronounced in
+tersetal.,2018)inthesamefeaturemode,buttheyareconsis-
+our “fewest-shot” setup (with only 10 annotated
+tentlyoutperformedbyallothermodelsincomparison.
+6Thisperformedslightlybetterthanusingthe[CLS]token examplesperintent). Therespectiveimprovements
+embeddingassentencerepresentation.
+ofUSE+CONVERToverBERT-TUNEDare+1.77,
+7https://tfhub.dev/google/universal-sentence-encoder-
+multilingual-large/1
++1.33,and+0.97for BANKING77, CLINC150,and
+8https://github.com/PolyAI-LDN/polyai-models HWU64(10examplesperintent),andwealsosee
+BANKING77 CLINC150 HWU64
+Model 10 Full 10 Full 10 Full
+BERT-FIXED 64.9(67.8)[57.0] 86.2(88.4)[74.9] 78.1(80.6)[70.2] 91.2(92.6)[84.7] 71.5(72.8)[68.0] 85.9(86.8)[81.5]
+USE 83.9(84.4)[83.0] 92.6(92.9)[91.4] 90.6(91.0)[89.9] 95.0(95.3)[93.9] 83.6(83.9)[83.0] 91.6(92.1)[90.7]
+CONVERT 83.1(83.4)[82.4] 92.6(93.0)[91.6] 92.4(92.8)[92.0] 97.1(97.2)[96.3] 82.5(83.1)[82.0] 91.3(91.6)[90.8]
+USE+CONVERT 85.2(85.5)[84.8] 93.3(93.5)[92.8] 93.2(93.5)[92.8] 97.0(97.2)[96.5] 85.9(86.2)[85.7] 92.5(92.8)[91.6]
+Table4: Variationinaccuracyscores(×100%)withdifferenthyperparameterregimesforallthemodelsincom-
+parisonandonallthreedatasets. 10againmeans10trainingexamplesperintentasopposedtoFulltrainingdata.
+Thescoresareprovidedasavg(max)[min]:avgistheaverageoverallrunswithdifferenthyperparametersettings
+foreachencodermodelandeachsetup,maxandminaretherespectivemaximumandminimumscores.
+Encoder CPU GPU (500),see§4.
+BERT(Large) 2.4 235.9 We now demonstrate that the intent detectors
+USE 53.5 785.4 based on dual encoders are very robust with re-
+CONVERT 58.3 866.7
+spect to different hyper-parameter choices, start-
+ingfromthisbasicassumptionthatahighnumber
+Table5:Averagenumberofsentencesencodedpersec-
+ond with the three sentence encoders. The data is fed of iterations and high dropout rates r are needed.
+toeachencoderinbatchesof15sentences. For each classifier, we fix the base/pivot config-
+uration from §4: the number of hidden layers is
+H = 1,itsdimensionalityish = 512,theSGDop-
+Classifer CPU GPU TPU
+timizerisusedwiththelearningrateof0.75. Start-
+BERT-TUNED n/a n/a 567s
+ing from the pivot configuration, we create other
+USE 65s 57s n/a
+CONVERT 73s 53s n/a configurationsbyalteringonehyper-parameterat
+the time from the pivot. We probe the follow-
+Table6: Timetotrainandevaluateanintentclassifica-
+ing values: r = {0.75,0.5,0.25}, H = {0,1,2},
+tion model based on two dual models and fine-tuning
+h = {128,256,512,1024},andwealsotryoutall
+BERT on BANKING77 in a few-shot scenario with 10
+theconfigurationswithanotheroptimizer: Adam
+examplesperintent. TheCPUisa2.3GHzDual-Core
+withthelinearlydecayinglearningrateof4×10−4.
+IntelCorei5. TheGPUisaGeForceRTX2080Ti,11
+GB.TheTPUisav2-8,8cores,64GB. Theresultswithallhyperparameterconfigsare
+summarized in Table 4. They suggest that intent
+detectors based on dual models are indeed very
+betterresultswiththecombinedmodelwhen30ex- robust. Importantly,wedonotobserveanyexperi-
+amplesperintentareavailableonallthreedatasets. mentalrunwhichresultsinsubstantiallylowerper-
+Overall,thisprovesthesuitabilityofdualsentence formancewiththesemodels. Ingeneral,thepeak
+encodersforthefew-shotintentclassificationtask. scores with dual-based models are reported with
+higherr rates(0.75),andwithlargerhiddenlayer
+Invariance to Hyperparameters. A prominent
+sizesh(1,024). Ontheothersideofthespectrum
+riskinfew-shotsetupsconcernsoverfittingtosmall
+arevariantswithlowerr rates(0.25)andsmaller
+datasets(Srivastavaetal.,2014;Olsonetal.,2018).
+h-s(128). However,thefluctuationinscoresisnot
+Anotherissueconcernsthesheerlackoftraining
+large,asillustratedbytheresultsinTable4. This
+data, which gets even more pronounced if a sub-
+finding does not hold for BERT-FIXED where in
+set of the (already scarce) data must be reserved
+Table4wedoobserve“outlier”runswithsubstan-
+forvalidationandhyper-parametertuning. There-
+tiallylowerperformancecomparedtoitspeakand
+fore, a desirable property of any few-shot intent
+averagescores. Finally,itisalsoimportanttonote
+detector is its invariance to hyperparameters and,
+BERT-TUNEDdoesnotconvergetoagoodsolution
+consequently, its off-the-shelf usage without fur-
+for 2% of the runs with different seeds, and such
+thertuningonthevalidationset. Thiseffectively
+runsarenotincludedinthefinalreportednumbers
+meansthatonecoulduseallavailableannotatedex-
+withthatbaselineinTable3.
+amplesdirectlyfortraining. Inordertoincreasethe
+reliabilityoftheintentdetectorsandpreventover- ResourceEfficiency. Besidesstrongperformance
+fittinginfew-shotscenarios,wesuggesttousethe establishedinTable3andincreasedstability(see
+aggressivedropoutregularization(i.e.,thedropout Table4),anotheradvantageofthetwodualmodels
+rateis0.75),andaverylargenumberofiterations is their encoding efficiency. In Table 5 we report
+the average times needed by each fixed encoder sponse selection pretraining, BERT is primarily
+to encode sentences fed in the batches of size 15 a (local) language model. It seems that the next
+on both CPU (2.3 GHz Dual-Core Intel Core i5) sentence prediction objective is not sufficient to
+and GPU (GeForce RTX 2080 Ti, 11 GB). The learnauniversalsentenceencoderwhichcanbeap-
+encodingtimesrevealthat BERT, whenusedasa pliedoff-the-shelftounseensentencesinconversa-
+sentenceencoder,isaround20timessloweronthe tionaltasks(Mehrietal.,2019). However,BERT’s
+CPUandroughly3timesslowerontheGPU.9 competitiveperformanceinthefine-tuningmode,
+Furthermore,inTable6wepresentthetimere- atleastintheFulldatascenarios,suggeststhatit
+quiredtotrainandevaluateanintentclassification stillcapturesknowledgewhichisusefulforintent
+modelfor BANKING77 inthelowest-dataregime detection. Givenstrongperformanceofbothfine-
+(10instancesperintent).10 Notethatthetimereduc- tunedBERTanddualmodelsintheintentdetection
+tiononGPUoverCPUforthefew-shotscenariois task,infutureworkweplantoinvestigatehybrid
+mostlyduetothereducedencodingtimeonGPU strategiesthatcombinedualsentenceencodersand
+(see Table 5 again). However, when operating in LM-basedencoders. Notethatitisalsopossibleto
+theFulldataregime,thebenefitsofGPUtraining combineBERT-FIXEDwiththetwodualencoders,
+vanish: usinganeuralnetwithasinglehiddenlayer butsuchensembles,besidesyieldingreducedper-
+theoverheadoftheGPUusageishigherthanthe formance,alsosubstantiallyincreasetrainingtimes
+speed-upachievedduetofasterencodingandnet- (seeagainTable5).
+workcomputations. Crucially,thereportedtraining We also believe that further gains can be
+andexecutiontimesclearlyindicatethateffective achievedbyincreasingtheoverallsizeanddepth
+intent detectors based on pretrained dual models of dual models such as ConveRT, but this comes
+canbeconstructedevenwithoutlargeresourcede- attheexpenseofitsefficiencyandtrainingspeed:
+mands and can run even on CPUs, without huge note that the current architecture of ConveRT re-
+models that require GPUs or TPUs. In sum, we liesononly6Transformerlayersandembedding
+hopethatourfindingsrelatedtoimprovedresource dimensionality of 512 (cf., BERT-Large with 24
+efficiency of dual models, as well as the shared layersand1024-dimembeddings).
+code will facilitate further and wider research fo-
+cusedontheintentclassificationtask. 6 Conclusion
+Further Discussion. The results from Tables 3 Wehavepresentedintentclassificationmodelsthat
+and4showthattransferringrepresentationsfrom rely on sentence encoders which were pretrained
+conversational pretraining based on the response on a conversational response selection task. We
+selectiontask(andconversationaldata)isusefulfor havedemonstratedthatusingdualencodermodels
+conversationaltaskssuchasintentdetection. This such as USE and ConveRT yield state-of-the-art
+corroborates the main findings from prior work intentclassificationresultsonthreediverseintent
+(Humeau et al., 2020; Henderson et al., 2019b). classification data sets in English. One of these
+Theresultsalsosuggestthatusingthecurrentpre- datasetsisanothercontributionofthiswork: we
+trainedBERTasanoff-the-shelfsentenceencoder have proposed a fine-grained single-domain data
+is sub-optimal for an application such as intent setspanning13,083annotatedexamplesacross77
+detection: BERT is much more powerful when intentsinthebankingdomain.
+usedinthefine-tuningmodeinsteadofthelessex-
+Thegainswiththeproposedmodelsoverfully
+pensive“feature-based”mode(Petersetal.,2019).
+fine-tuned BERT-based classifiers are especially
+ThismightbeduetoitspretrainingLMobjective:
+pronounced in few-shot scenarios, typically en-
+while both USE and ConveRT are forced to rea-
+countered in commercial systems, where only a
+son at the level of full sentences during the re-
+smallsetofannotatedexamplesperintentcanbe
+guaranteed. Crucially,wehaveshownthatthepro-
+9Weprovideacolabscripttoreproducetheseexperiments. posedintentclassifiersareextremelylightweight
+10Note that we cannot evaluate BERT-TUNED
+in terms of resources, which makes them widely
+on GPU as it runs out of memory. Similar prob-
+lems were reported in prior work; see https: usable: they can be trained on a standard lap-
+//github.com/google-research/bert/blob/ top’sCPUinseveralminutes. Thispropertyholds
+master/README.md#squad-11forareference. USE
+promisetofacilitatethedevelopmentofintentclas-
+andCONVERTcannotbeevaluatedonTPUsastheycurrently
+lackTPU-specificcode. sifiersevenwithoutaccesstolargecomputational
+resources,whichinturnalsoincreasesequalityand Muthuraman Chidambaram, Yinfei Yang, Daniel Cer,
+fairnessinresearch(Strubelletal.,2019). SteveYuan,Yun-HsuanSung,BrianStrope,andRay
+Kurzweil. 2019. Learning cross-lingual sentence
+Infutureworkwewillporttheefficientintentde-
+representationsviaamulti-taskdual-encodermodel.
+tectorsbasedondualencoderstootherlanguages,
+In Proceedings of the 4th Workshop on Representa-
+leveragingmultilingualpretrainedrepresentations tionLearningforNLP,pages250–259.
+(Chidambaram et al., 2019). This work has also
+Alice Coucke, Alaa Saade, Adrien Ball, The´odore
+empiricallyvalidatedthatthereisstillampleroom
+Bluche, Alexandre Caulier, David Leroy, Cle´ment
+forimprovementintheintentdetectiontaskespe- Doumouro, Thibault Gisselbrecht, Francesco Calta-
+cially in low-data regimes. Therefore, similar to girone,ThibautLavril,etal.2018. SnipsVoicePlat-
+recentwork(Upadhyayetal.,2018;Khaliletal., form:Anembeddedspokenlanguageunderstanding
+systemforprivate-by-designvoiceinterfaces. arXiv
+2019; Liu et al., 2019c), we will also investigate
+preprintarXiv:1805.10190,pages12–16.
+how to transfer intent detectors to low-resource
+targetlanguagesinfew-shotandzero-shotscenar- Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of
+ios. We also plan to extend the models to handle
+deep bidirectional transformers for language under-
+out-of-scopeprediction(Larsonetal.,2019).
+standing. In Proceedings of NAACL-HLT, pages
+We have released the code and the data 4171–4186.
+sets online at: github.com/PolyAI-LDN/
+Layla El Asri, Hannes Schulz, Shikhar Sharma,
+polyai-models.
+Jeremie Zumer, Justin Harris, Emery Fine, Rahul
+Mehrotra, and Kaheer Suleman. 2017. Frames: A
+Acknowledgments corpusforaddingmemorytogoal-orienteddialogue
+systems. In Proceedings of SIGDIAL, pages 207–
+We thank our colleagues at PolyAI, especially 219.
+PawełBudzianowski,SamCoope,andShawnWen
+Charles T. Hemphill, John J. Godfrey, and George R.
+for many fruitful discussions. We also thank the
+Doddington.1990. TheATISSpokenLanguageSys-
+anonymousreviewersfortheirhelpfulsuggestions. temsPilotCorpus. InProceedingsoftheWorkshop
+onSpeechandNaturalLanguage,pages96–101.
+Matthew Henderson, Pawel Budzianowski, In˜igo
+References
+Casanueva, Sam Coope, Daniela Gerz, Girish Ku-
+Rami Al-Rfou, Marc Pickett, Javier Snaider, Yun- mar,NikolaMrksˇic´,GeorgiosSpithourakis,Pei-Hao
+HsuanSung,BrianStrope,andRayKurzweil.2016. Su, Ivan Vulic´, and Tsung-Hsien Wen. 2019a. A
+Conversationalcontextualcues: Thecaseofperson- repository of conversational datasets. In Proceed-
+alization and history for response ranking. CoRR, ingsofthe1stWorkshoponNaturalLanguagePro-
+abs/1606.00372. cessingforConversationalAI,pages1–10.
+MatthewHenderson, In˜igoCasanueva, NikolaMrksˇic´,
+Yuki Arase and Jun’ichi Tsujii. 2019. Transfer fine-
+Pei-Hao Su, Ivan Vulic´, et al. 2019b. Con-
+tuning: A BERT case study. In Proceedings of
+veRT: Efficient and accurate conversational rep-
+EMNLP-IJCNLP,pages5392–5403.
+resentations from transformers. arXiv preprint
+arXiv:1911.03688.
+Daniel Braun, Adrian Hernandez Mendez, Florian
+Matthes, and Manfred Langen. 2017. Evaluating
+Matthew Henderson, Ivan Vulic´, Daniela Gerz, In˜igo
+natural language understanding services for conver-
+Casanueva, Paweł Budzianowski, Sam Coope,
+sational question answering systems. In Proceed-
+Georgios Spithourakis, Tsung-Hsien Wen, Nikola
+ingsofSIGDIAL,pages174–185.
+Mrksˇic´,andPei-HaoSu.2019c. Trainingneuralre-
+sponseselectionfortask-orienteddialoguesystems.
+Paweł Budzianowski, Tsung-Hsien Wen, Bo-Hsiang
+InProceedingsofACL,pages5392–5404.
+Tseng, In˜igo Casanueva, Stefan Ultes, Osman Ra-
+madan, and Milica Gasˇic´. 2018. MultiWOZ - A Samuel Humeau, Kurt Shuster, Marie-Anne Lachaux,
+large-scale multi-domain wizard-of-oz dataset for and Jason Weston. 2020. Poly-encoders: Trans-
+task-orienteddialoguemodelling. InProceedingsof former architectures and pre-training strategies for
+EMNLP,pages5016–5026. fast and accurate multi-sentence scoring. In Pro-
+ceedingsofICLR,volumeabs/1905.01969.
+Daniel Cer, Yinfei Yang, Sheng-yi Kong, Nan Hua,
+Nicole Limtiaco, Rhomni St. John, Noah Con- Talaat Khalil, Kornel Kiełczewski, Georgios Chris-
+stant, MarioGuajardo-Cespedes, SteveYuan, Chris tos Chouliaras, Amina Keldibek, and Maarten Ver-
+Tar, Yun-Hsuan Sung, Brian Strope, and Ray steegh. 2019. Cross-lingual intent classification in
+Kurzweil.2018. Universalsentenceencoder. CoRR, alowresourceindustrialsetting. InProceedingsof
+abs/1803.11175. EMNLP-IJCNLP,pages6418–6423.
+Stefan Larson, Anish Mahendran, Joseph J. Peper, Victor Sanh, Lysandre Debut, Julien Chaumond, and
+Christopher Clarke, Andrew Lee, Parker Hill, ThomasWolf.2019. DistilBERT,adistilledversion
+JonathanK.Kummerfeld, KevinLeach, MichaelA. ofBERT:Smaller,faster,cheaperandlighter. CoRR,
+Laurenzano, Lingjia Tang, and Jason Mars. 2019. abs/1910.01108.
+An evaluation dataset for intent classification and
+out-of-scopeprediction. InProceedingsofEMNLP- Nitish Srivastava, Geoffrey E. Hinton, Alex
+IJCNLP,pages1311–1316. Krizhevsky, Ilya Sutskever, and Ruslan Salakhutdi-
+nov.2014. Dropout:Asimplewaytopreventneural
+Xingkun Liu, Arash Eshghi, Pawel Swietojanski, and networks from overfitting. Journal of Machine
+Verena Rieser. 2019a. Benchmarking natural lan- LearningResearch,15(1):1929–1958.
+guageunderstandingservicesforbuildingconversa-
+tionalagents. InProceedingsofIWSDS. Emma Strubell, Ananya Ganesh, and Andrew McCal-
+lum. 2019. Energy and policy considerations for
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- deeplearninginNLP. InProceedingsofACL,pages
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, 3645–3650.
+Luke Zettlemoyer, and Veselin Stoyanov. 2019b.
+RoBERTa: A robustly optimized BERT pretraining ShyamUpadhyay,ManaalFaruqui,Go¨khanTu¨r,Dilek
+approach. CoRR,abs/1907.11692. Hakkani-Tu¨r, and Larry P. Heck. 2018. (almost)
+zero-shotcross-lingualspokenlanguageunderstand-
+Zihan Liu, Jamin Shin, Yan Xu, Genta Indra Winata,
+ing. InProceedingsofICASSP,pages6034–6038.
+PengXu,AndreaMadotto,andPascaleFung.2019c.
+Zero-shotcross-lingualdialoguesystemswithtrans- Tsung-Hsien Wen, David Vandyke, Nikola Mrksˇic´,
+ferablelatentvariables. InProceedingsofEMNLP- MilicaGasˇic´,LinaM.Rojas-Barahona,Pei-HaoSu,
+IJCNLP,pages1297–1303. Stefan Ultes, and Steve Young. 2017. A network-
+based end-to-end trainable task-oriented dialogue
+AndrewL.Maas,AwniY.Hannun,andAndrewY.Ng.
+system. InProceedingsofEACL,pages438–449.
+2013. Rectifier nonlinearities improve neural net-
+workacousticmodels. InProceedingsofICML. Jason Williams. 2012. A critical analysis of two sta-
+tisticalspokendialogsystemsinpublicuse. InPro-
+Shikib Mehri, Evgeniia Razumovskaia, Tiancheng
+ceedingsofSLT.
+Zhao, and Maxine Eskenazi. 2019. Pretraining
+methods for dialog context representation learning.
+Anbang Xu, Zhe Liu, Yufan Guo, Vibha Sinha, and
+InProceedingsofACL,pages3836–3845.
+RamaAkkiraju.2017. Anewchatbotforcustomer
+serviceonsocialmedia. InProceedingsofthe2017
+MatthewOlson,AbrahamJ.Wyner,andRichardBerk.
+CHI Conference on Human Factors in Computing
+2018. Modernneuralnetworksgeneralizeonsmall
+Systems,pages3506–3510.
+data sets. In Proceedings of NeurIPS, pages 3623–
+3632.
+Yinfei Yang, Daniel Cer, Amin Ahmad, Mandy
+Guo, Jax Law, Noah Constant, Gustavo Herna´ndez
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt
+A´brego, Steve Yuan, Chris Tar, Yun-Hsuan Sung,
+Gardner, Christopher Clark, Kenton Lee, and Luke
+BrianStrope,andRayKurzweil.2019. Multilingual
+Zettlemoyer. 2018. Deep contextualized word rep-
+resentations. InProceedingsofNAACL-HLT,pages universal sentence encoder for semantic retrieval.
+CoRR,abs/1907.04307.
+2227–2237.
+Matthew E. Peters, Sebastian Ruder, and Noah A. Ofir Zafrir, Guy Boudoukh, Peter Izsak, and Moshe
+Smith.2019. Totuneornottotune? Adaptingpre- Wasserblat. 2019. Q8BERT: Quantized 8bit BERT.
+trainedrepresentationstodiversetasks. InProceed- CoRR,abs/1910.06188.
+ings of the 4th Workshop on Representation Learn-
+ingforNLP,pages7–14.
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan,
+DarioAmodei,andIlyaSutskever.2019. Language
+modelsareunsupervisedmultitasklearners. OpenAI
+Blog,1(8).
+Abhinav Rastogi, Xiaoxue Zang, Srinivas Sunkara,
+RaghavGupta,andPranavKhaitan.2019. Towards
+scalable multi-domain conversational agents: The
+schema-guided dialogue dataset. arXiv preprint
+arXiv:1909.05855.
+Sebastian Ruder, Matthew E. Peters, Swabha
+Swayamdipta, and Thomas Wolf. 2019. Trans-
+fer learning in natural language processing. In
+Proceedings of NAACL-HLT: Tutorials, pages
+15–18.

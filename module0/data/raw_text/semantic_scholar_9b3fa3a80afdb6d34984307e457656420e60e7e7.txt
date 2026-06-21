@@ -1,0 +1,1264 @@
+Should You Mask 15% in Masked Language Modeling?
+AlexanderWettig TianyuGao ZexuanZhong DanqiChen
+∗ ∗
+DepartmentofComputerScience,PrincetonUniversity
+{awettig,tianyug,zzhong,danqic}@cs.princeton.edu
+Abstract (MLMs)likeBERT(Devlinetal.,2019)predicta
+maskedsubsetofinputtokensbasedontheremain-
+Maskedlanguagemodels(MLMs)convention-
+ingcontextandaremoreeffectiveondownstream
+allymask15%oftokensduetothebeliefthat
+tasksduetotheirbidirectionalnature.
+more masking would leave insufficient con-
+BERT chooses a 15% masking rate, based on
+text to learn good representations; this mask-
+ing rate has been widely used, regardless of the reasoning that models cannot learn good rep-
+model sizes or masking strategies. In this resentations when too much text is masked, and
+work,werevisitthisimportantchoiceofMLM thetrainingisinefficientwhentoolittleismasked.
+pre-training. We first establish that 15% is Surprisingly,thisimportantchoicehasbeenunder-
+not universally optimal, and larger models
+exploredsince15%maskingisusedubiquitously
+should adopt a higher masking rate. Specifi-
+byBERT’ssuccessors(Liuetal.,2019;Joshietal.,
+cally, we find that masking 40% outperforms
+2020;Lanetal.,2020;Heetal.,2021;Levineetal.,
+15% for BERT-large size models on GLUE
+2021;Izsaketal.,2021),regardlessofmodelsizes,
+and SQuAD. Interestingly, an extremely high
+masking rate of 80% can still preserve 95%
+maskingstrategiesandoptimizationrecipes.2
+fine-tuning performance and most of the ac- In this work, we aim to understand the impact
+curacy in linguistic probing, challenging the ofmaskingrates. Wehypothesizethattheoptimal
+conventional wisdom about the role of the masking rate is not universally 15%, but should
+masking rate. We then examine the interplay
+depend on other factors. First, we consider the
+between masking rates and masking strate-
+impact of model sizes and establish that indeed
+giesandfindthatuniformmaskingrequiresa
+larger models should adopt higher masking rates
+highermaskingratecomparedtosophisticated
+maskingstrategiessuchasspanorPMImask- (§3). Specifically, we find that under an efficient
+ing.Finally,wearguethatincreasingthemask- pre-training recipe (Izsak et al., 2021), 40% out-
+ing rate has two distinct effects: it leads to performs 15% for BERT-large size models when
+more corruption, which makes the prediction fine-tuningonGLUEandSQuAD.
+task harder; it also enables more predictions,
+Interestingly,weobservethatlargemodelscan
+whichbenefitsoptimization. Usingthisframe-
+stilllearngoodrepresentationsevenforveryhigh
+work, we revisit BERT’s 80-10-10 corruption
+maskingrates: ifwemaskasmuchas80%ofinput
+strategy. Together, our results contribute to a
+betterunderstandingofMLMpre-training.1 tokens and pre-trained models have a perplexity
+ofmorethan1000,thelearnedrepresentationscan
+1 Introduction still preserve more than 95% of fine-tuning per-
+formance on downstream tasks, compared to the
+Pre-trainedlanguagemodelshavetransformedthe
+default15%masking(Table1),andshowconsider-
+landscapeofnaturallanguageprocessing(Devlin
+ableperformanceinlinguisticprobing(§4). This
+et al., 2019; Liu et al., 2019; Raffel et al., 2020;
+challengescommonintuitionsaboutmaskingrates
+Brown et al., 2020, inter alia). They are trained
+andwhatmodelslearninMLMpre-training.
+onvastquantitiesoftextdataandacquirerichand
+Wethenfocusonthestrategyofwhichtokensto
+versatile language representations. Compared to
+maskasanadditionalfactortotheoptimalmasking
+autoregressive models, which always predict the
+rate of MLMs (§5). We find that different mask-
+nexttokeninasequence,maskedlanguagemodels
+ing rates should be used with different masking
+*Thefirsttwoauthorscontributedequally. strategies,andthedefaultuniformmaskingbene-
+1Ourcodeandpre-trainedmodelsarepubliclyavailableat
+https://github.com/princeton-nlp/DinkyTrain. 2Someexceptionsarediscussedin§8.
+2985
+Proceedingsofthe17thConferenceoftheEuropeanChapteroftheAssociationforComputationalLinguistics,pages2985–3000
+May2-6,2023©2023AssociationforComputationalLinguistics
+Pre-training Fine-tuning
+m Example PPL MNLI QNLI SQuAD3
+15% Westudyhighmaskingratesforpre-traininglanguagemodels. 17.7 84.2 90.9 88.0
+40% Westudyhighmaskingratesforpre-traininglanguagemodels. 69.4 84.5 0.3 91.6 0.7 89.8 1.8
+↑ ↑ ↑
+80% Westudyhighmaskingratesforpre-traininglanguagemodels. 1141.4 80.8 3.4 87.9 3.0 86.2 1.8
+↓ ↓ ↓
+Randominitialization 61.5 22.7 60.9 30.0 10.8 77.2
+↓ ↓ ↓
+Table1: Maskedexamples, validationperplexity(calculatedinthesamewayasDevlinetal., 2019)ofdifferent
+masking rates on the one billion word benchmark (Chelba et al., 2013), and downstream task development per-
+formance(SQuAD:F1; accuracyforothers). Allthepre-trainedmodelshaveaBERT-largearchitectureandare
+trainedwiththeefficientpre-trainingrecipe(§2.2). FullresultsareprovidedinTable7.
+fitsmorefromhighermaskingratesthanmoreso- autoencoding,whereamodelistrainedtorestore
+phisticatedmaskingstrategiessuchasspan(Joshi acorruptedinputsequence. Specifically,masked
+et al., 2020; Raffel et al., 2020) and PMI mask- languagemodelsmakeindependentpredictionson
+ing (Levine et al., 2021); when all methods are thesubsetofmaskedtokens:
+consideredattheiroptimalmaskingrate,uniform
+maskingachievescompetitiveperformance. L( ) = E E logp(x i x˜) , (1)
+Finally,weproposetodissectthemaskingrate C x ∈C M=⊂mx x "xi∈M | #
+|M| | | P
+into two factors (§6): the corruption rate—how
+whereonemasksm(maskingrate,typically15%)
+much of the context is corrupted (masked)—and
+percentageoftokensfromtheoriginalsentencex
+the prediction rate—how much of the tokens the
+andpredictsonthemaskedtokenset giventhe
+model predicts on. In MLMs, both are set to the M
+corruptedcontextx˜(themaskedversionofx).
+masking rate. However, these two factors have
+Differentmaskingstrategieshavebeenproposed
+opposingeffects: higherpredictionratesgenerate
+to sample : Devlin et al. (2019) randomly
+moretrainingsignalsandbenefittheoptimization, M
+choose from the input tokens with a uniform dis-
+whilehighercorruptionratesmaketheprediction
+tribution; Joshi et al. (2020) sample contiguous
+task more challenging by providing less context.
+spans of text; Levine et al. (2021) sample words
+Tostudythetwofactorsindependently,wedesign
+and spans with high pointwise mutual informa-
+ablationexperimentstodisentanglecorruptionand
+tion(PMI).Theseadvancedsamplingstrategiesare
+prediction rates. Thus, we can verify that mod-
+adoptedtopreventmodelsfromexploitingshallow
+elsbenefitfromhigherpredictionratesandsuffer
+localcuesfromuniformmasking.
+frommorecorruption. Usingthisframework,we
+MLMs can encode bidirectional context while
+alsodiscussBERT’spracticeofpredictingonorig-
+autoregressivelanguagemodelscanonly“lookat
+inalorrandomtokens(the80-10-10rule),andwe
+the past”, and thus MLMs are shown to be more
+findthatmodelsusuallyperformworseunderthis
+effectiveatlearningcontextualizedrepresentations
+corruptionstrategy(§7).
+fordownstreamuse(Devlinetal.,2019). Onthe
+Together,ourresultsdemonstratetheoverlooked
+other hand, MLMs suffer a significant computa-
+impact of the masking rate in MLM pre-training
+tionalcostbecauseitonlylearnsfrom15%ofthe
+andouranalysisdisentanglesitsopposingeffects
+tokenspersequence,whereasautoregressiveLMs
+ofcorruptionandprediction. Weconcludebydis-
+predicteverytokeninasequence. Inthiswork,we
+cussing the relation to work in other models and
+focusonMLMsandstudytheeffectsofdifferent
+modalities (§8) and by highlighting several new
+maskingratesondownstreamperformance.
+avenuesforefficientMLMinthefuture(§9).
+2.2 ExperimentSetup
+2 Background
+We build most of our experiments on a recent ef-
+2.1 MaskedLanguageModeling ficient pre-training recipe—the 24hBERT recipe
+Wefocusonthewidelypopularmaskedlanguage from Izsak et al. (2021)—by using which mod-
+modeling(Devlinetal.,2019),aformofdenoising- els can match BERT-base performance 6 faster
+×
+(testedon8 Titan-V).Thisefficientpre-training
+3ForourSQuADv1.1experiments,wecontinuetraining ×
+recipe allows us to run a large amount of exper-
+the models with 512-token sequences for 2,300 steps and
+reportF1.SeeAppendixAformoredetails. iments in an academic setup. Izsak et al. (2021)
+2986
+84.0
+82.5
+81.0
+5k 10k 15k 20k
+Training Step
+)%(
+ecnamrofreP
+MNLI QNLI QQP STS-B SST-2 SQuAD
+91.5 88.0 88.0 93.0 84.0
+90.0 87.6 86.0 92.0 82.0
+88.5 87.2 84.0 91.0 80.0 15%
+40%
+86.8
+5k 10k 15k 20k 5k 10k 15k 20k 5k 10k 15k 20k 5k 10k 15k 20k 5k 10k 15k 20k
+Training Step Training Step Training Step Training Step Training Step
+Figure 1: Downstream task development performance of large models trained with the efficient pre-training
+recipe,undermaskingratesof15%and40%. Wehighlightbythebluedottedlinehowlongthe40%modeltakes
+to achieve the same performance as the 15% baseline; On QNLI and QQP, the 40% model achieved the same
+performancewithalmosthalfthetrainingtime.
+makethepre-trainingfasterbyusingaBERT-large
+architecture,alargerlearningrate(2e-3),alarger 1
+batchsize(4,096),ashortersequencelength(128)4,
+0
+and fewer training steps. We deviate from the
+-1
+24hBERTwithafewsimplechanges:
+-2
+1. WeadoptRoBERTa’sBPEtokenizer(Sennrich
+etal.,2016;Liuetal.,2019)ratherthanBERT’s 15 20 30 40 50
+Masking Rate (%)
+tokenizer for it performs better in our prelimi-
+naryexperiments(seeAppendixC).
+2. Instead of adopting BERT’s 80-10-10 token
+corruption strategy, we simply replace all the
+maskedtokenswith[MASK]bydefault. Wefind
+that the 80-10-10 corruption strategy does not
+perform better for most downstream tasks, as
+discussedin§7.
+Following 24hBERT, we also do not perform
+nextsentencepredictionduringpre-training,which
+was shown to hurt performance (Liu et al.,
+2019). We show hyperparameters for the effi-
+cientpre-trainingrecipeandacomparisontoother
+recipes(Devlinetal.,2019;Liuetal.,2019)inAp-
+pendixA.Formodelsofdifferentsizes,masking
+rates,andmaskingstrategies,wefollowthesame
+recipeasourpreliminaryexperimentsshowthatit
+stillperformsthebest.
+We use fine-tuning downstream task perfor-
+manceasthemeasurementofhowgoodtheMLMs
+are,sincefine-tuningisthepredominantwaytouse
+pre-trainedMLMsindownstreamuse. Asevident
+fromTable1,pre-trainingmetricslikeperplexity
+donotcorrelatewellwiththedownstreamperfor-
+mance. We describe our downstream fine-tuning
+settingandhyperparametersinAppendixA.
+4Izsaketal.(2021)onlyevaluateonGLUEtasksinstead
+ofSQuADbecauseoftheshortsequencelength.Wefurther
+trainthemodelwith512tokensforSQuADinTable1.
+5Foreachtaskandeachmodelsize, normalizedperfor-
+mance is calculated by x −x σ15% where x 15% is the perfor-
+manceof15%maskingrateandσisthestandarddeviation
+acrossallmaskingrates.RelativeF1istheF1scoresubtracted
+bythe15%modelF1.
+ecnamrofreP
+dezilamroN
+Average GLUE
+1.5
+1.0
+0.5
+large
+base 0.0
+medium
+−0.5
+15 20 30 40 50
+Masking Rate (%)
+)%(
+1F
+evitaleR
+SQuAD
+large
+base
+medium
+Figure 2: Impact of masking rates on different model
+sizes(large>base>medium).5 Weseethatlargermod-
+elsfavorlargeroptimalmaskingrates.
+3 LargerModelsCanBenefitFrom
+HigherMaskingRates
+Devlin et al. (2019) choose the mysterious mask-
+ingrateof15%,forthebeliefthatmaskingmore
+leadstoinsufficientcontexttodecodethetokens,
+andmaskingfewermakesthetraininginefficient,
+and this masking rate has been viewed as a con-
+stantacrossdifferentmodelsizes. Inthissection,
+wetrainmodelsofsizelarge(354Mparameters),
+base(124Mparameters),andmedium(51Mparam-
+eters)formaskingratesvaryingfrom15%to50%.
+ThemodelconfigurationsarelistedinAppendixE.
+Optimal masking depends on model sizes. The
+impact of masking rate across the model sizes is
+summarizedbyFigure2,withdetailedresultsgiven
+inAppendixE.Weseethatlargermodelspossess
+higher optimal masking rates: on average, under
+theefficientpre-trainingrecipe,largemodelstake
+40%astheoptimalmaskingrate;basemodelstake
+20%andmediummodelstake15%. Thisshowsthat
+larger MLM models favor higher masking rates.
+Wehypothesizethattheadditionalcapacityallows
+thelargeMLMto“handle”themorechallenging
+taskofpredictingmanytokensgivenlesscontext.
+Large models learn faster with 40% masking.
+Wenowcomparethebestperformingmaskingrate
+40%totheconventional15%inmoredetailforour
+2987
+84.0
+82.5
+81.0
+20 30 40 50 60 70 80
+Masking Rate (%)
+)%(
+ecnamrofreP
+MNLI QNLI QQP STS-B SST-2 SQuAD
+91.5 88.0 93.0 84.0
+88.0
+90.0 87.6 87.2 92.0 82.0
+91.0
+88.5 87.2 86.4 80.0 Mask 15%
+90.0
+20 30 40 50 60 70 80 20 30 40 50 60 70 80 20 30 40 50 60 70 80 20 30 40 50 60 70 80 20 30 40 50 60 70 80
+Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%)
+Figure 3: Impact of masking rates on large models with the efficient pre-training recipe. We see that on most
+tasks,highermaskingratesoutperform15%. 40%istheoptimalmaskingrateoverall.
+largemodel. First,weplothowthedownstream
+task performance changes with different training
+stepsinFigure1. Formosttasks,weseethat40% 90
+maskingoutperforms15%consistentlyduringthe
+course of training, such that on QNLI and QQP, 75
+the40%modelcanachievethesameperformance
+as the 15% baseline with only half the training 60
+time. We also report the test results in Table 2,
+whereagainmasking40%outperforms15%with 20 40 60 80
+Masking Rate (%)
+ourefficientpre-trainingrecipe. However,theopti-
+malmaskingratecanbetask-dependent,asSST-2
+performs better with 15% masking at the end of
+training. Weacknowledgethattheoptimalmask-
+ing rate may also depend on the training recipe.
+Since the efficient pre-training recipe uses a rela-
+tivelysmallnumberoftrainingsteps,weexplore
+trainingforover4 moresteps,aswellastraining
+×
+withamoreexpensiverecipefromRoBERTa(Liu
+etal.,2019),andwefindinAppendixDthatusing
+a40%maskingratestillperformswell,achieving
+similarperformancetothe15%maskingrate. The
+experimentsintheremainingsectionsofthispaper
+areallbasedonlargemodels.
+4 MLMsinHigh-MaskingRegimes
+Thesuccessofmasking40%over15%motivates
+ustoexplorewhathappensatevenlargermasking
+rates. Therefore, we pre-train additional large
+models with masking rates of up to 80%. We
+consider the question of what representations an
+MLMcanlearnwithsuchlimitedinputasthelast
+masked sentence in Table 1, which is hard to de-
+cipher even for a human. While He et al. (2022)
+recentlypioneeredsuchhighmaskingratesinthe
+visiondomain,andtheyreasonthatimagesarenat-
+uralsignalswithheavyredundancy,whilelanguage
+ishighlysemanticandinformation-dense. Toour
+knowledge,nobodyhasexaminedsuchhighmask-
+ingratesinmaskedlanguagemodelingbefore.
+MLMs learn with extreme masking. We first
+confirm in Table 1 that the validation perplexity
+whenpre-trainingwithan80%maskingrateisex-
+)%(
+ycaruccA
+BLiMP by Linguistic Category
+anaphor agreement
+irregular forms
+determiner noun agreement
+ellipsis
+subject verb agreement
+argument structure
+binding
+control raising
+npi licensing
+filler gap dependency
+quantifiers
+island effects
+Figure 4: Evaluating our models on the BLiMP
+benchmark (Warstadt et al., 2020) using pseudo log-
+likelihoodscoring(Salazaretal.,2020).
+tremely high (>1,000), which suggests that the
+MLM is unable to reconstruct corrupted inputs
+withindependenttokenpredictions. Thereforeour
+settingdiffersfromvision,wheregoodreproduc-
+tions are possible with high masking rates (He
+et al., 2022). Nevertheless, we find that MLMs
+can surprisingly still learn good representations:
+Figure3showstheperformanceofthemodelsfine-
+tunedonarangeoftasks,andweobservethatpre-
+trainingwithan80%maskingratecanretain95%
+offine-tuningperformance,whichissubstantially
+betterthanfine-tuningfromarandominitialization,
+whichisreportedinAppendixB.
+WehypothesizethatMLMsatsuchhighmask-
+ing rates may be understood as a powerful skip-
+grammodel(Mikolovetal.,2013),e.g.,masking
+80%ofa128tokensequencestilllearnsskip-grams
+oflengthupto26. Furthermore,whencompared
+to the simple word2vec model, our Transformer
+models have access to positional information for
+eachcontexttokenandprediction.
+Analysis of linguistic probing. Besides down-
+stream performance, we study the models’ lin-
+guisticabilitiesbyevaluatingthemontheBLiMP
+benchmark (Warstadt et al., 2020). We employ
+zero-shot pseudo log-likelihood scoring (Salazar
+etal.,2020),whereascoreiscomputedbymasking
+each token individually, which is a greater distri-
+2988
+MNLI-m/mm QNLI QQP RTE SST-2 MRPC CoLA STS-B SQuAD
+Masking15% 84.2/83.4 90.9 70.8 73.5 92.8 88.8 51.8 87.3 88.0
+FMasking40% 84.7/84.0 91.3 70.9 75.5 92.6 89.8 50.7 87.6 89.8
+Table2: ThetestresultsontheGLUEbenchmarkwithlargemodels,theefficientpre-trainingrecipe(Izsaketal.,
+2021), and with 15% or 40% masking rates. For RTE, MRPC, and STS-B we fine-tune from the MNLI model
+followingconventionsetbyPhangetal.(2018). ForSQuADv1.1,wetakethesamesettingasTable1.
+butionalshiftfromhighermaskingrates. Weshow
+ourresultsinFigure4. Wefindthatmostlinguis-
+tic phenomena are acquired evenly across mask- 1
+ingratesfrom15%to60%,buttheyarestillcap-
+turedwellbyanMLMtrainedwith80%masking—
+which on average preserves 90% of the probing 0
+accuracy of the 15% model baseline. However,
+15 20 30 40
+some categories such as filler gap dependencies Masking Rate (%)
+and island effects show clear trends that perfor-
+mance deteriorates with higher masking rates—
+although it remains unclear to what extent such
+linguistic knowledge is required by downstream
+tasks in GLUE (Sinha et al., 2021). Overall, our
+resultssuggestthatusefullinguisticknowledgecan
+belearnedfroma“patchy”trainingsignal.
+5 MaskingRatesvs. MaskingStrategies
+Devlinetal.(2019);Liuetal.(2019)useuniform
+samplingforselectingwhichtokenstomask. Sub-
+sequentworkshowedthatadoptingmoresophisti-
+catedmaskingstrategies—suchasspanmaskingor
+PMImasking—canoutperformuniformmasking
+onarangeofdownstreamtasks(Joshietal.,2020;
+Levine et al., 2021). The argument for adopting
+advancedmaskingisthatuniformmaskingenables
+modelstoexploitshallowlocalcues(Levineetal.,
+2021). An example is given by “[MASK] Kong”:
+themodelcaneasilypredict“Hong”withoutusing
+more context. However, all the previous studies
+used a constant 15% masking rate regardless of
+masking strategies, which raises the question of
+whether the conclusions still hold with a higher
+maskingrate.
+Weexperimentwithmultiplemaskingstrategies
+asanadditionalfactorfortheoptimalmaskingrate
+inlargemodels. Figure5showstheresultsofuni-
+formmasking,T5-stylespanmasking(Raffeletal.,
+2020)6,andPMImasking(Levineetal.,2021)un-
+dermaskingratesfrom15%to40%. Weseethat
+(1)forallmaskingstrategies,theoptimalmasking
+6Span maskings in Raffel et al. (2020) and Joshi et al.
+(2020)differinsamplingproceduresandwefollowRaffel
+etal.(2020)forimplementationsimplicity.
+ecnamrofreP
+dezilamroN
+Average GLUE
+85.0
+84.5
+84.0
+83.5
+83.0
+15 20 30 40
+Masking Rate (%)
+)%(
+1F
+SQuAD
+PMI
+Span
+Uniform
+Figure 5: Performance of different masking strate-
+giestrainedwithdifferentmaskingrates(efficientpre-
+trainingrecipe,largemodels).
+1.0
+0.8
+0.5
+0.2
+0.0
+0 20 40 60 80 100
+Masking Rate (%)
+) deksaM
+tinU
+IMP
+( P
+PMI Spans
+12
+PMI@15%
+PMI Span 9
+Uniform
+6
+3
+0
+0 20 40 60 80 100
+Masking Rate (%)
+htgneL
+napS
+deksaM
+.gvA
+Span Lengths
+PMI@15%
+PMI Span
+Uniform
+Figure6:Highermaskingratesincreasetheprobability
+that an entire PMI span is masked (left) under differ-
+ent masking strategies. Uniform masking with a 40%
+ratemasksasmanyPMIspansasregularPMImasking
+at 15%. Masks form longer spans for higher masking
+ratesinuniformsampling, whiletheaveragelengthis
+fixedat3forT5-stylespanmasking(whichcannotbe
+enforcedforveryhighmaskingrates).
+ratesarehigherthan15%;(2)theoptimalmasking
+ratesforspanmaskingandPMImaskingarelower
+thanthatofuniformmasking;(3)whenallstrate-
+giesadopttheoptimalmaskingrates,theuniform
+masking achieves similar and even better results
+compared to the advanced strategies. We also re-
+markthat,whenmaskingwith15%,simplyincreas-
+ingthemaskingratecanbeamoreeffectiveway
+toincreaseperformanceonSQuADthanswitching
+fromuniformmaskingtoanothermoreadvanced
+strategy. Morefine-grainedresultswiththesemask-
+ingstrategiesareincludedinAppendixE.
+Interestingly,highermaskingratesnaturallyin-
+crease the chance of masking neighbouring co-
+2989
+m corr m pred MNLI QNLI QQP STS-B SST-2 modeling attempts to learn a conditional proba-
+40% 40% 84.50.1 91.60.1 88.10.0 88.20.1 92.80.1 bility distribution over the vocabulary given the
+40% 20% 83.7 90.6 87.8 87.5 92.9 corruptedcontextp( x˜)duringpre-training. Ifa
+20% 20% 84.1↓ 91.3↓ 87.9↓ 87.4↓ 92.7↑ · |
+↓ ↓ ↓ ↓ ↓ largerproportionoftheinputiscorrupted,atoken
+20% 40% 85.7 ↑ 92.0 ↑ 87.9 ↓ 88.6 ↑ 93.4 ↑ predictionisconditionedonfewercontexttokens,
+10% 40% 86.3 92.3 88.3 88.9 93.2
+↑ ↑ ↑ ↑ ↑ makingpredictionsharderandmoreuncertain.
+05% 40% 86.9 92.2 88.5 88.6 93.9
+↑ ↑ ↑ ↑ ↑
+m affects optimization. Predicting more
+Table3:Corruptionvs. prediction. Wetake40%mask- pred
+meansthemodellearnsfrommoretrainingsignals,
+ingasthebaselinemodel(standarddeviationreported),
+sohigherpredictionratesboostthemodelperfor-
+disentanglem andm ,andmanipulateeachinde-
+corr pred
+pendently. The trend is clear: more prediction helps mance. Fromanotherperspective,eachprediction
+andmorecorruptionhurts. ateachmaskedtokenleadstoalossgradient,which
+isaveragedtooptimizetheweightsofthemodel.
+Averaging across more predictions has a similar
+occuring tokens, similar to the effect of the ad-
+effecttoincreasingthebatchsize,whichisproved
+vancedmaskingstrategies. Weconsiderthemasked
+tobebeneficialforpre-training(Liuetal.,2019).
+tokens over one epoch of training, and count the
+numberofPMIn-grams(e.g.,“HongKong”)that Experiments. Inmaskedlanguagemodeling,both
+were completely covered by different masking m corrandm predaredeterminedbytheoverallmask-
+strategies. Figure6showsthatraisingthemasking ing rate. To study how m corr and m pred affect the
+ratefrom15%to40%resultsinan8-foldincrease downstreamperformanceindependently,wedesign
+inthechanceofmaskingaPMIn-gramunderuni- asimpleablationexperimenttodisentanglethem:
+formmaskingandgivesavaluecomparabletoPMI
+masking at 15% masking rate. Similarly, higher 1. Ifm pred < m corr,wemaskm corr oftokensand
+maskingratesalsomakethemaskedtokensform onlymakepredictionsonm pred ofthetokens. This
+longer spans. However, at a given masking rate, can be implemented without additional cost. For
+uniformmaskingremainsaneasiertaskthanspan example,withm corr = 40%andm pred = 20%,we
+maskingorPMImasking—itappearsreasonable mask40%andonlypredicton20%tokens.
+for uniform masking to admit a higher optimal
+maskingrateforagivenmodelcapacity. 2. If m pred > m corr, we duplicate each sequence
+mpred
+times and mask disjoint sets of m of
+dmcorre corr
+6 UnderstandingMaskingAs the tokens in different sequences. For example,
+CorruptionandPrediction with m = 20% and m = 40%, for each
+corr pred
+sentence, we do twice 20% masking on different
+Inthissection,weanalyzehowmaskingratesaf-
+tokensandpredictonallthemaskedtokens—this
+fect the pre-training process of MLMs, through
+leads to a 20% corruption but a 40% prediction
+two distinct perspectives: task difficulty and op-
+on each sequence. Note that this ablation takes
+timization. We identify that the masking rate m mpred
+timeslongerbecausewedomultiplepasses
+determinestwoimportaspectsofthepre-training dmcorre
+oneverysequence,andisnotefficientinpractice.
+problem: thecorruptionratem andthepredic-
+corr
+tion rate m . m is the proportion of tokens
+pred corr Table 3 shows the ablation results with disen-
+thatareerasedfromtheinputsequence—typically
+tangled m and m . We see that (1) fixing
+bysubstituting[MASK].m istheproportionof corr pred
+pred them as40%,loweringthem from40%to
+corr pred
+tokensthatthemodelspredict, andeachofthose
+20% results in a consistent drop on downstream
+tokenscontributestothecross-entropyloss.
+tasks, showing that more predictions lead to bet-
+InEq. (1),m controlshowmuchcontentis
+corr terperformance;(2)fixingthem as40%,low-
+pred
+corrupted in x˜ compared to the original sentence
+eringthem leadstoconsistentlybetterperfor-
+corr
+x, and m controls the number of predictions
+pred mance,suggestingthatlowercorruptionratesmake
+in the set . Usually, both the corruption and
+M thepre-trainingtaskeasiertolearnandarebetter
+the prediction rates are tied to the masking rate,
+for pre-training. Though we see that the perfor-
+i.e., m = m = m, but they may impact
+corr pred mance gain by lowering m from 10% to 5%
+corr
+representationqualitydifferently.
+ismuchsmallerthanthatbyloweringm from
+corr
+m controlstaskdifficulty. Maskedlanguage 40% to 20%, suggesting a diminishing marginal
+corr
+2990
+MNLI QNLI QQP STS-B SST-2 Randomtokencorruptions. Replacingwithran-
+40%mask 84.50.1 91.60.1 88.10.0 88.20.1 92.80.1 domtokenscontributetocorruptionandprediction
++5%same 84.2 91.0 87.8 88.0 93.3 rate, as the input is corrupted and the prediction
+↓ ↓ ↓ ↓ ↑
+w/5%rand 84.5 91.3 87.9 87.7 92.6
+↓ ↓ ↓ ↓ ↓ task is non-trivial. In fact, we find that the loss
+w/80-10-10 84.3 91.2 87.9 87.8 93.0
+↓ ↓ ↓ ↓ ↑ is slightly higher on random tokens compared to
+Table 4: Impact of substituting masks with ran- [MASK], as (1) the model needs to decide for all
+dom/sametokens. “+5%same”: doextra5%sameto- tokenswhethertheinformationattheinputisfrom
+kenpredictions.“w/5%rand”:usemaskfor35%mask acorruptionornot,and(2)predictionsneedtobe
+tokensandrandomtokensfor5%. “w/80-10-10”: for
+invarianttolargechangesintheinputembeddings.
+the 40% masked tokens, 10% are same token predic-
+tionsand10%arerandomtokencorruptions. Ablation experiments. We adopt the m = 40%
+modelusingonly[MASK]replacementsasthebase-
+line,ontopofwhichweaddthreemodels:
+return of reducing the corruption rate. (3) com-
+paring m = 20%,m = 20% and m = 1. “+5%same”: wemask40%oftokensbutpre-
+corr pred corr
+40%,m = 40%, we see that the gain brought dicton45%oftokens. Addingsametokenpredic-
+pred
+by more predictions transcends the drawback of tionsdoesnotchangem orm .
+corr pred
+morecorruption,leadingtobetterperformance.
+2. “w/5%random”: wemask35%oftokensand
+Theablationshowsthatwhenwetunethemask-
+randomlyreplaceanother5%oftokens,predicting
+ingrate,wearetuningthecorruptionrateandthe
+on40%intotal.
+prediction rate together, which have antagonistic
+effects. The final outcome is decided by which 3. “80-10-10”: theoriginalBERTrecipe. Dueto
+rateweighsmore—themodelbenefitsfromhigher sametokenpredictions,m = m = 36%.
+corr pred
+masking rates if the hindrance brought by high
+As shown in Table 4, we observe that same to-
+corruptionissurpassedbytheadvantagefrompre-
+kenpredictionsandrandomtokencorruptionsde-
+dictingmore. Manyfactorsmayaffectthebalance
+teriorateperformanceonmostdownstreamtasks.
+between the two—for example, model sizes and
+The 80-10-10 rule performs worse than simply
+maskingstrategiesaswediscussedin§3and§5.
+using all [MASK]—with the exception of SST-2,
+7 RevisitingBERT’sCorruption wheresametokenpredictionsarebeneficial. Over-
+Strategy all, our results suggest that in the fine-tuning
+paradigm,themodelcanadapttofull,uncorrupted
+Devlinetal.(2019)suggestthatitisbeneficialto sentences,regardlessoftheuseofalternativecor-
+replace10%of[MASK]tokenswiththeoriginalto-
+ruption strategies in pre-training. Therefore, we
+ken(sametokenpredictions)and10%withrandom suggesttouseonly[MASK]forMLMpre-training.
+tokens(randomtokencorruptions). Sincethen,this Wealsopresentananalysisbasedoninformation
+80-10-10 rule has been widely adopted in almost flow(Voitaetal.,2019)inAppendixG.
+all the MLM pre-training work (Liu et al., 2019;
+Joshietal.,2020;Heetal.,2021). Themotivation 8 RelatedWork
+isthatmaskingtokenscreateamismatchbetween
+pre-training and downstream fine-tuning, and us- Maskingratesandmaskingstrategies. Thereex-
+ingoriginalorrandomtokensasanalternativeto istafewworksonstudyingtheimpactofmasking
+[MASK]maymitigatethegap. Withourcorruption rates, among which Liao et al. (2020) show that
+andpredictionframework,werevisitthetwokinds dynamicallysamplingthemaskingratefrom0%to
+of mask replacements in the 80-10-10 rules and 100%foreachsequencecanimproveMLM’sdown-
+empirically verify whether they are beneficial to streamperformanceaswellastheabilityasagener-
+downstreamperformance. ationmodel. Ontheotherhand,maskingstrategies
+are heavily explored for both pre-training (Joshi
+Same token predictions. The loss from same to-
+etal.,2020;Raffeletal.,2020;Levineetal.,2021)
+ken predictions is very small and should be re-
+andintermediatepre-training(Yeetal.,2021)with-
+gardedasanauxiliaryregularization. Thus,same
+outconsideringtheeffectofmaskingrates.
+tokenpredictionsshouldneithercounttowardsthe
+corruptionnortotheprediction—theydonotcor- “Unrealistic” MLM training. A recent line of
+rupttheinputandcontributelittletolearning. work shows that linguistically implausible MLM
+2991
+objectives can achieve competitive or non-trivial etal.(2020)proposeasimilarstylemaskedmodel
+downstreamperformance,e.g.,trainingwithshuf- inspeechandadoptamaskingrateofaround50%.
+fledwordorder(Sinhaetal.,2021),withrandomly
+generatedsequences(Krishnaetal.,2021),orpre-
+9 Conclusion&Discussion
+dicting only the first character of masked tokens
+(Yamaguchi et al., 2021; Alajrami and Aletras, In this work, we conduct a comprehensive study
+2022). These studies echo our findings that even onthemaskingratesofMLMs. Wediscoverthat
+an“unrealistical”highmaskingratecanstilllead 15%isnotuniversallyoptimal,andlargermodels
+togooddownstreamresults. shouldadoptahighermaskingrate. Wealsofind
+that masking strategies should be considered to-
+Masking in other language models. Besides gether with masking rates, and uniform masking
+MLMs, there are other pre-training schemes,
+needs a higher masking rate than more sophisti-
+namelyautoregressivelanguagemodels(Radford
+catedmaskingstrategies. Wegainabetterunder-
+et al., 2018; Brown et al., 2020) and sequence-
+standingofmaskingratesbydisentanglingthemas
+to-sequence (seq2seq) language models (Raffel
+corruption rates and prediction rates and analyze
+etal.,2020;Lewisetal.,2020). SimilartoMLMs,
+the 80-10-10 corruption strategy that are widely
+seq2seq models corrupt text with a masking rate,
+usedinBERTmodels. Basedonourfindings,we
+buttheypredictwithanautoregressivedecoderand
+discusstheimplicationsofhighmaskingratesand
+arefine-tunedindifferentways;Songetal.(2019)
+futuredirectionsofefficientMLMpre-training:
+alsopointoutthatmaskingratescontrolwhether
+seq2seqmodelsareclosertoencoder-onlyMLMs Implications on higher masking rates. A direct
+(maskingless)ordecoder-onlyautoregressiveLMs takeaway from our findings is that larger models
+(maskingmore). Thus,weexpectthemaskingrate mayadopthighermaskingratesforbettersample
+studiesinseq2seqmodelstodrawadifferentcon- efficiency. Figure1showsthatalargemodelwith
+clusion from ours (Raffel et al., 2020; Tay et al., 40%maskingcanachievecomparableresultstoa
+2022b). Besides,Tayetal.(2022a)showthatpre- 15%baselineonseveraltaskswithhalfthetraining
+trainingmetricsarenotcorrelatedwithdownstream time. Largermodelsalsoexhibitfasterconvergence
+performance,echoingourfindingsthatperplexity foragivencomputationalbudget: Lietal.(2020)
+doesnotcorrelatewithfine-tuningresults. suggest it is more efficient to train larger models
+forfewersteps,asopposedtotrainingsmallermod-
+ELECTRA (Clark et al., 2020) uses a smaller
+elsforlonger. Thiscanbecombinedwithhigher
+MLMtofillin15%oftheblanksandtrainsamodel
+maskingratesforbettersampleefficiency.
+to distinguish whether a token was generated by
+theMLMornot. Despitethecomplicatedtraining
+Separatingmaskedandunmaskedtokens. The
+procedure, the main motivation of ELECTRA is
+trainingefficiencycanpotentiallybenefitfromen-
+to improve the training efficiency by predicting
+coding masked and unmasked tokens separately,
+on100%oftokens. Interestingly,wefindthatthe
+where masked tokens use a much lighter-weight
+corruption rate in ELECTRA becomes very low
+module. Ifahighmaskingrateistaken,thiscansig-
+towardstheendoftraining—theaveragecorruption
+nificantlyreducethetrainingcostduetotheshorter
+rateisroughlyonly7%,butthereplacementsare
+inputtotheencoder. Asimilarapproachhasbeen
+“hard” negatives generated by the smaller MLM.
+explored by masked autoencoders in vision (He
+Weleavethestudyofitsconnectiontocorruption
+et al., 2022), where 75% of the input patches are
+andpredictionratesasfuturework.
+maskedandremovedfromtheinputoftheheavy
+encodertoachievea4.1 speedup. Recently,Liao
+Masking in other modalities. Recently, a num- ×
+et al. (2022) have applied these architectural im-
+ber of works extend MLM training to images
+provements to natural language pre-training, and
+andvideosanddemonstratestrongpre-trainingre-
+together with a high masking rate can accelerate
+sults(Heetal.,2022;Zhouetal.,2022;Feichten-
+MLMbyathirdofthepre-trainingbudget.
+hoferetal.,2022;Tongetal.,2022). Theyadopt
+extremelyhighmaskingrates(e.g.,75%onimages Disentanglingcorruptionandprediction. Mod-
+and 90% on videos) compared to their language elsperformbetterwhentrainedwithlowercorrup-
+counterparts, with the argument that images and tionratesandhigherpredictionrates. However,in
+videosarehighlyinformationredundant. Baevski standardMLMs,thosetwofactorsarealwaystied
+2992
+to the masking rate. Methods which can encode Acknowledgements
+asequenceonceandthenefficientlypredictmany
+WethankSadhikaMalladiandthemembersofthe
+smallsetsofmasks,forexamplebymanipulating
+Princeton NLP group for helpful discussion and
+theattention,couldsubstantiallyacceleratemasked
+valuablefeedback. AlexanderWettigissupported
+languagemodelingpre-training.
+byaGraduateFellowshipatPrincetonUniversity.
+ThisworkisalsosupportedbyaGoogleResearch
+Limitations ScholarAward.
+(1)Ouranalysisofmaskingratesappliestoaspe-
+References
+cifictypeofpre-trainingmethod,maskedlanguage
+Ahmed Alajrami and Nikolaos Aletras. 2022. How
+modeling. Wearealsointerestedinstudyingmask-
+doesthepre-trainingobjectiveaffectwhatlargelan-
+ingratesinotherpre-trainedmethods,e.g.,seq2seq
+guage models learn about linguistic properties? In
+modelsandELECTRA,andleaveitforfuturework. Proceedings of the 60th Annual Meeting of the As-
+(2)Whilewehaveshownhowtheoptimalmasking sociation for Computational Linguistics (Volume 2:
+Short Papers), pages 131–147, Dublin, Ireland. As-
+ratedependsonmodelsizeandmaskingstrategy,
+sociationforComputationalLinguistics.
+theremaybeadditionalfactors,suchasthevocab-
+ularysize,pre-trainingcorpusorlanguagefamily. AlexeiBaevski,YuhaoZhou,AbdelrahmanMohamed,
+Inparticular,ourexperimentsfocusonEnglish,but and Michael Auli. 2020. wav2vec 2.0: A frame-
+workforself-supervisedlearningofspeechrepresen-
+languageswithdifferentstructuralandmorphologi-
+tations. InAdvancesinNeuralInformationProcess-
+calfeaturesmayhavelowerorevenhigheroptimal
+ing Systems (NeurIPS), volume 33, pages 12449–
+maskingrates,orrelymoreonadvancedmasking 12460.
+strategies. (3)Weconsiderawell-establishedyet
+Roy Bar Haim, Ido Dagan, Bill Dolan, Lisa Ferro,
+relatively small set of downstream tasks, which
+Danilo Giampiccolo, Bernardo Magnini, and Idan
+donotbenchmarkdomain-specificknowledgeor Szpektor. 2006. The second PASCAL recognising
+moreadvancedreasoningskills. (4)Duetotheex- textualentailmentchallenge.
+pensivenatureofourpre-trainingexperiments,we
+Luisa Bentivogli, Peter Clark, Ido Dagan, and Danilo
+werenotabletotrainmultiplepre-trainedmodels
+Giampiccolo.2009. ThefifthPASCALrecognizing
+overmultipleseeds. (5)Finally,ourfindingspoint textualentailmentchallenge. InTAC.
+outseveralpromisingdirectionsbutthepaperpri-
+TomBBrown, BenjaminMann, NickRyder, Melanie
+marilyaimstostudyandunderstandtheimpactof
+Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind
+maskingrateswithrespecttodifferentfactors. We
+Neelakantan,PranavShyam,GirishSastry,Amanda
+leave exploring better architectures and methods Askell, et al. 2020. Language models are few-shot
+forefficientpre-trainingtofuturework. learners. In Advances in Neural Information Pro-
+cessingSystems(NeurIPS).
+Daniel Cer, Mona Diab, Eneko Agirre, Iñigo Lopez-
+EthicalConsiderations
+Gazpio, and Lucia Specia. 2017. SemEval-2017
+task1: Semantictextualsimilaritymultilingualand
+crosslingualfocusedevaluation. Inthe11thInterna-
+Largelanguagemodelscanexhibitvariouskinds
+tionalWorkshoponSemanticEvaluation(SemEval-
+of stereotypes, as they capture societal biases en-
+2017).
+codedinthetrainingdata. Theseassociationsare
+notdetectedbystandardGLUEorSQuADevalua- CiprianChelba,TomasMikolov,MikeSchuster,QiGe,
+Thorsten Brants, Phillipp Koehn, and Tony Robin-
+tion. Wedonotexpectthatsimplemodificationsof
+son.2013. Onebillionwordbenchmarkformeasur-
+maskingratescanmakeprogresstowardssolving ingprogressinstatisticallanguagemodeling. arXiv
+these problems. Language model pre-training is preprintarXiv:1312.3005.
+also computationally expensive, which comes at
+Kevin Clark, Minh-Thang Luong, Quoc V. Le, and
+a significant environmental cost. Furthermore, it
+Christopher D. Manning. 2020. ELECTRA: Pre-
+makesre-productionandfollow-upresearchdiffi- training text encoders as discriminators rather than
+cult within an academic context. We reduce the generators. In International Conference on Learn-
+ingRepresentations(ICLR).
+computationalrequirementsbyfollowingandpro-
+motinganefficientpre-trainingrecipeandourfind-
+Ido Dagan, Oren Glickman, and Bernardo Magnini.
+ingspointtofutureresearchforefficientMLM. 2005. ThePASCALrecognisingtextualentailment
+2993
+challenge. IntheFirstInternationalConferenceon YoavLevine,BarakLenz,OpherLieber,OmriAbend,
+Machine Learning Challenges: Evaluating Predic- Kevin Leyton-Brown, Moshe Tennenholtz, and
+tive Uncertainty Visual Object Classification, and Yoav Shoham. 2021. PMI-Masking: Principled
+RecognizingTextualEntailment. masking of correlated spans. In International Con-
+ferenceonLearningRepresentations(ICLR).
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of Mike Lewis, Yinhan Liu, Naman Goyal, Mar-
+deepbidirectionalTransformersforlanguageunder- jan Ghazvininejad, Abdelrahman Mohamed, Omer
+standing. InNorthAmericanChapteroftheAssoci- Levy, Veselin Stoyanov, and Luke Zettlemoyer.
+ationforComputationalLinguistics(NAACL). 2020. BART:Denoisingsequence-to-sequencepre-
+trainingfornaturallanguagegeneration,translation,
+WilliamB.DolanandChrisBrockett.2005. Automati- and comprehension. In Association for Computa-
+callyconstructingacorpusofsententialparaphrases. tionalLinguistics(ACL),pages7871–7880.
+In the Third International Workshop on Paraphras-
+ing(IWP2005). Zhuohan Li, Eric Wallace, Sheng Shen, Kevin Lin,
+Kurt Keutzer, Dan Klein, and Joey Gonzalez. 2020.
+Train big, then compress: Rethinking model size
+Christoph Feichtenhofer, Haoqi Fan, Yanghao
+for efficient training and inference of transformers.
+Li, and Kaiming He. 2022. Masked autoen-
+In International Conference on Machine Learning
+coders as spatiotemporal learners. arXiv preprint
+(ICML),pages5958–5968.
+arXiv:2205.09113.
+Baohao Liao, David Thulke, Sanjika Hewavitha-
+Danilo Giampiccolo, Bernardo Magnini, Ido Dagan,
+rana, Hermann Ney, and Christof Monz. 2022.
+and Bill Dolan. 2007. The third PASCAL recog-
+Mask more and mask later: Efficient pre-training
+nizing textual entailment challenge. In the ACL-
+of masked language models by disentangling the
+PASCALWorkshoponTextualEntailmentandPara-
+[MASK] token. In Findings of the Association for
+phrasing.
+Computational Linguistics: EMNLP 2022, pages
+1478–1492, Abu Dhabi, United Arab Emirates. As-
+Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li,
+sociationforComputationalLinguistics.
+Piotr Dollár, and Ross Girshick. 2022. Masked au-
+toencodersarescalablevisionlearners. InProceed-
+Yi Liao, Xin Jiang, and Qun Liu. 2020. Probabilisti-
+ings of the IEEE/CVF Conference on Computer Vi-
+callymaskedlanguagemodelcapableofautoregres-
+sionandPatternRecognition(CVPR),pages16000–
+sivegenerationinarbitrarywordorder. InProceed-
+16009.
+ings of the 58th Annual Meeting of the Association
+for Computational Linguistics, pages 263–274, On-
+Pengcheng He, Xiaodong Liu, Jianfeng Gao, and
+line.AssociationforComputationalLinguistics.
+Weizhu Chen. 2021. DeBERTa: Decoding-
+enhancedbertwithdisentangledattention. InInter-
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+national Conference on Learning Representations
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+(ICLR).
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+RoBERTa: A robustly optimized BERT pretraining
+PeterIzsak,MosheBerchansky,andOmerLevy.2021.
+approach. arXivpreprintarXiv:1907.11692.
+How to train BERT with an academic budget. In
+EmpiricalMethodsinNaturalLanguageProcessing
+Tomas Mikolov, Kai Chen, Gregory S. Corrado, and
+(EMNLP),pages10644–10652.
+JeffreyDean.2013. Efficientestimationofwordrep-
+resentationsinvectorspace. InICLR.
+Mandar Joshi, Danqi Chen, Yinhan Liu, Daniel S.
+Weld, Luke Zettlemoyer, and Omer Levy. 2020. Myle Ott, Sergey Edunov, Alexei Baevski, Angela
+SpanBERT: Improving pre-training by representing Fan, Sam Gross, Nathan Ng, David Grangier, and
+and predicting spans. Transactions of the Associa- Michael Auli. 2019. fairseq: A fast, extensible
+tionofComputationalLinguistics(TACL),8:64–77. toolkit for sequence modeling. In Proceedings of
+the 2019 Conference of the North American Chap-
+KundanKrishna,JeffreyBigham,andZacharyC.Lip- teroftheAssociationforComputationalLinguistics
+ton. 2021. Does pretraining for summarization re- (Demonstrations),pages48–53.
+quireknowledgetransfer? InFindingsoftheAssoci-
+ationforComputationalLinguistics: EMNLP2021, Jason Phang, Thibault Févry, and Samuel R Bowman.
+pages3178–3189,PuntaCana,DominicanRepublic. 2018. Sentence encoders on stilts: Supplementary
+AssociationforComputationalLinguistics. training on intermediate labeled-data tasks. arXiv
+preprintarXiv:1811.01088.
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+Kevin Gimpel, Piyush Sharma, and Radu Soricut. AlecRadford,KarthikNarasimhan,TimSalimans,and
+2020. ALBERT:Alitebertforself-supervisedlearn- Ilya Sutskever. 2018. Improving language under-
+ing of language representations. In International standing by generative pre-training. Technical re-
+ConferenceonLearningRepresentations(ICLR). port,OpenAI.
+2994
+ColinRaffel,NoamShazeer,AdamRoberts,Katherine pretrainingandfinetuningtransformers. InInterna-
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou, tionalConferenceonLearningRepresentations.
+WeiLi, andPeterJLiu.2020. Exploringthelimits
+oftransferlearningwithaunifiedtext-to-textTrans- Yi Tay, Mostafa Dehghani, Vinh Q Tran, Xavier Gar-
+former. TheJournalofMachineLearningResearch cia,DaraBahri,TalSchuster,HuaixiuStevenZheng,
+(JMLR),21(140). Neil Houlsby, and Donald Metzler. 2022b. Unify-
+ing language learning paradigms. arXiv preprint
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and arXiv:2205.05131.
+PercyLiang.2016. SQuAD:100,000+questionsfor
+machinecomprehensionoftext. InEmpiricalMeth-
+Zhan Tong, Yibing Song, Jue Wang, and Limin
+odsinNaturalLanguageProcessing(EMNLP).
+Wang.2022. VideoMAE:Maskedautoencodersare
+data-efficient learners for self-supervised video pre-
+Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase,
+training. In Advances in Neural Information Pro-
+and Yuxiong He. 2020. Deepspeed: System opti-
+cessingSystems.
+mizationsenabletrainingdeeplearningmodelswith
+over 100 billion parameters. In Proceedings of
+ElenaVoita,RicoSennrich,andIvanTitov.2019. The
+the 26th ACM SIGKDD International Conference
+bottom-up evolution of representations in the trans-
+on Knowledge Discovery and Data Mining, page
+former: A study with machine translation and lan-
+3505–3506.
+guage modeling objectives. In Empirical Methods
+in Natural Language Processing and International
+JulianSalazar,DavisLiang,ToanQ.Nguyen,andKa-
+Joint Conference on Natural Language Processing
+trinKirchhoff.2020. Maskedlanguagemodelscor-
+(EMNLP-IJCNLP),pages4396–4406.
+ing. In Proceedings of the 58th Annual Meeting
+of the Association for Computational Linguistics,
+pages 2699–2712, Online. Association for Compu- Alex Wang, Amanpreet Singh, Julian Michael, Felix
+tationalLinguistics. Hill, Omer Levy, and Samuel R Bowman. 2019.
+GLUE: A multi-task benchmark and analysis plat-
+Rico Sennrich, Barry Haddow, and Alexandra Birch. form for natural language understanding. In Inter-
+2016. Neuralmachinetranslationofrarewordswith national Conference on Learning Representations
+subword units. In Association for Computational (ICLR).
+Linguistics(ACL),pages1715–1725.
+AlexWarstadt,AliciaParrish,HaokunLiu,AnhadMo-
+Mohammad Shoeybi, Mostofa Patwary, Raul Puri, hananey,WeiPeng,Sheng-FuWang,andSamuelR.
+Patrick LeGresley, Jared Casper, and Bryan Catan- Bowman. 2020. Blimp: The benchmark of linguis-
+zaro.2019. Megatron-lm: Trainingmulti-billionpa- ticminimalpairsforenglish. TransactionsoftheAs-
+rameter language models using model parallelism. sociationforComputationalLinguistics,8:377–392.
+arXivpreprintarXiv:1909.08053.
+AlexWarstadt,AmanpreetSingh,andSamuelR.Bow-
+Koustuv Sinha, Robin Jia, Dieuwke Hupkes, Joelle
+man.2019. Neuralnetworkacceptabilityjudgments.
+Pineau, Adina Williams, and Douwe Kiela. 2021.
+Transactions of the Association of Computational
+Masked language modeling and the distributional
+Linguistics(TACL),7.
+hypothesis: Order word matters pre-training for lit-
+tle. In Proceedings of the 2021 Conference on Em-
+Adina Williams, Nikita Nangia, and Samuel Bowman.
+pirical Methods in Natural Language Processing,
+2018. A broad-coverage challenge corpus for sen-
+pages2888–2913, OnlineandPuntaCana, Domini-
+tence understanding through inference. In North
+can Republic. Association for Computational Lin-
+American Chapter of the Association for Computa-
+guistics.
+tional Linguistics: Human Language Technologies
+(NAACL-HLT).
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, ChristopherD.Manning, AndrewNg, and
+Atsuki Yamaguchi, George Chrysostomou, Katerina
+Christopher Potts. 2013. Recursive deep models
+Margatina, and Nikolaos Aletras. 2021. Frustrat-
+forsemanticcompositionalityoverasentimenttree-
+ingly simple pretraining alternatives to masked lan-
+bank. In Empirical Methods in Natural Language
+guage modeling. In Proceedings of the 2021 Con-
+Processing(EMNLP).
+ferenceonEmpiricalMethodsinNaturalLanguage
+Kaitao Song, Xu Tan, Tao Qin, Jianfeng Lu, and Processing, pages 3116–3125, Online and Punta
+Tie-Yan Liu. 2019. MASS: Masked sequence Cana,DominicanRepublic.AssociationforCompu-
+to sequence pre-training for language generation. tationalLinguistics.
+In International Conference on Machine Learning
+(ICML),pages5926–5936. Qinyuan Ye, Belinda Z. Li, Sinong Wang, Benjamin
+Bolte, Hao Ma, Wen-tau Yih, Xiang Ren, and Ma-
+Yi Tay, Mostafa Dehghani, Jinfeng Rao, William Fe- dian Khabsa. 2021. On the influence of masking
+dus, Samira Abnar, Hyung Won Chung, Sharan policies in intermediate pre-training. In Empirical
+Narang,DaniYogatama,AshishVaswani,andDon- MethodsinNaturalLanguageProcessing(EMNLP),
+aldMetzler.2022a. Scaleefficiently: Insightsfrom pages7190–7202.
+2995
+Jinghao Zhou, Chen Wei, Huiyu Wang, Wei Shen, Ci-
+hangXie,AlanYuille,andTaoKong.2022. Image
+BERT pre-training with online tokenizer. In Inter-
+national Conference on Learning Representations
+(ICLR).
+YukunZhu,RyanKiros,RichZemel,RuslanSalakhut-
+dinov,RaquelUrtasun,AntonioTorralba,andSanja
+Fidler.2015. Aligningbooksandmovies: Towards
+story-like visual explanations by watching movies
+andreadingbooks. InProceedingsoftheIEEEinter-
+national conference on computer vision, pages 19–
+27.
+2996
+A ExperimentSetup Hyperparameter MNLI,QNLI,QQP
+Peaklearningrate {5e-5,8e-5}
+A.1 Pre-training Batchsize 32
+Maxepochs {3,5}
+We implement our pre-training work based on
+fairseq (Ott et al., 2019). To further speed up RTE,SST-2,MRPC,CoLA,STS-B
+pre-training, we integratethe DeepSpeed (Rasley Peaklearningrate {1e-5,3e-5,5e-5,8e-5}
+Batchsize {16,32}
+etal.,2020)Transformerkernelforspeedup. Maxepochs {3,5,10}
+We keep the other setting the same as the
+24hBERT(Izsaketal.,2021),exceptthatweuse Table6: GridsearchhyperparametersforGLUEtasks.
+theRoBERTatokenizer(Liuetal.,2019)andwe
+donotadoptthe80-10-10rule. Wetrainourmodel
+For the SQuAD results in Table 1 and Table 2,
+on the English Wikipedia and BookCorpus (Zhu
+wefurthertrainthemodelsfor2300steps(10%of
+etal.,2015). Wewanttoemphasizethatusingpre-
+thetraining)withasequencelengthof512,alearn-
+layernorm(Shoeybietal.,2019)isessentialforthe
+ing rate of 5e-4, and a warmup rate of 10%. For
+high learning rate in Izsak et al. (2021) to work.
+othertablesandfigures,wepresenttheSQuADre-
+Thehyperparametersfortheefficientpre-training
+sultswithoutfurtherpre-training,andtheabsolute
+recipeareshowninTable5. Wetrainwith8Nvidia
+numbersarelowerbecauseoftheshortpre-training
+GTX2080GPUsandusegradientaccumulationto
+sequence length. For some of the figures in the
+achievethelargebatchsizes.
+paper, we only show the results of MNLI, QNLI,
+QQP, STS-B, SST-2, and SQuAD due to limited
+Hyperparameter Efficientpre-trainingrecipe
+space. Thosetasksareselectedbecausetheyhave
+Peaklearningrate 2e-3
+Warmupproportion 6% largertrainingsetandtheresultsaremorereliable.
+Batchsize 4,096 Wealwaysshowthedevelopmentresultsinallour
+Trainingsteps 23,000
+figuresandtablesexceptTable2,wherewereport
+Sequencelength 128
+Architecture large thetestnumbersforGLUEtasks.
+Table5: Ourpre-traininghyperparametersettings.
+B DifferentMaskingRates: FullResults
+Table 7 shows the performance of 15%, 40%
+A.2 DownstreamTaskEvaluation
+and 80% masked models on all GLUE tasks and
+We fine-tune our model on the GLUE bench-
+SQuAD. We can see that 80% masking largely
+mark(Wangetal.,2019),includingSST-2(Socher
+preserves the downstream performance and 40%
+et al., 2013), CoLA (Warstadt et al., 2019),
+outperforms15%onmosttasks.
+MNLI (Williams et al., 2018), QNLI (Rajpurkar
+et al.,2016), RTE (Daganet al.,2005; Bar Haim
+C TokenizerComparison
+etal.,2006;Giampiccoloetal.,2007;Bentivogli
+et al., 2009), MRPC (Dolan and Brockett, 2005),
+QQP7 and STS-B (Cer et al., 2017), and the Table9showstheperformanceofdifferenttokeniz-
+ersondownstreamtasks. Weseethatonmosttasks
+SQuADv1.1(Rajpurkaretal.,2016)dataset. For
+RoBERTatokenizerisbetterthanBERTtokenizer.
+eachdatasetwerunthreerandomseedsandaver-
+agetheresults. WeapplygridsearchfortheGLUE
+datasets,asshowninTable6. ForSQuAD,weuse MNLI-m/mm QNLI QQP RTE
+alearningrateof1e-4,abatchsizeof16,andtrain WordPieces 84.3/84.9 90.8 88.2 64.8
+for2epochs. ForbothGLUEandSQuADweuse BPE 84.5/84.8 91.6 88.1 67.0
+alinearschedulingforlearningrates. SST-2 MRPC CoLA STS-B
+For all the results in the paper, we report ac- WordPieces 92.5 75.5 56.6 88.7
+curacy for MNLI, QNLI, RTE, SST-2; we report BPE 92.8 76.9 61.0 88.2
+F1scoreforQQP,MRPC,andSQuAD;wereport
+Table 9: Comparison between BERT’s uncased Word-
+Matthew’scorrelationforCoLAandSpearman’s
+PiecestokenizerandRoBERTa’sBPEtokenizer. Both
+correlationforSTS-B. models are large and trained with the efficient pre-
+7https://www.quora.com/q/quoradata/ trainingrecipewitha40%maskingrate.
+2997
+MNLI-m/mm QNLI QQP RTE SST-2 MRPC CoLA STS-B SQuAD
+Masking15% 84.2/84.6 90.9 87.8 67.3 93.3 77.0 59.2 87.7 88.0
+Masking40% 84.5/84.8 91.6 88.1 67.0 92.8 76.9 61.0 88.2 89.8
+Masking80% 80.8/81.0 87.9 87.1 58.6 90.5 72.1 38.7 86.3 86.2
+Randominitialization 61.5/61.2 60.9 70.7 49.6 80.0 45.4 11.9 17.5 10.8
+†
+Table 7: The development results on the GLUE benchmark with large models, the efficient pre-training recipe,
+and with 15%, 40%, or 80% masking rates. The SQuAD development results areattained with the same contin-
+uoustrainingasinTable1. Comparedtotherandominitializationmodel, 80%maskingratesclearlylearngood
+representationsfordownstreamtasks,despitehavingaveryhighperplexity. : Therandominitializationmodels
+†
+aretrainedwiththesamefine-tuninghyperparametersaspre-trainedmodels,thustheycouldbeundertrained.
+MNLI-m/mm QNLI QQP RTE SST-2 MRPC CoLA STS-B SQuAD
+Trainlongerwiththeefficientpre-trainingrecipe
+Masking15% 87.47/87.02 92.95 88.40 69.93 94.07 82.50 61.00 88.89 87.29
+Masking40% 86.63/86.83 93.13 88.40 68.87 94.67 79.50 61.23 89.60 87.16
+RecipefromRoBERTa
+Masking15% 87.40/87.23 93.04 88.43 67.53 94.13 80.80 59.80 90.05 90.72
+Masking40% 87.30/87.03 92.90 88.83 67.63 94.10 63.90 56.07 87.94 91.23
+Table 8: Development results of 15% vs 40% masking with larger pre-training budget. We use the recipe from
+Table3inLiuetal.(2019),andtheefficientpre-trainingrecipewithmoretrainingsteps. SeeTable10forhyper-
+parameters.
+D LongerTraining advantagewhenthetrainingstepsarelimited.
+We also train the model using a recipe from
+RoBERTa and present the results in Table 8. We
+Hyperparameter Trainlonger RoBERTa
+seethat(1)onmosttasks40%achievescompara-
+Peaklearningrate 2e-3 7e-4
+Warmupproportion 6% 6% bleresultscomparedto15%;(2)our“trainlonger”
+Batchsize 4,096 2,048 results, which uses shorter sequences and larger
+Trainingsteps 125,000 125,000
+learning rates, are comparable to the RoBERTa
+Sequencelength 128 512
+reciperesultsthoughwithmuchshortertime.
+Table10: Comparisonbetweenourlongerpre-training
+recipesandarecipefromRoBERTa(Liuetal.,2019). E ResultsofDifferentModelSizesand
+MaskingStrategies
+To see that how the different masking rates per-
+formwithlongertraining,wemodifytheefficient Weshowtheconfigurationsofdifferentmodelsizes
+pre-trainingrecipeforlongersteps. Wealsoexperi- inTable11. Figure8andFigure9showtheresults
+mentwitharecipeusedintheRoBERTapaper(Liu of the base model and the medium model, which
+etal.,2019). SincethefinalRoBERTamodelsuse serveascomplementarymaterialsforFigure2.
+moretrainingdata, werefertotherecipeusedin Figure 10 shows the performance of uniform
+RoBERTa’sablationinitsTable3. Table10shows masking,T5-stylespanmasking,andPMImasking
+thehyperparametersforthelongertraining,aswell ondownstreamtasks. Thisservesasacomplemen-
+as a comparison to the RoBERTa’s recipe. The tarymaterialforFigure5.
+majordifferenceisthatwetrainwithmuchlarger
+learningrateandonlyasequencelengthof128.
+medium base large
+We train the models with 15% and 40% mask-
+#Layers 8 12 24
+ingrateslongerandevaluatethemondownstream
+#Attentionheads 8 12 16
+tasks. Figure 7 shows the results. We see that Hiddensize 512 768 1024
+on most of the tasks, the trend that 40% is better
+than15%stillholds,thoughthe40%hasalarger Table11: Configurationsofdifferentmodelsizes.
+2998
+87.0
+86.0
+85.0
+25k 50k 75k 100k 125k
+Training Step
+)%(
+ecnamrofreP
+MNLI QNLI QQP STS-B SST-2 SQuAD
+93.0 88.5 89.6 94.4
+86.0 92.0 88.2 88.8
+93.6
+91.0 88.0 88.0 84.0 15%
+92.8 40%
+90.0 87.8 82.0
+25k 50k 75k 100k 125k 25k 50k 75k 100k 125k 25k 50k 75k 100k 125k 25k 50k 75k 100k 125k 25k 50k 75k 100k 125k
+Training Step Training Step Training Step Training Step Training Step
+Figure7: 15%vs40%maskingrateswithlargemodelsandtheefficientpre-trainingrecipebuttrainedlonger.
+82.2 82.0
+81.8 81.6
+20 30 40 50
+Masking Rate (%)
+)%( ecnamrofreP
+MNLI QNLI QQP STS-B SST-2 SQuAD
+89.6 87.2 85.6 92.5 81.0
+89.2 87.0 92.0 80.4
+84.8
+88.8 86.8 84.0 91.5 79.8 Mask 15% 79.2
+20 30 40 50 20 30 40 50 20 30 40 50 20 30 40 50 20 30 40 50
+Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%)
+Figure8: Resultsonselecteddownstreamtaskswiththebase(124Mparameter)model.
+79.8
+79.6
+79.4
+79.2
+20 30 40 50
+Masking Rate (%)
+)%(
+ecnamrofreP
+MNLI QNLI QQP STS-B SST-2 SQuAD
+87.2 86.1 84.8 91.2 75.5
+86.8 86.0 84.0 90.6 75.0
+86.4 85.9 83.2 90.0 74.5
+86.0 85.8 82.4 Mask 15%
+20 30 40 50 20 30 40 50 20 30 40 50 20 30 40 50 20 30 40 50
+Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%)
+Figure9: Resultsonselecteddownstreamtaskswiththemedium(51Mparameter)model.
+84.8
+84.4
+84.0
+83.6
+15 20 30 40
+Masking Rate (%)
+)%(
+ecnamrofreP
+MNLI QNLI QQP STS-B SST-2 SQuAD
+88.5 85.2
+89.0
+92.0 88.2 93.0 84.6
+88.5
+91.5 88.0 88.0 92.0 84.0 Uniform
+91.0 87.8 87.5 91.0 83.4 S PMpa In
+15 20 30 40 15 20 30 40 15 20 30 40 15 20 30 40 15 20 30 40
+Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%) Masking Rate (%)
+Figure 10: Comparison of different masking strategies on selected tasks. Models are trained with the efficient
+pre-trainingrecipe,thelargeconfiguration,andseveralmaskingrates.
+F ResultsonFrenchMLM
+4.8
+To validate our conclusions in a new setting, we
+conduct experiments on MLM on a corpus in 4.5
+French. Similar to Izsak et al. (2021), we pre-
+4.2
+trainon2020FrenchWikipediaandfine-tunedon
+FrenchXNLI.Wereportaccuracyaveragedover4 3.9
+seeds,andmaketheobservationthat40%isbetter
+than15%. 3.6
+0 10 20
+Layer
+XNLI-fr
+valid test
+Masking15% 78.3 77.3
+Masking40% 78.9 77.5
+Table12: Wepre-trainon2020FrenchWikipediaand
+fine-tuned on French XNLI. We report accuracy aver-
+agedover4seeds.
+noitamrofnI
+lautuM
+MI(Layer; Src. Token)
+40% mask
++5% same
+w/ 5% rand
+w/ 80-10-10
+Figure11: Mutualinformationbetweenaninputtoken
+and its intermediate representations for four different
+corruptionstrategies.SeeTable4fordetailsonmodels.
+G InformationFlowAnalysis
+Tovisualizetheeffectofthesecorruptionstrategies
+(the80-10-10rule),wefollowVoitaetal.(2019)’s
+2999
+analysisofmeasuringmutualinformationbetween
+aninputtokenanditsintermediaterepresentations.
+Figure 11 shows that each model initially loses
+some information about the source token while
+acquiring information from the surrounding con-
+text. Using same token predictions during pre-
+training leads to a “reconstruction” stage in the
+lastfewlayers,asobservedbyVoitaetal.(2019),
+wherebyinformationaboutthesourcetokenisre-
+storedfromthecontext. However,thissecondstage
+isnotpresentwhensametokenpredictionstokens
+areablated: the[MASK]-onlybaselinepropagates
+contextual features only—and no reconstruction
+occurs. Thisismorepronouncedwithrandomto-
+kencorruption,wheresourceinformation(thatwas
+lessreliableduringpre-training)islostatagreater
+rate. One consequence is that information about
+theinputtokenscanbemoreeasilyextractedwhen
+pre-trainingwithsametokenpredictions. However,
+the reconstruction of the source tokens does not
+appeartobeasimportantinthefine-tuningsetting,
+asshowninourexperimentsinTable4.
+3000

@@ -1,0 +1,593 @@
+Recycling a Pre-trained BERT Encoder for Neural Machine Translation
+KenjiImamura and EiichiroSumita
+NationalInstituteofInformationandCommunicationsTechnology
+3-5Hikaridai,Seika-cho,Soraku-gun,Kyoto619-0289,Japan
+fkenji.imamura,eiichiro.sumitag@nict.go.jp
+Abstract Recently, models in which the ideas of BERT
+areextendedtomultiplelanguageshavebeenpro-
+In this paper, a pre-trained Bidirectional posed (Lample and Conneau, 2019). These mod-
+Encoder Representations from Transformers els,whicharepre-trainedusingmultilingualdata,
+(BERT) model is applied to Transformer-
+arecalledcross-linguallanguagemodels(XLMs).
+basedneuralmachinetranslation(NMT).
+Wecanconstructamachinetranslationsystemus-
+In contrast to monolingual tasks, the number ingtwoXLMmodelsastheencoderanddecoder.
+of unlearned model parameters in an NMT
+In this paper, we apply a pre-trained BERT en-
+decoder is as huge as the number of learned
+coder to neural machine translation (NMT) based
+parameters in the BERT model. To train
+ontheTransformer(Vaswanietal.,2017). Specif-
+all the models appropriately, we employ two-
+ically, theencoderoftheTransformerNMTisre-
+stage optimization, which first trains only the
+unlearned parameters by freezing the BERT placed with the BERT encoder. Generally, sys-
+model,andthenfine-tunesallthesub-models. tems using BERT, including machine translation
+systems based on an XLM, are fine-tuned using
+Inourexperiments,stabletwo-stageoptimiza-
+task-specificdata. However,stabletrainingisdif-
+tionwasachieved,incontrasttheBLEUscores
+ofdirectfine-tuningwereextremelylow.Con- ficult using simple fine-tuning because the num-
+sequently, the BLEU scores of the proposed berofunlearnedparametersishugeinoursystem.
+method were better than those of the Trans- Therefore, we employ two-stage training, which
+former base model and the same model with-
+firsttrainsonlyunlearnedparametersandthenap-
+out pre-training. Additionally, we confirmed
+pliesfine-tuning.
+thatNMTwiththeBERTencoderismoreef-
+Our experimental results demonstrated that
+fectiveinlow-resourcesettings.
+two-stage optimization stabilized training,
+whereasdirectfine-tuningmadetheBLEUscores
+1 Introduction
+quitelow. Asaresult,theBLEUscoresimproved
+Bidirectional Encoder Representations from in comparison with the scores of the Transformer
+Transformers (BERT) (Devlin et al., 2019) is a base model and models with the same structure
+language representation model trained in advance but without pre-training. Our results indicate
+on a very large monolingual dataset. We adapt that we can reuse neural networks trained for one
+this model to our own tasks after fine-tuning purpose (natural language understanding, in this
+(Freitag and Al-Onaizan, 2016; Servan et al., case)foranotherpurpose (machinetranslation, in
+2016) using task-specific data. Systems using this case) if we use two-stage optimization. From
+BERT have achieved high accuracy in various this viewpoint, this paper presents an example of
+tasks, such as the General Language Understand- networkrecycling.
+ing Evaluation (GLUE) benchmark (Wang et al., Theremainderofthispaperisorganizedasfol-
+2019) and the reading comprehension benchmark lows. In Section 2, an overview of the BERT re-
+using the Stanford Question Answering Dataset lated models is provided. In Section 3, our pro-
+(SQuAD) (Rajpurkar et al., 2018). However, posal, that is, NMT using the BERT model and
+most tasks using BERT are monolingual because its training method, is described. In Section 4,
+it was originally developed for natural language the proposed method is evaluated through exper-
+understanding. iments. In Section 5, we discuss back-translation
+23
+Proceedingsofthe3rdWorkshoponNeuralGenerationandTranslation(WNGT2019),pages23–31
+HongKong,China,November4,2019.(cid:13)c2019AssociationforComputationalLinguistics
+www.aclweb.org/anthology/D19-56%2d
+and model recycling, including related work. Fi- tasks, suchastheGLUEbenchmark(Wangetal.,
+nally,weconcludethepaperinSection6. 2019) and the reading comprehension benchmark
+using SQuAD (Rajpurkar et al., 2018). However,
+2 Pre-trainedLanguageModels
+theabovetasksaremonolingual.
+2.1 BERT
+2.2 XLMs
+TheformoftheBERTmodel(Devlinetal.,2019)
+XLMs,inwhichtheideasofBERTareextendedto
+is the same as that of a Transformer encoder, in
+multiple languages (Lample and Conneau, 2019)
+whichtheinputisawordsequenceandtheoutput
+have been proposed. Although the form of the
+consists of representations that correspond to the
+XLMmodelisalsoTransformer,itistrainedfrom
+input words. The input contexts are encoded by
+multilingual corpora. It also learns bilingual cor-
+multi-headself-attentionmechanisms.
+respondencesinaTransformermodelbyinputting
+BERT models are distributed with pre-training.
+aconnectedbilingualsentence.
+The distributed models have a depth of 12 or 24
+Machine translation can be realized using
+layers, whichisdeeperthantheTransformerbase
+XLMs by regarding two pre-trained models as an
+model (six layers). Users (or system develop-
+encoderanddecoder. NMTusingBERTdescribed
+ers) construct various systems by adding a small
+in this paper is fundamentally the same as XLM-
+network to adapt BERT to their own tasks and
+basedNMT.However,ouraimistoconnectdiffer-
+fine-tune the system using task-specific data. For
+entsystems,andweregardourapproachasmodel
+example, when the BERT model is used for a
+recycling (Ramachandran et al., 2016) using the
+document classification task, a classifier is con-
+BERTencoderandTransformerdecoder.
+structed by adding a generation layer for classi-
+Most pre-trained systems, including XLM-
+fication(whichconsistsoflinearandsoftmaxsub-
+based machine translation, are trained only using
+layers) to the BERT model. Similarly, when a
+fine-tuning(Devlinetal.,2019;LampleandCon-
+namedentityrecognizerisconstructed,generation
+neau,2019). However,ifthenumberofunlearned
+layersthatconvertwordrepresentationstonamed
+parameters is huge compared with the number of
+entitytagsareadded,andtheentiremodelisfine-
+pre-trained parameters, then the pre-trained pa-
+tuned. The numbers of additional parameters in
+rameter values will be destroyed due to a phe-
+thesemodelsaremuchsmallerthanthenumberof
+nomenon called catastrophicforgetting(Goodfel-
+parametersintheBERTmodel.
+low et al., 2013), and consequently, training will
+The BERT model is pre-trained to perform
+diverge. We must suppress this problem to stably
+two tasks: masked language modeling and next-
+trainthemodel.
+sentenceprediction. Bothtaskstrainthemodelto
+improveitslanguagepredictionperformance. 3 NMTwithBERT
+Themaskedlanguagemodelistrainedtorestore
+the original word sequence from noisy input. In In this section, we describe our proposal: NMT
+thistask,somewordsarereplacedwithspecialto- usingtheBERTencoder.
+kens, [MASK], or other words. For instance, if
+3.1 Model
+the original sentence is “my dog is hairy”
+and “my dog is [MASK]” is given as the in- The NMT system in this paper is an encoder-
+put word sequence, then the system predicts that decoder based on the Transformer. The structure
+the original word for [MASK] was hairy. Dur- is shown in Figure 1. Because the BERT model
+ing prediction, both forward and backward con- isalsotheTransformerencoder,weadoptitasthe
+textsinasentenceareused. encoder for NMT without modification. The out-
+Inthenext-sentencepredictiontask,thesystem putsfromtheBERTencoder, whicharerepresen-
+learns whether two given sentences are consecu- tations of source words, are input to the context
+tive. To implement binary classification using the attention mechanism in the Transformer decoder
+Transformer, a special token [CLS] is placed at togenerateatranslation. Notethatwecalltheen-
+theheadofaninputsentence,andclassificationis coder of the conventional NMT the Transformer
+performedfromtherepresentationof[CLS].Ad- encoder to distinguish it from the BERT encoder.
+ditionally,[SEP]isusedasasentenceseparator. The number of layers in the Transformer decoder
+BERT has achieved high accuracy on various isfixedtosixthroughoutthepaper.
+24
+(cid:10) (cid:2) (cid:10) (cid:3) ... <eos> Output Tokens
+TransformerDecoder
+ℎ (cid:5)(cid:6)(cid:7) ℎ (cid:2) ℎ (cid:3) ... ℎ (cid:7)(cid:8)(cid:9) Generator
+BERT Encoder Feed Forward
+Feed Forward Context-Attention
+Nx
+Self-Attention 6x Self-Attention
+Embeddings Embeddings
+S Su pb ec-w iao lr Td os k e& ns [CLS] (cid:1) (cid:2) (cid:1) (cid:3) ... [SEP] <bos> (cid:10) (cid:2) (cid:10) (cid:3) ... S Oh ui tf pte ud t Tokens
+BERT Tokenizer
+InputSentence
+Figure1: StructureofNMTusingaBERTencoder.
+BecausetheBERTencoderispre-trainedusing Specifically, the model is trained using parallel
+a specific tokenizer, we must use the BERT tok- corpora, as in conventional NMTs. During train-
+enizer when we apply it to machine translation. ing, however, backpropagation is only applied to
+TheBERTtokenizerincludessub-wordsegmenta- the decoder and is dropped before the encoder.
+tionbasedonWordPiece(Wuetal.,2016). Addi- This means that we do not need to compute the
+tionally, the input to the encoder contains [CLS] gradients and maintain the input/output values in
+and [SEP] tokens at the head and tail, respec- the BERT encoder, and we can train the model
+tively. using GPUs with a relatively small memory even
+AlthoughtheTransformerdecoderisusedhere, thoughthemodelsizeishuge. Dropoutisonlyap-
+weassumethatarecurrentneuralnetworkdecoder plied to the Transformer decoder, that is, it is not
+(Sutskeveretal.,2014;Bahdanauetal.,2014)can appliedtotheBERTencoder.
+alsobeapplied,.
+Note that decoder training continues until the
+3.2 Training lossofthedevelopmentsetisminimized. Wedis-
+cusstheefficientnumberofepochsforthedecoder
+When we construct a system using pre-trained
+training in Section 4.3 when we combine it with
+BERT models, we generally add a task-specific
+fine-tuning.
+network and fine-tune the system using task-
+specific data. Because the additional network is
+small(i.e.,thenumberofadditionalparametersis
+small),themodelscanbelearnedbyfine-tuning. 3.2.2 Fine-Tuning
+In this paper, the additional network is the de-
+coder, whose number of parameters is huge. In- In the fine-tuning stage, model parameters in the
+deed, the number of model parameters of the BERTencoderarealsoupdatedtooptimizetheen-
+BERT encoder (pre-trained) and Transformer de- tiremodel.
+coder (unlearned) used in Section 4 were 110M
+Although the model has already been trained
+and 80M, respectively. We cannot train such a
+untilthelossofthedevelopmentsetisminimized
+large number of unlearned parameters only by
+during decoder training, both the encoder and de-
+fine-tuning. Thus,weemploytwo-stageoptimiza-
+coderarefurtheroptimizedinanend-to-endman-
+tioninthispaper,thatisdecodertrainingandfine-
+ner by updating the encoder parameters. Dropout
+tuning.
+is applied to both the BERT encoder and Trans-
+3.2.1 DecoderTraining former decoder. In the fine-tuning stage, back-
+In this stage, only the decoder parameters are up- propagation is applied to all layers, and a large
+datedwhiletheencoderparametersarefrozen. amountofmemoryisconsumed.
+25
+Task Set #Sentences #Tokens Type Option Value
+(En) Decoder Batchsize Approx.500sents.
+WMT-2014 train 4,468,840 116M training Optimizer Adam
+En-De newstest2013 3,000 66K (cid:12) =0:9,(cid:12) =0:99
+1 2
+newstest2014 2,737 63K Learningrate 4:0(cid:2)10(cid:0)4
+newstest2015 2,169 68K Warm-up 5epochs
+IWSLT-2015 train 133,317 2.7M Cool-down Inversesquareroot
+En-Vi tst2012 1,553 34K Labelsmoothing 0.1
+tst2013 1,268 34K Dropout 0.15
+Lossfunction Label-smoothedcross
+Table1: Sizesoftheexperimentaldatasets. entropy
+Initializer Xavieruniform
+Fine-tuning Identicaltodecodertrainingexceptfor
+thelearningrateandwarm-up
+4 Experiments Test Beamsize 10
+Lengthpenalty 1.0(fixed)
+4.1 ExperimentalSettings
+Table2: Hyperparametersettings.
+Data: In this paper, we used data for shared
+tasksthatwerepre-processedbytheStanfordNLP
+Group.1 ThesizesofthedatasetsareshowninTa-
+model was trained using BookCorpus (Zhu et al.,
+ble1.
+2015) and English Wikipedia (3.3G words in to-
+The first task is the news translation task
+tal).
+of English-to-German (En-De) from the Work-
+Notethatweconvertedthepublishedmodelinto
+shop on Statistical Machine Translation (WMT-
+a model that is compatible with the PyTorch li-
+2014) (Bojar et al., 2014). Four sets in total
+brary using a tool4 because it was trained for the
+have been published. In this paper, we used
+TensorFlowlibrary.
+newstest2013asthedevelopmentset,andthe
+othertwosets(newstest2014and2015)were Translation System: We used fairseq5 as the
+usedastestsets. basic translator. It is an NMT system constructed
+Moreover, to contrast the results with those of on the PyTorch library and includes Transformer
+a low-resource setting, we also used the English- models. We replaced its encoder with the BERT
+to-Vietnamese (En-Vi) corpus used in the Inter- modelandusedthefairseqdecoderwithoutmodi-
+national Workshop on Spoken Language Transla- fication.
+tion(IWSLT-2015)(Cettoloetal.,2015). Weused
+The decoder used here was six-layer Trans-
+tst2012 as the development set and tst2013
+former. We set the numbers of hidden units and
+asthetestset.
+heads to be the same as those of the encoder (i.e.,
+Thetargetsentencesoftheabovedatawerefur-
+768 units and 12 heads) to incorporate encoder
+ther segmented into 16K sub-words using byte-
+outputs into the decoder using the context atten-
+pair encoding (Sennrich et al., 2016b). For the
+tionmechanism.
+source sentences, we segmented 30K sub-words
+using the BERT tokenizer if the encoder model Hyperparameters: Table2summarizesthehy-
+was BERT. If the encoder was the conventional perparameter settings. The hyperparameters for
+Transformer, we segmented the source sentences fine-tuning were almost the same as those of de-
+into16Ksub-wordsusingourbyte-pairencoder. coder training, except for the learning rate (LR)
+andwarm-up.
+BERT Model: We used a pre-trained model
+published in the BERT GitHub repository2 called Evaluation: We used BLEU (Papineni et al.,
+theBERTbasemodel,whosefeaturesareuncased 2002) as the evaluation metric. The MultEval
+inputs,12layers,768hiddenunits,and12heads.3 tool (Clark et al., 2011)6 was used for statisti-
+The number of parameters is about 110M. This cal testing, which is based on the bootstrap re-
+sampling method. The significance level was 5%
+1https://nlp.stanford.edu/projects/
+nmt/ (p < 0:05).
+2https://github.com/google-research/
+bert 4https://github.com/huggingface/
+3https://storage.googleapis.com/bert_ pytorch-pretrained-BERT
+models/2018_10_18/uncased_L-12_H-768_ 5https://github.com/pytorch/fairseq
+A-12.zip 6https://github.com/jhclark/multeval
+26
+BLEU"
+System LR Dev.PPL# 2013 2014 2015 Remark
+Baselines Transformerbase 4:0(cid:2)10(cid:0)4 4.23 26.29 27.22 29.48 Stat.testbaseline
+TransformerBERTsize 4:0(cid:2)10(cid:0)4 4.04 26.15 27.09 29.32
+NMT Directfine-tuning 8(cid:2)10(cid:0)5 4.28 0.13(-) 0.10(-) 0.12(-) #Epochs=33
+withBERT 4:0(cid:2)10(cid:0)4 4.09 0.48(-) 0.42(-) 0.54(-) #Epochs=29
+Proposed:
+Decodertrainingonly 4:0(cid:2)10(cid:0)4 4.76 24.13(-) 23.62(-) 25.74(-) #Epochs=65
++Fine-tuning 4(cid:2)10(cid:0)5 3.93 27.14(+) 28.27(+) 30.68(+) #Epochs=21
+8(cid:2)10(cid:0)5 3.92 27.05(+) 28.90(+) 30.89(+) #Epochs=9
+1:2(cid:2)10(cid:0)4 3.93 27.03(+) 28.50(+) 30.51(+) #Epochs=11
+1:6(cid:2)10(cid:0)4 3.94 26.64 28.59(+) 30.51(+) #Epochs=11
+2:0(cid:2)10(cid:0)4 3.95 26.89(+) 28.67(+) 30.24(+) #Epochs=12
+4:0(cid:2)10(cid:0)4 N/Abecausetrainingdidnotconverge
+Table3: Resultsofthesystemcomparison.
+The bold values indicate the best results. The (+) and (-) symbols indicate that the results significantly
+improvedordegraded(p < 0:05)withrespecttotheTransformerbasemodel,respectively.
+4.2 SystemComparison wasdirectlyfine-tuned,trainingconvergedbutthe
+BLEU scores dramatically decreased even if we
+In this section, we compare systems using WMT-
+useddifferentlearningrates. Thisimpliesthatthe
+2014data.
+models were broken.7 Unlike monolingual tasks
+We compare the proposed methods with
+using the BERT model, it was difficult to directly
+Vaswani et al. (2017)’s Transformer base model
+apply fine-tuning for NMT using the pre-trained
+(6 layers, 512 hidden units, and 8 heads) as the
+BERTencoder.
+baseline. Forreference,wealsouseanotherTrans-
+Bycontrast,inthedecodertraining-onlymodel,
+former NMT called Transformer BERT size, in
+namelythemodelimmediatelyafterdecodertrain-
+which the model structure of the encoder agrees
+ing, training was successfully finished. However,
+withthatoftheBERTencoder(i.e.,12layers,768
+the development perplexity was higher and the
+hidden units, and 12 heads). This system is com-
+BLEU scores were lower than those of the base-
+paredtodeterminewhetherthemodelcapacityin-
+line. Theentiremodelwasnotlearnedcompletely
+fluencestranslationquality.
+because of the data mismatch, which was that the
+Thedecodersoftheproposedsystemswerefirst pre-trainingandourtrainingdataweredifferent.
+trained until the loss of the development set was Afterfine-tuning,bycontrast,theperplexityde-
+minimized (newstest2013), and then the sys- creasedandtheBLEUscoreincreased. Compared
+tems were fine-tuned. The learning rates during with those of Transformer base, the BLEU scores
+fine-tuning were changed from 1/10 to 1 times significantly improved in almost all cases. Be-
+those of the decoder training. The warm-up pe- cause the development perplexity decreased with
+riods were also changed to be proportional to the respecttoTransformerBERTsize,wecansaythat
+learningrates. TheresultsareshowninTable3. In theseimprovementsresultedfromlearningperfor-
+thetable,Dev. PPLindicatestheperplexityofthe mance rather than the number of model parame-
+developmentset,andtheyearsoftheBLEUscores ters.
+denote the results of newstest2013, 2014, Wechangedthelearningratesfrom4(cid:2)10(cid:0)5 to
+and2015,respectively. 4:0(cid:2)10(cid:0)4
+in the fine-tuning. When the learning
+First, we compare the baselines. Transformer rate was 4:0(cid:2)10(cid:0)4 (the decoder training learn-
+BERT size yielded a better model than that ing rate), we could not tune the model because
+of Transformer base because its perplexity was there was no convergence. For the other learn-
+lower. However, the BLEU scores were slightly ing rates, there were no large differences in per-
+degraded (but not significantly). Increasing the
+7Indeed,verylongtranslationsweregeneratedduetofre-
+numberofparametersdidnotleadtobettertrans- quent repetition in the case of the low learning rate (8 (cid:2)
+lationquality. 10(cid:0)5). We suppose that the decoder was not learned suffi-
+ciently. In the case of the high learning rate (4:0(cid:2)10(cid:0)4),
+Next,wecomparetheNMTsystemwithBERT
+longandcompletelywrongtranslationsweregenerated. We
+andtheTransformerbase. Whentheentiremodel supposethattheencoderwasbroken.
+27
+Decodertraining Fine-tuning BLEU"
+#Epochs Dev.PPL# #Epochs Dev.PPL# 2013 2014 2105 Remark
+0 — 33 4.28 0.13(-) 0.10(-) 0.12(-) Directfine-tuning
+1 33.05 34 4.23 26.67 28.77 30.16(-)
+2 11.47 20 4.20 26.80 28.58 30.82
+3 8.12 18 4.10 27.41 28.93 30.78
+5 6.69 18 4.02 27.20 28.43(-) 30.80
+10 5.50 15 3.96 27.33 28.59 30.42
+20 5.08 18 3.91 27.00 28.87 30.92
+30 4.89 10 3.92 27.18 28.39(-) 30.70
+40 4.86 12 3.91 27.01 29.04 30.70
+50 4.81 11 3.91 27.02 28.65 30.77
+65 4.76 9 3.92 27.05 28.90 30.89 Decodertrainingconverged
+Baselineforstatisticaltesting
+Table4:Changesintheperplexityofthedevelopmentset(Dev.PPL)andBLEUscoreswithrespecttothenumber
+ofdecodertrainingepochs.
+plexity or BLEU scores. However, we confirmed (cid:15) To shorten the total training time, it is best
+that there were some differences in convergence to perform decoder training for three epochs
+time(#Epochs),andfine-tuningconvergedinnine (3+18 = 21epochsintotal).
+epochswhenthelearningratewas8(cid:2)10(cid:0)5.
+There-
+(cid:15) To obtain the best model (i.e., the model
+fore, we fixed the learning rate for fine-tuning to
+8(cid:2)10(cid:0)5
+inoursubsequentexperiments.
+with the minimum development perplexity),
+20 epochs are sufficient for decoder training
+4.3 NumberofEpochsforDecoderTraining (whichyieldsaDev. PPLof3.91).
+Theproposedmethodfirstperformsdecodertrain- 4.4 ExperimentonaLow-resourceLanguage
+ing until convergence, and then applies fine- Pair
+tuning. However, this approach may not be opti-
+Inthissection, theeffectoftheBERTencoderon
+malbecausedecodertrainingisslow. Forinstance,
+a low-resource setting is explored using IWSLT-
+ittook65epochsfordecodertrainingintheexper-
+2015 En-Vi data (133K sentences). All experi-
+iment in the previous section. In this section, we
+mental settings, except for the corpus, were the
+investigate whether decoder training can be made
+same as those in Section 4.1. The results are
+moreefficientbystoppingitbeforeconvergence.
+showninTable5.
+Table4showstheresultsafterfine-tuningwhen
+In the low-resource setting, the development
+decoder training was stopped after various num-
+perplexitydecreasedincomparisonwiththebase-
+bers of epochs. Fine-tuning was conducted un-
+line when applying the BERT encoder and per-
+til convergence in all cases. The table shows the
+forming decoder training only. However, the
+changesindevelopmentperplexityandtheBLEU
+BLEU score degraded, as in the large data setting
+scores, whose baselines are shown on the bottom
+(Section4.2).
+line. Note that zero epochs of decoder training
+Bycontrast,whenfine-tuningwasapplied,both
+(the top line) mean that fine-tuning was directly
+theperplexityandBLEUscoreslargelyimproved
+applied without decoder training (the same as in
+with respect to the baseline. The BLEU score of
+Table3).
+tst2013 improved by +3.45. Considering the
+Asthenumberofepochsofdecodertrainingde-
+score of newstest2015 in the experiment in
+creased,fine-tuningrequiredmoreepochsandthe
+Table 3 was +1.41 for the same settings, these re-
+final perplexity increased. However, the BLEU
+sultsshowthattheBERTencoderismoreeffective
+scores were almost stable. Indeed, only three
+forimprovingtranslationqualityinalow-resource
+scores significantly decreased with respect to the
+setting.
+baseline.
+Becauseweassumethattheoptimalsettingsof 5 DiscussionandRelatedWork
+decoder training depend on the data and hyperpa-
+5.1 ContrastwithBack-Translation
+rameters, we cannot provide explicit criteria val-
+uesinthispaper. Attheveryleast,ourexperimen- Back-translation(Sennrichetal.,2016a)isatech-
+talresultsshowthefollowingconclusions. nique to improve translation quality using mono-
+28
+BLEU"
+System LR Dev.PPL# 2012 2013
+Baseline Transformerbase 4:0(cid:2)10(cid:0)4 11.54 24.03 26.12
+NMTwithBERT Proposed:Decodertrainingonly 4:0(cid:2)10(cid:0)4 11.45 21.77(-) 23.23(-)
++Fine-tuning 8(cid:2)10(cid:0)5 8.98 26.77(+) 29.57(+)
+Table5: ResultsoftheIWSLT-2015data.
+lingual corpora. It translates monolingual cor- simultaneously trains a translation model and
+pora of the target language into the source lan- two autoencoders using parallel and source/target
+guage, generates pseudo-parallel sentences, and monolingualcorpora. Bothmethodsmustusepar-
+trains the source-to-target translator from a mix- allelandmonolingualcorporaduringtraining.
+tureofpseudo-andmanuallycreatedparallelcor- Our method explicitly distinguishes training
+pora. Because BERT encoders are trained us- stages: 1) pre-training of a BERT encoder using
+ingsourcemonolingualcorpora,theycomplement monolingual corpora, 2) training of a decoder us-
+eachother. ing parallel corpora, and 3) fine-tuning the entire
+However, there are differences between BERT model. This means that monolingual corpora are
+encoders and back-translation from the viewpoint only necessary in the pre-training stage, and we
+of parallel corpus sizes. BERT encoders them- canfocusonthisstagetoobtaintheadvantagesof
+selves do not need parallel corpora for training. largecorpora.
+They can be applied to low-resource language
+5.3 Pre-TrainingversusRecycling
+pairs for which large parallel corpora are difficult
+toobtain. However,hugemonolingualcorporaare TheBERTmodelusedinthispaperwasdesigned
+necessarytotrainBERTencoders. Therefore,they and trained for natural language understanding,
+aresuitablefortranslationfromresource-richlan- andmachinetranslationisanunintendedpurpose.
+guages(e.g.,English)tolow-resourcelanguages. Therefore,weusetheword“recycle.”
+By contrast, back-translation requires a certain We assume that pre-training and recycling are
+size of parallel corpora to translate back from the distinguished by the number of unlearned param-
+target to the source languages. This is because eters. The numbers of model parameters in this
+back-translated results are not confident if the paperwere110MfortheBERTencoderand80M
+parallel corpora are small (Edunov et al., 2018). for the Transformer decoder. We could not opti-
+Therefore,back-translationissuitablefortranslat- mize them using fine-tuning alone. In this case,
+ingmiddle-resourcelanguagepairs. it is appropriate to call the model recycling, and
+Notethatunsupervisedmachinetranslationcan two-stageoptimizationbecomeseffective. Webe-
+be realized using the XLM described in Section lievethatourstudycanberegardedasanexample
+2.2byconnectingtwoautoencodersasanencoder- ofmodelrecycling.
+decoder. Thoseautoencodersaretrainedtoencode
+6 Conclusions
+source-target-source and target-source-target us-
+ingmonolingualcorpora. Therefore,thisapproach In this paper, an NMT system that incorporates a
+canberegardedasincludingback-translation. Be- BERT encoder was presented. We applied two-
+causeback-translationwasoriginallydevelopedto stage optimization, that is, decoder training and
+enhancedecoders,itisreasonabletoincorporateit fine-tuning, because the number of unlearned pa-
+intopre-training. rameterswasaslargeasthenumberofpre-trained
+model parameters. Consequently, we constructed
+5.2 NMTUsingSourceMonolingualCorpora
+ahigherqualityNMTthanthattrainedfromgiven
+There are other methods that improve translation parallel data. Moreover, it was particularly ef-
+qualityusingsourcemonolingualcorpora. fective in a low-resource setting. We also inves-
+Zhang and Zong (2016) proposed a multi-task tigated the appropriate number of epochs for de-
+learning method that learns a sentence reorder- coder training and confirmed that several to tens
+ing model from source language corpora and a ofepochsweresufficient.
+translation model from parallel corpora. Cheng There are some future directions for this study.
+et al. (2016) proposed semi-supervised NMT that First, various pre-trained models have been dis-
+29
+tributed, such as the BERT large model, multilin- ComputationalLinguistics:HumanLanguageTech-
+gual BERT, and XLMs. Exploring the relation- nologies, Volume1(LongandShortPapers), pages
+4171–4186,Minneapolis,Minnesota.
+shipbetweenthesemodelsandtranslationquality
+isourfuturework. Applyingthepre-trainedmod- Sergey Edunov, Myle Ott, Michael Auli, and David
+els to various language pairs, from low- to high- Grangier. 2018. Understanding back-translation at
+scale. In Proceedings of the 2018 Conference on
+resourcelanguagepairs,isalsoacuriousdirection.
+Empirical Methods in Natural Language Process-
+Regarding model recycling, we plan to combine
+ing,pages489–500,Brussels,Belgium.
+heterogeneousmodelsinfuturework.
+Markus Freitag and Yaser Al-Onaizan. 2016. Fast
+Acknowledgments domain adaptation for neural machine translation.
+CoRR,abs/1612.06897.
+This work was supported by the “Research and
+Ian J. Goodfellow, Mehdi Mirza, Da Xiao, Aaron
+Development of Enhanced Multilingual and Mul-
+Courville, andYoshuaBengio.2013. Anempirical
+tipurposeSpeechTranslationSystems”aprogram investigation of catastrophic forgetting in gradient-
+of the Ministry of Internal Affairs and Communi- basedneuralnetworks. arXivpreprint.
+cations,Japan.
+GuillaumeLampleandAlexisConneau.2019. Cross-
+lingual language model pretraining. CoRR,
+abs/1901.07291.
+References
+KishorePapineni,SalimRoukos,ToddWard,andWei-
+Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Jing Zhu. 2002. Bleu: a method for automatic
+Bengio. 2014. Neural machine translation by evaluation of machine translation. In Proceedings
+jointly learning to align and translate. CoRR, of the 40th Annual Meeting of the Association for
+abs/1409.0473. Computational Linguistics (ACL), pages 311–318,
+Philadelphia,Pennsylvania,USA.
+Ondrej Bojar, Christian Buck, Christian Federmann,
+Barry Haddow, Philipp Koehn, Johannes Leveling, Pranav Rajpurkar, Robin Jia, and Percy Liang. 2018.
+Christof Monz, Pavel Pecina, Matt Post, Herve Know what you don’t know: Unanswerable ques-
+Saint-Amand,RaduSoricut,LuciaSpecia,andAlesˇ tionsforsquad. CoRR,abs/1806.03822.
+Tamchyna.2014. Findingsofthe2014workshopon
+Prajit Ramachandran, Peter J. Liu, and Quoc V. Le.
+statisticalmachinetranslation. InProceedingsofthe
+2016. Unsupervisedpretrainingforsequencetose-
+NinthWorkshoponStatisticalMachineTranslation,
+quencelearning. CoRR,abs/1611.02683.
+pages 12–58, Baltimore, Maryland, USA. Associa-
+tionforComputationalLinguistics.
+Rico Sennrich, Barry Haddow, and Alexandra Birch.
+2016a. Improvingneuralmachinetranslationmod-
+Mauro Cettolo, Kam Moejies amd Sebastian Stu¨ker,
+els with monolingual data. In Proceedings of the
+Luisa Bentivogli, Roldano Cattoni, and Marcello
+54thAnnualMeetingoftheAssociationforCompu-
+Federico. 2015. The IWSLT 2015 evaluation cam-
+tationalLinguistics(ACL-2016,Volume1:LongPa-
+paign. In Proceedings of the International Work-
+pers),pages86–96,Berlin,Germany.
+shop on Spoken Language Translation, Da Nang,
+Vietnam.
+Rico Sennrich, Barry Haddow, and Alexandra Birch.
+2016b. Neural machine translation of rare words
+Yong Cheng, Wei Xu, Zhongjun He, Wei He, Hua
+withsubwordunits. InProceedingsofthe54thAn-
+Wu, Maosong Sun, and Yang Liu. 2016. Semi-
+nual Meeting of the Association for Computational
+supervised learning for neural machine translation.
+Linguistics (Volume 1: Long Papers), pages 1715–
+InProceedingsofthe54thAnnualMeetingoftheAs-
+1725,Berlin,Germany.
+sociationforComputationalLinguistics(Volume1:
+LongPapers),pages1965–1974,Berlin,Germany. ChristopheServan,JosepMariaCrego,andJeanSenel-
+lart. 2016. Domain specialization: a post-training
+Jonathan H. Clark, Chris Dyer, Alon Lavie, and
+domain adaptation for neural machine translation.
+NoahA.Smith.2011. Betterhypothesistestingfor
+CoRR,abs/1612.06141.
+statistical machine translation: Controlling for op-
+timizer instability. In Proceedings of the 49th An- Ilya Sutskever, Oriol Vinyals, and Quoc V. Le. 2014.
+nual Meeting of the Association for Computational Sequence to sequence learning with neural net-
+Linguistics: Human Language Technologies, pages works. InProceedingsofAdvancesinNeuralInfor-
+176–181,Portland,Oregon,USA. mation Processing Systems 27 (NIPS 2014), pages
+3104–3112.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+deepbidirectionaltransformersforlanguageunder- Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+standing. InProceedingsofthe2019Conferenceof Kaiser, and Illia Polosukhin. 2017. Attention is all
+the North American Chapter of the Association for youneed. CoRR,abs/1706.03762.
+30
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Hill, Omer Levy, and Samuel R. Bowman. 2019.
+Glue:Amulti-taskbenchmarkandanalysisplatform
+fornaturallanguageunderstanding. InInternational
+ConferenceonLearningRepresentations.
+Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V.
+Le, Mohammad Norouzi, Wolfgang Macherey,
+Maxim Krikun, Yuan Cao, Qin Gao, Klaus
+Macherey, Jeff Klingner, Apurva Shah, Melvin
+Johnson, Xiaobing Liu, Lukasz Kaiser, Stephan
+Gouws, Yoshikiyo Kato, Taku Kudo, Hideto
+Kazawa, Keith Stevens, George Kurian, Nishant
+Patil, Wei Wang, Cliff Young, Jason Smith, Jason
+Riesa, Alex Rudnick, Oriol Vinyals, Greg Corrado,
+MacduffHughes,andJeffreyDean.2016. Google’s
+neuralmachinetranslationsystem:Bridgingthegap
+between human and machine translation. CoRR,
+abs/1609.08144.
+Jiajun Zhang and Chengqing Zong. 2016. Exploit-
+ingsource-sidemonolingualdatainneuralmachine
+translation. InProceedingsofthe2016Conference
+on Empirical Methods in Natural Language Pro-
+cessing (EMNLP-2016), pages 1535–1545, Austin,
+Texas.
+Yukun Zhu, Ryan Kiros, Richard S. Zemel, Ruslan
+Salakhutdinov, Raquel Urtasun, Antonio Torralba,
+andSanjaFidler.2015. Aligningbooksandmovies:
+Towards story-like visual explanations by watching
+movies and reading books. In 2015 IEEE Inter-
+national Conference on Computer Vision (ICCV),
+pages19–27.
+31

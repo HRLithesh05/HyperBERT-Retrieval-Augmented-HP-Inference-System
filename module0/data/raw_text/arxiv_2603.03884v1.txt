@@ -1,0 +1,788 @@
+CzechTopic: A Benchmark for Zero-Shot Topic
+Localization in Historical Czech Documents
+Martin Kostelník1[0009−0002−5478−9580], Michal Hradiš1[0000−0002−6364−129X],
+and Martin Dočekal1[0000−0002−0580−9357]
+Faculty of Information Technology, Brno University of Technology,
+Brno, Czech Republic
+{ikostelnik,ihradis,idocekal}@fit.vut.cz
+Abstract. Topiclocalizationaimstoidentifyspansoftextthatexpress
+a given topic defined by a name and description. To study this task, we
+introduceahuman-annotatedbenchmarkbasedonCzechhistoricaldoc-
+uments, containing human-defined topics together with manually anno-
+tatedspansandsupportingevaluationatbothdocumentandwordlevels.
+Evaluationisperformedrelativetohumanagreementratherthanasingle
+referenceannotation.Weevaluateadiverserangeoflargelanguagemod-
+els alongside BERT-based models fine-tuned on a distilled development
+dataset.ResultsrevealsubstantialvariabilityamongLLMs,withperfor-
+mance ranging from near-human topic detection to pronounced failures
+inspanlocalization.Whilethestrongestmodelsapproachhumanagree-
+ment, the distilled token embedding models remain competitive despite
+their smaller scale. The dataset and evaluation framework are publicly
+available at: https://github.com/dcgm/czechtopic.
+Keywords: Natural Language Processing · NLP · Topic Localization ·
+BERT · LLM · Dataset · Benchmark
+1 Introduction
+Topic localization is the task of identifying the exact spans of text that express
+agiventopic.Itisalargelyunderexploredproblemindocumentunderstanding.
+Previous work has extensively explored document-level classification, topic dis-
+covery, and topic segmentation [10,1,14,44,4]. These approaches focus on iden-
+tifying document themes or detecting topic boundaries, rather than localizing
+whereatopicisexpressedwithinthetextitself.Comparedtodocumentclassifi-
+cationorsentence-levellabeling,topiclocalizationrequiresword-levelboundary
+decisions, allows overlapping and non-exclusive spans, and permits multiple dis-
+joint mentions of the same topic (Figure 1).
+Topic localization is motivated by applications where analysts need to un-
+derstand not only whether a topic appears in a document, but also where it
+is discussed. Such fine-grained annotations support both qualitative and quan-
+titative analysis of text collections, particularly in digital humanities and his-
+torical research. For example, historians may trace social or political themes
+6202
+raM
+4
+]LC.sc[
+1v48830.3062:viXra
+2 M. Kostelník et al.
+Topic: Labor disputes — Strikes and conflicts between workers and owners (e.g., mining
+strikes), demands for higher wages, and consequences for local communities.
+Text: as two years ago in Leadville. From Leadville as well, enterprising adventurers are
+moving there. They have already founded a newspaper, The Gunnison News, whose first issue
+was sold by auction and reached as many as 850 copies. — In Leadville, construction is
+proceeding diligently this year, especially more permanent buildings. The miners’ strike
+is very interesting, as about 5,000 workers are out of work, demanding $4 per day instead
+of the $3 they had received until now. The mine owners, however, have resolved not to
+yield or raise wages, even if they were to suffer losses, which seems rather unreasonable
+on their part, since they cannot simply summon 5,000 other workers. — From Greeley it is
+reported that since last June, nearly a whole year now, neither proper rain nor snow has
+fallen here. This spring the farmers irrigated wherever rivers were available, but if
+rain does not arrive in time, the wheat harvest will be only half, and corn and pota—
+Result (word indices): [(start: 60, end: 136)]
+Fig.1: Illustration of the topic localization task. A topic is defined by a name
+and a textual description. The objective is to identify and localize all spans in
+the document that correspond to the given topic.
+across archival materials. Compared to document-level classification, span-level
+localizationenablesricherdownstreamusessuchasautomaticorsemi-automatic
+tagging,evidenceextraction,topic-basednavigation,andassistedcorpusannota-
+tion,allowinghumanexpertstoefficientlyvalidateandrefinemachine-generated
+labels.
+Topic localization is related to topic segmentation and span prediction tasks
+such as extractive question answering, but differs in key respects. Unlike seg-
+mentation, it does not assume a partition of the text into contiguous topical
+blocks; and unlike QA-style span prediction, it allows multiple valid spans for
+the same topic and does not reduce naturally to a single answer span. These
+propertiesmakebothannotationandevaluationsubstantiallymorechallenging,
+as model performance depends not only on semantic understanding but also on
+fine-grained and potentially subjective boundary placement.
+The recent success of large language models (LLMs) raises a natural ques-
+tion: can LLMs perform topic localization in a manner comparable to humans?
+Standard evaluations typically compare predictions against a single reference
+annotation,implicitlyassuminghighandhomogeneoushumanagreement.How-
+ever, for tasks involving abstract categories and fuzzy boundaries, annotators
+may disagree systematically, and model scores against a single reference can
+be difficult to interpret without quantifying human consistency. To meaning-
+fully assess topic localization models, evaluation should therefore be grounded
+in inter-annotator agreement.
+To address this gap, we introduce a new human-annotated dataset for topic
+localization derived from Czech historical documents. The dataset consists of
+text excerpts from digitized archival sources, human-defined topics specified by
+names and descriptions, and manually annotated spans marking where these
+topics are expressed within the texts. Unlike existing datasets, which typically
+relyonfixedlabelsets,contiguoussegmentation,orquestion-drivenspanextrac-
+CzechTopic 3
+tion, our dataset combines open-ended topic definitions with fine-grained span
+localization. The key differences between our dataset and related benchmarks
+are summarized in Table 1. The presented dataset enables evaluation at two
+levels: topic presence detection and word-level span localization.
+We use the proposed dataset to benchmark a diverse set of publicly avail-
+ableLLMsundermultiplepromptingconfigurations,aswellasseveralfine-tuned
+BERT-based models, and compare their behavior to human annotators. Rather
+than constructing a single gold annotation, we define the human baseline us-
+ing average pairwise agreement: for each annotator, agreement scores are com-
+putedagainstallotherannotatorsandaveraged,andtheseper-annotatorscores
+aresubsequentlyaveragedacrossannotators.Modelevaluationfollowsthesame
+protocol, with each model compared against every human annotator and the
+resulting agreement scores averaged.
+The main contributions of this paper are:
+1. We introduce a new human-annotated dataset for topic localization com-
+prising525texts,363topics,and1,820annotated(text,topic)pairs.Exper-
+iments show that LLMs exhibit substantial performance variability on this
+dataset.
+2. We construct a large distilled development dataset and fine-tune a set of
+BERT-based cross-encoder models for topic localization.
+3. We quantify human agreement and benchmark LLMs and distilled BERT
+modelsundermultipleconfigurations,analyzingperformancerelativetointer-
+annotator agreement.
+2 Related Work
+Document classification Traditional document classification assigns topics or
+other labels to entire texts and is commonly evaluated on datasets such as 20
+Newsgroups[27],AGNews[50],andReuters[28].Zero-shotclassificationgener-
+alizes this setting by allowing models to predict labels that are not fixed during
+training, typically by expressing candidate labels in natural language and eval-
+uating their compatibility with the input text. In our dataset, document-level
+classification arises naturally: a document is considered positive for a topic if at
+least one span is present.
+Topicsegmentation Topicsegmentationpartitionsdocumentsintocoherenttopi-
+calunitsbydetectingtopicshiftboundariesincontinuoustext.Earlyapproaches
+such as TextTiling [17] rely on lexical cohesion, while recent methods employ
+transformer-basedmodels.Benchmarkdatasetstypicallyprovidecontiguousseg-
+ment annotations and evaluate boundary detection using metrics such as Pk [5]
+and WindowDiff [33]. In contrast, our dataset does not assume full topic cover-
+age or require boundary detection; instead, it focuses on localizing potentially
+overlapping and non-contiguous spans corresponding to human-defined topics,
+representing a different granularity and prediction structure from topic segmen-
+tation tasks.
+4 M. Kostelník et al.
+Table 1: Comparison of existing datasets across document classification, ex-
+tractive question answering, topic segmentation, and named entity recognition
+tasks. Columns indicate whether datasets explicitly model topics, provide span-
+level annotations, and support an open label space defined by natural-language
+queries or descriptions rather than a fixed label set. Our dataset uniquely com-
+bines topic-level supervision, span annotations, and an open label space.
+Span Open label
+Dataset Language Topics
+annotations space
+20 Newsgroups [27] en - ✗ ✗
+Reuters-21578 [28] en - ✗ ✗
+Czech News Dataset [26] cs - ✓ ✗
+SQuAD [35,34] en ✗ ✓ ✓
+Natural Questions [25] en ✗ ✓ ✓
+HotpotQA [47] en ✗ ✓ ✓
+FEVER [42] en ✗ ✓ ✓
+Choi [8] en ✓ ✓ ✗
+Wiki-727K [24] en ✓ ✓ ✗
+WikiSection [4] en ✓ ✓ ✗
+Universal NER [31] multi ✗ ✓ ✗
+CNEC [38] cs ✗ ✓ ✗
+Ours cs ✓ ✓ ✓
+Topic discovery Topic discovery methods aim to uncover latent themes in text
+collections. Classical approaches such as LDA [6] model topics as distributions
+overwordsanddocuments,whilerecentmethodsincludingBERTopic[14]lever-
+age transformer-based embeddings and clustering, and FASTopic [44] further
+employs optimal transport for efficient topic extraction. These approaches are
+typically unsupervised and operate at the corpus level. In contrast, our work
+assumes human-defined topics specified by names and descriptions and focuses
+on localizing where these predefined topics occur within individual texts, rather
+than discovering latent topic structure.
+Extractive question answering Extractive QA is typically formulated as a span
+selection, as popularized by benchmarks such as SQuAD [35,34] and Natural
+Questions [25]. Multi-hop datasets like HotpotQA [47] additionally provide sup-
+porting evidence annotations, linking answer prediction with rationale extrac-
+tion. Unlike QA, which localizes evidence supporting a query, our work focuses
+on localizing spans corresponding to predefined topics, shifting the objective
+from pure information extraction toward semantic text analysis.
+Span labeling with large language models Span labeling is commonly solved by
+in-context learning with LLMs, which use one of the following output encoding
+CzechTopic 5
+paradigms: tagging, indexing, and matching [37]. The tagging paradigm recon-
+structs the input text while inserting markers that denote span boundaries [43,
+46].Theindexingparadigmrequiresmodelstopredictexplicitpositionaloffsets,
+which has been shown to be unreliable due to limitations of LLMs in precise
+text positional reasoning [16,36]. In contrast, the matching paradigm generates
+only the relevant span content, and positions are recovered in post-processing
+via string matching [37,21,16,29]. In this paper, we focus exclusively on the
+tagging and matching paradigms and omit indexing baselines.
+Fine-tuning approaches for sequence labeling Beyond standard LLM prompt-
+ing strategies, alternative supervised fine-tuning (SFT) methods have been pro-
+posed[12,11].Inparticular,[11]improvesequencelabelingindecoder-onlymod-
+els by removing the causal mask to enable bidirectional information flow. Other
+approaches reformulates zero-shot labeling as pairwise text–label classification:
+Yinetal.[48]modelclassificationastextualentailmentbetweeninputtextsand
+label descriptions, while GLiNER [49] performs span extraction conditioned on
+natural-language labels, enabling zero-shot entity recognition.
+3 Task Overview and Dataset
+We formally define the task of topic localization as follows. Let a document D
+consist of a sequence of words W ={w ,w ,w ,...,w }. Each document
+D1 D2 D3 DI
+isassociatedwithatopicT =(N,S),whereN denotesthetopicnameandS its
+description.Theobjectiveoftopiclocalizationisthentopartitionthedocument
+wordsequenceW intotwodisjointsubsetsW andW ,whereW contains
+pos neg pos
+words that form spans corresponding to the given topic, and W contains the
+neg
+remaining words.
+In our datasets, documents contain 130 words on average. Topic names are
+short phrases of at most four words, while topic descriptions contain 13 words
+on average.
+3.1 Data Preparation
+The data for our dataset originate from historical Czech documents, primarily
+books and periodicals. Each document page is available as a scanned image. To
+obtain a textual representation, we apply PERO-OCR [22,19,23], which pro-
+duces structured OCR output including transcribed text lines. From the OCR
+output, we construct continuous text, and split each page into smaller segments
+of 768–1024 characters.
+Foreachtext,wecomputedensetextembeddingsusingtheGemma2model
+fine-tuned for multi-task embedding [7,45]. These embeddings provide a seman-
+tic representation of the text content. We then cluster the embeddings using
+the K-means algorithm [15] to group semantically similar texts. We do this to
+increase the difficulty of the topic localization task: rather than distinguishing
+6 M. Kostelník et al.
+betweenclearlyunrelated themes,annotatorsandmodelsmustdiscriminatebe-
+tween more subtle topical differences within semantically coherent groups.
+From each cluster, we select several texts closest to the cluster centroid. As
+a result, the dataset is organized into groups of semantically similar texts while
+maintaining a broad diversity of topics across clusters. Topics are subsequently
+defined and annotated independently for each cluster.
+3.2 Human Annotation
+To enable a reliable evaluation of the proposed task, we constructed a novel
+human-annotated dataset. The annotation process involved multiple annotators
+and was conducted in two phases: topic definition (Phase 1) and topic local-
+ization (Phase 2), ensuring consistency with the task definition. All annotators
+received detailed written guidelines specifying the definition of a topic, require-
+ments for topic descriptions, criteria for topic granularity, and rules for span
+localization. In addition, regular meetings were held throughout the annotation
+processtodiscussambiguouscases,refinetheguidelines,andpromoteconsistent
+annotation practices.
+Phase 1: Topic Definition and Localization. In the first phase, an annotator
+is presented with five texts corresponding to a single cluster. The annotator is
+instructedtoproposebetweentwoandfivetopicsthatarepresentinthecluster.
+Sincethetextswithinaclusteraresemanticallysimilar,theannotatorisrequired
+to identify themes that recur across multiple texts. Each topic must satisfy the
+following criteria:
+– The topic must appear in at least two of the five texts.
+– The topic must not be overly general (e.g., covering the whole text).
+– The topic must not be overly specific, such that the task degenerates into
+for example named entity recognition.
+After defining the topics, the annotator localizes each topic within the texts
+bymarkingthecorrespondingtextspans.Thetopicsaretreatedasindependent
+labels; therefore, spans may overlap and multiple topics may be assigned to the
+same region of text. In this phase, each cluster is annotated by exactly one
+annotator. On average, the annotation of a single cluster in Phase 1 required
+approximately 30–45 minutes.
+Phase 2: Topic Localization Agreement. Inthesecondphase,thesamefivetexts
+from a given cluster are presented again. In contrast to Phase 1, the annotator
+is provided with the set of topics already defined in Phase 1. The task in this
+phase is solely to localize each predefined topic within the texts by marking the
+corresponding spans.
+Eachclusterisannotatedbymultipleannotatorstoenablethemeasurement
+ofinter-annotatoragreementforthelocalizationtaskwhilekeepingthetopicdef-
+initionsfixed.AnnotatorsinPhase2donothaveaccesstothespanannotations
+CzechTopic 7
+produced by other annotators, ensuring independent judgments. The annota-
+tion of a single cluster in this phase required approximately 15–25 minutes on
+average.
+This two-phase annotation procedure ensures that the dataset reflects the
+textual definitions of topics rather than relying on interpretations held by the
+topic author. At the same time, this enables analysis of how well the written
+topic definitions capture the original intent of the topic author, allowing the
+evaluation of both the clarity of topic formulations and the extent to which
+independent annotators interpret and localize topics in a consistent manner.
+3.3 Resulting Dataset
+The resulting dataset comprises 105 annotated text clusters, each containing
+fivetexts(525textsintotal).Intotal,363topicswereannotated,yielding1,820
+annotated(text,topic)pairs.Figure2presentsanexampletextfromthedataset
+annotated with two distinct topics. Figure 3 illustrates the distribution of topic
+occurrences across texts as well as the distribution of annotated span lengths.
+si mé chování tak vykládali. Byl jsem příliš dojat matčinou smrtí. Teď vidím, že s matkou jsem ztratil všecko, a
+v nějaké štěstí již nedoufám. Řekněte Kačence, že jí přeji, aby byla šťastna — tak jako mohla být se mnou.“
+Tak zněl Jáchymův dopis. Brzy potom stala se Kačenka Hrabáčovou ženou. Rodiče jí dali čtyři sta zlatých,
+více jí dáti nemohli, ale Hrabáč je ujišťoval, že mu o peníze nejde a že je se vším spokojen, jen když dostane
+Kačenku. Jeho rodiče to příliš rádi neviděli, byli by raději viděli, kdyby si byl syn vzal dívku zámožnější, ale
+starý konečně řekl: „Je svým pánem, má rozum, ať dělá, jak myslí.“ Zdálo se tedy, že si Hrabáč béře Kačenku
+jen z veliké lásky, a každý hádal, jak bude jejich manželství šťastné. Ale to štěstí dlouho netrvalo. Kačenka
+byla hezká, a to bylo asi pohnutkou pro Hrabáče, že tak o ni stál. Jeho láska k ní neměla hlubšího základu, a
+proto dosti brzy ochladla. Hrabáč za ženino věno nakoupil různého zboží, neboť neměl krám zrovna bohatě
+zásobený, a ještě i potom se mu tak mnohého nedostávalo. Jindy si myslíval: „Až se ožením, zařídím si ob-
+Fig.2: Example from our topic localization dataset showing a text annotated
+with spans belonging to two distinct topics.
+3.4 LLM Distillation
+The human annotation process described above is time-consuming and difficult
+to scale to larger datasets. To enable model development and training at scale,
+we constructed a separate development dataset using LLM distillation.
+Specifically, the gpt-5-mini model was employed to generate annotations
+in a manner analogous to the human annotation procedure. The generation
+process was also performed in two stages, mirroring the structure of the human
+annotation pipeline.
+8 M. Kostelník et al.
+120
+100
+80
+60
+40
+20
+0 0 2 4
+#Texts
+scipoT#
+Distributionoftopicsacrosstexts
+400
+300
+200
+100
+0 0 2 4
+#Texts
+(a) Phase 1
+scipoT#
+Distributionoftopicsacrosstexts
+400
+300
+200
+100
+0 0 100 200
+Length(words)
+(b) Phase 2
+tnuoC
+Distributionofspanlengths
+(c) Phase 2
+Fig.3:Distributionstatisticsofourtopiclocalizationdataset.Distributionofthe
+number of texts in which a topic appears in Phase 1 (a) and Phase 2 (b). The
+Phase 2 distribution is aggregated across all annotators. Note that some topics
+are not annotated by certain annotators, resulting in zero occurrences for those
+annotator–topic pairs. (c) Distribution of annotated span lengths measured in
+words for Phase 2 annotations.
+Phase 1: Topic Generation. In the first phase, the model was provided with 15
+textscorrespondingtoasinglecluster.Basedonthejointcontentofthesetexts,
+the model was instructed to generate between 5 and 20 candidate topics that
+recur across the cluster. The prompt design followed the same principles as the
+human guidelines, encouraging semantically meaningful topics that are neither
+overly general nor overly specific.
+Phase 2: Topic Localization. In the second phase, the model was presented
+with a single text together with the complete list of topics generated for the
+correspondingcluster.Foreachtopic,themodelwasrequiredtolocalizerelevant
+text spans within the text using an matching approach.
+This two-phase distillation procedure enabled the creation of a substantially
+larger annotated development dataset while maintaining structural consistency
+with the human annotation protocol. Although automatically generated, the
+distilledannotationspreservethekeycharacteristicsofthetaskformulationand
+provide a practical foundation for training and experimentation. The resulting
+datasetcomprises1,550clusters,eachcontainingtentexts(15,550textsintotal).
+In total, 19,107 topics were annotated, yielding 187,773 annotated (text, topic)
+pairs.
+4 Experiments
+This section describes the evaluation protocol and experimental setup used to
+estimate human agreement and benchmark model performance.
+CzechTopic 9
+4.1 Evaluation
+We evaluate the task at two levels: text-level and word-level. At the text level,
+the task is to determine whether a given topic is present in a text. We report
+precision,recall,andF1score.TheF1scoreisaccompaniedbya95%confidence
+interval computed via bootstrap resampling over topics.
+At the word level, the task is to identify which words correspond to a given
+topic, as defined in Section 3. We report precision, recall, F1, and Intersection
+overUnion(IoU),withconfidenceintervalsprovidedforF1andIoU.Inaddition,
+we define localization success, where a topic is considered successfully localized
+if the IoU exceeds a predefined threshold.
+Allmetricsaremacro-averagedovertopics.Thehumanbaselineiscomputed
+as the average pairwise performance among annotators. For each annotator,
+scoresarecalculatedbycomparingtheirannotationsagainstthoseofallremain-
+ing annotators and averaging the results. The final human baseline is obtained
+by averaging these per-annotator scores across all annotators.
+4.2 BERT Fine-Tuning
+We draw inspiration from GLiNER [49], which demonstrates zero-shot labeling
+using a cross-encoder formulation. We fine-tune a set of BERT-based models
+on the development dataset described in Section 3.4. The dataset is split into
+training and validation subsets using an 80:20 partition over clusters, ensuring
+that both topics and texts remain disjoint between splits. Each model is trained
+as a cross-encoder, jointly encoding the topic description and the text as input,
+as illustrated in Figure 4.
+Given the joint encoding, we compute a similarity matrix between topic to-
+kens and text tokens. A score is then assigned to each text token by taking the
+maximumsimilarityacrossalltopictokens.Modelsaretrainedusinganeffective
+batchsizeof64,theAdamWoptimizer,andalearningrateof3×10−5.Foreach
+model, the final classification threshold is selected based on the word-level F1
+score measured on the validation split.
+4.3 Large Language Models
+We evaluated several open and commercial large language models. Two strate-
+giesforspanpredictionwereexplored:taggingandmatching.Experimentswere
+conducted in both zero-shot and few-shot settings; in the latter, models were
+provided with a small number of annotated examples illustrating span localiza-
+tion. Finally, we examined the effect of prompt language by comparing prompts
+written in Czech and English.
+4.4 Results
+Table 2 presents the evaluation results of all human annotators, BERT-based
+models, and large language models on both text-level and word-level tasks. Fig-
+ures 5 and 6 provide a visual comparison of model performance against the
+10 M. Kostelník et al.
+Topic Text
+Labor disputes - Strikes and ... SEP as two years ago in ...
+BERT
+0.1 0.9 0.8 0.1 0.3 0.4
+0.8 0.8 0.7 0.1 0.2 0.1
+0.6 0.2 0.2 0.1
+Text-Topic Similarity
+0.1 0.4 Matrix 0.4 0.1
+0.2 0.6 0.3 0.2
+0.1 0.6 0.5 0.2 0.1 0.2
+Score (max) 0.8 0.9 0.8 0.3 0.4 0.4
+Fig.4:Overviewofthecross-encoderarchitectureusedfortopiclocalization.The
+topic and text are jointly encoded by BERT. A similarity matrix is computed
+betweentopictokensandtexttokens,andeachtexttokenreceivesascoregiven
+by the maximum similarity across all topic tokens.
+human baseline and illustrate topic localization success across IoU thresholds,
+respectively.
+Human annotators show a high level of agreement. Inter-annotator agreement
+measured using Krippendorff’s α reached 0.616 (micro) and 0.592 when macro-
+averagedovertopics.Bootstrappingovertopicsyielded95%confidenceintervals
+of [0.591, 0.640] and [0.567, 0.616], respectively. Individual annotators achieve
+word-level F1 scores between 66.4 and 72.1, confirming consistent localization
+behavior across annotators.
+Large language models exhibit substantial performance variability. Performance
+variesconsiderablyacrossmodels,witha47.9percentage-pointgapinword-level
+F1 between the best and worst systems (61.1 vs. 13.2). While stronger models
+such as GPT-5-2 approach human-level performance in topic detection, smaller
+orlesscapablemodelsdegradesubstantially,demonstratingthatthebenchmark
+poses a non-trivial challenge.
+Large language models underperform human annotators. Even the strongest
+LLM achieves a word-level F1 of 61.1 and IoU of 48.7, remaining notably below
+the human baseline (68.7 F1 and 57.2 IoU, p < 0.001). This gap indicates that
+precise topic localization remains challenging for current generative models de-
+spite strong document-level understanding. Moreover, the best model remains
+significantly below human agreement even at the text level (80.6 vs. 83.2 F1,
+p=0.026).
+CzechTopic 11
+Table 2: Text-level and word-level performance of human annotators and evalu-
+atedmodelsonthetopiclocalizationtask.Text-levelmetricsmeasuretopicpres-
+ence detection, while word-level metrics evaluate word-level localization quality.
+Results are reported as macro averages over topics. Confidence intervals (shown
+in brackets) denote 95% bootstrap intervals computed over topics for F1 and
+IoU. Models are grouped by category: human annotators, BERT models, and
+large language models. Each group is ordered by word-level F1.
+Text-level Word-level
+P R F1 P R F1 IoU
+Humanbaseline 85.7 86.7 83.2 72.8 72.8 68.7 57.2
+[81.5,84.9] [66.7,70.6] [55.1,59.3]
+Annotator6 89.4 88.3 86.4 79.5 72.8 72.1 61.0
+[84.6,88.2] [69.7,74.4] [58.2,63.7]
+Annotator3 88.5 84.7 83.9 73.4 73.2 69.5 58.2
+[81.9,85.7] [67.3,71.7] [55.7,60.7]
+Annotator4 84.3 87.1 82.8 70.3 75.7 68.8 57.5
+[80.3,85.1] [66.2,71.4] [54.6,60.4]
+Annotator7 83.8 88.3 83.1 72.3 73.5 68.5 56.7
+[81.1,85.1] [66.1,70.8] [54.1,59.3]
+Annotator5 82.7 84.8 80.3 71.0 71.1 66.4 55.0
+[77.7,82.9] [63.7,69.0] [52.2,57.9]
+robeczech[40] 67.4 91.2 72.1 60.7 51.7 48.3 35.5
+[69.7,74.5] [46.0,50.6] [33.3,37.7]
+mmbert[30] 73.5 84.6 72.1 67.2 45.4 47.0 34.7
+[69.5,74.7] [44.6,49.4] [32.5,36.9]
+robertaxlm[9] 56.2 94.2 65.2 65.6 41.7 45.3 32.7
+[63.0,67.4] [43.1,47.6] [30.7,34.7]
+czert[39] 68.7 84.2 70.6 61.1 38.4 40.9 28.8
+[68.2,73.0] [38.6,43.2] [26.9,30.9]
+small-e-czech[20] 68.1 82.8 68.6 58.0 41.8 40.2 28.4
+[66.2,71.0] [37.9,42.5] [26.4,30.4]
+bert-cased[10] 60.1 86.0 64.8 52.1 42.8 39.0 27.4
+[62.3,67.3] [36.7,41.4] [25.4,29.4]
+slavicbert[3] 60.8 85.0 64.9 53.5 40.6 38.0 26.5
+[62.4,67.5] [35.6,40.3] [24.5,28.5]
+bert-uncased[10] 55.6 90.2 63.3 49.8 42.1 38.0 26.2
+[61.0,65.5] [35.8,40.2] [24.4,28.1]
+gpt-5-2-2025-12-11[32] 76.1 94.2 80.6 63.4 71.4 61.1 48.7
+[78.3,82.8] [58.4,63.9] [45.8,51.7]
+gpt-oss-20b[2] 69.2 91.3 74.7 57.7 64.9 55.4 42.1
+[72.7,76.7] [53.3,57.5] [40.0,44.2]
+gpt-5-mini-2025-08-07[32] 64.9 82.4 67.8 50.6 72.5 53.4 40.9
+[65.4,70.1] [51.0,55.7] [38.6,43.3]
+llama3-3-70b[13] 67.2 96.9 75.2 56.1 61.8 53.0 39.2
+[73.2,77.2] [51.0,54.9] [37.2,41.2]
+gemma3-27b[18] 59.9 95.9 70.0 50.8 62.3 50.7 36.8
+[68.1,72.0] [48.7,52.5] [34.9,38.7]
+gemini-3-pro-preview[41] 72.2 65.1 62.4 63.9 45.7 47.4 36.6
+[58.7,66.0] [43.9,50.8] [33.4,39.8]
+gemma3-4b[18] 47.4 95.9 59.9 32.8 36.7 30.7 19.3
+[57.9,61.9] [29.3,32.2] [18.2,20.4]
+llama-3-2-3B-Instruct[13] 49.4 89.5 59.7 27.8 40.1 29.2 18.6
+[57.2,62.2] [27.2,31.3] [17.1,20.1]
+gpt-5-nano-2025-08-07[32]64.6 16.3 18.4 54.2 11.9 13.2 10.3
+[15.0,21.9] [10.5,16.2] [7.9,12.8]
+BERT-based models achieve competitive performance relative to their teacher
+model and outperform several LLMs. Fine-tunedtokenembeddingmodelsreach
+word-level F1 scores up to 48.3 (robeczech; 95% CI: [46.0,50.6]) and text-level
+F1scoresaround72.1(95%CI:[69.7,74.5]),surpassingmultipleLLMconfigura-
+tions,includingsmallerGemmaandLlamavariants.Althoughstillbelowhuman
+performance (p < 0.001), these results show that specialized cross-encoder ar-
+chitecturestraineddirectlyforlocalizationcancompetewith,andinsomecases
+exceed, general-purpose large language models.
+Human annotators are more consistent with one another than with the topic
+author. We tested the hypothesis that annotators performing localization un-
+derfixedtopicdefinitionsexhibithighermutualagreementthanagreementwith
+12 M. Kostelník et al.
+70
+60
+50
+40
+30
+20
+10
+IC%59;1FdroW
+80
+60
+40
+20
+Humanbas gel pi t-n 5e -2-2025-12-11 llama3-3-70b gpt-oss-20b gem gm pa t-3- 5-27 mib ni-202 g5 e-0 mi8- ni0 -7 3-pro-preview ge lm lama m3 a- -4 3-b 2-3B- gI pn ts -t 5r -u nc at no-2025-08-07
+IC%59;1FtxeT
+Humanbaselin mie ni-2025-08-07 mmbert robeczech czert small-e-czech robertaxlm slavicbert bert-cased bert-uncased
+5-
+pt-
+g
+(a) Large language models (b) BERT-based models
+Fig.5: Comparison of model performance. The top row shows word-level F1
+scores and the bottom row text-level F1 scores, each with 95% confidence in-
+tervals. (a) Large language models and (b) BERT-based models. The human
+baseline is highlighted in red. In (b), the teacher model is highlighted in green.
+the original topic creator. Agreement among Phase 2 annotators was signifi-
+cantly higher than agreement between Phase 1 and Phase 2 annotations (∆F1
+= 0.024, 95% CI [0.009, 0.041], p = 0.0013). This result indicates a systematic,
+though moderate, divergence between the original topic formulation and sub-
+sequent localization judgments. In particular, it suggests that part of the topic
+interpretation remains implicit to the author and is not fully captured by the
+written topic description.
+Ablation on the LLM setting. Table 3 presents an ablation study analyzing the
+impact of configuration choices in the LLM-based pipeline. The choice of span
+extractionstrategyhasthelargesteffectonperformance:thematchingapproach
+improves span-level F1 by 0.104 compared to tagging, with a narrow confidence
+CzechTopic 13
+1.0
+0.8
+0.6
+0.4
+0.2
+0.0
+0.0 0.2 0.4 0.6 0.8 1.0
+IoUthreshold
+etarsseccuS
+Topiclocalizationsuccess@IoU
+1.0
+Humanbaseline
+gemma3-27b
+llama3-3-70b
+llama-3-2-3B-Instruct 0.8
+gemma3-4b
+gemini-3-pro-preview
+gpt-5-nano-2025-08-07
+gpt-5-2-2025-12-11 0.6
+gpt-oss-20b
+gpt-5-mini-2025-08-07
+0.4
+0.2
+0.0
+0.0 0.2 0.4 0.6 0.8 1.0
+IoUthreshold
+(a) Large language models
+etarsseccuS
+Topiclocalizationsuccess@IoU
+Humanbaseline
+gpt-5-mini-2025-08-07
+bert-uncased
+bert-cased
+mmbert
+slavicbert
+small-e-czech
+robeczech
+robertaxlm
+czert
+(b) BERT-based models
+Fig.6: Comparison of model performance with respect to topic localization suc-
+cess across IoU thresholds. (a) Large language models and (b) BERT-based
+models. Curves show the proportion of topics successfully localized at a given
+IoUthreshold.Thehumanbaselineishighlightedinred,whilein(b)theteacher
+model is highlighted in green.
+interval indicating a consistent and substantial gain (p < 0.001). In contrast,
+movingfromzero-shottofew-shotpromptingyieldsonlyamodestimprovement
+of 0.010 F1, suggesting limited benefit from additional examples for this task
+(p<0.001).Finally,promptlanguagehasnomeasurableimpactonperformance,
+as the difference between Czech and English prompts is statistically negligible
+(p=0.962).
+Table3:AblationstudyofLLMconfigurationfactors.Thetablereportschanges
+in word-level F1 (∆F1), together with 95% confidence intervals. The span ex-
+traction strategy has the largest impact, while few-shot prompting yields only
+marginal improvements and prompt language shows no statistically significant
+effect.
+Factor ∆F1 CI
+Matching (x Tagging) 0.104 [0.097; 0.110]
+Zero-shot (x Few-shot) 0.010 [0.007; 0.014]
+Czech prompt (x English prompt)0.000[-0.003; 0.003]
+5 Conclusions
+We presented a new human-annotated benchmark for topic localization, a task
+that requires identifying spans of text expressing a given topic defined by a
+14 M. Kostelník et al.
+name and description. The dataset is derived from historical Czech documents
+and contains 525 texts annotated with 363 human-defined topics, yielding 1,820
+annotated (text, topic) pairs. The dataset is publicly available online1.
+To enable scalable experimentation, we constructed a large distilled devel-
+opment dataset generated using the gpt-5-mini model and used it to fine-tune
+several BERT-based models.
+We evaluated both large language models and fine-tuned encoder architec-
+turesagainsthumanannotators,framingevaluationrelativetomeasuredhuman
+agreement rather than a single gold annotation.
+Our experiments show that topic localization remains challenging: while the
+strongest LLM approaches human-level performance, substantial variability ex-
+ists across models, and most systems remain below human consistency, partic-
+ularly at the span level. Fine-tuned BERT-based models achieve competitive
+performance relative to their teacher model and even surpass it on text-level
+evaluation, demonstrating that specialized architectures trained for localization
+remain strong baselines.
+Wehopethisbenchmarkestablishestopiclocalizationasadistinctevaluation
+settingandencouragesfutureworkonstructuredtopicunderstanding,improved
+spanlocalizationmethods,andevaluationparadigmsgroundedinhumanagree-
+ment.
+Acknowledgments. ThisworkhasbeensupportedbytheMinistryofCultureofthe
+Czech Republic under the NAKI III research project semANT – Semantic Document
+Exploration (DH23P03OVV060).
+Disclosure of Interests. The authors have no competing interests to declare that
+are relevant to the content of this article.
+References
+1. Adhikari,A.,Ram,A.,Tang,R.,Lin,J.:Docbert:Bertfordocumentclassification.
+arXiv preprint arXiv:1904.08398 (2019)
+2. Agarwal, S., Ahmad, L., Ai, J., Altman, S., Applebaum, A., Arbus, E., Arora,
+R.K., Bai, Y., Baker, B., Bao, H., et al.: gpt-oss-120b & gpt-oss-20b model card.
+arXiv preprint arXiv:2508.10925 (2025)
+3. Arkhipov,M.,Trofimova,M.,Kuratov,Y.,Sorokin,A.:Tuningmultilingualtrans-
+formers for language-specific named entity recognition. In: Proceedings of the 7th
+Workshop on Balto-Slavic Natural Language Processing. pp. 89–93. Association
+for Computational Linguistics, Florence, Italy (Aug 2019)
+4. Arnold, S., Schneider, R., Cudré-Mauroux, P., Gers, F.A., Löser, A.: Sector: A
+neural model for coherent topic segmentation and classification. Transactions of
+the Association for Computational Linguistics 7, 169–184 (2019)
+5. Beeferman, D., Berger, A., Lafferty, J.: Statistical models for text segmentation.
+In: Machine Learning (1999)
+1 The dataset is available at: https://github.com/dcgm/czechtopic.
+CzechTopic 15
+6. Blei,D.M.,Ng,A.Y.,Jordan,M.I.:Latentdirichletallocation.JournalofMachine
+Learning Research 3, 993–1022 (2003)
+7. Chen, J., Xiao, S., Zhang, P., Luo, K., Lian, D., Liu, Z.: M3-embedding: Multi-
+linguality, multi-functionality, multi-granularity text embeddings through self-
+knowledgedistillation.In:Findingsoftheassociationforcomputationallinguistics:
+ACL 2024. pp. 2318–2335 (2024)
+8. Choi, F.Y.Y.: Advances in domain independent linear text segmentation. In: 1st
+Meeting of the North American Chapter of the Association for Computational
+Linguistics (2000)
+9. Conneau, A., Khandelwal, K., Goyal, N., Chaudhary, V., Wenzek, G., Guzmán,
+F., Grave, E., Ott, M., Zettlemoyer, L., Stoyanov, V.: Unsupervised cross-lingual
+representationlearningatscale.In:Proceedingsofthe58thannualmeetingofthe
+association for computational linguistics. pp. 8440–8451 (2020)
+10. Devlin,J.,Chang,M.,Lee,K.,Toutanova,K.:BERT:pre-trainingofdeepbidirec-
+tional transformers for language understanding. CoRR abs/1810.04805 (2018)
+11. Dukić,D.,Šnajder,J.:Lookingrightissometimesright:Investigatingthecapabil-
+ities of decoder-only LLMs for sequence labeling. In: Findings of the Association
+forComputationalLinguistics:ACL2024.pp.14168–14181.AssociationforCom-
+putational Linguistics, Bangkok, Thailand (Aug 2024)
+12. Dukić,D.,Glavaš,G.,Šnajder,J.:Supervisedin-contextfine-tuningforgenerative
+sequence labeling (2025)
+13. Grattafiori, A., Dubey, A., Jauhri, A., Pandey, A., Kadian, A., Al-Dahle, A., Let-
+man,A.,Mathur,A.,Schelten,A.,Vaughan,A.,etal.:Thellama3herdofmodels.
+arXiv preprint arXiv:2407.21783 (2024)
+14. Grootendorst,M.:Bertopic:Neuraltopicmodelingwithaclass-basedtf-idfproce-
+dure. arXiv preprint arXiv:2203.05794 (2022)
+15. Hartigan, J.A., Wong, M.A.: A k-means clustering algorithm. JSTOR: Applied
+Statistics 28(1), 100–108 (1979)
+16. Hasanain, M., Ahmad, F., Alam, F.: Large language models for propaganda span
+annotation.In:FindingsoftheAssociationforComputationalLinguistics:EMNLP
+2024.pp.14522–14532.AssociationforComputationalLinguistics,Miami,Florida,
+USA (Nov 2024)
+17. Hearst,M.A.:Texttiling:segmentingtextintomulti-paragraphsubtopicpassages.
+Comput. Linguist. 23(1), 33–64 (Mar 1997)
+18. Kamath, A., Ferret, J., Pathak, S., et al.: Gemma 3 technical report. ArXiv
+abs/2503.19786 (2025)
+19. Kišš, M., Beneš, K., Hradiš, M.: At-st: self-training adaptation strategy for ocr
+indomainswithlimitedtranscriptions.In:InternationalConferenceonDocument
+Analysis and Recognition. pp. 463–477. Springer (2021)
+20. Kocián,M.,Náplava,J.,Štancl,D.,Kadlec,V.:Siamesebert-basedmodelforweb
+search relevance ranking evaluated on a new czech dataset. In: Proceedings of the
+AAAI Conference on Artificial Intelligence. vol. 36, pp. 12369–12377 (2022)
+21. Kocmi, T., Federmann, C.: GEMBA-MQM: Detecting translation quality error
+spans with GPT-4. In: Proceedings of the Eighth Conference on Machine Trans-
+lation. pp. 768–775. Association for Computational Linguistics, Singapore (Dec
+2023)
+22. Kodym,O.,Hradiš,M.:Pagelayoutanalysissystemforunconstrainedhistoricdoc-
+uments.In:DocumentAnalysisandRecognition–ICDAR2021:16thInternational
+Conference, Lausanne, Switzerland, September 5–10, 2021, Proceedings, Part II
+16. pp. 492–506. Springer (2021)
+16 M. Kostelník et al.
+23. Kohút, J., Hradiš, M.: Ts-net: Ocr trained to switch between text transcription
+styles. In: Document Analysis and Recognition–ICDAR 2021: 16th International
+Conference, Lausanne, Switzerland, September 5–10, 2021, Proceedings, Part IV
+16. pp. 478–493. Springer (2021)
+24. Koshorek, O., Cohen, A., Mor, N., Rotman, M., Berant, J.: Text segmentation as
+a supervised learning task. In: Proceedings of the 2018 Conference of the North
+AmericanChapteroftheAssociationforComputationalLinguistics:HumanLan-
+guage Technologies, Volume 2 (Short Papers). pp. 469–473 (2018)
+25. Kwiatkowski, T., Palomaki, J., Redfield, O., Collins, M., Parikh, A., Alberti, C.,
+Epstein, D., Polosukhin, I., Devlin, J., Lee, K., Toutanova, K., Jones, L., Kelcey,
+M., Chang, M.W., Dai, A.M., Uszkoreit, J., Le, Q., Petrov, S.: Natural questions:
+Abenchmarkforquestionansweringresearch.TransactionsoftheAssociationfor
+Computational Linguistics 7, 452–466 (2019)
+26. Kydlíček, H., Libovicky`, J.: A dataset and strong baselines for classification of
+czechnewstexts.In:InternationalConferenceonText,Speech,andDialogue.pp.
+33–44. Springer (2023)
+27. Lang, K.: Newsweeder: Learning to filter netnews. In: Prieditis, A., Russell, S.
+(eds.) Machine Learning Proceedings 1995, pp. 331–339. Morgan Kaufmann, San
+Francisco (CA) (1995)
+28. Lewis, D.D.: Reuters-21578 text categorization test collection, distribution 1.0
+(1997)
+29. Li,P.,Sun,T.,Tang,Q.,Yan,H.,Wu,Y.,Huang,X.,Qiu,X.:CodeIE:Largecode
+generation models are better few-shot information extractors. In: Proceedings of
+the 61st Annual Meeting of the Association for Computational Linguistics (Vol-
+ume1:LongPapers).pp.15339–15353.AssociationforComputationalLinguistics,
+Toronto, Canada (Jul 2023)
+30. Marone, M., Weller, O., Fleshman, W., Yang, E., Lawrie, D., Van Durme, B.:
+mmbert: A modern multilingual encoder with annealed language learning. arXiv
+preprint arXiv:2509.06888 (2025)
+31. Mayhew, S., Blevins, T., Liu, S., Šuppa, M., Gonen, H., Imperial, J.M., Karlsson,
+B.F.,Lin,P.,Ljubešić,N.,Miranda,L.,Plank,B.,Riab,A.,Pinter,Y.:Universal
+ner: A gold-standard multilingual named entity recognition benchmark. In: Pro-
+ceedingsofthe2024ConferenceoftheNorthAmericanChapteroftheAssociation
+for Computational Linguistics (NAACL) (2024)
+32. OpenAI: Gpt-5-2. https://platform.openai.com/docs/models (2025), accessed via
+OpenAI API
+33. Pevzner,L.,Hearst,M.A.:Acritiqueandimprovementofanevaluationmetricfor
+text segmentation. Computational Linguistics 28(1), 19–36 (2002)
+34. Rajpurkar,P.,Jia,R.,Liang,P.:Knowwhatyoudon’tknow:Unanswerableques-
+tionsforsquad.In:Proceedingsofthe56thAnnualMeetingoftheAssociationfor
+Computational Linguistics (Volume 2: Short Papers). pp. 784–789 (2018)
+35. Rajpurkar, P., Zhang, J., Lopyrev, K., Liang, P.: Squad: 100,000+ questions for
+machinecomprehensionoftext.In:Proceedingsofthe2016ConferenceonEmpir-
+ical Methods in Natural Language Processing. pp. 2383–2392 (2016)
+36. Ramponi, A., Daffara, A., Tonelli, S.: Fine-grained fallacy detection with human
+labelvariation.In:Proceedingsofthe2025ConferenceoftheNationsoftheAmer-
+icas Chapter of the Association for Computational Linguistics: Human Language
+Technologies(Volume1:LongPapers).pp.762–784.AssociationforComputational
+Linguistics, Albuquerque, New Mexico (Apr 2025)
+37. Semin,D.,Dušek,O.,Kasner,Z.:Strategiesforspanlabelingwithlargelanguage
+models. arXiv preprint arXiv:2601.16946 (2026)
+CzechTopic 17
+38. Ševčíková,M.,Žabokrtský,Z.,Krůza,O.:Namedentitiesinczech:Annotatingdata
+and developing NE tagger. In: Matoušek, V., Mautner, P. (eds.) Lecture Notes in
+Artificial Intelligence, Proceedings of the 10th International Conference on Text,
+SpeechandDialogue.LectureNotesinComputerScience,vol.4629,pp.188–195.
+Springer, Berlin / Heidelberg (2007)
+39. Sido, J., Pražák, O., Přibáň, P., Pašek, J., Seják, M., Konopík, M.: Czert–czech
+bert-like model for language representation. In: Proceedings of the International
+Conference on Recent Advances in Natural Language Processing (RANLP 2021).
+pp. 1326–1338 (2021)
+40. Straka, M., Náplava, J., Straková, J., Samuel, D.: RobeCzech: Czech RoBERTa,
+a Monolingual Contextualized Language Representation Model. In: Text, Speech,
+and Dialogue. pp. 197–209. Springer International Publishing, Cham (2021)
+41. Team, G., Anil, R., Borgeaud, S., Alayrac, J.B., Yu, J., Soricut, R., Schalkwyk,
+J., Dai, A.M., Hauth, A., Millican, K., et al.: Gemini: a family of highly capable
+multimodal models. arXiv preprint arXiv:2312.11805 (2023)
+42. Thorne,J.,Vlachos,A.,Christodoulopoulos,C.,Mittal,A.:FEVER:alarge-scale
+dataset for fact extraction and VERification. In: Proceedings of the 2018 Confer-
+ence of the North American Chapter of the Association for Computational Lin-
+guistics: Human Language Technologies, Volume 1 (Long Papers). pp. 809–819.
+Association for Computational Linguistics, New Orleans, Louisiana (Jun 2018)
+43. Wang, S., Sun, X., Li, X., Ouyang, R., Wu, F., Zhang, T., Li, J., Wang, G., Guo,
+C.: GPT-NER: Named entity recognition via large language models. In: Findings
+of the Association for Computational Linguistics: NAACL 2025. pp. 4257–4275.
+Association for Computational Linguistics, Albuquerque, New Mexico (Apr 2025)
+44. Wu, X., Nguyen, T., Zhang, D., Wang, W.Y., Luu, A.T.: Fastopic: Pretrained
+transformer is a fast, adaptive, stable, and transferable topic model. Advances in
+Neural Information Processing Systems 37, 84447–84481 (2024)
+45. Xiao, S., Liu, Z., Zhang, P., Muennighoff, N.: C-pack: Packaged resources to ad-
+vance general chinese embedding (2023)
+46. Yan, F., Yu, P., Chen, X.: Ltner: Large language model tagging for named en-
+tity recognition with contextualized entity marking. p. 399–411. Springer-Verlag,
+Berlin, Heidelberg (2024)
+47. Yang, Z., Qi, P., Zhang, S., Bengio, Y., Cohen, W., Salakhutdinov, R., Manning,
+C.D.: Hotpotqa: A dataset for diverse, explainable multi-hop question answering.
+In: Proceedings of the 2018 conference on empirical methods in natural language
+processing. pp. 2369–2380 (2018)
+48. Yin, W., Hay, J., Roth, D.: Benchmarking zero-shot text classification: Datasets,
+evaluationandentailmentapproach.In:Proceedingsofthe2019conferenceonem-
+piricalmethodsinnaturallanguageprocessingandthe9thinternationaljointcon-
+ference on natural language processing (EMNLP-IJCNLP). pp. 3914–3923 (2019)
+49. Zaratiana, U., Tomeh, N., Holat, P., Charnois, T.: GLiNER: Generalist model for
+named entity recognition using bidirectional transformer. In: Proceedings of the
+2024 Conference of the North American Chapter of the Association for Compu-
+tationalLinguistics:HumanLanguageTechnologies(Volume1:LongPapers).pp.
+5364–5376. Association for Computational Linguistics, Mexico City, Mexico (Jun
+2024)
+50. Zhang, X., Zhao, J., LeCun, Y.: Character-level convolutional networks for text
+classification. Advances in neural information processing systems 28 (2015)

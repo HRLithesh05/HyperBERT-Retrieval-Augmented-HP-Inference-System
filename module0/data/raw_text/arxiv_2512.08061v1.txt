@@ -1,0 +1,1667 @@
+LUNA: LINEAR UNIVERSAL NEURAL ATTENTION WITH
+GENERALIZATION GUARANTEES
+AshkanShahbazi∗,1 PingHe∗,1 AliAbbasi1
+YikunBai1 XinranLiu1 ElahehAkbari1
+DarianSalehi3 NavidNaderiAlizadeh4 SoheilKolouri1,2
+1DepartmentofComputerScience,VanderbiltUniversity,Nashville,TN,USA
+2DepartmentofElectrical&ComputerEngineering,VanderbiltUniversity,Nashville,TN,USA
+3DepartmentofComputerScience,DukeUniversity,Durham,NC,USA
+4DepartmentofBiostatistics&Bioinformatics,DukeUniversity,Durham,NC,USA
+∗Equalcontribution
+December10,2025
+ABSTRACT
+Scaling attention faces a critical bottleneck: the O(n2) quadratic computational cost of softmax
+attention,whichlimitsitsapplicationinlong-sequencedomains. Whilelinearattentionmechanisms
+reducethiscosttoO(n),theytypicallyrelyonfixedrandomfeaturemaps,suchasrandomFourier
+featuresorhand-craftedfunctions. Thisrelianceonstatic,data-agnostickernelscreatesafundamental
+trade-off,forcingpractitionerstosacrificesignificantmodelaccuracyforcomputationalefficiency.
+WeintroduceLUNA,akernelizedlinearattentionmechanismthateliminatesthistrade-off,retaining
+linear cost while matching and surpassing the accuracy of quadratic attention. LUNA is built
+on the key insight that the kernel feature map itself should be learned rather than fixed a priori.
+Byparameterizingthekernel, LUNA learnsafeaturebasistailoredtothespecificdataandtask,
+overcoming the expressive limitations of fixed-feature methods. LUNA implements this with a
+learnablefeaturemapthatinducesapositive-definitekernelandadmitsastreamingform,yielding
+lineartimeandmemoryscalinginthesequencelength. Empiricalevaluationsvalidateourapproach
+acrossdiversesettings. OntheLongRangeArena(LRA),LUNAachievesstate-of-the-artaverage
+accuracy among efficient Transformers under compute parity, using the same parameter count,
+trainingsteps,andapproximateFLOPs. LUNAalsoexcelsatpost-hocconversion: replacingsoftmax
+infine-tunedBERTandViT-B/16checkpointsandbrieflyfine-tuningrecoversmostoftheoriginal
+performance,substantiallyoutperformingfixedlinearizations.
+1 Introduction
+Transformers[27]underpinstate-of-the-artsystemsacrosslanguage[7],vision[14],audio[8],multi-modallearning
+[16], and scientific domains [6, 11]. Their core mechanism, attention, models long-range token dependencies but
+incursquadraticcostinthesequencelength, whichlimitscontextscaling. Thishasmotivatedalargeliteratureon
+linearattention,whichreducescomplexityviastructuredsparsity,low-rankcompression,orkernelfeatureexpansions
+[2,3,13,17,24,30,31]. However, thesearchitecturestypicallycommittoafixedkernelorfeaturemap, whether
+derivedfromthesoftmaxexponentialkernelorhand-craftednonlinearities,andthuscannotadapttheirinductivebiasto
+thestatisticsofagiventaskordataset. Ourworkfollowsthislinebutasksadifferentquestion: ratherthanfixingthe
+kernelfeaturemapapriori(randomorengineered),canwelearnthefeaturefamilydirectlyfromdata—preserving
+linearcomplexitywhiletailoringthekerneltothetask?
+5202
+ceD
+8
+]GL.sc[
+1v16080.2152:viXra
+APREPRINT-DECEMBER10,2025
+Learningsuchkernelswhilepreservingthelinear-attentionregimeisnon-trivial. Thestreamingformulationsthat
+enablelineartimeandmemorytypicallyrelyonrigidalgebraicstructure: thekernelmustadmitanon-negativefeature
+representationandastabledecompositionintokey-andquery-sidestatistics. Naivelyparameterizingthefeaturemap
+canbreakpositive-definiteness,destroythestreamingfactorization,orleadtobrittletrainingdynamics. Instead,we
+seekalearnablekernelfamilythatpreservesthelinearcomputationwhileexposingenoughflexibilitytoadjustits
+inductivebiasacrossarchitecturesanddomains.
+WeaddressthischallengebyintroducingLUNA,alinear-timeattentionmechanismthatreplaceshand-craftedrandom
+featureswithafullylearnablekernelfeaturefamily. Concretely,LUNAparameterizes(i)inputprojectionmatricesthat
+capturedistributionalstructureand(ii)abankofchannelfunctionswithatoken-wiseenvelopethattogetherdefinethe
+kernelnonlinearity. Attentioniscomputedviathestandardkernelizedfactorizationinlineartime,makingLUNAa
+drop-inreplacementforsoftmaxorpriorlinearmodules. Wetrainallcomponentsend-to-endoneachtaskusingthe
+taskloss. Thisseparationofrepresentation(thelearnednonlinearity)andmixing(theprojections)yieldsexpressive
+efficiency: themodelretainslinear-timecomplexityinthesequencelengthwhileadaptingitsfeaturebasistodatarather
+thansamplingfromafixedspectralmeasure.
+Beyond training from scratch, LUNA also supports post-hoc conversion of quadratic models: given a fine-tuned
+checkpoint(e.g.,BERT-baseonGLUEorViT-B/16onImageNet-1K),wereplaceeachsoftmaxattentionlayerwithits
+LUNAlinearcounterpartandbrieflyfine-tunetorecoveraccuracy,therebyavoidingrelianceontheexponentialsoftmax
+kernelwhileremainingcompatiblewithexistingarchitectures. Theoretically,forasingle-layerinstantiation,wederive
+a feature-level Rademacher complexity bound showing that, under standard norm and Lipschitz assumptions, the
+√
+hypothesisclassinducedbyourlearnedkernelfamilyhascomplexityscalingasO˜(1/ n)withcontrolleddependence
+onthatfamily.
+Contributionsinthisworkaresummarizedas:
+• Weintroduceapositive-definite,kernelizedattentionwithlearnablefeaturemapsthatsubsumefixedrandom-
+featureschemes(e.g.,randomFourierfeatures)whilepreservinglinear-time/memorystructure. Thisdesign
+enablesthemodeltodiscoverkernelsauto-adaptivetoeachmodalityandtaskdistribution.
+• We provide a concise PD guarantee for our construction and an approximation-error decomposition
+(parametrizationvs.sampling),withhigh-probabilityboundsunderboundedandunboundedfeatureregimes.
+Thisdesignprovidestheoreticaljustificationforthemethod’sgeneralizationcapabilities.
+• We show that softmax attention in finetuned models can be replaced by LUNA with brief task-specific
+finetuning,recoveringmostoftheoriginalperformanceforBERTonGLUEandViT-B/16onImageNet-1K,
+andoutperformingexponential-featurelinearizations. Thispost-hocconversioncapabilityenablespractical
+deploymentoflinearattentioninexistingproductionsystemswithoutre-trainingfromscratch.
+• Undermatchedcompute,LUNAsetsanewstate-of-the-artaverageaccuracyontheLongRangeArena.
+2 RelatedWork
+2.1 QuadraticAttentionandStochasticStructure
+The original Transformer uses a quadratic-time softmax attention whose cost becomes prohibitive at long context
+lengths[27]. Withinthisquadraticregime,somestudiesexploitthestochasticstructureofattentionmatrices. Standard
+softmaxattentionisrow-stochasticbutnotcolumn-normalized;doubly-stochasticvariantsenforceapproximatebis-
+tochasticityviaSinkhorn-stylenormalizationandrelatedtransport-inspiredconstraints,mainlytoimprovestability
+andinterpretabilitywhilekeepingO(n2)complexity[21,22]. Thesemethodsactonthenormalizationoftheattention
+matrixandarelargelyorthogonaltolinearization: suchconstraintscanbecombinedwitheitherquadraticsoftmax
+attentionorlinearizedkernels[23].
+Beyondsuchnormalization-basedapproaches,TeoandNguyenviewself-attentionthroughkernelPCAandproposea
+robustquadraticvariant(RPC-Attention),whereasweworkinthelinear-attentionsettingandlearnthekernelfeature
+familyitself[26].
+2.2 FromQuadratictoEfficientApproximations
+To remove the O(n2) bottleneck, efficient attention mechanisms replace dense all-to-all interactions with sparse,
+low-rank, or kernelized surrogates. Structured-sparsity methods restrict each token to a subset of neighbors using
+local windows, dilations, or block patterns (e.g., local attention, Longformer, and hashing/block-sparse designs)
+[1,15,18,32]. Kernelizedandlow-rankapproachesfactorizesimilarityviafeaturemapsorlearnedprojections: Linear
+2
+APREPRINT-DECEMBER10,2025
+(a) (c)
+SOFTMAX ATTN 𝒎 𝝍: ℝ→ ℝ𝑳 𝝍 𝟏(𝒖)
+𝒏
+Gene Fr ua nli cz te id
+o
+nK sernel Pro ij ne c ℝt 𝟏io ns 𝝍
+𝝍𝟏
+𝝍=𝟎
+𝝍𝟐
+𝒏 𝑾∈ ℝ𝒎×𝒅 ℝ𝒅 ℝ𝒎 𝝍𝑳 𝝍 (𝒖)
+𝟐
+𝒅 𝝍
+𝑨𝒕𝒕𝒏𝑸,𝑲,𝑽 =𝑺𝒐𝒇𝒕𝒎𝒂𝒙
+𝑸𝑲𝑻
+𝑽
+𝝍𝟏
+𝝍=𝟎
+𝒅 𝝍𝟐 𝝓∈ℝ𝒎𝑳
+FLOPs ~ 𝓞(𝒅𝒏𝟐) × =
+(b) LUNA
+𝝍𝑳
+𝝍
+𝝍𝟏
+𝒏 𝒎𝑳 𝝍𝟐 𝝍 𝑳(𝒖)
+𝒎𝑳 𝝍𝑳
+𝝍=𝟎
+𝑳𝑼𝑵𝑨𝑸,𝑲,𝑽 =𝝓𝑸 𝝓𝑲𝑻𝑽 𝒉 𝒙 ×
+𝝓𝑸 𝝓𝑲𝑻𝟏𝒏
+𝒎
+FLOPs ~ 𝓞𝒏𝒎𝑳𝟐 , 𝝓∈ℝ𝒎𝑳
+Figure1: (a)Softmaxattentionrequirescomputingallpairwiseinteractionsamongtokens,whichcausesthecost
+togrowquadraticallywiththesequencelength. (b)LUNAintroducesalearnablekernelmethodforlinearizingthe
+attentionmechanism,shiftingtheexpensivestepfromthesequencelengthntothefeaturemapsizemL. (c)Foragiven
+setoftokens,LUNAappliesmlinearprojectionsW ∈ Rd,producingmscalarvalues. Eachscalaristhenpassed
+i
+throughasharedMLPψ: R → RL. ByconcatenatingtheLoutputsacrossallmprojections,weobtainthekernel
+featuremapϕ∈RmL. Theplotsontherightshowseverallearnedcomponentsψ fortheLRA-Texttask,illustrating
+i
+thattheresultingscalarfunctionsdifferfromthecommonlyusedfixedchoicessuchastanh,sin,orexp. Thegray
+band/histogramrepresentstheempiricaldistributionofu.
+TransformersandPerformerre-expresssoftmaxattentionthrough(randomordeterministic)kernelfeatures,turning
+n×naccumulationsinton×Dcomputations[3,13],whileLinformer,Nyströmformer,andrelatedmethodslearnor
+approximatealow-rankstructureinthekeys,values,orkernelmatrix[30,31]. Subsequentworkproposesorthogonal
+orstructuredbasesandstabilizedfeaturemaps[2,4,34],andSynthesizerdepartsfromquery-keymatchingbylearning
+syntheticmixingweights[25]. “Post-hocconversion”techniquesreplacesoftmaxwithanexponentialfeaturemap
+inpretrainedmodelsandfinetunetorecoverperformance,prioritizingcompatibilitywithexistingcheckpointsover
+expressivityofthefeaturemapitself[12,33]. Thesestudiesdefinethelinear-attentionparadigm: approximatesoftmax
+attentionwhilereducingcomplexitytolinearornear-linearintokenlength.
+2.3 PositioningLUNA
+LUNAoperatesonthefeature-mapsideoflinearattention. Insteadoffixingthekernelfeaturemapapriori(e.g.,via
+randomFourierfeaturesorhand-craftednonlinearities)orfocusingprimarilyoncompressingqueries,keys,orvalues,
+LUNAlearnsatask-specificfamilyofkernelfeatures. Concretely,itcombineslearnableinputprojectionswithashared
+bankofscalarchannelfunctions,trainedend-to-endonasingletask. Thisdesignseparatesspecializationoverinputs
+fromtherepresentationpowerofthenonlinearity,allowingthefeaturebasistoadapttothedatawhilepreservingthe
+drop-inefficiencyoflinearattention(linearcomplexityinthesequencelengthandfeaturedimension). Inthissense,
+LUNAdiffersfromfixedorpurelyrandomfeaturemapsusedinPerformer/Cosformer/Skyformer-styledesignsand
+fromexponential-featureconversionsusedforpost-hoclinearization,providingalearnedkernelrepresentationtailored
+tothetaskwithinastandardlinear-attentionpipeline.
+Importantly, thisdiffersfrompost-hocconversionapproachessuchasT2RandHedgehog[12,33], whichreplace
+softmaxwithafixedexponentialfeaturemapandfine-tunetomimicthesoftmaxkernel. LUNAdoesnotattemptto
+matchsoftmax;itlearnsatask-alignedkernelfeaturefamilydirectlyfromdata. Theexponentialmapisaspecialcase
+withinourparameterization,butitisnotaconstraint,enablingLUNAtoretainlinearcomplexitywhilesearchinga
+richerspaceofkernelsbettersuitedtothedownstreamtask.
+3
+APREPRINT-DECEMBER10,2025
+3 LearningKernelsforLinearAttention
+Weadoptthekernelizedformulationofdot-productattentionanditsrandom-featurelinearizations. Thisviewmakes
+explicitthesufficient-statisticsfactorizationthatunderlieslinear-time,linear-memoryvariantsandrecoverssoftmax
+attentionasaspecificpositive-definitekernelinducedbyanexponentialfeaturemap. Buildingonthisformulation,we
+introduceaparametricfamilyoflearnablefeaturemapsthat(i)defineavalidpositive-definitekerneland(ii)retainthe
+linearcomputepatternofkernelizedattentionlayers.
+3.1 Preliminaries: AttentionasaKernelMethod
+Let Q,K,V ∈ Rn×d denote the query, key, and value matrices, respectively, with sequence length n and latent
+dimensiond. Scaleddot-productattentionisgivenby
+(cid:16) (cid:17) AV (cid:16) (cid:17)
+Attn(Q,K,V)=softmax Q √K⊤ V = , A=exp Q √K⊤ ,
+d A1 d
+n
+(1)
+where the softmax and the normalization by 1 ∈ Rn act row-wise. This admits a kernel view with k (x,y) =
+n SM
+(cid:16) (cid:17)
+exp x √⊤y , x = Q[i,:], y = K[j,:]. Although k
+SM
+is not shift-invariant, it is linked to the Gaussian kernel
+d
+k G(x,y)=exp(− √1 ∥x−y∥2)via
+2 d
+√ √
+k (x,y)=e∥x∥2/2 dk (x,y)e∥y∥2/2 d (2)
+SM G
+ByBochner’stheorem[19,20],acontinuous,shift-invariant,positive-definitekerneladmits
+(cid:90)
+k(x−y)=
+eiω⊤(x−y)dµ(ω)
+Rd
+=E (cid:2) eiω⊤(x−y)(cid:3) =E (cid:2) ζ (x)ζ (y)(cid:3) ,
+ω∼µ ω∼µ,b∼Unif(0,2π) ω,b ω,b
+√ (3)
+withζ (x)= 2cos(ω⊤x+b),whereb∼Unif(0,2π)isaddedasavariance-reductiontricktogetcosine-shifted
+ω,b
+features[19]. Writingk (x,y) := k(x−y)forthekernelinducedbythespectralmeasureµ,weapproximatethe
+µ
+i.i.d.
+expectationin(3)withmMonteCarlosamples(ω ,b ) ∼ µ×Unif(0,2π)obtainingthefinitefeaturemap:
+i i
+(cid:114)
+ϕ (x)= 2 (cid:2) cos(ω⊤x+b ),...,cos(ω⊤x+b )(cid:3)⊤ , (4)
+m m 1 1 m m
+yieldingtheempiricalkernelestimator
+kˆ(m)(x,y):=ϕ (x)⊤ϕ (y)
+µ m m
+m
+2 (cid:88)
+= cos(ω⊤x+b ) cos(ω⊤y+b ),
+m i i i i
+i=1
+(5)
+whichconvergestok µ(x,y)asm→∞. SpecializingtotheGaussianspectralmeasureµ=N(0,√1 I d)yieldsthe
+d
+standardrandomFourierfeatures(RFF)approximationtotheGaussiankernel,
+k (x,y)≈kˆ(m)(x,y)=ϕ (x)⊤ϕ (y), (6)
+G µ m m
+√
+Performerfeatures. Tolinearizetheexponentialdot-productkernelk (x,y)=exp(x⊤y/ d),Performer[3]uses
+exp
+thefactthatthiskerneladmitsaGaussian-momentfactorization:
+(cid:16) (cid:17)
+k exp(x,y)=exp x √⊤y
+d
+=E ω∼N(0,Id)(cid:104) e2ω⊤ 2x√− d∥x∥2 e2ω⊤ 2y√− d∥y∥2(cid:105) .
+(7)
+Thisrepresentationexpressesthekernelasanexpectationoftwoseparatedfunctionsofxandy,enablingarandom-
+featureapproximation. Drawingω 1,...,ω
+m
+i. ∼i.d. N(0,√1 I d)producesthePerformerfeaturemap
+d
+ϕP m(x)= √1 m(cid:2) e−∥x∥ 22 √+ d2ω1⊤x ,...,e−∥x∥ 22 √+ d2ωm⊤x(cid:3)⊤ ,
+(8)
+forwhichϕP(x)⊤ϕP(y)≈k (x,y).
+m m exp
+4
+APREPRINT-DECEMBER10,2025
+Linear attention. With a (possibly learned) feature map ϕ : Rd → RD applied row-wise on the query and key
+matrices,wehave
+ϕ(Q)(cid:0) ϕ(K)⊤V(cid:1)
+Attn(Q,K,V)= ,
+(cid:0) (cid:1)
+ϕ(Q) ϕ(K)⊤1
+n
+(9)
+reducingcomplexityfromO(n2d)toO(nD2). Thedenominatoriscomputedelement-wiseperrow.
+3.2 OurMethod: FullyLearnableKernels
+The constructions above show that many efficient Transformers admit a kernel of the form k(x,y) =
+E (cid:2) ζ (x)ζ (y)(cid:3) , where ζ is a fixed, scalar feature determined by the choice of spectral measure µ (Fourier
+ω∼µ ω ω ω
+features, Performer, etc.). In all such cases the kernel class is hard-coded by ζ . We generalize this template by
+ω
+replacingthescalarfeatureζ (x)withavector-valued,learnablefeaturefamilyϕ (x). Formally,wedefine
+ω ω
+k(x,y):=E (cid:10) ϕ (x),ϕ (y)(cid:11)
+ω∼N(0,Id) ω ω H
+m
+1 (cid:88)(cid:10) (cid:11)
+≈ ϕ(x;ω ),ϕ(y;ω ) ,
+m i i H
+i=1
+(10)
+whereeachϕ :Rd →HmapsaninputtoafeatureinaHilbertspaceH∼ =RmLendowedwiththeEuclideaninner
+ω
+product.1 Thispreservesthepositive-definitekernelstructureandthelinear-time,streamingformofkernelattention,
+whileallowingthefeaturefamilyandthekernelitselftoadapttothedata.
+Proposition 1. The construction in (10) yields a positive-definite kernel. Conversely, by Mercer’s theorem, any
+positive-definitekerneladmitssucharepresentationforanappropriateϕ(·;ω)intoanRKHSH. SeeAppendix8.
+We replace fixed RFF components with learnable projections and channels. Let W ∈ Rm×d with rows {w⊤}m ,
+i i=1
+channel functions {ψ : R→R}L (each instantiated as a small MLP on the scalar projection u = w⊤x), and a
+ℓ ℓ=1 i
+tokenwiseenvelopeh:Rd →R. Ourfeaturemapis
+ϕ(x;W,ψ,h)= h √(x)(cid:2) ψ (w⊤x)(cid:3) ∈RmL,
+m ℓ i i=1,...,m
+ℓ=1,...,L
+(11)
+ThistemplatestrictlygeneralizesRFFandPerformerfeatures: botharerecoveredbyfixinghandtheψ byhand,
+ℓ
+whereasinourcaseW,h,andthechannelfunctions{ψ }arelearnedfromdata.
+ℓ
+Remark1(NeuralApproximationofMultiplicativelyDecomposableKernels). Letk :Rd×Rd →Rbeapositive-
+definitekernel,andsupposeitadmitsthemultiplicativeform
+k(x,y)=h(x)k′(x−y)h(y),
+forsomecontinuousfunctionsh:Rd →Randk′ :Rd →R. Undersuitableregularityassumptionsonh,k′,andthe
+domainK ⊂Rd,thereexistsaneuralfeaturemapϕ(x;ω)∈RL,oftheformdescribedin(11),suchthatwithhigh
+probabilityoverrandomdrawsW ={ω }m ,
+i i=1
+(cid:12) (cid:12)
+(cid:12)k(x,y)−k NN(x,y;W)(cid:12)≤ε, ∀(x,y)∈K×K,
+wheretheneuralkernelestimatoris
+m
+1 (cid:88)
+k (x,y;W):= ϕ(x;ω )⊤ϕ(y;ω ).
+NN m i i
+i=1
+Hereeachfeaturemaptakestheseparableform
+ϕ(x;ω
+)=h(x)(cid:2)
+ψ
+(ω⊤x)(cid:3)L
+,
+i ℓ i ℓ=1
+whichisonecomponentofthestructuredfeatureconstructionin(11).
+Thetotalapproximationerrornaturallydecomposesintotwoparts:
+1Forconvenience,wedonotdistinguishϕ (·),ϕ(ω,·),andϕ(·;ω)inthispaper.
+ω
+5
+APREPRINT-DECEMBER10,2025
+• Parametrizationerror: theerrorarisingfromapproximatingtheidealfeaturemapϕusingafinite-depth
+neuralnetwork;
+• Sampling(orgenerative)error: theerrorincurredbyreplacingthepopulationexpectationwithafinitesetof
+randomparameters{ω }m .
+i i=1
+TheinformalconclusionabovesummarizesthecombinedeffectofPropositions2and3,statednext.
+Proposition 2 (Parametrization Error (Informal)). Suppose the kernel admits the decomposition k(x,y) =
+h(x)k′(x−y)h(y),withhandk′continuous. Undersuitableregularityassumptions,thereexistMLP-basedfeature
+mapsϕ(x;ω)oftheform(11)suchthat,
+(cid:12) (cid:12)
+(cid:12)k(x,y)−k NN(x,y)(cid:12)<ε, ∀x,y ∈K,
+where
+k (x,y):=E (cid:2) ϕ(x;ω)⊤ϕ(y;ω)(cid:3) ,
+NN ω∼N(0,Id)
+andK ⊂Rdisafixedcompactdomain.
+Thispropositiongeneralizestheclassicaluniversalapproximationtheoremfromfunctionapproximationtokernel
+approximationvianeuralfeaturemapsinalinear-attention–styleconstruction. Theprecisestatementsaredeferredto
+Appendix9.1,wherewetreatseparately:
+• boundedkernelswithboundedactivations(Proposition4);
+• unboundedkernelsorunboundedactivations(Proposition6).
+SketchoftheproofofProposition2. Undertheassumptionk(x,y)=h(x)k(x−y)h(y),wehave
+k(x,y)=E (cid:2) ϕ(ω,x)⊤ϕ(ω,y)(cid:3) ,
+ω∼N(0,Id)
+ϕ(ω,x)=h(x)ψ(x).
+By the Universal Approximation Theorem, there exist one-hidden-layer neural networks h and ψ such that
+NN NN
+h ≈handψ ≈ψuniformlyonK. Hence
+NN NN
+ϕ (ω,x):=h (x)ψ (ω,x)
+NN NN NN
+satisfiesϕ (ω,x)≈ϕ(ω,x),andthereforetheinducedkernel
+NN
+k (x,y):=E (cid:2) ϕ (ω,x)⊤ϕ (ω,y)(cid:3)
+NN ω∼N(0,Id) NN NN
+approximatesthetargetkernelk(x,y)uniformlyonK×K.
+Proposition3(SamplingError(Informal)). Assumethekerneladmitstherepresentation
+k(x,y)=E (cid:2) ϕ(x;ω)⊤ϕ(y;ω)(cid:3) .
+ω∼N(0,Id)
+i.i.d.
+Letω ,...,ω ∼ N(0,I ),anddefinetheMonteCarloestimator
+1 m d
+m
+1 (cid:88)
+k(x,y;W)= ϕ(x;ω )⊤ϕ(y;ω ).
+m i i
+i=1
+Then,undersuitableregularityconditions,foranyx,y ∈K,
+P(cid:0)(cid:12) (cid:12)k(x,y)−k(x,y;W)(cid:12) (cid:12)≥ε(cid:1)
+≤δ,
+whereδdecaysexponentiallyinm.
+TheformalresultsareprovidedinAppendix9.3,wherewecharacterizethesamplingerrorintworegimes:
+• Boundedfeatureregime. Ifϕ(x;ω)isuniformlyboundedforallx∈K,thenbyGaussianconcentration,
+δ =O(exp(−cmϵ2)),
+forsomeconstantc>0. SeeCorollary1andRemark6andrelatedresultsfordetails.
+6
+APREPRINT-DECEMBER10,2025
+103
+102
+101
+29 211 213 215 217
+# Tokens
+).reti
+/
+sm(
+emitnuR
+Linear Transformer Cosformer PolaFormer
+Performer Kernelized LUNA
+Nyströmformer Linformer LOTFormer (r=64)
+Figure2: Scalingoflinearattentionvariants. Per-layerruntimeasafunctionofsequencelengthn(log–logscale)
+for representative linear-attention baselines and LUNA, measured under identical settings. All methods exhibit
+approximately linear growth in n, with LUNA matching the runtime envelope of existing baselines while using
+learnablekernelfeatures.
+• Unboundedfeatureregime. If{ϕ(x;ω):x∈K}isnotuniformlybounded(e.g.,ReLUactivations),then
+anexponential-typeconcentrationboundgives
+δ =O(exp(−min(c ϵ2m,c ϵm))),
+1 2
+wherec ,c >0areconstants. SeeCorollary3fortheprecisestatement.
+1 2
+SketchofproofofProposition3. Fix arbitrary x,y ∈ K. Since ω ∼ N(0,I ), both ϕ(ω,x) and ϕ(ω,y) are sub-
+d
+Gaussian. Consequently,
+A(ω):=ϕ(ω,x)⊤ϕ(ω,y)
+issub-Gaussianwhen{ϕ(·,x):x∈K}isuniformlybounded,andsub-exponentialotherwise. Theprobabilitytermin
+Proposition3canthereforebewrittenas
+(cid:32)(cid:12) (cid:12) 1 (cid:88)m (cid:12) (cid:12) (cid:33)
+P (cid:12) A(ω )−E[A(ω)](cid:12)>ϵ ,
+(cid:12)m i (cid:12)
+(cid:12) (cid:12)
+i=1
+whichisdirectlycontrolledbystandardconcentrationinequalitiesforsumsofi.i.d. sub-Gaussianorsub-exponential
+randomvariables.
+4 RuntimeAnalysis
+Let n be the sequence length, d the key/query width, d the value width, and D = mL the feature dimension of
+v
+ϕ(x;W,ψ,h)∈RD. UsingthekernelizedformofEq.(9),theper-headcostdecomposesinto(i)evaluatingϕ(·)forall
+tokensand(ii)formingtwokey-sidesufficientstatisticsfollowedbyasinglequery-sideapplication:
+S =ϕ(K)⊤V ∈RD×dv, S =ϕ(K)⊤1 ∈RD.
+KV K1 n
+Theresultingcomplexityis
+(cid:0) (cid:1) (cid:0) (cid:1)
+T =O n(md+Dc ) + O nDd ,
+total ψ v
+wherec denotestheper-channelMLPcostinψ. Inthecommonregimed =Θ(D),thissimplifiesto
+ψ v
+T
+=O(cid:0) nD2(cid:1) =O(cid:0) n(mL)2(cid:1)
+. (12)
+total
+Thecomputationislinearinnbecausethen×nattentionmatrixisneverformed. Figure2comparestheresulting
+computeflowandempiricalscalingagainstrepresentativelinear-attentionbaselines. Althoughalllinearvariantsshare
+O(nD2)complexity,theadditionalcostofourlearnedfeaturemapsismodestinpractice: measuredruntimesremain
+comparabletoexistinglinearbaselines,whilethelearnedkernelyieldsperformanceimprovements,aswediscussnext.
+7
+APREPRINT-DECEMBER10,2025
+5 Experiments
+Weevaluate LUNA intwocomplementarysettings: (i)theheterogeneous, long-contextLongRangeArena(LRA)
+benchmark,and(ii)post-hocconversionoffinetunedquadratic-attentionmodelsinlanguage(BERT-baseonGLUE)
+andvision(ViT-B/16onImageNet-1K).Acrossallexperiments,wekeepthebackbonearchitecture,optimizer,schedule,
+andtrainingbudgetfixedwithineachsetting,andvaryonlytheattentionmoduleanditsfeaturedimensionD =mLso
+thatcompetinglinear-attentionvariantsarecomparedatmatchedcompute.
+2
+0
+2
+5.0 2.5 0.0 2.5 5.0
+)u(
+1(u) (layer 0) 2(u) (layer 0) 3(u) (layer 0) 4(u) (layer 0) 5(u) (layer 0) 6(u) (layer 0) 7(u) (layer 0) 8(u) (layer 0)
+2 2 2 2 2 2 2
+0 0 0 0 0 0 0
+2 2 2 2 2 2 2
+5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0
+2
+0
+2
+5.0 2.5 0.0 2.5 5.0
+u
+)u(
+1(u) (layer 1) 2(u) (layer 1) 3(u) (layer 1) 4(u) (layer 1) 5(u) (layer 1) 6(u) (layer 1) 7(u) (layer 1) 8(u) (layer 1)
+2 2 2 2 2 2 2
+0 0 0 0 0 0 0
+2 2 2 2 2 2 2
+5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0 5.0 2.5 0.0 2.5 5.0
+u u u u u u u
+Figure3: Channel-wisevisualizationofthelearnedfeaturemapϕonLRA–ImagewithM=8andL=8. Eachsmall
+subplotshowsachannelMLPψ (u)versusthescalarprojectionu=w⊤x+b . Toprow: Transformer-layer0;Bottom
+ℓ i i
+row: Transformer-layer1;Orangecurve: ψ (u)evaluatedonrealu;Grayhistogram: theempiricaldistributionofu.
+ℓ
+5.1 LongRangeArena
+The Long Range Arena (LRA) evaluates long-context reasoning across heterogeneous modalities (Text, ListOps,
+Retrieval, Pathfinder, Image) under a shared training protocol. Within this setting, we compare LUNA to softmax
+attentionandrepresentativelinear-attentionbaselinesatmatchedcompute,keepingthebackbone,optimizer,schedule,
+and training budget fixed and varying only the attention module and its feature dimension D = mL (number of
+projectionsmandchannelsL).
+Results. Table 1 summarizes test accuracy by task and averaged across LRA. LUNA matches or surpasses prior
+efficientTransformersonfouroffivetasks,withthelargestgainsonImageandstrongperformanceonText,while
+operatinginthesamelinear-attentionregimeasthebaselines.
+ToprobehowLUNAachievesitsgains,wevisualizerepresentativechannelsofthelearnedkernelfeaturemapϕ(·)on
+aheld-outLRA–Imageexample(Figure3).
+5.2 Post-hocConversionofFinetunedQuadraticTransformers
+Westudypost-hocconversionoffinetunedquadratic-attentionmodelstolinearattention,followedbybrieftask-specific
+finetuning.Concretely,westartfromBERT-basemodelsfinetunedonGLUE(BERT-FT),replaceeachsoftmaxattention
+layerwithakernelizedlinearattentionmodule,andfinetuneontheoriginaltaskusingthesameoptimizer,schedule,
+andtrainingbudgetasinthebaselines. Withinthissetting,wecompareLUNAtoexponential-featureconversions
+(T2R,T2R-HH)andHedgehogunderidenticaltrainingrecipesandfeaturedimensions. Table2reportsdev-setscores
+andthepercentageoftheoriginalBERT-FTperformancerecoveredbyeachconvertedmodel.
+AcrossGLUE,LUNArecovers99.5%oftheBERT-FTscoreonaverage,slightlyexceedingHedgehog(99.3%)and
+substantiallyimprovingoverT2R(88.9%)andT2R-HH(93.5%). Task-wise,LUNAcloselytracksBERT-FTonall
+benchmarksandmodestlyimprovesonSST2andSTS-B.Theseresultsindicatethatalearnedkernelfeaturemapcan
+actasadrop-inreplacementforquadraticattentioninfinetunedBERTmodels,withoutanybespokedistillationor
+changestothetrainingprotocol.
+WerepeattheconversionexperimentinvisionusingViT-B/16trainedonImageNet-1K.Startingfromafinetuned
+softmaxmodel,weswapsoftmaxattentionforLUNA(orabaselinelinearization)inalllayersandbrieflyfinetune
+withtheoriginaltrainingconfiguration. AsshowninTable3,LUNAattains80.5%Top-1accuracy,slightlyabovethe
+originalsoftmaxmodel(80.3%)andhigherthanT2R-HH(77.0%)andHedgehog(79.5%). Thus,inthissettingaswell,
+thelearnedfeaturemappreservesormodestlyimprovesperformanceafterconversion.
+Toprobequalitativebehavioracrossmodalities,weinspectCLS-centeredattentionmapsonSST-2andImageNet-1K
+(Figure4). OnSST-2,LUNAproducessharper,content-alignedhighlightsthanHedgehogwhileremainingclosetothe
+8
+APREPRINT-DECEMBER10,2025
+Table1: ResultsontheLRAbenchmark. Bestnumberspercolumnareinbold. Ourmethodachievesthehighestoverall
+averageaccuracy(%),withparticularlystronggainsonText,ListOps,andImage.
+Model Text ListOps Retrieval Pathfinder Image Avg.
+Transformer 61.55 38.71 80.93 70.39 39.14 58.14
+LocalAttn 52.98 15.82 53.39 66.63 41.46 46.06
+LinearTrans. 65.90 16.13 53.09 75.30 42.34 50.55
+Reformer 56.10 37.27 53.40 68.50 38.07 50.67
+Performer 65.40 18.01 53.82 77.05 42.77 51.41
+Synthesizer 61.68 36.99 54.67 69.45 41.61 52.88
+Longformer 62.85 35.63 56.89 69.71 42.22 53.46
+Informer 62.13 37.05 79.35 56.44 37.86 54.57
+Bigbird 64.02 36.05 59.29 74.87 40.83 55.01
+Linformer 57.29 36.44 77.85 65.39 38.43 55.08
+Kernelized 60.02 38.46 82.11 69.86 32.63 56.62
+Cosformer 63.54 37.20 80.28 70.00 35.84 57.37
+Nystrom 62.36 37.95 80.89 69.34 38.94 57.90
+Skyformer 64.70 38.69 82.06 70.73 40.77 59.39
+Hedgehog 64.60 37.15 82.24 74.16 40.15 59.66
+PolaFormer 73.06 37.35 80.50 70.53 42.15 60.72
+α=3
+LOTFormer 71.1 38.5 80.9 69.9 54.1 62.9
+LUNA 73.41 38.94 81.02 69.52 64.32 65.44
+Table 2: Post-hoc conversion of BERT-base on GLUE. Scores are dev-set metrics in the standard GLUE format.
+"Recover"isthepercentageoftheBERT-FTscorerecoveredbyeachconvertedmodel,averagedacrosstasks.
+Method CoLA SST2 MRPC STS-B QQP MNLI QNLI RTE (%)Recover
+BERT-FT 58.8 93.2 90.2 88.8 91.0 84.7 91.3 68.2 100.0
+T2R 43.6 87.7 83.0 78.6 86.7 78.9 84.6 54.1 88.9
+T2R-HH 56.9 90.9 89.1 77.7 90.0 77.4 84.5 56.3 93.5
+Hedgehog 59.2 92.6 90.1 87.4 91.0 82.6 89.6 69.3 99.3
+LUNA 58.8 93.4 90.1 88.5 90.7 83.5 90.6 68.8 99.5
+softmaxbaseline: attentionmassisconcentratedonsentiment-bearingspans,withstopwordsandpunctuationreceiving
+lowerweight,whereasHedgehogtendstospreadmassmorediffuselyacrossthesequence. OnImageNet-1Kvalidation
+images,werenderCLS→patchattentionweightsasalpha-tintedoverlays;LUNAagainyieldscompact,object-centric
+highlightswithfeweroff-objectactivationsthanHedgehog,whilestayingqualitativelyclosetothesoftmaxbaseline.
+Table3: Post-hocconversionofViT-B/16onImageNet-1Kvalidationaccuracy(%).
+Top-1 ViT-B/16 T2R-HH Hedgehog LUNA
+Accuracy(%) 80.3 77.0 79.5 80.5
+5.3 AblationsonChannelsandProjections
+We isolate the LRA–Image task to study how the number of projections M (feature projections per head) and the
+numberofchannelsL(parallelattentionchannels)affectperformance.Unlessstatedotherwise,thebackbone,optimizer,
+schedule,andtrainingrecipefollowSection5.1.
+Table4summarizestwo1Dsweeps. AtfixedM=8, accuracyisrelativelystableasLincreases, withamildpeak
+atL=8beforedegradingatL=16. Conversely, atfixedL=8, increasingM beyond8yieldsnobenefit; M=16is
+comparabletoM=8,andperformancedropssharplyatM=32. ThismotivatesourdefaultchoiceofL=8andM=8.
+9
+APREPRINT-DECEMBER10,2025
+noisrevnoC
+61/B-TiV
+noisrevnoC
+TF-TREB
+Figure4: CLS-basedattentionvisualizationsacrossvisionandlanguage. Toprow(ViT-B/16,ImageNetdogsample):
+CLSattentiononimages. Columns: Original,Softmaxrollout,Hedgehog(diffusebaseline),LUNA(ours). LUNA
+concentratesonsemanticallycoherentregions(eyes/snout/collar)andsuppressesbackground,whileSoftmaxisscattered
+andHedgehogisoverlysmooth. Bottomrow(BERTonSST-2): CLS→tokenattentiononSST-2. Columns: Original
+text,Softmax,Hedgehog,LUNA.Tokensareshadedwithanalphaproportionaltothenormalizedattentionweightfrom
+theCLStoken(redforSoftmax,yellowforHedgehog,blueforLUNA).LUNAyieldscompact,sentiment-aligned
+highlightscomparabletoSoftmaxandsharperthanHedgehog.
+Table4: LRA–Imageablations. Top: varychannelsL(fixM=8). Bottom: varyprojectionsM (fixL=8). Report
+accuracy(%).
+VaryL(channels),fixM=8
+L 2 4 8 16
+Accuracy(%) 62.62 62.02 64.32 60.89
+VaryM (projections),fixL=8
+M 4 8 16 32
+Accuracy(%) 63.06 64.32 63.88 59.15
+5.4 Ablations: NeuralKernelVariants
+Wenextablatetheneuralkernelϕ(·)whilekeepingthebackbone,trainingrecipe,(M,L),andDWCfixed. Allvariants
+sharethesamefeaturedimensionDandlinear-attentionimplementation;onlytheformofϕ(x)changes. Wecompare:
+(i)RFF–sin,cos(fixed): non-learnablesinusoidal/randomfeaturesϕ (x);(ii)Bank+Coef: abasis{ϕ (x)}L
+sin,cos ℓ ℓ=1
+withlearnedglobalcoefficientsw (input-agnosticreweighting);(iii)Envelope-gatedenvelope(x)·ψ(x): alearned
+ℓ
+mapψ(x)modulatedbyatokenwiseenvelopeenvelope(x)∈[0,1]L;(iv)Nogateψ(x): thesamelearnedmapwith
+envelope(x)≡1. OnLRA–Image,learnedkernelsarenecessary:allneuralvariantsoutperformfixedRFFfeatures,and
+thesimpleungatedmapψ(x)substantiallyoutperformsitsenvelope-gatedcounterpart. Wethereforeuseϕ(x)=ψ(x)
+asthedefaultkerneldesigninLUNA.
+6 Conclusion
+We introduced LUNA, a linear attention mechanism that replaces fixed, data-agnostic feature maps with a learned
+kernelfeaturemapwhilepreservingapositive-definitekernelandanassociative,streamingformulation. Thisyields
+10
+APREPRINT-DECEMBER10,2025
+Table5: LRA–Image: neuralkernelablations(Top-1accuracy).
+Variant Kernelform Accuracy(%)
+RFF–sin,cos(fixed) ϕ(x)=ϕ (x) 35.72
+sin,cos
+Bank+Coef
+ϕ(x)=(cid:80)L
+w ϕ (x) 40.30
+ℓ=1 ℓ ℓ
+Envelope-gated ϕ(x)=h(x)⊙ψ(x) 41.52
+Nogateψ(x) ϕ(x)=ψ(x) 64.32
+lineartimeandmemorycomplexityandsubstantiallynarrowstheaccuracygaptoquadraticsoftmaxattention. Under
+matchedcompute,LUNAachievesstate-of-the-artperformanceamongefficientTransformersonLongRangeArena,
+andinpost-hocconversionexperiments,swappingsoftmaxinfine-tunedBERTandViT-B/16andbrieflyfine-tuning,it
+recoversmostoftheoriginalperformance,clearlyoutperformingfixedexponential-featurelinearizations. Ablations
+showthatjointlylearningprojectionsandchannelfunctionsiscrucial,andthatremovingmultiplicativegatingimproves
+optimizationstabilitywithoutdegradingaccuracy. QualitativeCLS-centricvisualizationsfurtherindicatethatLUNA
+concentratesattentiononsemanticallysalientspansandregionsinbothtextandimages.
+Acknowledgment
+SKacknowledgessupportfromtheNSFCAREERAwardNo.2339898andtheWellcomeLeap“Surgery: Assess/Val-
+idate/Expand(SAVE)”program. ASacknowledgessupportfromLambdaLabsthroughaLambdaCloudResearch
+Creditaward.
+References
+[1] IzBeltagy,MatthewE.Peters,andArmanCohan. Longformer:Thelong-documenttransformer. InProceedingsofthe2020
+ConferenceonEmpiricalMethodsinNaturalLanguageProcessing(EMNLP),pages8449–8460,2020.
+[2] YifanChen,QiZeng,HengJi,andYunYang. Skyformer:Remodelself-attentionwithgaussiankernelandnystr\"ommethod.
+AdvancesinNeuralInformationProcessingSystems,34:2122–2135,2021.
+[3] KrzysztofChoromanski,ValeriiLikhosherstov,DavidDohan,XingyouSong,AndreeaGane,TamasSarlos,PeterHawkins,
+JaredDavis,AfrozMohiuddin,LukaszKaiser,etal. Rethinkingattentionwithperformers. arXivpreprintarXiv:2009.14794,
+2020.
+[4] KrzysztofChoromanski,ValeriiLikhosherstov,DavidDohan,XingyouSong,AndreeaGane,TamasSarlos,PeterHawkins,
+JaredDavis,AfrozMohiuddin,LukaszKaiser,DavidBelanger,LucyColwell,andAdrianWeller. Rethinkingattentionwith
+performers. InAdvancesinNeuralInformationProcessingSystems(NeurIPS),pages2366–2380,2021.
+[5] GeorgeCybenko. Approximationbysuperpositionsofasigmoidalfunction. MathematicsofControl,Signals,andSystems,2
+(4):303–314,1989.
+[6] HugoDalla-Torre,LiamGonzalez,JavierMendoza-Revilla,NicolasLopezCarranza,AdamHenrykGrzywaczewski,Francesco
+Oteri,ChristianDallago,EvanTrop,BernardoPdeAlmeida,HassanSirelkhatim,etal. Nucleotidetransformer:buildingand
+evaluatingrobustfoundationmodelsforhumangenomics. NatureMethods,22(2):287–297,2025.
+[7] AaronGrattafiori,AbhimanyuDubey,AbhinavJauhri,AbhinavPandey,AbhishekKadian,AhmadAl-Dahle,AieshaLetman,
+AkhilMathur,AlanSchelten,AlexVaughan,etal. Thellama3herdofmodels. arXivpreprintarXiv:2407.21783,2024.
+[8] AnmolGulati,JamesQin,Chung-ChengChiu,NikiParmar,YuZhang,JiahuiYu,WeiHan,ShiboWang,ZhengdongZhang,
+YonghuiWu,etal. Conformer:Convolution-augmentedtransformerforspeechrecognition. arXivpreprintarXiv:2005.08100,
+2020.
+[9] KurtHornik. Approximationcapabilitiesofmultilayerfeedforwardnetworks. NeuralNetworks,4(2):251–257,1991.
+[10] YoshifusaIto. ApproximationofcontinuousfunctionsonRdbylinearcombinationsofshiftedrotationsofasigmoidfunction
+withandwithoutscaling. NeuralNetworks,5(1):105–115,1992.
+[11] JohnJumper,RichardEvans,AlexanderPritzel,TimGreen,MichaelFigurnov,OlafRonneberger,KathrynTunyasuvunakool,
+RussBates,AugustinŽídek,AnnaPotapenko,etal. Highlyaccurateproteinstructurepredictionwithalphafold. nature,596
+(7873):583–589,2021.
+[12] JungoKasai,HaoPeng,YizheZhang,DaniYogatama,andNoahA.Smith. Ontheexpressivityandtrainabilityofattention
+heads. InProceedingsofthe2021ConferenceonEmpiricalMethodsinNaturalLanguageProcessing(EMNLP),pages
+5416–5431,2021.
+[13] AngelosKatharopoulos,ApoorvVyas,NikolaosPappas,andFrançoisFleuret. Transformersarernns: Fastautoregressive
+transformerswithlinearattention. InInternationalconferenceonmachinelearning,pages5156–5165.PMLR,2020.
+11
+APREPRINT-DECEMBER10,2025
+[14] SalmanKhan,MuzammalNaseer,MunawarHayat,SyedWaqasZamir,FahadShahbazKhan,andMubarakShah.Transformers
+invision:Asurvey. ACMcomputingsurveys(CSUR),54(10s):1–41,2022.
+[15] NikitaKitaev,ŁukaszKaiser,andAnselmLevskaya. Reformer:Theefficienttransformer. InInternationalConferenceon
+LearningRepresentations(ICLR),2020.
+[16] HaotianLiu,ChunyuanLi,QingyangWu,andYongJaeLee. Visualinstructiontuning. Advancesinneuralinformation
+processingsystems,36:34892–34916,2023.
+[17] WeikangMeng,YadanLuo,XinLi,DongmeiJiang,andZhengZhang. Polaformer:Polarity-awarelinearattentionforvision
+transformers. arXivpreprintarXiv:2501.15061,2025.
+[18] Niki Parmar, Ashish Vaswani, Jakob Uszkoreit, Lukasz Kaiser, Noam Shazeer, Alexander Ku, and Dustin Tran. Image
+transformer. InInternationalConferenceonMachineLearning(ICML),pages4055–4064,2018.
+[19] AliRahimiandBenjaminRecht. Randomfeaturesforlarge-scalekernelmachines. InAdvancesinNeuralInformation
+ProcessingSystems,2007.
+[20] WalterRudin. FourierAnalysisonGroups. CourierDoverPublications,2017.
+[21] MichaelESander,PierreAblin,MathieuBlondel,andGabrielPeyré. Sinkformers: Transformerswithdoublystochastic
+attention. InInternationalConferenceonArtificialIntelligenceandStatistics,pages3515–3530.PMLR,2022.
+[22] AshkanShahbazi,ElahehAkbari,DarianSalehi,XinranLiu,NavidNaderializadeh,andSoheilKolouri. Espformer:Doubly-
+stochasticattentionwithexpectedslicedtransportplans,2025. arXivpreprintarXiv:2502.07962.
+[23] Ashkan Shahbazi, Chayne Thrash, Yikun Bai, Keaton Hamm, Navid NaderiAlizadeh, and Soheil Kolouri. Lotformer:
+Doubly-stochasticlinearattentionvialow-rankoptimaltransport,2025.
+[24] Zhuoran Shen, Mingyuan Zhang, Haiyu Zhao, Shuai Yi, and Hongsheng Li. Efficient attention: Attention with linear
+complexities. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV), pages
+3530–3539,2021.
+[25] YiTay,DaraBahri,LiuYang,DonaldMetzler,andDa-ChengJuan. Synthesizer: Rethinkingself-attentionintransformer
+models. InInternationalConferenceonMachineLearning(ICML),pages10183–10192,2021.
+[26] RachelS.Y.TeoandTanMinhNguyen.Unveilingthehiddenstructureofself-attentionviakernelprincipalcomponentanalysis.
+InICLR2025Workshop:XAI4Science:FromUnderstandingModelBehaviortoDiscoveringNewScientificKnowledge,2025.
+[27] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia
+Polosukhin. Attentionisallyouneed. Advancesinneuralinformationprocessingsystems,30,2017.
+[28] RomanVershynin. High-DimensionalProbability:AnIntroductionwithApplicationsinDataScience. CambridgeUniversity
+Press,2ndedition,2018.
+[29] Ming-XiWangandYangQu. Approximationcapabilitiesofneuralnetworksonunboundeddomains. NeuralNetworks,145:
+56–67,2022.
+[30] SinongWang,BelindaZLi,MadianKhabsa,HanFang,andHaoMa. Linformer:Self-attentionwithlinearcomplexity. arXiv
+preprintarXiv:2006.04768,2020.
+[31] YunyangXiong,ZhanpengZeng,RudrasisChakraborty,MingxingTan,GlennFung,YinLi,andVikasSingh. Nyströmformer:
+Anyström-basedalgorithmforapproximatingself-attention. InProceedingsoftheAAAIconferenceonartificialintelligence,
+pages14138–14148,2021.
+[32] ManzilZaheer,GuruGuruganesh,KumarAvinavaDubey,JoshuaAinslie,ChrisAlberti,SantiagoOntanón,PhilipPham,
+AnirudhRavula,QifanWang,LiYang,andAmrAhmed. Bigbird:Transformersforlongersequences. InAdvancesinNeural
+InformationProcessingSystems(NeurIPS),pages17283–17297,2020.
+[33] MichaelZhang,KushBhatia,HermannKumbong,andChristopherRé. Thehedgehog&theporcupine: Expressivelinear
+attentionswithsoftmaxmimicry. arXivpreprintarXiv:2402.04347,2024.
+[34] QinZhen,ZhaoJin,ZhiqiangLu,ZhaojieTang,andDengTao. Cosformer:Rethinkingsoftmaxinattention. InInternational
+ConferenceonLearningRepresentations(ICLR),2022.
+12
+APREPRINT-DECEMBER10,2025
+7 SupplementaryMaterial
+Remark2. Forconvenience,intheappendix,wedonotdistinguishϕ(ω,x),ϕ (x)andϕ(x;ω)whereϕisthefeature
+ω
+mappingusedtodefinethekernel.
+8 ProofofProposition1
+Forconvenience,letG=N(0,I ). WefirstintroducethefollowingfundamentalresultforKernelfunctionandthe
+d
+featurespace:
+Lemma 1. Let k(x,y) be a positive definite kernel, then there exists a feature mapping ϕ : Rd → H such that
+k(x,y)=⟨ϕ(x),ϕ(y)⟩ anddim(H)≤|R|.
+H
+Remark3. Givenakernelfunction,itsfeaturemappingandthecorrespondedfeaturespacearenotuniquelydetermined.
+Thus,weonlyclaimexistenceintheabovestatement.
+Proof. WedefinetheRKHS(ReproducingKernelHilbertSpace):
+H:=span{k(·,x):x∈X}
+where the inner product is defined as the following: for each f,g ∈ H, by definition of the RKHS space, there
+exists sequence (a )∞ ,(b )∞ ⊂ R such that f = lim f ,g = lim g where f = (cid:80)n a k(x,x ),g =
+i i=1 i i=1 n n n n n i=1 i i n
+(cid:80)n
+b k(x,x ). Then
+i=1 i i
+n
+(cid:88)
+⟨f,g⟩ :=lim⟨f ,g ⟩ :=lim a b k(x ,x ).
+H n n H i j i j
+n n
+i,j=1
+Itisclearϕ(x):x(cid:55)→k(·,x)isafeaturemappingwithk(x,y)=⟨ϕ(x),ϕ(y)⟩ . Itremainstoshowdim(H )≤|R|.
+H ϕ
+ChooseanorthogonalbasisofH,denotedas{ϕ },wehave:
+α
+|{ϕ }|≤|{(k(·,x):x∈X}|≤|X|=|Rd|=|R|.
+α
+wherethelastlineholdssinced∈Nisfinite. Thus,wecompletetheproof.
+Forward direction. It is immediate that k(x,y) is symmetric. It remains to show positive definiteness. For any
+c ,...,c ∈Randx ,...,x ∈Rd,wehave
+1 n 1 n
+ 
+n n
+(cid:88) (cid:88)
+c ic jk(x i,x j)=E ω∼G c ic jϕ ω(x i)·ϕ ω(x j)
+i,j=1 i,j=1
+(cid:34) (cid:13)(cid:88)n (cid:13)2(cid:35)
+=E (cid:13) c ϕ (x )(cid:13)
+ω∼G (cid:13) i ω i (cid:13)
+i=1
+≥0.
+Hence,k(x,y)definedin(10)isapositivedefinitekernel.
+Reversedirection. Supposek(x,y)isapositivedefinitekernel. Thenbytheabovelemma,thereexistsafeaturemap
+ϕ:Rd →HintoaHilbertspace(H,⟨·,·⟩ )suchthat
+H
+k(x,y)=⟨ϕ(x),ϕ(y)⟩ .
+H
+andthereexistsanorthogonalbasisU ={u α} α∈RspanningH. Define:
+g (x):=⟨ϕ(x),u ⟩ .
+α α H
+Then
+(cid:90)
+k(x,y)= g (x)g (y)dα. (13)
+α α
+α∈R
+Wedistinguishtwocases.
+1
+APREPRINT-DECEMBER10,2025
+Case1: U iscountable. Withoutlossofgenerality,rewrite(13)as
+(cid:88)
+k(x,y)= g (x)g (y). (14)
+i i
+i∈Z
+Foreachω ∈R,letI(ω)=ibetheuniqueintegersuchthati−1<ω ≤i. Define
+1
+ϕ (x):= g (x).
+ω (cid:112) I(ω)
+G((i−1,i])
+Then
+E [ϕ (x)ϕ
+(y)]=(cid:88) g i(x)g i(y)
+P(ω ∈(i−1,i])
+ω∼G ω ω G((i−1,i])
+i∈Z
+(cid:88)
+= g (x)g (y)
+i i
+i∈Z
+=k(x,y).
+Case2: U isuncountable. Letν betheuniformmeasureontheindexset{α:u ∈U}. Sinceν isnon-discrete,itis
+α
+acontinuousmeasure. HencetheRadon–Nikodymderivative
+dν
+:R→R
+dG
+iswelldefined. Extendg toallα∈Rby
+α
+(cid:40)
+g (x), ifu ∈U,
+α α
+g¯ (x):=
+α
+0, otherwise.
+Nowdefine
+(cid:113)
+ϕ (x):=g¯ (x) dν(ω).
+ω ω dG
+Then
+(cid:90) dν
+E [ϕ (x)ϕ (y)]= g¯ (x)g¯ (y) (ω)dG(ω)
+ω∼G ω ω ω ω dG
+R
+(cid:90)
+= g¯ (x)g¯ (y)dν(ω)
+ω ω
+R
+=k(x,y).
+Thusinbothcasesthekernelk(x,y)admitstherepresentation(10),whichcompletestheproof.
+Remark4. Intheproof,wecanseeeachk(x,y):Rd×Rd →Rcanbewrittenas
+E [ϕ(ω,x)ϕ(ω,y)]
+ω∼N(0,1)
+forsomemeasurablefunctionϕ:R×Rd →R.
+9 Approximationerrorforlearnablekernel.
+Inpractice,weutilizeafinitelayerMLP(e.g. themodeldescribedinsection2.2)toparametrizethefeaturemapping,
+denotedasϕθ andselectafinitenumberof{ω }m ∼ i.i.d.N(0,1)andletG = (cid:80)m δ . Theinducedkernel
+i i=1 m j=1 ωj
+becomes:
+kθ(x,y)=E [ϕθ(x)·ϕθ(y)].
+ω∼Gn ω ω
+Givenamachinelearningtask,supposek∗(x,y)isanoptimalkernelforthistask,thatis:
+k∗(x,y)∈arg min E [L (k,Z)] (15)
+kisakernel
+Z∼µt t
+whereµ isthegroundtruthdistributionfortaskt.
+t
+Onenaturalquestionis: Whatistheapproximationerror:
+|k∗(x,y)−kθ(x,y)|?
+Theaboveerrorcanbedecomposedintothreetypeoferrors:parameterizationerror,generativeerrorfromtheGaussian
+sampleω .
+i
+2
+APREPRINT-DECEMBER10,2025
+9.1 AssumptionsandFundamentalResults
+Assumption1. LetK ⊂Rdbeacompactset. Weimposethefollowingassumptionsonϕ:
+(1) Foreachx∈Rd,themapω (cid:55)→ϕ(ω,x)is∥ϕ(·,x)∥ -Lipschitz. where
+lip
+(cid:118)
+(cid:117) D
+(cid:117)(cid:88)
+∥ϕ(·,x)∥ :=(cid:116) ∥ϕi(·,x)∥2 .
+lip lip
+i=1
+Thatis,wedefinetheLipschiznormastheL normoftheLipschiznormofeachcomponent.
+2
+(2) Foreachx∈Rd,themapω (cid:55)→ϕ(ω,x)isbounded,i.e.,
+sup ∥ϕ(ω,x)∥<∞.
+ω∈Rd
+(3) ϕisuniformlyboundedwhenxisrestrictedtoK,i.e.,
+max ∥ϕ(ω,x)∥<∞.
+ω∈Rd,x∈K
+(4) ϕ(·,x)hasauniformLipschitznorm,thatis:
+max∥ϕ(·,x)∥ <∞.
+lip
+x∈K
+(5) Wedefine
+g(ω)= sup|ϕ(ω,x)|2.
+x∈K
+Theng(ω)<∞forallω,and
+E [g(ω)]<∞.
+ω∼N(0,Id)
+(6) Thekernelcanbeexpressedas
+k(x,y)=h(x)k′(x−y)h(y)
+=E (cid:2) ϕ(ω,x)⊤ϕ(ω,y)(cid:3) .
+ω∼N(0,Id)
+with
+ϕ(ω,x)=h(x)ψ(ω⊤x);
+whereh : Rd → Randk′ : Rd×Rd → R. Thesecondequalityfollowsfromlemma3. Moreover,h(x)is
+assumedtobecontinuous.
+(7) ConsiderMLPsψ ,h ,wesupposetheiractivationfunctionσisLipschiz,nonpolynomialfunction.
+NN NN
+9.2 Parametrizationerrorinthelearnablekernel.
+Inthissection,wedefineafeaturemappingviathemodel(11),i.e.,x(cid:55)→F(u)withu=ω⊤x. Ourgoalistoanalyze
+theexpressiveerror|kθ(x,y)−k(x,y)|,wherekθ(x,y)=E [ϕ(ω,x)ϕ(ω,y)].
+ω∼N(0,Id)
+Propertiesthefeaturemapping. Wefirstdefinethefeaturemappingandintroducesomefundamentalpropertiesof
+it.
+ByProposition1andRemark4,wehavethefollowing.
+Lemma2. ForeachD ∈N,thereexistsamapping
+Rd×Rd ∋(x,ω)→ϕ(ω,x)∈RD
+suchthat
+k(x,y)=E [ϕ(ω,x)·ϕ(ω,y)].
+ω∈N(0,Id)
+3
+APREPRINT-DECEMBER10,2025
+Proof. ByProposition1,thereexistsamapping
+R×Rd ∋(ω ,x)(cid:55)→ψ(ω ,x)∈R
+1 1
+suchthat
+k(x,y)=E [ϕ(ω ,x)ϕ(ω,y)],∀x,y ∈Rd.
+ω1∈N(0,1) 1
+Define:
+ϕ(ω,x)=[ψ(ω ,x);0 ]
+1 D−1
+andwehave
+E [ϕ(ω,x)·ϕ(ω,x)]
+ω∼N(0,Id)
+=E [ψ(ω ,x)ψ(ω ,y)]
+ω1,...ωd∼i.i.d.N(0,1) 1 1
+=E [E [ψ(ω ,x)ψ(ω ,y)]]
+ω2,...ωd∼i.i.dN(0,1) ω1∼N(0,1) 1 1
+=E [k(x,y)]=k(x,y)
+ω2,...ωd∼i.i.dN(0,1)
+Thiscompletestheproof.
+Lemma3. Supposek(x,y)satisfiesAssumption1(6),thereexistsfeaturemappingintheform.
+ϕ(ω,x)=h(x)ψ(ω,x).
+Proof. WedirectlyobtaintheresultfromBochner’stheorem[19,20]asdiscussedinthemaintext. Whereψ(ω⊤x)=
+√
+[cos(ω⊤x),sin(ω⊤x)]orψ(ω,x)= 2cos(ω⊤x+b).
+Lemma4. Supposethefeaturemappingϕ(ω,x)satisfiescondition(5)inAssumption1. Thenthereexistsasufficiently
+largeRsuchthat,
+E [∥ϕ∥−∥ϕ∥1 ]≤ϵ,
+ω A
+whereA={ω :∥ω∥≤R}.
+Proof. Letg(ω)=sup ∥ϕ(ω,x)∥2. Bycondition(5)inAssumption1,wehave
+x∈K
+E [g(X)]<∞.
+ω∼N(0,Id)
+Thus,bythedominatedconvergencetheoremandthefactg1 ≤gforanysetB ⊂Rd,wehave
+B
+E[g(ω)1 ]↘0 asR→∞.
+∥ω∥≥R
+PickR>0suchthatE[g(ω)1 ]≤ϵ. Wethenhave
+|ω|≥R
+E[∥ϕ(ω,x)∥21 ]≤E[g1 ]≤ϵ, (16)
+ω≥R |ω|≥R
+andtheproofiscomplete.
+Lemma5. Givenanon-emptycompactsetK,supposek(x,y)satisfiesAssumption1(6),sothatwecanwritethe
+featuremappingasϕ(ω,x)=h(x)ψ(ω⊤x). Assumemoreoverthatψsatisfiescondition(5)inAssumption1. Then
+thereexistsacompactsetAsuchthat,forallx,y ∈K,
+(cid:12) (cid:12)k(x,y)−kA(x,y)(cid:12)
+(cid:12)≤ϵ,
+(17)
+kA(x,y):=E (cid:2) ϕ(ω,x)ϕ(ω,y)1 (cid:3) .
+ω∼N(0,Id) {ω∈A}
+Remark5. Thecondition(5)inAssumption1ismuchweakerthantheboundednessofψ(ω,x). Thetwowidelyused
+ψfunctionsderivedinBochner’sTheoremareboundedandthussatisfythecondition(6).
+Proof. Fromassumption1(6),wehaveϕ(ω,x)=h(x)ψ(ω⊤x). whereC isaconstant. ItisclearC∥ω∥isintegrable
+inRd,N(0,I ). Thus(5)inAssumption1aresatisfied.
+d
+FromLemma5,thereexistscompactsetAsuchthatE [∥ψ(ω,x)∥1 ]≤ϵ,∀x. Thenwehave
+ω∼N(0,Id) Ac
+|k(x,y)−kA(x,y)|
+≤E [|h(x)ψ(ω,x)−h(x)ψ(ω,x)1 |]
+ω∼N(0,Id) ω∈A
+=|h(x)|E [|ψ(ω,x)|1 ]
+ω Ac
+≤max|h(x)|ϵ (18)
+x∈K
+Sincex(cid:55)→h(x)iscontinuous,max |h(x)|isfinite. Thuswecompletetheproof.
+x∈K
+4
+APREPRINT-DECEMBER10,2025
+SomeusefulLemmas. Nowweintroducesomefundamentallemmaandinequalities.
+Lemma6. Picka ,a ,b ,b ∈Rd(ora ,a ∈R,b ,b ∈Rd),let∆ =a −a ,∆ =b −b ,wehave
+1 2 2 2 1 2 1 2 a 1 2 b 1 2
+∥a ·b −a ·b ∥
+1 1 2 2
+=∥a ·b −(a −∆ )·(b −∆ )∥
+1 1 1 a 1 b
+=∥∆a·b+a ∆ −∆ ·∆ ∥
+1 b a b
+≤∥∆a∥∥b ∥+∥∆b∥∥a ∥+∥∆ ∥∥∆ ∥
+1 1 a b
+UniversialApproximationTheorem Next,weintroducethefollowingclassicalUniversalapproximationtheorem:
+Theorem1. [[5]]Considerthefollowing1-hidden-layerMAPhypothesisclass,whereσisnotapolynomialfunction:
+(cid:110) (cid:111)
+H:= Aσ(Wx+b):W ∈Rw×d, b∈Rw, A∈RD×w ,
+(19)
+(cid:8) (cid:9)
+=span σ(Wx+b) .
+ThenHisdenseinC(K)withrespectto∥·∥ foreachcompactsetK,anditisdenseinC(Rd)withrespectto∥·∥ ,
+sup µ
+whereµisafinitepositivemeasuresupportedonacompactset.
+Thecompactdomainassumptioncanbefurtherrelaxed:
+Theorem2. [9]UnderthesamesettingoftheTheorem1,supposeσisunboundednon-polynomial,wehaveHcanis
+denseinLp(µ),∀1≤p<∞forallfinitepositivemeasureµdefinedinRd.
+Theorem3. [[10,29]]Thehypothesisclassofall1-hiddenlayerMLPs,HisdenseinspaceC (Rn)(setofcontinuous
+0
+functionsconvergingto0atinfinity)andC(R¯n)(setofcontinuousfunctionsconvergingtoafinitenumberatinfinity).
+ParametrizationerrorAnalysis BasedontheaboveUATtheoremsandlemmas,wewilldiscusstheparametrization
+error.
+Proposition4. Supposek(x,y)anditsfeaturemappingsatisfytheconditionsinLemma4. Inaddition,supposefeature
+mappingϕiscontinuous. SetHypothesisclass
+H={ϕ (ω,x):=h (x)ψ (ω⊤x)}
+NN NN NN
+whereh :Rd →R,ψ :R→RD arethe1-hiddenlayerMLPs.
+NN NN
+ThenthereexistsM >0suchthat
+ϕ ∈HM,
+NN
+HM :={f(ω,x)=h (x)ψ (ω⊤x)M}, (20)
+NN NN
+fM :=clip(f,[−M,M]).
+suchthat
+|k(x,y)−k (x,y)|≤ϵ,∀x,y ∈K,
+NN
+wherek (x,y)=E [ϕ (ω,x)·ϕ (ω,y)].
+NN ω∼N(0,Id) NN NN
+Proof. PickthecompactsetAinlemma5suchthat
+E[∥ϕ(x,y)∥]≤ϵ,∀x,y ∈K.
+Sincek(x,y)satisfiesAssumption1(6),bylemma3,thereexistsfeaturemappingϕ(ω,x)=h(x)ψ(ω⊤x). Further-
+more,wehave
+M = sup ∥ϕ(ω,x)∥<∞
+ω∈A,x∈K
+sinceϕiscontinuous.
+BytheUATTheorem1,thereexistsone-hidden-layerMLP,ψ suchthat
+NN
+∥ψ(ω⊤x)−ψ (ω⊤x)∥≤ϵ,∀(ω,x)∈A×K.
+NN
+5
+APREPRINT-DECEMBER10,2025
+LetψM =Clip(ψ ,[−M,M]). Wehave
+NN NN
+sup ∥ψ(ω⊤x)−ψM (ω⊤x)∥≤
+NN
+ω∈M,x∈K
+∥ψ(ω⊤x)−ψ (ω,x)∥≤ϵ. (21)
+NN
+Similarly,wecanfindh suchthat∥h −h∥≤ϵ,∀x∈K. Letϕ =h ψM . Allexpectationsbeloware
+NN NN NN NN NN
+withrespecttoω ∼N(0,I ). Wehave
+d
+k(x,y)−k
+(x,y)=E(cid:2) ϕ(ω,x)ϕ(ω,y)(cid:3)
+NN
+(22)
+−E(cid:2)
+ϕ (ω,x)ϕ
+(ω,y)(cid:3)
+.
+NN NN
+ByLemma6,
+k(x,y)−k
+(x,y)≤E(cid:2) ∥ϕ(ω,x)∥∆(ω,y)(cid:3)
+NN
++E(cid:2) ∥ϕ(ω,y)∥∆(ω,x)(cid:3)
+(23)
++E(cid:2) ∆(ω,x)∆(ω,y)(cid:3)
+.
+Therefore,
+k(x,y)−k (x,y)≤E1/2[∆2(ω,x)]·E1/2[ϕ2(ω,y)]
+NN
++E1/2[∆2(ω,y)]·E1/2[ϕ2(ω,x)] (24)
++E1/2[∆2(ω,x)]·E1/2[∆2(ω,y)].
+where∆(ω,x)=∥ϕ(ω,x)−ϕ (ω,x)∥. Wehave:
+NN
+E1/2[ϕ2(ω,x)]=k1/2(x,x)≤maxk1/2(x,x) (25)
+x∈K
+andthesamepropertyholdsfory. Itremainstoboundsup E[∆2(ω,x)].Wehave
+x∈K
+E[∆2(ω,x)]=E(cid:2)
+∥ϕ(ω,x)−ϕ
+(ω,x)∥2(cid:3)
+NN
+≤E(cid:2) ∥ϕ(ω,x)−ϕ (ω,x)∥21 (cid:3)
+NN ω∈A
+(cid:124) (cid:123)(cid:122) (cid:125)
+(26)
+B1
++E(cid:2) ∥ϕ(ω,x)∥21 (cid:3) +E(cid:2) ∥ϕ (ω,x)∥21 (cid:3) .
+ω∈/A NN ω∈/A
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+B2 B3
+Let∆ =h−h ,δ =ψ−ψ ,wehave:
+h NN ψ NN
+ByLemma6,wehave
+B ≤E (cid:2) ∥|h|∥∆ ∥+|∆ |∥ψ∥+|δ |∥∆ ∥2(cid:3)
+1 A ψ h h ψ
+≤E (cid:2) (max|h|ϵ+Mϵ+ϵ2)2(cid:3)
+A
+A
+(27)
+=(max|h|ϵ+Mϵ+ϵ2)2
+A
+=:B (ϵ)=O(ϵ2).
+1
+ByLemma5,
+B ≤maxh(x)ϵ=:B (ϵ)=O(ϵ2). (28)
+2 2
+A
+FromthedefinitionofψM ,andthefact|h−h |≤ϵ,wehave
+NN NN
+B ≤(max|h(x)|+ϵ)2MP(ω ∈Ac)
+3
+A
+(29)
+≤(max|h(x)|+ϵ)2MPϵ=:B (ϵ).
+3
+A
+ApplyingB (ϵ),B (ϵ),B (ϵ)to(26),wehave
+1 2 3
+6
+APREPRINT-DECEMBER10,2025
+E[∆2(ω,x)]≤B (ϵ)+B (ϵ)+B (ϵ)=:B(ϵ)=O(ϵ). (30)
+1 2 3
+Applying(25)and(30)to(24),weobtain
+(cid:112)
+|k(x,y)−kh(x,y)|≤2 B(ϵ)maxk1/2(x,x)+B(ϵ),
+x∈K
+whichcompletestheproof.
+TherearetwowaystorelaxtheupperboundM inthehypothesissetting. Westartfromthesimpleone:
+Proposition5. UnderthesamesettingofProposition4. WeredefinetheHypothesisas:
+(cid:40) K (cid:41)
+(cid:88)
+H:= h (ψ + α Relu(ψ )):K ∈N,α ∈R
+NN NN i NN i
+i=1
+whereh :Rd →Risa1-hiddenlayerMLP,ψ isa1-hiddenlayerMLP.
+NN NN
+Thenthereexistsk definedbyfeaturemappinginHsuchthat
+NN
+|k(x,y)−k (x,y)|≤ϵ,∀x,y ∈K.
+NN
+Proof. FromProposition4,thereexists1-hiddenlayerh and1-hiddenlayerψ suchthatthethekernelk
+NN NN NN
+inducedbyh (clip(ψ ,[−M,M]),canapproximatek,i.e.
+NN NN
+|k(x,y)−K (x,y)|≤ϵ,∀x,y ∈K.
+NN
+Furthermore,wehave
+clip(ψ ,[−M,M])
+NN
+=ψ −ReLu(ψ −M)+ReLu(−ψ −M)
+NN NN NN
+=:ψ˜ (31)
+NN
+Thush ψ˜ ∈Handwecompletetheproof.
+NN NN
+Proposition6. UnderthesamesettingofProposition4,letH := {h (x)ψ (ω⊤x)},whereψ is1-hidden
+NN NN NN
+layerMLPwithunbounded,non-polynomialactivation(e.g. ReLu),thenthereexistsϕ ∈Hsuchthat|k(x,y)−
+NN
+k (x,y)|≤ϵ,∀x,y ∈K.
+NN
+Proof. First,bylemma5,thereexistsacompactsetA suchthat
+1
+E [∥ψ1 (x,ω)∥]≤ϵ,∀x∈K.
+ω∼N(0,Id) Ac
+1
+Furthermore,thereexistscompactsetA suchthatP(ω ∈A )≤ϵ. WesetcompactsetA=A ∪A .
+2 2 1 2
+We can define the following C function ψ : R → RD : Indeed, there exists R ≥ 0 such that ω⊤x ∈
+0 0
+[−R,R],∀(ω,x)∈A×K. Wedefine
+ψ(ω⊤x) Ifω⊤x∈[−R,R]
+(1−(ω⊤x−R))ψ(R)
+ifω⊤x∈[R,R+1]
+(ω,x)(cid:55)→ψ (ω⊤x)= (32)
+0 (1+ω⊤x+R)ψ(−R) ifω⊤x∈[−R−1,−R]
+
+0 elses
+Wehave:
+(cid:26) ψ (ω⊤x)=ψ(ω⊤x), if(ω,x)∈A×K
+0
+∥ψ (ω⊤x)∥≤max(∥ψ(R)∥,∥ψ(ω⊤x)∥), otherwise
+0
+7
+APREPRINT-DECEMBER10,2025
+Forthefase(ω,x)∈/ A×K,wehave
+1 1
+∥ψ−ψ ∥2 ≤ ∥ψ∥2+ ∥ψ ∥2 ≤∥ψ∥2+∥ψ(R)∥2
+0 2 2 0
+Thus,wehave
+E [∥ψ−ψ ∥2]
+ω∈N(0,Id) 0
+=E [∥ψ−ψ ∥21 ]
+ω∈N(0,Id) 0 ω∈Ac
+≤0+E [(∥ψ∥2+∥ψ(R)∥2)1 ]
+ω∈N(0,Id) ω∈Ac
+≤ϵ+∥ψ(R)∥2ϵ=:B ϵ.
+1
+ByUATtheorem3,thereexists1-hiddenlayerMLPψ suchthat
+NN
+∥ψ (ω⊤x)−ψ (ω⊤x)∥≤ϵ,∀(ω,x)∈Rd×K.
+NN 0
+Pickh thatcanuniformlyapproximatehonK:
+NN
+∥h −h∥≤ϵ,∀x∈K.
+NN
+Let
+∆(ω,x)=∥ϕ(ω,x)−ϕ (ω,x)∥,
+NN
+∆ =|h−h |,
+h NN
+(33)
+∆ =∥ψ −ψ ∥,
+ψ0 0 NN
+∆ =∥ψ−ψ ∥.
+ψ 0
+Wehave
+E[∆2(ω,x)]=E[∥hψ−h ψ ∥2]
+NN NN
+≤E(cid:2)
+(∥hψ−hψ ∥+∥hψ −h ψ
+∥)2(cid:3)
+0 0 NN NN
+≤E(cid:2)
+(|h|∆ +|h|∆ +∥ψ ∥∆ +∆ ∆
+)2(cid:3)
+ψ ψ0 0 h h ψ0
+≤E(cid:2)
+(max|h|∆ +max|h|∆
+K
+ψ
+K
+ψ0
+(34)
++max∥ψ ∥∆ +∆ ∆
+)2(cid:3)
+Rd
+0 h h ψ0
+≤E(cid:2)
+(max|h|∆ +max|h|ϵ
+ψ
+K K
++max∥ψ
+∥ϵ+ϵ2)2(cid:3)
+,
+0
+Rd
+whereweusedLemma6. BytheCauchy–Schwarzinequality,
+E[∆2(ω,x)]≤E(cid:104) C(max|h|,max∥ψ ∥)(cid:0) ∆2 +ϵ2+ϵ4(cid:1)(cid:105)
+0 ψ
+K Rd
+=C(cid:0)E[∆2]+ϵ2+ϵ4(cid:1) (35)
+ψ
+≤C(B ϵ+ϵ2+ϵ4)=:B(ϵ),
+1
+whereC(max K|h|,max Rd∥ψ 0∥)=C isaconstantdependingonlyonmax K|h|andmax Rd∥ψ 0∥.
+Applying(25)and(35)to(24),weobtain
+(cid:112)
+|k(x,y)−kh(x,y)|≤2 B(ϵ)maxk1/2(x,x)+B(ϵ),
+x∈K
+andcompletetheproof.
+9.3 GeneralizationErrorInducedbyω
+i
+Givenakernel
+k(x,y)=E (cid:2) ϕ (x)·ϕ (y)(cid:3) , (36)
+ω∼G ω ω
+andfori.i.d.samplesΩ:={ω ,...,ω },wedefinetheempiricalkernel
+1 m
+kΩ(x,y):=E (cid:2) ⟨ϕ (x),ϕ (y)⟩(cid:3)
+ω∼Gˆm ω ω
+m
+1 (cid:88) (37)
+= ϕ (x)·ϕ (y).
+m ωj ωj
+j=1
+8
+APREPRINT-DECEMBER10,2025
+whereGˆm = 1 (cid:80)m δ istheempiricaldistributionbasedonsampleΩ. Inthissection,wewillanalyzetheerror
+m j=1 ωj
+|k(x,y)−kΩ(x,y)|.
+Proposition7. Considerourmodeldefinedin(11),supposeh=h ,ψ =ψ arefixed1-layerMLPs(including
+NN NN
+constantmapping),thenthemodelϕ(ω,x)satisfies(1)(2)(3)(4)inAssumption1withboundedLipschizactivation(e.g.
+Sigmoid)(seecondition(7)inassumption1).
+Inaddition,thefeaturemapping(11)withunboundedactivation(e.g. ReLu)satisfies(1)(4)withunboundedLipschiz
+activation(e.g. ReLu).
+Toprovethestatement,wefirstintroducethefollowingLemmas:
+Lemma7(BasicLipschitzrules). LetX ⊂RdandY ⊂RD benonempty. Then:
+(1) Iff :X →Y andf :Y →Z areLipschitz,thenf ◦f isLipschitzand
+1 2 2 1
+∥f ◦f ∥ ≤∥f ∥ ∥f ∥ .
+2 1 lip 2 lip 1 lip
+(2) Iff ,f :X →Y areLipschitz,thenf +f isLipschitzand
+1 2 1 2
+∥f +f ∥ ≤∥f ∥ +∥f ∥ .
+1 2 lip 1 lip 2 lip
+(3) Iff ,f :X →Y areboundedLipschitz,thenf ⊙f isLipschitz.
+1 2 1 2
+(4) Iff ,f :X →Y areboundedLipschitz,thenf ·f isLipschitz.
+1 2 1 2
+Lemma8. GivennonemptysetsX ⊂Rd,Y ⊂RD,wehave:
+(1) Iff : X → Y,f : Y → Z, andf ,f areLipschizfunctions. Thenf ◦f isa∥f ∥ ∥f ∥ -Lipschiz
+1 2 1 2 2 1 1 lip 2 lip
+function.
+(2) Iff ,f :X →Y areLipschizfunctions,thenf +f areLipschiz.
+1 2 1 2
+(3) Iff ,f :X →Y areboundedLipschitzfunction,thenf ⊙f isLipschitzfunction.
+1 2 1 2
+(4) Iff ,f :X →Y areLipschitzboundedfunctions,thenf ·f isaLipschitzfunction.
+1 2 1 2
+Proof. Pickx,x′ ∈X,y,y′ ∈Y.
+(1)Inthiscase,wehave
+(cid:13) (cid:13)f 2◦f 1(x)−f 2◦f 1(x′)(cid:13) (cid:13)≤∥f 2∥
+lip
+∥f 1(x)−f 1(x′)∥
+≤∥f ∥ ∥f ∥ ∥x−x′∥.
+2 lip 1 lip
+(2)Inthiscase,
+∥f (x)+f (x)−(f (x′)+f (x′))∥
+1 2 1 2
+≤∥f (x)−f (x′)∥+∥f (x)−f (x′)∥
+1 1 2 2
+≤(∥f ∥ +∥f ∥ )∥x−x′∥.
+1 lip 2 lip
+(3)Inthiscase,
+∥f (x)⊙f (y)−f (x′)⊙f (y′)∥
+1 2 1 2
+≤∥f (x)∥∥f ∥ ∥y−y′∥+∥f (y′)∥∥f ∥ ∥x−x′∥
+1 2 lip 2 1 lip
+≤∥f ∥ ∥f ∥ ∥y−y′∥+∥f ∥ ∥f ∥ ∥x−x′∥
+1 ∞ 2 lip 2 ∞ 1 lip
+≤M M (∥x−x′∥+∥y−y′∥)
+√∞ lip
+≤ 2M M ∥(x;y)−(x′;y′)∥.
+∞ lip
+9
+APREPRINT-DECEMBER10,2025
+(4)Wehave
+∥f (x)·f (x)−f (x′)·f (x′)∥
+1 2 1 2
+≤∥f (x)·(f (x)−f (x′))∥+∥(f (x)−f (x′))·f (x′)∥
+1 2 2 1 1 2
+≤∥f (x)∥∥f ∥ ∥x−x′∥+∥f (x′)∥∥f ∥ ∥x−x′∥
+1 2 lip 2 1 lip
+≤M M ∥x−x′∥.
+∞ lip
+ProofofProposition7. Wefirstconsidertheboundedactivation.
+• Conditions(2)(3). Sinceσ(x)isaboundedfunction,thuswehaveψ,hareboundedfunction. Thenϕsatisfies
+(2)(3).
+• Condition(1). Fromtheabovelemma8,wehavethefollowingmappingareLipschitzfunction:
+x(cid:55)→u:=x⊤ω;
+ω (cid:55)→u:=x⊤ω
+z =u(cid:55)→σ(Wu);
+z (cid:55)→Wz
+Thus,x(cid:55)→ψ(ω⊤x)isLipschitzforeachω;ω (cid:55)→ψ(ω⊤x)isLipschitzforeachfixedx.
+Similarly,x(cid:55)→h (x)isLipschiz.
+NN
+• Itremainstoprovethelastcondition(4)whenσisbounded. First,wehave:
+du
+∥ ∥≤∥x∥≤max∥x∥.
+dω x∈K
+Thus,definethefiniteconstants
+M :=max ∥z∥,
+K z∈K
+M :=max ∥ψi∥ ,
+ψ i∈[1:D] lip
+M :=max |h(z)|.
+h z∈K
+Foranyx∈K,themapω (cid:55)→ω⊤xis∥x∥-Lipschitz,hence
+∥ω (cid:55)→ω⊤x∥ =∥x∥≤M .
+lip K
+Therefore,foreachi∈[1:D]andx∈K,
+∥ω (cid:55)→ψi(ω⊤x)∥ ≤∥ψi∥ ∥ω (cid:55)→ω⊤x∥
+lip lip lip
+≤∥ψi∥ ∥x∥≤M M .
+lip ψ K
+Takingthemaximumovercoordinatesgives
+∥ψ(·⊤x)∥ ≤M M <∞, ∀x∈K.
+lip ψ K
+Finally,withϕ(ω,x)=h(x)ψ(ω⊤x),
+∥ϕ(·,x)∥ =∥h(x)ψ(·⊤x)∥ ≤|h(x)|∥ψ(·⊤x)∥
+lip lip lip
+≤|h(x)|M M ≤M M M <∞, ∀x∈K.
+ψ K h ψ K
+wherethelastinequalityholdsfromthefacthiscontinuousMLP,andthusmax ∥h(x)∥ < ∞andwe
+x∈K
+prove(4).
+Proposition8(Gaussianconcentration). Supposef :Rd →RisL-LipschitzforsomeL≥0. LetΩ={ω ,...,ω }
+1 m
+bei.i.d.samplesfromG=N(0,I ),andset
+d
+m
+1 (cid:88)
+∆ =E [f(ω)]− f(ω ).
+m ω∼G m j
+j=1
+Then:
+10
+APREPRINT-DECEMBER10,2025
+• Gaussianconcentrationinequality:
+(cid:18) mϵ2(cid:19)
+P(|∆ |≤ϵ)≥1−2exp − .
+m 2L2
+• GaussianPoincaréinequality:
+1 1 L2
+E[∆2 ]= Var(f(ω))≤ E [∥∇f(ω)∥2]≤ .
+m m m ω∼G 2 m
+Proof. ThefirststatementistheclassicalGaussianconcentrationinequality. Forthesecond,thevarianceboundfollows
+from the Gaussian Poincaré inequality, and the final inequality uses the fact that ∥∇f∥ ≤ L for an L-Lipschitz
+2
+function.
+Lemma9. Letϕ:Rd×Rd →RH satisfyconditions(5)in(2.1)inAssumption1. Thenthemapping
+Rd ∋ω (cid:55)→⟨ϕ(ω,x),ϕ(ω,y)⟩
+isL-Lipschitzwith
+L=max{∥ϕ(·,x)∥,∥ϕ(·,y)∥}max{L2,L2}.
+x y
+Combiningtheabovepropositionandlemma8,weobtain:
+Proposition9. Fixx,y ∈Rdandsupposeϕsatisfiesconditions(1)(2)inAssumption1. LetΩ={ω }m ∼Gbei.i.d.
+i i=1
+samples,andletGˆmdenotetheempiricaldistribution. Define∆ =k(x,y)−kΩ(x,y). Then:
+Ω
+(cid:18) mϵ2(cid:19)
+P(|∆ |≤ϵ)≥1−2exp − , (38)
+Ω 2L2
+L(x,y)
+E[|∆ |2]≤ , (39)
+Ω m
+where
+(cid:8) (cid:9)
+L(x,y):=max ∥ϕ(·,x)∥ , ∥ϕ(·,y)∥
+∞ ∞
+(cid:8) (cid:9)
+×max ∥ϕ(·,x)∥ , ∥ϕ(·,y)∥ .
+lip lip
+Proof. ByLemma8,themapping
+ω (cid:55)→⟨ϕ(ω,x),ϕ(ω,y)⟩
+isL-Lipschitz,whereLisdefinedintheabovestatement. ApplyingProposition8completestheproof.
+Corollary1. LetK ⊂ Rd becompactandsupposeϕsatisfiesconditions(1)–(4)inAssumption1. Thenforeach
+(x,y)∈K×K,inequalities(38)–(39)holdwith
+L(K)= max ∥ϕ(ω,x)∥ max∥ϕ(·,x)∥2 .
+lip
+x∈K,ω∈Rd x
+Proof. By(3)–(4)inAssumption1,L(K)isfinite. Moreover,
+L(K)= sup L(x,y)
+x,y∈K
+L(x,y)isdefinedinproposition9. Combiningthiswiththepreviouspropositionyieldstheresult.
+Remark 6. If the activation function is a bounded (e.g., sigmoid) function, combining the above corollary and
+Proposition7,wehavethatourmodel(11)satisfiestheabovecorollary. Thatis
+−mϵ2
+P(|k(x,y)−kˆ(x,y)|≥ϵ)≤2exp( )
+2L2(K)
+Nowweconsiderthecaseactivationfunctionisunbounded(e.g., ReLu). Wefirstrecallthedefinitionandrelated
+conceptsinthesub-exponentialdistribution.
+11
+APREPRINT-DECEMBER10,2025
+Definition1. GivenArandomvariableX. WeconsidertheOrlicznorms
+(cid:20) (cid:18) |X|p(cid:19)(cid:21)
+∥X∥ =inf{K >0:E exp ≤2}.
+ψp Kp
+X issaidtofollowasub-exponentialdistributionifthefollowingequivalentconditionsholds:
+• ∥X∥ <∞,where∥·∥ iscalledsub-exponentialnorm.
+ψ1 ψ1
+• Thereexistsaconstantc>0suchthat
+ϵ2 ϵ
+P(|X|>ϵ)≤2exp(−cmin( , )).
+∥X∥2 ∥X∥
+ψ1 ψ1
+WefirstintroducethefollowingconcentrationinequalityforproductoftwoLipschizfunctions. Note,thechallangeis,
+iff ,f areLipschizbutunbounded,f f isnotaLipschitzfunction.
+1 2 1 2
+Proposition10. [Exponentialconcentration.] ConsidertwoLipschitzfunctionsf ,f :Rd →R,foreachϵ∈(0,1),
+1 2
+wehave:
+P ω∼N(0,Id)(cid:0)(cid:12) (cid:12)f 1(ω)f 2(ω)−E[f 1(ω)f 2(ω)](cid:12) (cid:12)≥ϵ(cid:1)
+(cid:32) (cid:40) (cid:41)(cid:33)
+ϵ ϵ2 (40)
+≤2exp −c min , .
+∥f ∥ ∥f ∥ ∥f ∥2 ∥f ∥2
+1 lip 2 lip 1 lip 2 lip
+Proof. SinceωisStandardGaussian,wehave∥ω∥ =1. BythefundementalresultsforSub-Gaussiandistribution,
+ψ2
+wehave
+∥f (ω)∥ ≤∥f ∥ ,∥f (ω)∥ ≤∥f ∥ .
+1 ψ2 1 lip 2 ψ2 2 lip
+From[28,Lemma2.8.6],wehaveand
+∥f (ω)f (ω)∥ ≤∥f ∥ ∥f ∥ ≤∥f ∥ ∥f ∥
+1 2 ψ1 1 ψ2 2 ψ2 1 lip 2 lip
+Thuswecompletetheproof.
+Nextweextendtheaboveargumenttovector-valuedfunctions. Westartwithabasicpropertyofthesub-exponential
+Orlicznorm.
+Lemma10. LetX andY besub-exponentialrandomvariables. Then
+∥X+Y∥ ≤∥X∥ +∥Y∥ .
+ψ1 ψ1 ψ1
+Proof. Seta:=∥X∥ andb:=∥Y∥ ,andlet
+ψ1 ψ1
+a
+α:= , p:=1/α, p∗ :=1/(1−α).
+a+b
+Using|X+Y|≤|X|+|Y|andHölder’sinequality,weobtain
+(cid:16)|X+Y|(cid:17) (cid:16)|X|+|Y|(cid:17)
+E[exp ]≤E[exp ]
+a+b a+b
+(cid:20) (cid:16)|X|(cid:17)α (cid:16)|Y|(cid:17)1−α(cid:21)
+=E exp exp
+a b
+(cid:20) (cid:16)|X|(cid:17)αp(cid:21)1/p
+≤E exp
+a
+(cid:20) (cid:16)|Y|(cid:17)(1−α)p∗(cid:21)1/p∗
+×E exp
+b
+≤2α21−α =2.
+Bythedefinitionof∥·∥ ,thisimplies∥X+Y∥ ≤a+b.
+ψ1 ψ1
+12
+APREPRINT-DECEMBER10,2025
+Proposition11. Letf =[fi]D andf =[fi]D beLipschitzmapsf ,f :Rd →RD. DefinethevectorLipschitz
+1 1 i=1 2 2 i=1 1 2
+seminorms
+(cid:118) (cid:118)
+(cid:117) D (cid:117) D
+(cid:117)(cid:88) (cid:117)(cid:88)
+∥f ∥ :=(cid:116) ∥fi∥2 , ∥f ∥ :=(cid:116) ∥fi∥2 .
+1 lip 1 lip 2 lip 2 lip
+i=1 i=1
+Thenthescalarrandomvariableg(ω):=f (ω)·f (ω)=(cid:80)D fi(ω)fi(ω)issub-exponentialand
+1 2 i=1 1 2
+∥g∥ ≤∥f ∥ ∥f ∥ .
+ψ1 1 lip 2 lip
+Proof. For each coordinate, fi(ω) and fi(ω) are Lipschitz functions of a Gaussian vector, hence sub-Gaussian;
+1 2
+moreover,
+∥fi(ω)∥ ≤∥fi∥ , ∥fi(ω)∥ ≤∥fi∥ .
+1 ψ2 1 lip 2 ψ2 2 lip
+By[28,Lemma2.8.6],theproductissub-exponential:
+∥fi(ω)fi(ω)∥ ≤∥fi∥ ∥fi∥ .
+1 2 ψ1 1 lip 2 lip
+UsingLemma10repeatedlyandthenCauchy–Schwarz,
+(cid:13) (cid:13)
+∥g∥ =(cid:13)(cid:80)D fi(ω)fi(ω)(cid:13) ≤(cid:80)D ∥fi(ω)fi(ω)∥
+ψ1 (cid:13) i=1 1 2 (cid:13)
+(cid:113)ψ1
+i=1 1
+(cid:113)
+2 ψ1
+≤(cid:80)D ∥fi∥ ∥fi∥ ≤ (cid:80)D ∥fi∥2 (cid:80)D ∥fi∥2
+i=1 1 lip 2 lip i=1 1 lip i=1 2 lip
+=∥f ∥ ∥f ∥ .
+1 lip 2 lip
+Corollary2. UnderthesameconditionsasProposition10,let{ω }m bei.i.d.samples. Then
+i i=1
+P(cid:0)(cid:13) (cid:13) m1 (cid:80)m i=1f 1(ω i)f 2(ω i)−E[f 1(ω)f 2(ω)](cid:13) (cid:13)≥ϵ(cid:1)
+(cid:32) (cid:40) (cid:41)(cid:33)
+ϵ2m ϵm (41)
+≤2exp −c min , .
+∥f ∥2 ∥f ∥2 ∥f ∥ ∥f ∥
+1 lip 2 lip 1 lip 2 lip
+Proof. By Proposition 11, g(ω) = f (ω)·f (ω) is sub-exponential with ∥g∥ ≤ ∥f ∥ ∥f ∥ . Applying the
+1 2 ψ1 1 lip 2 lip
+sub-exponentialBernsteininequality[28,Theorem2.9.1]gives
+P(cid:0)(cid:12) (cid:12) m1 (cid:80)m i=1g(ω i)−E[g(ω)](cid:12) (cid:12)≥ϵ(cid:1)
+(cid:32) (cid:40) (cid:41)(cid:33)
+ϵ2m ϵm
+≤2exp −c min ,
+∥g∥2 ∥g∥
+(cid:32) (cid:40)
+ψ1 ψ1
+(cid:41)(cid:33)
+ϵ2m ϵm
+≤2exp −c min , .
+∥f ∥2 ∥f ∥2 ∥f ∥ ∥f ∥
+1 lip 2 lip 1 lip 2 lip
+Corollary3. ChooseacompactsetK andrestrictx,y ∈K. Assumetheactivationin(11)isReLU.Thenthefinite
+kernelkˆsatisfiestheconcentrationboundinCorollary2. Inparticular,
+(cid:16) (cid:17)
+P ∥kˆ(x,y)−k(x,y)∥≥ϵ
+(cid:18) (cid:26) (cid:27)(cid:19)
+mϵ mϵ
+≤2exp −c min , , (42)
+L2(K) L(K)
+∀x,y ∈K.
+where
+L(K):=max ∥ϕ (·,x)∥
+x∈K NN lip
+(cid:118) 
+(cid:117) D
+(cid:117)(cid:88)
+=max x∈K(cid:116) ∥ϕi NN(·,x)∥2 lip.
+i=1
+Proof. ByProposition7,foreachx∈Kthemapω (cid:55)→ϕ (ω,x)isLipschitzwithfiniteconstant.HenceL(K)<∞,
+NN
+andtheclaimfollowsbyapplyingCorollary2.
+ThusL(K)isafinitenumber. Fromthefactϕ(·,x)satisfies(1),byCorollary2,weobtaintheconclusion.
+13
+APREPRINT-DECEMBER10,2025
+10 ImplementationDetails
+10.1 LongRangeArena(LRA)
+WeevaluateontheLongRangeArena(LRA)benchmark,astandardizedsuiteoflong-contextclassificationtaskswith
+sequencelengthsbetween1Kand16Ktokens. LRAiswidelyusedtobenchmarktheaccuracy–efficiencytrade-offsof
+Transformervariantsunderaconsistentevaluationprotocol.
+Codebasesandpreprocessing. AllLRAexperimentsareconductedusingtheofficialbenchmarkrepository,including
+its preprocessing pipelines, tokenization/feature construction, and fixed train/validation/test splits.2 We treat this
+codebaseasthesourceoftruthfordatahandlingandevaluation,anddonotmodifyanyofitsprocessingormetrics. For
+theSkyformerbaseline,werelyontheauthors’officialimplementationandtheirreleasedLRAtrainingscripts.3
+Trainingprotocol. ForeachLRAtask,wefollowtheoptimizer,learning-rateschedule,regularization,andbatching
+specifiedintheofficialLRAconfigurationfiles. Ourmethodisimplementedasadrop-inreplacementfortheattention
+module;allotherarchitecturalcomponentsandtask-specificsettingsarekeptidenticaltothecorrespondingbaselinesto
+ensureafaircomparison.
+10.2 Two-StageϕConversiononGLUE
+Weuseatwo-stageconversionpipelinetoswapthestandardsoftmaxattentioninapretrainedBERTmodelwithour
+attentionmechanism,whilepreservingtheoriginalquery/key/valueprojections. Thefullprocedureisimplementedin
+ourtrainingscript.
+Codebaseandtasks. AllexperimentsarebuiltontheHuggingFacetransformersanddatasetsstacks,using
+theofficialGLUEsplitsandevaluationmetrics.ThescriptsupportsthestandardGLUEclassificationtasksandSTS-B
+regression,andfollowsthesametokenizationandpreprocessingusedbythecorrespondingpretrainedcheckpoints.
+Attentionreplacement. StartingfromapretrainedBERTcheckpoint,wereplaceeveryself-attentionmodulewith
+ourattentionblock. Theswapisdoneinadrop-inmanner: thepretrainedlinearprojectionsforQ,K,andV arekept
+intact,andonlytheattentioncomputationischangedtoourformulation. Anyadditionalparametersspecifictoour
+method(e.g.,ϕ)areinstantiatedperlayerandheadfollowingthemodel’soriginalattentiongeometry.
+Stage 1: attention distillation. In the first stage, we freeze all pretrained parameters and train only the newly
+introducedcomponents(ourϕparameters). Theobjectiveistomatchtheteacherattentiondistributionfromtheoriginal
+softmaxattentionwiththestudentdistributioninducedbyourattentionmechanism. ThisstageusesAdamWwitha
+cosinescheduleandahigherlearningrate,andisrunforashortwarm-start(oneepochbydefault).
+Stage2: taskfinetuning. Afterdistillation,weunfreezethefullmodelandfinetuneend-to-endontheGLUEtask
+loss. Wefollowthestandardsupervisedsetupusedinourappendix: AdamW,batchsize8,learningrate10−5,zero
+weightdecay,upto10epochs,andearlystoppingwithpatience3basedonthevalidationmetricofeachtask.
+10.3 ViT-B/16ImageNet-1KConversion
+Weperformatwo-stageconversionofapretrainedViT-B/16modelonImageNet-1K,replacingtheoriginalsoftmax
+self-attentionwithourattentionmechanismwhilekeepingthepretrainedpatchembedding,positionalembeddings,
+andQ/K/V projectionsunchanged. Thegoalistoisolatetheimpactoftheattentionreplacementunderastandard
+large-scalevisiontrainingprotocol.
+Codebaseanddata. AllexperimentsuseastandardViTtrainingstack(timm-styleimplementations)andtheofficial
+ImageNet-1Ktrain/validationsplits. Imagesareresizedandcenter-croppedforevaluation,andtrainedwithcommon
+ImageNetaugmentations(randomresizedcropandhorizontalflip),optionallycombinedwithstrongerregularization
+suchasRandAugment,Mixup/CutMix,andlabelsmoothingtomatchtypicalViTfinetuningpractice.
+2google-research/long-range-arena
+3pkuzengqi/Skyformer
+14
+APREPRINT-DECEMBER10,2025
+Attentionreplacement. StartingfromaViT-B/16checkpointpretrainedwithsoftmaxattention,wereplaceeach
+multi-headself-attentionblockwithourattentionmoduleinadrop-infashion. Thepretrainedlinearlayersproducing
+Q,K,andV arereusedwithoutmodification;onlytheattentioncomputationisswapped. Anyadditionalparameters
+introducedbyourmethod(e.g.,ϕ-relatedparameters)areinitializedperlayer/headfollowingthemodel’soriginalhead
+structure.
+Stage1: attentiondistillation. Inthefirststage,wefreezeallpretrainedViTparametersandtrainonlythenew
+componentsintroducedbyourattentionmechanism. Wedistillattentionbymatchingtheteacherattentiondistribution
+fromtheoriginalsoftmaxmoduletothestudentdistributionproducedbyourmethod,usingthesameimagebatchesas
+thedownstreamtask. Thiswarm-startstageisrunforashortschedule(typicallyafractionofanepochtooneepochon
+ImageNet-1K)withahigherlearningrateforthenewparameters,andusesAdamWwithacosinedecayscheduleand
+smallornowarmup.
+Stage 2: supervised finetuning. After distillation, we unfreeze the entire network and finetune end-to-end on
+ImageNet-1KwithastandardViTrecipe. WeuseAdamW,cosinelearning-ratedecaywithwarmup,weightdecayin
+theusualViTrange,andmini-batchsizesconsistentwiththepretrainedsetup. Regularizationandaugmentationchoices
+arekeptidenticalacrossbaselinesandourconvertedmodeltoensureafaircomparison.
+Listing1: OurMLP-basedfeaturemapandlinearattention.
+class TaskSpecificProjections(nn.Module):
+# shared W_i^T x + b_i over tokens/heads
+def __init__(self, d: int, M: int):
+super().__init__()
+self.M = int(M)
+self.W = nn.Parameter(torch.randn(self.M, d) / math.sqrt(d))
+self.b = nn.Parameter(torch.zeros(self.M))
+def forward(self, x): # (B,H,N,d) -> (B,H,N,M)
+return torch.einsum("md,bhnd->bhnm", self.W, x) + self.b
+class ScalarMLP(nn.Module):
+# maps scalar u to L channels in one pass (L=1 gives OneMLP)
+def __init__(self, L=1, hidden=64, act="relu", nonneg=True):
+super().__init__()
+self.fc1 = nn.Linear(1, hidden)
+self.fc2 = nn.Linear(hidden, int(L))
+self.act = _act(act)
+self.nonneg = bool(nonneg)
+def forward(self, u): # (T,1) -> (T,L)
+y = self.fc2(self.act(self.fc1(u)))
+if self.nonneg:
+y = F.relu(y)
+return y
+class MLPLearnableFeatureMap(nn.Module):
+# phi(x) = (1/sqrt(M)) * [ f_l(w_i^T x) ]_{i,l}
+def __init__(self, M, L, hidden=64, act="relu", nonneg=True,
+chunk=1_000_000, shared_channels=False,
+ch_rms=False, ch_rms_target=0.1):
+super().__init__()
+self.M, self.L = int(M), int(L)
+self.scale = 1.0 / math.sqrt(self.M)
+self.chunk = int(chunk)
+self.shared = bool(shared_channels)
+self.ch_rms = bool(ch_rms)
+self.ch_rms_target = float(ch_rms_target)
+if self.shared:
+self.shared_mlp = ScalarMLP(self.L, hidden, act, nonneg)
+self.mlps = None
+else:
+15
+APREPRINT-DECEMBER10,2025
+self.mlps = nn.ModuleList(
+[ScalarMLP(1, hidden, act, nonneg) for _ in range(self.L)]
+)
+def forward(self, proj): # (B,H,N,M) -> (B,H,N,M*L)
+B, H, N, M = proj.shape
+u = proj.reshape(-1, 1).float() # (T,1)
+if self.shared:
+y = _chunked(self.shared_mlp, u, self.chunk) # (T,L)
+else:
+ys = [_chunked(mlp, u, self.chunk) for mlp in self.mlps]
+y = torch.cat(ys, dim=1) # (T,L)
+y = y.view(B, H, N, M, self.L)
+if self.ch_rms:
+eps = 1e-6
+rms = torch.sqrt(y.pow(2).mean((0, 1, 2, 3)) + eps) # (L,)
+s = (self.ch_rms_target / (rms + eps)).clamp(max=1.0)
+y = y * s.view(1, 1, 1, 1, self.L)
+return (y * self.scale).reshape(B, H, N, M * self.L)
+16

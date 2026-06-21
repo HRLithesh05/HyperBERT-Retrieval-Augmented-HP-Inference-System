@@ -1,0 +1,362 @@
+SPEECHRECOGNITIONBYSIMPLYFINE-TUNINGBERT
+Wen-ChinHuang1,2,Chia-HuaWu2,Shang-BaoLuo2,Kuan-YuChen3,Hsin-MinWang2,TomokiToda1
+1NagoyaUniversity,Japan2AcademiaSinica,Taiwan
+3NationalTaiwanUniversityofScienceandTechnology,Taiwan
+ABSTRACT callBERT-ASR,formulatesASRasaclassificationproblem,where
+theobjectiveistocorrectlyclassifythenextwordgiventheacoustic
+We propose a simple method for automatic speech recognition
+speechsignalsandthehistorywords.WeshowthatevenanAMthat
+(ASR) by fine-tuning BERT, which is a language model (LM)
+simplyaveragestheframe-basedacousticfeaturescorrespondingto
+trained on large-scale unlabeled text data and can generate rich
+awordcanbeappliedtoBERT-ASRtocorrectlytranscribespeech
+contextual representations. Our assumption is that given a history
+toacertainextent, andtheperformancecanbefurtherboostedby
+context sequence, a powerful LM can narrow the range of possi-
+usingamorecomplexmodel.
+ble choices and the speech signal can be used as a simple clue.
+Hence, comparing to conventional ASR systems that train a pow-
+erful acoustic model (AM) from scratch, we believe that speech 2. BERT
+recognitionispossiblebysimplyfine-tuningaBERTmodel. Asan
+initialstudy,wedemonstratetheeffectivenessoftheproposedidea BERT[4],whichstandsforBidirectionalEncoderRepresentations
+ontheAISHELLdatasetandshowthatstackingaverysimpleAM from Transformers, is a pretraining method from a LM objective
+ontopofBERTcanyieldreasonableperformance. with a Transformer encoder architecture [8]. The full power of
+BERTcanbereleasedonlythroughapretraining–fine-tuningframe-
+IndexTerms— speechrecognition,BERT,languagemodel
+work,wherethemodelisfirsttrainedonalarge-scaleunlabeledtext
+dataset, and then all/some parameters are fine-tuned on a labeled
+1. INTRODUCTION datasetforthedownstreamtask.
+TheoriginalusageofBERTmainlyfocusedonNLPtasks,rang-
+Conventional automatic speech recognition (ASR) systems consist ingfromtoken-levelandsequence-levelclassificationtasks,includ-
+of multiple separately optimized modules, including an acoustic ingquestionanswering[9,10], documentsummarization[11,12],
+model(AM),alanguagemodel(LM)andalexicon.Inrecentyears, informationretrieval[13,14], machinetranslation[15,16], justto
+end-to-end (E2E) ASR models have attracted much attention, due name a few. There has also been attempts to combine BERT in
+to the believe that jointly optimizing one single model is benefi- ASR,includingrescoring[17,18]orgeneratingsoftlabelsfortrain-
+cial to avoiding not only task-specific engineering but also error ing[19].Inthissection,wereviewthefundamentalsofBERT.
+propagation. Currentmain-streamE2Eapproachesincludeconnec-
+tionisttemporalclassification(CTC)[1],neuraltransducers[2],and
+2.1. Modelarchitectureandinputrepresentations
+attention-basedsequence-to-sequence(seq2seq)learning[3].
+LMsplayanessentialroleinASR.EventheE2Emodelsthat BERT adopts a multi-layer Transformer [8] encoder, where each
+implicitlyintegrateLMintooptimizationcanbenefitfromLMfu- layer contains a multi-head self-attention sublayer followed by a
+sion. Itisthereforeworthwhilethinking: howcanwemakeuseof positionwise fully connected feedforward network. Each layer is
+thefullpowerofLMs?Letusconsiderasituationthatweareinthe equippedwithresidualconnectionsandlayernormalization.
+middle of transcribing a speech utterance, where we have already TheinputrepresentationofBERTwasdesignedtohandleava-
+correctly recognized a sequence of history words, and we want to rietyofdown-streamtasks,asvisualizedinFigure1. First,atoken
+determine what the next word is being said. From a probabilistic embeddingisassignedtoeachtokeninthevocabulary.Somespecial
+point of view, a strong LM, can then generate a list of candidates tokens were added to the original BERT, including a classification
+whereeachofthemishighlypossibletobethenextword. Thelist token([CLS])thatispaddedto thebeginningofeverysequence,
+maybeextremelyshortthatthereisonlyoneanswerleft. Asare- where the final hidden state of BERT corresponding to this token
+sult, we can use few to no clues in the speech signal to correctly is used as the aggregate sequence representation for classification
+recognizethenextword. tasks,andaseparationtoken([SEP])forseparatingtwosentences.
+TherehasbeenrapiddevelopmentofLMsinthefieldofnatu- Second, a segment embedding is added to every token to indicate
+rallanguagesprocessing(NLP),andoneofthemostepoch-making whetheritbelongstosentenceAorB.Finally,alearnedpositional
+approachisBERT[4]. Itssuccesscomesfromaframeworkwhere embeddingisaddedsuchthatthemodelcanbeawareofinforma-
+apretrainingstageisfollowedbyatask-specificfine-tuningstage. tionabouttherelativeorabsolutepositionofeachtoken. Theinput
+Thankstotheun-/self-supervisedobjectivesadoptedinpretraining, representation for every token is then constructed by summing the
+large-scaleunlabeleddatasetscanbeusedfortraining,thuscapable correspondingtoken,segment,andpositionembeddings.
+oflearningenrichedlanguagerepresentationsthatarepowerfulon
+variousNLPtasks. BERTanditsvariantshavecreatedadominant
+2.2. Trainingandfine-tuning
+paradigminNLPinthepastyear[5,6,7].
+Inthiswork,weproposeanovelapproachtoASR,whichisto Two self-supervised objectives were used for pretraining BERT.
+simplyfine-tuneapretrainedBERTmodel. Ourmethod,whichwe The first one is the masked language modeling (MLM), which is
+1202
+naJ
+03
+]DS.sc[
+1v19200.2012:viXra
+Fig. 1: The input representation of the original BERT
+andtheproposedBERT-ASR. Fig.2:IllustrationofthedecodingprocessoftheproposedBERT-ASR.
+a denoising objective that asks the model to reconstruct randomly trainingsamplesfollowingtheruleinEquation(2):
+masked input tokens based on context information. Specifically,
+15% of the input tokens are first chosen. Then, each token is (1)  ([CLS])
+r re ap nl da oc med tow ki eth nf[ oM rA 1S 0%K] of fo tr he80 ti% meo ,f (3th )e keti pm te u, nc(2 h) anr ge ep dla fc oe rd 1w 0%ith oa
+f
+([CLS],y
+1)
+(y ,...,y )→ ([CLS],y ,y ) . (2)
+thetime. 1 T 1 2
+task-D spu eri cn ifig cfin pe a- rt au mni en tg er, sde ap reen id ni tn rog do un ceth de sd oow thn as ttr fie na em -tt ua ns ik n, gm ci an nim ba el
+.
+([..
+CLS],y ,...,y )
+1 t−1
+cheapintermsofdataandtrainingefforts.
+ThetrainingoftheBERT-LMbecomessimplyminimizingthefol-
+lowingcross-entropyobjective:
+3. PROPOSEDMETHOD
+I fn ort mhi us las te ec Lti Mon ,, aw nde te hx ep nla fi un rth ho erw exw tee nfi dn ie t- tt oun coe na sup mre etr aa cin oe ud stiB cE spR eT ecto
+h L LM
+=−(cid:88)N (cid:88)T
+P(y t(i)|[CLS],y 1(i),...,y t( −i) 1). (3)
+signalstoachieveASR. i=1t=1
+AssumewehaveanASRtrainingdatasetcontainingN speech
+utterances: D = (cid:104)X(i),y(i)(cid:105)N , with each y = (y ,...,y )
+ASR i=1 1 T
+being the transcription consisting of T tokens, and each X =
+3.2. BERT-ASR
+(x 1,...,x T(cid:48)) denoting a sequence of T(cid:48) input acoustic feature
+frames.Theacousticfeaturesareofdimensiond,i.e.,x ∈Rd,and
+t We introduce our proposed BERT-ASR in this section. Since
+thetokensarefromavocabularyofsizeV.
+the time resolution of text and speech is at completely different
+scales, for the model described in Section 3.1 to be capable of
+3.1. TrainingaprobabilisticLMwithBERT taking acoustic features as input, we first assume that we know
+the nonlinear alignment between an acoustic feature sequence
+We first show how we formulate a probabilistic LM using BERT, and the corresponding text, as depicted in Figure 3. Specifically,
+whichwewillrefertoasBERT-LM.Theprobabilityofobservinga for a pair of training transcription and acoustic feature sequence
+symbolsequenceycanbeformulatedas: (cid:104)(x 1,...,x T(cid:48)),(y 1,...,y T)(cid:105), wedenoteF
+i
+tobethesegmentof
+P(y)=P(y 1,...,y
+T)=(cid:89)T
+P(y t|y 1,...,y t−1). (1)
+w
+tf he ha et iu
+c
+Thre (cid:48)s
+is
+ac cfo orr uor sme ts ip cfo
+r
+fan rmd ai meng
+et
+sit −o
+c1
+ay n+i: b1F
+ei t so
+e=
+gt
+mi(
+,
+ex
+nat n ti e− d d1 w+ ine1
+t, os. e. Tt.,
+t
+0
+gx
+rt o=i
+u) p∈
+s0
+:.R XTti h×
+u
+=d s,,
+t=1 (F ,...,F ), and a new dataset containing segmented acoustic
+1 T
+Thedecoding(orscoring)ofagivensymbolsequencethenbecomes featureandtextpairscanbeobtained:D seg =(cid:104)F(i),y(i)(cid:105)N i=1.
+aniterativeprocessthatcalculatesallthetermsintheproduct,which WecanthenaugmenttheBERT-LMintoBERT-ASRbyinject-
+isillustratedinFigure2.Atthet-thtimestep,theBERTmodeltakes ing the acoustic information extracted from D seg into BERT-LM.
+a sequence of previously decoded symbols and the [CLS] token Specifically, as depicted in Figure 1, an acoustic encoder, which
+as input, i.e., ([CLS],y ,...,y ). Then, the final hidden state willbedescribedlater,consumestherawacousticfeaturesegments
+1 t−1
+correspondingto[CLS]issentintoalinearclassifier, whichthen to generate the acoustic embeddings. They are summed with the
+outputstheprobabilitydistributionP(y |y ,...,y ). three types of embeddings in the original BERT, and further sent
+t 1 t−1
+Totrainthemodel, assumewehaveatrainingdatasetwithN intoBERT.Notethattheacousticembeddingcorrespondingtothe
+sentences: D = {y(i)}N . Anessentialtechniquetotrainthe currentwordtobetranscribedisaddedtothe[CLS]tokenasshown
+text i=1
+model is to exhaustively enumerate all possible training samples. inFigure2.
+That is, each sentence with T symbols is extended to T different The probability of observing a symbol sequence y in Equa-
+Fig.3:Illustrationofthealignmentbetweenthetextand
+theacousticframes. Fig.4:Theaverageencoder. Fig.5:Theconv1dresnetencoder.
+tions(1)canthereforebereformulatedas: 3.3.2. Conv1dresnetencoder
+Thedrawbackoftheaverageencoderisthattemporaldependencies
+T
+P(y)=(cid:89) P(y |y ,...,y ,F ,...,F ). (4) betweendifferentacousticsegmentswasnotconsidered.Therefore,
+t 1 t−1 1 t
+weinvestigateasecondencoder,whichwewillrefertoastheconv1d
+t=1
+resnetencoder,asillustratedinFigure5. Whileithastheidentical
+Notethattheacousticsegmentofthecurrenttimestepisalsotaken segmentandlinearlayersastheaverageencoder,weaddLlearnable
+intoconsideration,whichisessentialforthemodeltocorrectlytran- residualblocksthatoperatesonX.Eachresidualblockcontainstwo
+scribe the current word being said. The training objective can be conv1dlayersoverthetimeaxisfollowedbyReLUactivations. It
+derivedbyreformulatingEquation(3)as: isexpectedthattakingthetemporalrelationshipbetweensegments
+intoaccountcanboostperformance.
+N T
+L =−(cid:88)(cid:88) P(y(i)|
+ASR t 4. EXPERIMENTS
+i=1t=1
+(cid:104)[CLS],F t(cid:105),(cid:104)y 1(i),F 1(cid:105),...,(cid:104)y t( −i) 1,F t−1(cid:105)). (5) 4.1. Experimentalsettings
+WeevaluatetheproposedmethodontheAISHELL-1dataset[20],
+Inanutshell,thetrainingofBERT-ASRinvolvesthreesteps.
+whichcontains170hrMandarinspeech. WeusedtheKalditoolkit
+1. PretrainaBERTusingalarge-scaletextdataset. [21]toextract80-dimlogMel-filterbankplus3-dimpitchfeatures
+andnormalizedthem. Thetrainingdatacontainedaround120kut-
+2. fine-tuneaBERT-LMonthetranscriptionsoftheASRtrain-
+terances,andtheexhaustiveenumerationprocessdescribedinSec-
+ingdataset,asdescribedinSection3.1,
+tion3.1resultedin1.7Mtrainingsamples. Forthefirststepofthe
+3. fine-tuneaBERT-ASRusingbothtextandspeechdataofthe proposedBERT-ASR,i.e.,pretrainingaBERTmodelusingalarge-
+ASRtrainingdataset. scale text dataset (cf. Section 3.2), we adopt an updated version
+ofBERT,whichiswholewordmasking(WWM),whoseeffective-
+ness was verified in [22]. The major difference between the up-
+3.3. Acousticencoder dated BERT and the classic BERT is in the masking procedure of
+MLM training. If a masked token belongs to a word, then all the
+We now describe two kinds of architectures for the acoustic en-
+tokensthatcompletethewordwillbemaskedaltogether. Thisisa
+coder mentioned in Section 3.2. Formally, the acoustic encoder
+muchmorechallengingtask,sincethemodelisforcedtorecoverthe
+takes the whole acoustic frame sequence X as input, and outputs
+wholewordratherthanjustrecoveringtokens. wedirectlyusedthe
+the corresponding acoustic embeddings (AE ,...,AE ), where
+1 T hfl/chinese-bert-wwm pretrained model provided by [22]1,
+AE
+t
+∈ Rdmodel with d
+model
+being the BERT embedding dimen-
+which was trained on Chinese Wikipedia. The modeling unit was
+sion.Theacousticencodermustcontainthesegmentlayertoobtain
+Mandarincharacter. WeconductedtheexperimentsusingtheHug-
+theacousticsegments.
+gingFace Transformer toolkit [23]. The alignment we used dur-
+ingtrainingwasobtainedbyforcedalignmentwithanHMM/DNN
+3.3.1. Averageencoder modeltrainedonthesameAISHELL-1trainingset.
+Weconsideredtwodecodingscenariosw.r.tthealignmentstrat-
+Wefirstconsideraverysimpleaverageencoder,asdepictedinFig- egy. First,theoracledecodingiswhereweassumedthatalignment
+ure4. First,thesegmentationisperformed. Then,foreachF t,we is accessible. Second, to match a practical decoding setting, as a
+average on the time axis, and then the resulting vector is passed naive attempt, we assumed that the alignment between each utter-
+through a linear layer to distill the useful information, while scal- ance and the underlying text is linear, and partitioned the acoustic
+ingthedimensionfromdtod model. Simpleasitseems,aswewill framesintosegmentsofequallengths.Thelengthwascalculatedas
+showlater,initialresultscanalreadybeobtainedwiththisaverage
+encoder. 1https://github.com/ymcui/Chinese-BERT-wwm
+Table1:ResultsontheAISHELL-1dataset.”Orac.”and”Prac.”denotetheoracledecodingandpracticaldecoding,respectively.”Conv1d
+resnetX”denotestheconv1dresnetencoderwithXresnetblocks.BestperformanceoftheBERT-ASRareshowninbold.
+Perplexity CER(Orac.) CER(Prac.) SER(Orac.) SER(Prac.)
+Model Acousticencoder
+Dev Test Dev Test Dev Test Dev Test Dev Test
+Trigram-LM - 133.32 127.88 - - - -
+LSTM-LM - 79.97 78.80 - - - -
+BERT-LM - 39.74 41.72 - - - -
+Average 5.88 9.02 65.8 68.9 96.4 105.8 60.3 63.5 91.5 100.3
+Conv1dresnet1 4.91 7.63 55.8 59.0 89.6 99.6 50.0 53.8 84.4 94.1
+BERT-ASR Conv1dresnet2 4.77 6.94 54.6 58.8 89.7 99.1 49.5 53.6 84.6 93.5
+Conv1dresnet3 4.83 7.41 54.8 58.9 89.8 99.4 49.6 53.6 84.6 93.9
+Conv1d-resnet4 4.78 7.29 54.6 59.0 89.5 99.3 49.4 53.9 84.4 93.8
+GMM-HMM - - - 10.4 12.2 - -
+DNN-HMM - - - 7.2 8.4 - -
+theaveragenumberofframesperwordinthetrainingset,whichwas Table2:Developmentsetresultswitharatiooftheleading
+25frames. Inbothscenarios,weconsideredbeamdecodingwitha characterscorrectlyrecognized.
+beamsizeof10.
+Model Ratio CER SER
+4.2. Mainresults
+0 54.8 49.6
+Wereportedtheperplexity(PPL)andcharactererrorrate(CER)in
+Conv1dresnet3 1/3 61.9 55.3
+Table1,withtheformerbeingametrictocomparetheperformance
+1/2 57.3 51.4
+ofLMsandthelattertocompareperformanceofASRsystems. As
+a reference, we first compared the PPL between different LMs. It
+can be clearly observed that the BERT-LM outperformed the con- onacharacter-basedBERT,itmightbeinfeasibleforthemodelto
+ventionaltrigram-LMandLSTM-LM,againshowingthepowerof learn to map the same acoustic signal to different characters. To
+BERTasaLM. examineifourmodelactuallysufferedfromthisproblem,thesylla-
+WethencompareBERT-ASRwithBERT-LM.Byusingasim- bleerrorrates(SERs)werecalculatedandreportedinTable1. Itis
+ple average encoder, a significantly lower PPL could be obtained, obviousthattheSERsaremuchlowerthantheCERs,showingthe
+showingthatusingacousticcluescangreatlyhelpguiderecognition. existenceofthisproblem. Thus,learningphonetically-awarerepre-
+Moreover,modelswithacomplexacousticencoderliketheconv1d sentationswillbeafuturedirection.
+resnetencodercouldfurtherreducePPL.LookingattheCERs,we
+observedthatevenwiththesimpleaverageencoder, apreliminary
+4.3.2. Errorpropagation
+successcouldstillbeobtained. Furthermore,theconv1dresneten-
+codersreducedtheCERbyalmost10%,showingthatitisessential
+BERT benefits from the self-attention mechanism and is therefore
+tohaveaccesstoglobaltemporaldependenciesbeforesegmentation.
+known for its ability to capture global relationship and long-term
+We finally consider the practical decoding scenario. There is
+dependencies. Thefull-powerofBERTmaynotbeexertedwitha
+asignificantperformancedegradationwiththeequalsegmentation,
+relativelyshortcontext. Thatistosay,ourBERT-ASRcanbepoor
+and it is evidence to the nonlinear relationship of the alignment.
+attheearlierdecodingsteps. Asaresult,theerrorinthebeginning
+Thus, finding an alignment-free approach will be an urgent future
+mightpropagateduetotherecursivedecodingprocess. Toexamine
+work[24,25]. TheperformanceoftwoconventionalASRsystems
+thisproblem,weassumethatthestartingcharactersuptoacertain
+directlyfromtheoriginalpaperofAISHELL-1[20]arealsolisted,
+ratio are correctly recognized, and start the decoding process de-
+andasignificantgapexistsbetweenourmethodandthebaselines,
+pendingonthosecharacters. Althoughweexpectedtheerrorrates
+showingthatthereisstillmuchroomforimprovement. Neverthe-
+todecreaseastheratioincreases,asshowninTable2,theCERsand
+less,tothebestofourknowledge,thisisthefirststudytoobtainan
+SERswerenotlower.Thus,weconcludethaterrorpropagationwas
+ASRsystembyfine-tuningapretrainedlarge-scaleLM.Moreover,it
+notamajorissue.
+isworthnoticingthattheproposedmethodisreadilypreparedforn-
+bestre-scoring[17],thoughinthispaperwemainlyfocusonbuild-
+inganASRsystem.Wethusleavethisasfuturework. 5. CONCLUSION
+Inthiswork,weproposedanovelapproachtoASRbysimplyfine-
+4.3. ErrorAnalysis
+tuningBERT,anddescribedthedetailedformulationandseverales-
+Inthissection,weexaminetwopossiblereasonsforthecurrentun- sentialtechniques. ToverifytheproposedBERT-ASR,wedemon-
+satisfyingresults. stratedinitialresultsontheMandarinAISHELL-1dataset,andan-
+alyzedtwopossiblesourcesoferror. Inthefuture,wewillinvesti-
+gatemorecomplexmodelarchitecturesandthepossibilityofmulti-
+4.3.1. PolyphoneinMandarin
+tasklearning,inordertoclosethegapbetweenourandconventional
+Mandarinisacharacter-basedlanguage,wherethesamepronuncia- ASRsystems.WealsoplantoevaluatetheBERT-ASRonotherlan-
+tioncanbemappedtodifferentcharacters. Asourmethodisbased guages,andapplytheproposedmethodforn-bestre-scoring[17].
+6. REFERENCES [19] H. Futami, H. Inaguma, S. Ueno, M. Mimura, S. Sakai, and
+T.Kawahara, “Distillingtheknowledgeofbertforsequence-
+[1] A. Graves, S. Ferna´ndez, F. Gomez, and J. Schmidhuber, to-sequenceasr,” arXivpreprintarXiv:2008.03822,2020.
+“Connectionisttemporalclassification: labellingunsegmented
+[20] H. Bu, J. Du, X. Na, B. Wu, and H. Zheng, “Aishell-1: An
+sequencedatawithrecurrentneuralnetworks,”inProc.ICML,
+open-sourcemandarinspeechcorpusandaspeechrecognition
+2006,pp.369–376.
+baseline,” inProc.O-COCOSDA,2017,pp.1–5.
+[2] A.Graves, “Sequencetransductionwithrecurrentneuralnet-
+[21] D.Povey,A.Ghoshal,G.Boulianne,L.Burget,O.Glembek,
+works,” arXivpreprintarXiv:1211.3711,2012.
+N. Goel, M. Hannemann, P. Motlicek, Y. Qian, P. Schwarz,
+[3] W.Chan,N.Jaitly,Q.Le,andO.Vinyals, “Listen,attendand J. Silovsky, G. Stemmer, and K. Vesely, “The kaldi speech
+spell: A neural network for large vocabulary conversational recognitiontoolkit,” inProc.ASRU,Dec.2011.
+speechrecognition,” inProc.ICASSp,2016,pp.4960–4964.
+[22] Y.Cui,W.Che,T.Liu,B.Qin,S.Wang,andG.Hu,“Revisiting
+[4] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova, “BERT: pre-trainedmodelsforchinesenaturallanguageprocessing,”in
+Pre-training of deep bidirectional transformers for language Proc.FindingsofEMNLP,2020.
+understanding,” inProc.NAACL-HLT,2019,pp.4171–4186.
+[23] T.Wolf,L.Debut,V.Sanh,J.Chaumond,C.Delangue,A.Moi,
+[5] A. Radford, K. Narasimhan, T. Salimans, and I. Sutskever, P.Cistac,T.Rault,R.Louf,M.Funtowicz,etal., “Hugging-
+“Improving language understanding by generative pre- face’stransformers: State-of-the-artnaturallanguageprocess-
+training,” 2018. ing,” arXivpreprintarXiv:1910.03771,2019.
+[6] Y.Liu,M.Ott,N.Goyal,J.Du,M.Joshi,D.Chen,O.Levy, [24] N. Moritz, T. Hori, and J. L. Roux, “Triggered attention for
+M.Lewis,L.Zettlemoyer,andV.Stoyanov, “Roberta: Aro- end-to-end speech recognition,” in Proc. ICASSP, 2019, pp.
+bustly optimized bert pretraining approach,” arXiv preprint 5666–5670.
+arXiv:1907.11692,2019.
+[25] L. Dong and B. Xu, “Cif: Continuous integrate-and-fire for
+[7] Z. Lan, M. Chen, S. Goodman, K. Gimpel, P. Sharma, and end-to-end speech recognition,” in Proc. ICASSP, 2020, pp.
+R.Soricut, “Albert: Alitebertforself-supervisedlearningof 6079–6083.
+language representations,” arXiv preprint arXiv:1909.11942,
+2019.
+[8] A.Vaswani,N.Shazeer,N.Parmar,J.Uszkoreit,L.Jones,A.N
+Gomez, L. Kaiser, and I. Polosukhin, “Attention is All you
+Need,” inProc.NeruIPS,pp.5998–6008.2017.
+[9] Z. Zhao Z. Wang Q. Ju H. Deng P. Wang W. Liu, P. Zhou,
+“K-BERT:Enablinglanguagerepresentationwithknowledge
+graph,” inProc.AAAI,2020.
+[10] C.Qu,L.Yang,M.Qiu,W.B.Croft,Y.Zhang,andM.Iyyer,
+“Bertwithhistoryanswerembeddingforconversationalques-
+tionanswering,” inProc.SIGIR,2019,pp.1133–1136.
+[11] Y.Liu, “Fine-tunebertforextractivesummarization,” arXiv
+preprintarXiv:1903.10318,2019.
+[12] J.Xu,Z.Gan,Y.Cheng,andJ.Liu, “Discourse-awareneural
+extractivetextsummarization,” inProc.ACL,2020,pp.5021–
+5031.
+[13] W.Lu,J.Jiao,andR.Zhang, “Twinbert:Distillingknowledge
+to twin-structured bert models for efficient retrieval,” arXiv
+preprintarXiv:2002.06275,2020.
+[14] R.NogueiraandK.Cho,“Passagere-rankingwithbert,”arXiv
+preprintarXiv:1901.04085,2019.
+[15] J. Zhu, Y. Xia, L. Wu, D. He, T. Qin, W. Zhou, H. Li, and
+T.Liu,“Incorporatingbertintoneuralmachinetranslation,”in
+Proc.ICLR,2020.
+[16] T. Zhang*, V. Kishore*, F. Wu*, K. Q. Weinberger, and
+Y. Artzi, “Bertscore: Evaluating text generation with bert,”
+inProc.ICLR,2020.
+[17] J. Shin, Y. Lee, and K. Jung, “Effective sentence scoring
+method using bert for speech recognition,” in Proc. ACML,
+2019,vol.101,pp.1081–1093.
+[18] J.Salazar,D.Liang,T.Q.Nguyen,andK.Kirchhoff,“Masked
+languagemodelscoring,” inProc.ACL,July2020,pp.2699–
+2712.

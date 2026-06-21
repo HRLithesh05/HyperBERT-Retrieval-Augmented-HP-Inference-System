@@ -1,0 +1,1426 @@
+Accurate Neural Network Pruning Requires
+Rethinking Sparse Optimization
+DenisKuznedelev∗ EldarKurtic∗ EugeniaIofinova∗
+Skoltech&Yandex ISTAustria ISTAustria
+denis.kuznedelev@skoltech.ru eldar.kurtic@ista.ac.at eugenia.iofinova@ista.ac.at
+EliasFrantar AlexandraPeste DanAlistarh
+ISTAustria ISTAustria ISTAustria&NeuralMagic
+elias.frantar@ista.ac.at alexandra.peste@ista.ac.at dan.alistarh@ista.ac.at
+Abstract
+Obtaining versions of deep neural networks that are both highly-accurate and highly-sparse is one of the
+mainchallengesintheareaofmodelcompression,andseveralhigh-performancepruningtechniqueshave
+beeninvestigatedbythecommunity. Yet,muchlessisknownabouttheinteractionbetweensparsityandthe
+standardstochasticoptimizationtechniquesusedfortrainingsparsenetworks,andmostexistingworkuses
+standarddenseschedulesandhyperparametersfortrainingsparsenetworks. Inthiswork,weexaminethe
+impactofhighsparsityonmodeltrainingusingthestandardcomputervisionandnaturallanguageprocessing
+sparsity benchmarks. We begin by showing that using standard dense training recipes for sparse training
+issuboptimal,andresultsinunder-training. Weprovidenewapproachesformitigatingthisissueforboth
+sparsepre-trainingofvisionmodels(e.g. ResNet50/ImageNet)andsparsefine-tuningoflanguagemodels(e.g.
+BERT/GLUE),achievingstate-of-the-artresultsinbothsettingsinthehigh-sparsityregime,andproviding
+detailedanalysesforthedifficultyofsparsetraininginbothscenarios. Ourworksetsanewthresholdinterms
+oftheaccuraciesthatcanbeachievedunderhighsparsity,andshouldinspirefurtherresearchintoimproving
+sparsemodeltraining,toreachhigheraccuraciesunderhighsparsity,butalsotodosoefficiently.
+1 Introduction
+Thedifficultyoffindingdeepneuralnetworks(DNNs)thatarebothaccurateandsparse,i.e.,closelymatchtheaccuracyof
+densemodelswhilehavingalargemajorityoftheirweightssettozero, isoneofthemainchallengesintheareaofmodel
+compression. Ontheconceptualside,thischallengeconnectstofundamentalquestionsrelatedtotheLotteryTicketHypothesis
+(LTH)[18,19],whichpositedthatsuchsparsemasksexist,andthat,insomecases,theycanevenallowaccuratetrainingof
+sparsemodelsfromscratch,thatis,applyingthesparsitymaskatinitialization. Onthepracticalside,obtaininghighly-sparseand
+accuratenetworkscanleadtosignificantpracticalspeedups,bothforinference[56]andtraining[57].
+Inthiswork,wefocusonthechallengeofobtainingaccurateDNNsinthehigh-sparsityregime,andinvestigatethebarriersto
+obtaininghighly-sparseandhighly-accuratevariantsofDNNsforstandardvisionandlanguagetasks. Wemainlyfocusontwo
+tasksthatare,arguably,thestandardbenchmarksforsparsityinvisionandlanguage,respectively: imageclassificationusing
+theResNet50model[25]ontheImageNet-1Kdataset[61],e.g.[27,14,21,16,67,65,60],andlanguagemodellingusingthe
+BERT-basemodel[12]ontheGLUEbenchmarkdatasets[73],e.g.[64,27,42,43]. Roughly,forbothbenchmarks,itisknown
+thatsparsitieslowerthan90%canbeachievedwithapproximately1%accuracylossrelativetotheoriginaldensemodel,but
+accuracyrapidlydecreasesinthe90-95%range[27,16],andthatdecreasesaredrasticathigher(≥95%)sparsities[67,43]. In
+thispaper,weinvestigatethereasonsbehindthisaccuracylossduetosparsity,mainlytargetinghighsparsity,i.e. sparsities
+between90%and99%,studyingthedifficultyofobtainingaccuratemodelsinthisrange.
+Contribution. We begin from the observation that, when training sparse models from scratch, following standard dense
+trainingschedules,sparsemodelsshowclearevidenceofundertraining: boththeiraccuracyandlossfailtosaturate,andtheir
+∗Theseauthorscontributedequally.Authororderwasdeterminedbyexperimentalload(highestfirst).
+3202
+peS
+8
+]GL.sc[
+2v06020.8032:viXra
+outputcontinuestohavehighentropy. Thisfindingsuggeststhatmaximizationoftheaccuracyofsparsemodelsrequireslonger
+trainingthanthedenseoptimizationrecipesadoptedinmostoftheworkonmodelsparsification.
+Motivatedbythisobservation,weproposeacombinationoftechniqueswhichcanmitigatetheinherentdifficultyofsparse
+training. Asaconsequence, wesignificantlyimproveonthebestcurrently-knownsparsity-accuracytrade-offsonstandard
+sparsity benchmarks for both image classification and language modelling. More precisely, we obtain, for the first time,
+highly-accuratesparseversionsofResNet50,suchasa90%-sparsemodelwith78.5%Top-1accuracy,a95%-sparsemodel
+with 77.7% Top-1 accuracy, and a 98%-sparse model with 75.2% Top-1 accuracy. In addition, we show that stable results
+canbeobtainedevenforextremesparsities(e.g.,99%). Forlanguagemodels,weshowthatonthemostchallengingtasks,as
+measuredbythedropinaccuracyrelativetothedensemodel,wecanimproveresultsby3pointsinaccuracyrelativetothe
+currentstate-of-the-artresultsat90%sparsity. Wearriveattheseresultsasfollows:
+• We perform an analysis of the output and training characteristics of models trained using current state-of-the-art
+techniques,relativetotheirdensecounterparts. First,weshowthatsparseDNNsobtainedviamanycurrenttechniques
+behavesimilarlytoundertraineddensemodels: specifically,theytendtohavehighoutputentropy(alternatively,low
+“outputconfidence”),whichcorrelateswiththeirreducedaccuracy.
+• Thisanalysisprovidesclearevidencethatoptimizingsparsemodelsismoredifficultthanstandarddenseoptimiza-
+tion[15]. Thisobservationstandsincontrasttothefactthatmostcurrentsparsificationtechniquesusestandarddense
+training recipes for fine-tuning and recovery. We exploit this insight to obtain state-of-the-art accuracy for sparse
+modelsintwopopularscenarios: sparsepretraining,i.e. trainingsparsemodelsfromscratch,andsparsetransfer,i.e.
+optimizingasparsepretrainedmodelontoatargettransfertask.
+• Inthesparsepretrainingscenario,illustratedbythestandardtaskofobtainingahighly-sparseResNet50modelon
+theImageNetdataset,weshowthatwecancircumventthedifficultyofsparsetrainingbyadoptingavariantofthe
+AlternatingCompressed/Decompressed(AC/DC)algorithm[60]fortrainingsparseDNNs,whichhasguaranteesfor
+sparserecovery. Specifically,weshowthat,byscalingthealgorithm’sruntime,wecanobtainstate-of-the-artresultsfor
+sparsepretrainingonImageNetforResNet50andMobileNetmodels,andreachextremelyhighsparsities(e.g. 98%
+and99%)whilestillobtainingstableresults. Moreover,onlysparsemodelsbenefitfromextendedtraining,whereas
+densemodelsstarttooverfitwithlongertraining.
+• Inthesparsetransferscenario,popularinlanguagedomain,thedifficultyofsparsetrainingcanmanifestitselfthrough
+bothundertrainingandoverfitting,dependingontheparametrizationofthechosentransferlearningrecipe,specifically
+onthetraininglength. Weaddressthisviaamodifiedversionofthegraduallayerunfreezingapproach[31],tailored
+towardsasparsetransferlearningscenario,whichallowsustoobtainstate-of-the-artresultsinthecaseofBERT-base
+transferondownstreamdatasets.
+Discussion. Overall,ourresultssuggestthatthedifficultyofobtaininghighly-accuratesparsemodelsiscloselylinkedtothe
+difficultyofaccuratesparseoptimizationusingcurrentstate-of-the-arttechniques. Specifically,ourworkimprovesthebest
+knownresultsonstandardsparsitybenchmarks,forbothsparsepretrainingandsparsefinetuning,bothintermsofabsolute
+accuracy,andaccuracylossrelativetothedensebaseline. Moreover,weobservethefollowing:
+• Achievingstate-of-the-artsparsity-vs-accuracytrade-offscurrentlyrequiresusingsignificantadditionalcomputational
+complexityandmoreepochsfortrainingthesparsemodels,relativetothebestknowndensetrainingmethods. Inturn,
+thissuggeststhatsparseoptimizationmaybeinherentlyharderthanitsdensecounterpart.
+• Reachinghighvalidationaccuracyforsparsemodelsisstronglylinkedtoreachinglowtrainingloss,whichoccursat
+aslowerrateforsparsemodelsinthecaseofSGD-basedoptimization. Atthesametime,wedoobserveoverfitting
+behavior(decreaseofvalidationaccuracyw.r.t. increasedtrainingtime),especiallyatlowersparsities.
+• Tofurtherinvestigatethehardnessofsparseoptimization,weperformananalysisofthelosslandscapeofaccurate
+sparse networks both in terms of sharpness and loss interpolation / mode connectivity. We observe that achieving
+highly-accuratesparsenetworksfrominitializationrequiresovercomingmultiplelossbarriers,andthatsparsitymask
+explorationmaybeakeyingredientforovercomingthesebarriers.
+• Inaddition,weinvestigatetherelationshipbetweenstandardhyperparameterssuchasweightdecay,ontheonehand,
+andsparsitystructure,ontheother. Wefindthatcarefulsettingofweightdecayiscriticalforaccuratesparsity,andthat
+weightdecayadditionallyinduces(partial)structuredsparsityinhighly-sparsemodels. Thisprovidesafirstexplanation
+totheemergenceofstructuredsparsityinunstructuredsparsenetworks,whichhasbeenobservedpreviously[60,33,77].
+Ourresultssetnewaccuracythresholdsforsparsemodelsusingrelativelysimpletechniques. Theyshouldserveasmotivation
+forthecommunitytodeviseimprovedsparsity-awareoptimizationtechniques,specificallyallowingforfaster,moreefficient
+accuracyrecovery.
+2
+2 RelatedWork
+The goal of most sparsification methods [27] is to create a DNN that is as accurate as possible, while maximizing sparsity.
+This goal can be achieved via different strategies: for instance, post-training sparsification methods assume a pretrained
+dense model, from which weights are removed either in a single step (one-shot) or progressively (gradual pruning). By
+contrast, in sparse training methods, parameters are pruned from the model during training from scratch, either close to
+initialization[16,37,46,70,66],orprogressivelyasthemodelistrained[24,21,65]. Asubsetofsparsetrainingmethodsare
+dynamic,inthesensethatweightsmaybereintroducedduringtraining[16,60].
+Inthiswork,wemainlyfocusonthehigh-sparsityregime,inwhichsparsetrainingmethodsprovidethebestknownaccuracy-
+vs-sparsitytrade-offs. Webeginbydiscussingmethodsforcomputervision. Here,GradualMagnitudePruning(GMP),inwhich
+thelowest-magnitudeweightsareprogressivelyremovedthroughouttraining,isacommonbaseline. In[21],GMPwasshownto
+becompetitivewithmoresophisticatedpruningmethodsonimageclassificationmodelswhenproperlytuned;similarresults
+werelatershownforlanguagemodels[42].
+TheRigLpruningmethod[16]isacommon, high-performingbenchmarkfordynamicsparsetraining. Inthismethod, the
+weightsareinitiallyprunedtothetargetsparsityandtrainedthrough(sparse)stochasticgradientdescent. Periodically,however,
+themaskisupdatedbyselectingweightswiththehighestmagnitudegradient,subjecttoalimitonthetotalmaskchange. The
+authorsrunthismethodusingtwosparsitytargets-Uniformsparsity,wherealllayers(exceptthefirstandlast)areprunedtothe
+sameproportion,andErdo˝s–RényiKernel(ERK),wherelayersparsitytargetsaresettooptimizeperformance. Theauthorstest
+theirmethodinthenormal-schedule(100epochsonImagenet)and5xtrainingregime,gettingresultsof73.22%validation
+accuracyand74.63%validationaccuracyat95%global(ERK)anduniformsparsity,respectivelywhentrainingfor500epochs.
+Extendingtrainingto10000epochs(100x)furtherallowedtheauthorstoproduce99%sparse(ERK)ResNet50modelswith
+68.5%accuracyonImageNet. RigLwasimprovedbycombiningitwithITOP[49],byalteringtraininghyperparametersto
+encouragemaskexploration,whichwasshowntoimproveRigLresultsatmedium(80-90%)sparsity(seeTable 1).
+TheGraNet[50]methodextendsthisapproachbymakingitgradual-eitherstartingfromadensenetworkandperforming
+RigL-likeupdateswhilesimultaneouslyincreasingsparsityuntilthetargetsparsityisachieved,orbystartingbyapartially
+sparse(50%)networkanddoingthesame. Modelstrainedwiththesparse-initversionofGraNetachieved72.3%validation
+accuracyat95%globalsparsitywhentrainingfor100epochs.
+TheAC/DCpruningmethod[60]alternatesdenseandsparsepruningphasesofseveralepochseach,effectivelyco-trainingdense
+andsparsemodels. SimilartoRigL,AC/DCwastestedinthenormalandextendedtrainingregime,creating95%globallysparse
+ImageNet-1KResNet50modelswith73.14%top-1accuracy,and68.44%top-1accuracy98%sparsemodelsafter100epochsof
+training. Theauthorsalsoexperimentwithextendedtrainingtimes,producing95%uniformsparsityResNet50modelswith
+74.3%validationaccuracy.
+AnothersuccessfulpruningapproachisthecombinationofPowerpropagation[66]withTop-KAST[37]. InPowerpropagation,
+theweightsarereparametrizedusingf(w)=w|w|α−1forα>1,effectivelyencouraginghigh-magnitudeweightstocontinue
+increasing while lower-magnitude weights are driven toward 0. Top-KAST is a dynamic sparse training scheme that is
+largelysimilartoRigL:inTop-KAST,foratargetdensityD,thegradientsofthetopD′ <Dweightsarecomputedineach
+backpropagationroundandallowedtoaccumulate,andthemasksattheserespectivesparsitiesareperiodicallyrecomputed. The
+combinationofthesetwomethodsresultsin77.16%accuracyat90%sparsitywhentrainedfor3xtheirbaselineof32Ksteps.
+Therecently-proposedST-3method[69]usesthetechniqueofsoftthresholdingwithstraight-throughgradientestimationto
+progressivelypruneneuralnetworkswhileallowingweightstomovemoresmoothlybetweenthedenseandsparsestates. Using
+thismethod,theauthorswereabletoachieveImageNetaccuraciesofbetween74%and75%at96%sparsityonResNet-50,
+dependingonthemethodvariantused.
+Additionally,someworkshaveexploredthedifficultyofsparseoptimization[15],exploredchangestodensetrainingpipelines
+toimprovesparsetraining[1,35],orfocusedonthecreationofsparseaccurateneuralnetworksoutsideofthestandardparadigm
+ofsimultaneouslysearchingfortheoptimalmaskandweights. Notably,[49]exploredtheimpactofmaskexploration(thatis,
+thetotalnumberofexploredparametersatanypointinsparsetraining),demonstratingthepositiveeffectofextendedtraining
+onbothsparsenetworkperformanceandtotalnumberofexploredparameters. TheSTEP[52]learningmethodexploredthe
+interactionofsparsitywiththeAdamoptimizer[38],findingthatthemaskedweightsleadtoanincorrectestimateofthesecond
+momentduringoptimization;theseobservationsledtotheirproposalofanewmethodforN:Msparsitythatalleviatesthese
+effects. TheGradMaxmethod[17]initializesasmallneuralnetwork,thenusespredictedgradientstogrowalarger(whilestill
+small)neuralnetworkbyaddingadditionalneurons.
+Languagemodels Forlanguagemodels,thestandardcompressionpipelineconsistsoftwostages: pre-trainingonalarge
+unlabeledtextcorpusfollowedbyfine-tuningonasmallandlabeledtask-specificdataset. Theformerisusedtocapturethe
+statisticalpatternsandrelationshipsthatexistinthenaturallanguage,allowingthemodeltorecognizeandevengeneratevarious
+3
+linguisticpatterns. Thelatterstage,fine-tuningonadownstreamtask,buildsontopofthelearnedrepresentationsandadapts
+themtosolvespecifictaskssuchastextclassification,sentimentanalysis,duplicatedetection,etc. Sparsityhasbeenexploredin
+bothstages: pruningduringpre-trainingandpruningduringfine-tuning.
+MethodssuchasMovementPruning[63]andTheOptimalBERTSurgeon(oBERT)[43]makeuseoffirst-order(gradient)and
+second-order(curvature)information,respectively,toguidepruningdecisionsduringthefine-tuningstage. However,recent
+workobservedtwoproblemswiththisapproachwhenappliedonsmalldatasets: [80]demonstratedinstabilityduetolarge
+variabilityofestimatedimportancescores,while[32]observedoverfittingdespitereducedexpressivepowerduetopruning.
+Fromthepracticalside,thisapproachislessfavorableforpractitionersasitrequiresextensivepruning-domainknowledgeto
+properlyconfigureprunersforeachmodelanddatasetcombination. Therefore,themainfocusofourworkisontheotherstage,
+leveragingalreadysparsepre-trainedmodelswithtransferlearningtoobtainhighlyaccuratetask-specificfine-tunedmodels.
+PruneOnceforAll(PruneOFA)[79]andoBERT[43]representthemostrecentstate-of-the-arttechniquesaddressingthis
+problem. Bothmethodsfirstprunethemodelduringthepre-trainingstage,andthenapplytransferlearningwithafixedsparsity
+masktoobtainfine-tunedandsparsemodelsonvariousdownstreamdatasets.
+Impactofsparsificationbeyondtop-1accuracy Anopenareaofresearchistheimpactthatpruningingeneral,andthe
+choiceofpruningmethodinparticular,haveontheresultingmodel. Inparticular,prunedmodelshavebeenshowntobemore
+vulnerabletobias[28,29,34],andworseatpredictionaccuracyunderdistributionshift[48]. Recentworksby[8]and[34]
+investigatetheeffectsofpruningonarangeofmodeltrustworthinessmetricsandfindmixedresults,withsparseneuralnetworks
+havingbettercalibration,butexaggeratingspuriouspatternsintheexistingdata. Finally,workssuchas[33]and [9]investigated
+thecapacityofsparseCNNsfordomainadaptationviatransferlearning,findingthatsparselytrainednetworkscanhavemore
+generalizablefeaturesthandenseones.
+3 TheDifficultyofSparsePretrainingofVisionModels
+3.1 Background
+Formally,accuratepruningisaconstrainedoptimizationproblemwhich,giventheobjectiveofminimizingalossfunctionL,
+aimstofindan“optimal”sparsitymaskM⋆withagiventargetsparsitys,fractionofzeroparameters,2andweightsW⋆such
+that
+M⋆,W⋆ =argmin [L(M⊙W)] nonzero(M)≤(1−s)numel(M). (1)
+maskM,weightsW
+Initsgeneralform,whereboththeoptimalmaskandtheoptimalweightsmustbedetermined,thisapproachisNP-complete[5],
+evenforsimpleleast-squaresloss. However, thisproblemcanbemadetractableifweassumeafixedmask, orwewishto
+approximatethesparsityofthemask[2].
+Inthecontextofpruning,thisprocedurecanbelogicallysplitinto1)determiningthesparsitymaskM,whichisoftenseparated
+from2)theoptimizationprocedureoverthenon-zeroweights. Forinstance, thestandardLotteryTicketHypothesis(LTH)
+approach[18,9]istofirstidentifya“ticket”maskbyperformingweightselectionbymagnitudeoveranalready-trainedmodel,
+followedbySGD-basedfinetuning,usingtheinitializationandthesamesetofhyperparametersasfordensetraining.
+Whileseveralnovelwaysofchoosingorupdatingthesparsitymaskchoice(step1),havebeeninvestigated,byandlarge,for
+thesecondstep,thatofoptimizingtheremainingweights,sparsetrainingmethodslargelyemulatethehyperparametersofthe
+baselinedensemodel,includingthetotalnumberoftrainingepochs[21,36,16,60]. However,itisintuitivethattheproblem
+ofsimultaneouslyfindingnear-optimalweightsandanear-optimalmaskmaybehardertosolvethanastandarddenseloss
+minimizationproblem.
+Thisnaturallymotivatesanin-depthinvestigationintothefollowingquestions: canoptimizationoversparsenetworksconverge
+withthesamerateasoverdenseones?,andaredensetrainingrecipeswell-suitedforsparsetraining? Inthispaper,weprovide
+evidence that the answer to both questions is negative, suggesting that improved optimizers may be required for obtaining
+accuratesparsemodelsunderreducedtrainingbudgets.
+3.2 SparseVisionModelsShowEvidenceofUndertraining
+Webeginbyinvestigatingcorrelationsbetweentheperformanceandoutputcharacteristicsofdenseandsparsemodelstrained
+forincreasingnumberofepochs. Specifically,weexaminethreekeymetrics: Top-1accuracyonthevalidation/testset,losson
+thetrainset,andpredictionentropyonthevalidation/testsetforthetrainedmodels,whilescalingthenumberoftrainingepochs
+andtheassociatedhyperparameterscorrespondingly. Wedetailthesemetricsbelow.
+2Asparsitymaskissimplyabinarytensorofthesamedimensionsasthemodel,with0attheindicesofthesparsifiedentries,and1atthe
+otherindices.
+4
+TrainLossandOutputEntropy. Weexaminemodelfittothetrainingdataviathetraining(cross-entropy)lossatthelast
+epoch,andoutputpredictionsviatheinformation-theoreticnotionofentropy. Lowpredictionentropyimpliesthattheprediction
+weightislargelyconcentratedinasingleclass,whileahighentropysuggeststhatitisspreadoutoverseveralclasses. Intuitively,
+theentropyofthemodelisrelatedtoits“confidence”inpredictions,andisindependentofwhetherthepredictionsarecorrect
+(andsocanbemeasuredonunlabeleddata). Conversely,lowtraininglossmeasuresthemodel’sfittothetrainingdata.
+Wecomputethecross-entropylossandpredictionentropybytakingthesoftmaxoverthevectorofoutputvaluesofthenetwork
+andthenapplyingtherespectivestandardformulas,wherethecross-entropyistakenwithrespecttothecorrectlabeldistribution
+forthemodel(1forthecorrectclassand0otherwise). ForanoutputofanetworkoutputtingavectorZ =(z ,z ,...,z )of
+1 2 C
+sizeC withcorrectlabelL,theentropyH andthecross-entropyCE aregivenbythefollowingformulas:
+   
+(cid:88)C ezi  ezi   ezL 
+H(Z)=− log  and CE(Z)=−log . (2)
+C  C   C 
+i=1 (cid:80) ezj (cid:80) ezj (cid:80) ezj
+j=1 j=1 j=1
+Aswewilldemonstrate,weexpectasufficientlylargeandwell-trainedmodeltohave(a)lowlossonthetrainingdataand(b)
+fairlylowaveragepredictionentropy,whileamodelthatisnotwell-trainedtohavehighpredictionentropy. However,asis
+conventionallyknown,continuedtrainingondenseandlow-sparsitymodelsresultinginoverfittingwilllowerthesemetrics
+further.
+3.2.1 Example1: SparseTrainingonImageNet
+Experimentalsetup. WefirstexaminevalidationaccuracyontrainedsparseanddenseResNet50modelsontheImageNet-1K
+datasetandcompareitto(a)predictionentropyonthevalidationdatasetand(b)thetrainlossonthelastepochoftraining. All
+modelsweretrainedusingstandardhyperparameters(seeAppendixA)exceptforthedifferenceinnumberoftrainingofepochs
+indifferentexperiments. Measurementsrepresentthefinalaccuracyandentropyafterthelasttrainingepoch,soeachmarker
+ontheplotsrepresentsafullexperiment,ratherthananintermediatecheckpoint. SparsemodelswereprunedwithAlternating
+Compression/Decompression(AC/DC)[60],likewiseadjustingthetotalnumberofcompressedanddecompressedphasestothe
+totalrunlength. AC/DCwaschosenasitwasamongthebest-performingmethodsacrossallsparsitiesandtraininglengths(see
+Section3.3.1). WeusetheFFCVlibrary[45]forfastloadingofthedata. Incontrastwithotherrunspresentedinthispaper,we
+donotuseprogressiveresizingorlabelsmoothing,asthelatterexplicitlyencourageshighpredictionentropyandcross-entropy.
+Intheseexperiments,wekeepthefirstandlastlayerdense.
+0.77
+0.76
+0.75
+0.74
+0.73
+0.72
+0.71
+0.70
+0 100 200 300 400 500
+Number of training epochs
+noitadilaV
+,ycaruccA
+1-poT
+1.2
+1.0
+Sparsity 0.8
+0
+80
+90 0.6
+95
+98
+0.4
+0 100 200 300 400 500
+Number of training epochs
+ssoL
+niarT
+Sparsity
+0 90 98 1.4 80 95 1.3
+1.2
+1.1
+1.0
+0.9
+0.8
+0.7
+0 100 200 300 400 500
+Number of training epochs
+noitadilaV
+,yportnE
+Sparsity
+0 90 98 80 95
+Figure1: Averagevalidationaccuracy(left),Trainlossatfinalepoch(center),andEntropy(right)forsparseanddenseImageNet
+modelstrainedfordifferentnumbersofepochs. Thehighest-accuracymodelforeachsparsitylevelishighlightedwithalarger
+marker. Thecross-entropylossandentropylevelofthedensemodelisalsoshownwithadashedline,tosimplifycomparison.
+Results. OurresultsarepresentedinFigure1. Ontheleftpanel,weshowthetop-1accuracyofthefinalmodels. Weobserve
+that80%and90%sparsemodelsreachanaccuracythatissimilartodensemodels,evenslightlyexceedingdenseaccuracyat
+80%sparsity. Accuracydoesdropathighersparsity(95%and98%);thisisconsistentwiththeoriginalAC/DCpaperandresults
+fromotherpruningmethods. Examiningaccuracyacrossepochbudgets,andfocusingonthebest-performingmodelforeach
+sparsitylevel,weobservethefollowing:
+• Thedensemodelrequiresthefewestepochs(88)toreachitsbestvalidationaccuracy,andextendingthetrainingrecipe
+resultsinworseperformanceforthedensemodel,commonlyknownas“overfitting.”
+• Theoutcomechangesifweexaminesparsemodels,forwhichtheidealtraininglengthincreaseswithsparsity: 250
+epochsfor80%and90%sparsemodels,andatleast500epochs—thelongestschedulewetriedinthisexperiment—for
+5
+95%and98%sparsemodels. Evenat500epochs,theaccuracyincrease/lossdecreaseforthesemodelsdoesnotappear
+tobesaturated.
+Wenowexaminelossonthetrainingdatasetandpredictionentropyforthesameexperimentinmoredetail. Thesetwometrics
+giveustwodifferentwaystoconsidertheconvergenceofourmodel. The(cross-entropy)lossonthetrainingdatashowshow
+welltheparametersofthemodelfitthelearningobjective;conversely,thepredictionentropyonthevalidationdata,although
+similarincalculation,reflectsthemodel’sconfidenceinitspredictionswhenpresentedwithpreviouslyunseendata;additionally,
+unlikecross-entropy,itislabel-independent.
+Weobservethat,forallsparsitylevels,bothmetricsbehaveverysimilarly. Specifically,bothdecreasewhenthenumberof
+trainingepochsisincreased,andsparsemodelstrainedforthestandard100epochsshowsimilartraininglossandprediction
+entropytodensemodelstrainedforfarfewerepochs. Forexample,densemodelstrainedfor24epochshaveasimilartraining
+lossandpredictionentropyto95%sparsemodelstrainedfor100epochs, whiledensemodelstrainedfor100epochshave
+aslightlylowertraininglossandpredictionentropythan80%sparsemodelstrainedfor250epochs. Whenweconsiderthe
+best-performingmodelsattheirrespectivesparsitylevels,wefindthattheyhavesimilartraininglossandpredictionentropyto
+thetop-performingdensemodel,incaseswheresuchlowloss/entropycanbeachievedinareasonablenumberofepochs(at80%
+and90%sparsity);atallsparsities,performancedropsformodelswhosetraininglossandpredictionentropyfallbelowthis
+value.
+Discussion. Thesefindingsfurthersupportourhypothesisthat,duetotheinherentdifficultyofsparseoptimization,using
+standardtrainingrecipesisnotsufficientforsparsetraining,andsuggeststhatlongertrainingmaymitigatethiseffect. Further,
+resultssuggestthattraininglossand/orpredictionentropymaybeusefulcriteriatovalidatethatthesparsemodelsareproperly
+trained3,withthelattercriterionbeingalsousefulincaseswhereaccesstotraindata,ortoanylabeleddata,isnotpossible.
+3.2.2 Example2: SparseTrainingonCeleb-A
+Tovalidateourfindings,werepeatthisexperimentontheCeleb-ADataset[51]. Thisdatasetconsistsofacombined202599
+faceimagesof10177celebritiescollectedfromthepublicdomain,automaticallycroppedtotheface,andannotatedwith40
+binarylabels. Duetoitscontent,thisdatasetisfrequentlyusedtostudybiasinmachinelearningmodels,andhasalsobeenused
+instudiesontheeffectofsparsityonbias[28,34].
+0.922
+0.920
+0.918
+0.916
+0.914
+0.912
+0.910
+0 50 100 150 200
+Number of training epochs
+ycarucca
+egarevA
+0.20
+0.18
+Sparsity 0.16 0.0
+90.0 0.14
+95.0
+98.0
+0.12
+99.0
+99.5
+0.10
+0 50 100 150 200
+Number of training epochs
+ssoL
+niarT
+0.28
+0.26
+Sparsity 0.24 0.0
+90.0 0.22
+95.0
+98.0 0.20
+99.0
+99.5 0.18
+0 50 100 150 200
+Number of training epochs
+niatrecnu
+noitroporP Sparsity 0.0
+90.0
+95.0
+98.0
+99.0
+99.5
+Figure2: Averagevalidationaccuracy(left),trainlossatfinalepoch(center),anduncertainty(right)forsparseanddenseCelebA
+modelstrainedfordifferentnumbersofepochs. Thehighest-accuracymodelforeachsparsityishighlightedwithalargermarker.
+Thecross-entropylossandentropylevelofthedensemodelisalsoshownwithadashedline,tosimplifycomparison.
+ExperimentalSetup. Following[34],wetraintheResNet18architectureonthistask. Wetraindenseandsparse(90%,95%,
+98%,99%,and99.5%)modelsforavaryingnumberofepochs(5-200);insomecasestheveryloworveryhigh-epochruns
+areskippedifitisclearthatthedurationwillnotbeoptimalforthatsparsity. Sparsemodelsareproducedwithavariantof
+AC/DC,inwhichthesparsityofthesparsephasesrampsupprogressivelyfrom90%tothefinaltargetsparsity;thisisnecessary
+topreventlayercollapseatveryhighsparsities. UnliketheImageNetexperiments,herethephaselengthvariessomewhatwith
+duration,duetotheextremelyshortdurationofsomeruns. Foreachexperiment,characterizedbyasparsity/epoch-lengthpair,
+wemeasuretheaccuracyandtraininglossoftheresultingmodel. Inaddition,following[34],wemeasuretheuncertainty,rather
+thanentropy,ofthemodelpredictionsonthetestset. Thepredictionuncertaintyiscomputedasfollows: first,thesigmoid
+operatorisappliedtoeachlogit’soutputinordertoobtainapseudo-probabilityofapositivelabelbetween0and1; ifthis
+3The98%sparsemodelwilllikelyneverreachtheentropyoftheoptimaldensemodel,suggestingthattheaccuracymaycontinueto
+improvewithverylongtrainingschedules.Infact,theauthorsofRigLtraineda99%sparsemodelfor100timesthedensetrainingtimeand
+werenotabletosaturateitsaccuracy.Seewww.github.com/google-research/rigl#extended-training-results.
+6
+quantityisbetween0.1and0.9,thepredictionisconsidereduncertain. Wethencomputetheproportionofuncertainpredictions
+acrossthevalidationdataset.
+Results. TheresultsarepresentedinFigure2. Weobservethat,consistentwithourearlierobservationsonImageNet,the
+optimaltrainingdurationgoesupwithsparsity,withdensemodelsreachingtheiroptimalaccuracyat25epochs,and99%and
+95%sparsemodelsat150epochs. Further,weobservethat,evenastraininglossandtestuncertaintyalwaysdecreasewithlonger
+training,theoveralltraininglossandproportionofuncertainpredictionsgoesupwithsparsityatafixedtraininglength. Asinthe
+ImageNetexample,thehighest-performingmodelsateachsparsityhaveasimilartraininglossofabout0.17andmeanprediction
+uncertaintyofabout24%,exceptfortheverysparse99.5%model,whichhasslightlyhigher26%uncertainpredictions.
+Discussion. Weinterprettheseresultsascorroboratingevidencethatsparsemodelsrequirelongertrainingcomparedtodense
+modelstoachieveoptimalaccuracybeforetheoverfittingstartstotakeplace.
+3.3 State-of-the-ArtAccurateSparsePre-TrainingonImageNet
+The above observations for vision models suggest that successful sparse training may benefit from an extended training
+schedule. Wenowbuildonthisideatoachievestate-of-the-artresultsfortheclassicResNet50/ImageNetbenchmarkbyusingan
+extended-trainingversionofAC/DC,whichwecallAC/DC++.
+3.3.1 ComparingSparseTrainingMethods
+Forthefollowingexperiments,westartfromthecurrentstate-of-the-arttrainingapproachforResNet50/ImageNettraining,
+usingthePytorchFFCVpackage[45]. Inadditiontoanextendedtrainingschedule,weuselabelsmoothingandalinearlearning
+ratedecaywithwarm-up,aswellasprogressiveresizingofinputsamples4. Inthiscontext,weimplementedthreeleadingsparse
+trainingmethods: GradualMagnitudePruning(GMP)[81],RigL[16]andAC/DC[60],whichweexecuteforanincreasing
+number of epochs between 100 (standard) and 1000 (10x). For this, we scale the original training schedule proportionally,
+followingtheproportionsemployedbytheoriginalmethods. Forthisexperiment,modelsarecompressedto80%,90%,and95%
+sparsity. Followingthemostcommonexperimentalsetupwepruneallweightsinconvolutionalandlinearlayers(including
+inputconvolutionandclassificationhead). TheexacttrainingrecipeispresentedindetailinAppendixA.Wenotethatallthe
+experimentspresentedinthepapertakelessthanadayonastandard8-GPUserver. Theresults,intermsofaccuracyandlossvs
+numberoftrainingepochsarepresentedinFigure3andFigure4,respectively.
+78.5
+78.0
+77.5
+77.0
+76.5
+100 250 500 1000
+Epochs
+ycaruccA
+laV
+Sparsity=80% Sparsity=90% Sparsity=95%
+77
+78
+76
+77 75
+74
+Method 76 Method Method
+RigL RigL 73 RigL
+AC/DC AC/DC AC/DC
+75 72
+GMP GMP GMP
+71
+100 250 500 1000 100 250 500 1000
+Epochs Epochs
+Figure3: ValidationaccuracyonImageNet-1kvsnumberofepochsfordifferentsparsetrainingmethods.
+Results. Theresultsshowastrongcorrelationbetweenhowwellthemethodsachievereductioninlossandtheirvalidation
+accuracy. Thisreinforcesthepointthatsparsetrainingmethodssaturateslower,bothintermsoftraininglossandvalidation
+accuracy. Thishasalsobeeninvestigatedbypriorwork: Galeetal.[21]foundthatextendedtrainingdidimprovedresults
+forGMPinsomecases,whileRigL[16]andPowerpropagation[66]founddiminishingimprovements. Atthesametime,we
+noticeasignificantdifferencebetweenmethods: specifically,AC/DCstartsataslightlybetteraccuracypoint,andconsistently
+outperformsothermethodsbothintermsoflossachieved,andintermsofvalidationaccuracy,asweincreasetrainingtime. (This
+isconsistentwiththeAC/DCoriginalresults,executedat100epochs[60].) Weobservethatthiscorrelateswiththetheoretical
+computationalcost(FLOPs)ofthemethods: AC/DCwillusemoreFLOPsthanothermethodsduetothedensetrainingphases,
+4WefollowthesetupfromtheFFCVImageNetexamplerepositoryforResNet50.
+7
+1.9
+1.8
+1.7
+1.6
+100 250 500 1000
+Epochs
+ssoL
+niarT
+Sparsity=80% Sparsity=90% Sparsity=95%
+2.1 2.3
+2.0 2.2
+1.9 2.1
+Method Method Method
+RigL RigL RigL
+2.0
+AC/DC 1.8 AC/DC AC/DC
+GMP GMP GMP 1.9
+1.7
+100 250 500 1000 100 250 500 1000
+Epochs Epochs
+Figure4: TraininglossonImageNet-1kvsnumberofepochsfordifferentsparsetrainingmethods.
+whileGMPusesmoreFLOPsthanRigLduetograduallyincreasingsparsity. Inturn,thiscouldalsobecorrelatedwiththe
+amountofmaskexplorationperformedbythealgorithmduringtraining. AtlowsparsityRigLperformsslightlybetterthan
+GMP,butforhighersparsityGMPappearstoperformbetter. Forthesmallest80%,90%AC/DCreachesasaturationpoint,
+whereasinallothersetupsmodelperformancecontinuestoimprovewithtrainingbudget.
+3.3.2 Sparsity-vs-AccuracyResults
+0
+−1
+−2
+−3
+−4
+−5
+0.4 0.6 0.8 1.0 1.2 1.4 1.6 1.8
+GFLOPs, inference
+esned
+morf
+egnahc
+ycaruccA
+0
+−2
+−4
+−6
+−8
+−10
+Pruning method
+AC/DC++ (Ours) −12
+RigL 5x
+−14
+Top-KAST (50 bck)
+0.5 1.0 1.5 2.0 2.5 3.0 3.5
+GFLOPs, inference
+esned
+morf
+egnahc
+ycaruccA
+Pruning method
+AC/DC++ (Ours)
+RigL 5x - ERK
+Powerprop + Top-KAST (0 bck) 3x - ERK
+Figure5: ComparisonofAccuracychangefromdensebaselineasafunctionofInferenceFLOPsforleadingsparsetraining
+methods,underuniformsparsityconstraints(left)andglobalsparsityconstraints(right). Duetoalackofastandardbenchmark,
+globalandErdo˝s–RényiKernel(ERK)sparsityconstraintsweregroupedtogether. BothsparsityschedulesofAC/DC++(with
+alllayerssparsifiedandwiththefirstandlastlayerkeptdense)areplottedtogether.
+Goals and Metrics. Based on these results, in this section, we aim to improve the best known sparsity-versus-accuracy
+trade-offsbyperformingathoroughablationoversparsitiesandtraininglengthparameters. Wecompareourresultstothe
+highest-performingpreviouslypublishedsparsetrainingmethods. Inparticular,wecompareanextended-trainingversionof
+AC/DC,whichwecallAC/DC++,resultsreportedintheoriginalRigL,ST-3,andPowerpropagationpapers,aswellasmany
+otherexistingpruningmethods.5. AllmethodsaredescribedinSection2. Incaseswheretheauthorsconductedextendedtraining
+usingtheirmethod,wepresentthosenumbers,andweusetheFLOPs-optimizedST-3σ variant. AC/DC++candidatemodels
+weretrainedforfourpresettraininglengths(1x,2.5x,5xand10xthestandardImageNettrainingtimeonResNet50)atall
+sparsitylevels,andwechosethebestresultsobtainedbyablatingoverthelengthofthetrainingrun.
+5ThemostsuccessfulPowerpropagationapproachpresentedinthepapercombinesthismethodwithTop-KAST;weusethisbenchmark,as
+itperformsbetterthanTop-KASTindividually
+8
+Top-1accuracy(%) ∆Accuracy Sparsity Remaining InferenceFLOPs
+Method Dense(D) Sparse(S) 100×(S−D) (%) #ofparams prop.ofdense
+D
+SparseTraining
+AC/DC[60] 76.8 75.03 -1.77 90 2.56M 0.18
+GraNet(s0=0.5)[50] 76.80 74.5 -1.3 90 - 0.20
+Powerpropagation+Top-KASTFLD[66] 76.8 75.23 -1.57 90 - -
+Powerpropagation+Top-KASTERK[66] 76.80 75.74 -1.06 90 - 0.24
+RIGLERK1x[16] 76.80 73.00 -4.94 90 - 0.24
+RIGL-ITOPERK1x[49] 76.80 73.82 -2.98 90 - 0.24
+ST-3[69] 77.10 75.28 -1.82 90 - 0.24
+STR[44] 77.01 74.31 -3.51 90.23 2.49M -
+VariationalDropout[55] 76.69 73.84 -3.72 90.27 2.49M -
+Post-trainingsparsification
+GlobalMagnitude[67] 77.01 75.15 -2.42 90 2.56M -
+WoodFisher[67] 77.01 75.21 -2.34 90 2.56M -
+Extendedsparsetraining
+AC/DC++5x(thiswork) 78.78 78.49 -0.29 90 2.60M 0.2
+AC/DC++FLD5x(thiswork) 78.78 78.6 -0.18 90 4.45M 0.22
+GMPFLD1.5x[21] 76.69 75.16 -1.53 90 - -
+GraNet(s0=0.5)2.5x[50] 76.80 76.4 -0.4 90 - 0.20
+Powerpropagation+Top-KASTERK3x[66] 76.80 77.16 +0.36 90 - 0.24
+RIGLERK5x[16] 76.80 76.42 -0.38 90 - 0.24
+RIGL-ITOPERK5x[49] 76.80 75.50 -1.30 90 - 0.24
+SparseTraining
+AC/DC[60] 76.8 73.14 -3.66 95 1.28M 0.11
+GraNet(s0=0.5)[50] 76.80 72.3 -6.5 95 - 0.12
+Powerpropagation+Top-KASTFLD[66] 76.8 73.25 -3.55 95 - -
+RIGLERK1x[16] 76.80 70.00 -8.85 95 - 0.12
+ST-3[69] 77.10 74.46 -2.64 95 - 0.13
+STR[44] 77.01 70.40 -8.58 95.03 1.27M -
+VariationalDropout[55] 76.69 71.81 -6.36 94.94 1.30M -
+Post-trainingsparsification
+GlobalMagnitude[67] 77.01 71.72 -6.29 95 1.28M -
+WoodFisher[67] 77.01 72.12 -6.89 95 1.28M -
+M-FAC[20] 77.01 72.6 -4.41 95 1.28M -
+Extendedsparsetraining
+AC/DC++10x(thiswork) 78.78 77.27 -1.48 95 1.33M 0.13
+AC/DC++FLD10x(thiswork) 78.78 77.7 -1.08 95 3.28M 0.14
+GMPFLD1.5x[21] 76.69 72.71 -3.98 95 1.28M -
+RIGLERK5x[16] 76.80 74.63 -2.17 95 1.28M 0.12
+Sparsetraining
+AC/DC[60] 76.8 68.44 -9.36 98 0.7M 0.06
+ST-3[69] 77.10 70.46 -6.64 98 - 0.07
+STR[44] 77.01 70.40 -8.58 98 - -
+VariationalDropout[55] 76.69 64.52 -15.87 98.57 0.36M -
+Post-trainingsparsification
+M-FAC[20] 77.01 67.5 -9.51 98 - -
+WoodFisher[67] 77.01 65.55 -11.46 98 0.51M -
+Extendedsparsetraining
+AC/DC++10x(thiswork) 78.78 74.06 -4.72 98 0.51M -
+AC/DC++FLD10x(thiswork) 78.78 76.6 -2.28 98 2.58M 0.09
+Sparsetraining
+ST-3[69] 77.10 63.88 -13.22 99 - 0.04
+Extendedsparsetraining
+AC/DC++FLD10x(thiswork) 78.78 72.7 -6.08 99 2.34M 0.06
+RIGLERK5x[16] 76.80 61.86 -15.94 99 - 0.05
+RIGLERK10x[16] 76.80 63.89 -12.91 99 - 0.05
+RIGLERK50x[16] 76.80 66.94 -9.86 99 - 0.05
+RIGLERK100x[16] 76.80 68.15 -8.65 99 - 0.05
+Table1: ComparisonbetweenmodernsparsetrainingmethodsonImageNet-1kwithResNet-50modelsforvarioussparsity
+targets. ERKreferstotheErdos-RenyiKernelsparsitydistribution. FLDreferstothefirstandlastlayersbeingdense(AC/DC++)
+orthefirstlayerbeingdenseandthelastlayerbeing80%sparse(GMP,PowerPropagation).
+Asdifferentmethodshavedifferentcomputationalbudgetsanddifferentdensebaselines,toensureafaircomparison,weexamine
+the model performance both in terms of Top-1 Validation accuracy, and the Top-1 Validation accuracy difference from the
+correspondingdensebaseline. Weusethebestavailablenumbersoriginallyreportedinthepapersintroducingthemethodsfor
+comparisons.
+ExperimentalSetup. Wecomparetwopruningregimes. First,weconsiderUniformPruning,inwhicheverylayerispruned
+exactlytothetargetsparsity,exceptforthefirstandlastlayer,whichareleftdense. Second,weconsidertheGlobal/Nonuniform
+9
+Pruningregime,inwhichthesparsitybudgetissetglobally. Differentworksapportiontheglobalbudgetdifferently,andalso
+differwithrespecttowhichpartsofthenetworkaresubjecttotheglobalconstraint. Inparticular,ExtendedGMP[21]and
+Top-KASTdonotprunethefirstlayer,prunethelastlayertoafixed80%sparsity,andprunetheotherlayersusingaglobal
+magnitudecriterion. RigLusesanErdo˝s–Rényi-Kerneldistributionforlayersparsitytargets,andleavesonlythefirstlayer
+dense. TheoriginalAC/DCworkusesglobalsparsityandprunesallconvolutionalandFClayers. Therefore,tocreateamorefair
+comparison,weconsiderestimatedFloating-PointOperations(FLOPs)necessaryforinference;thesearecomputedasin[16].
+UsingFLOPsalsoequalizesmethodsacrossslightvariationsinResNet50architectures,andsoweuseitalsofortheUniform
+pruningcomparison. Inaddition,weusetwopruningschedulesforAC/DC++: onewhichleavesthefirstandlastlayerdense
+andprunestheremaininglayersusingaglobalmagnitudecriterion,andonethatprunesalllayersusingtheglobalmagnitude
+criterion. Wedonotablatebetweenthetwo,butratherpresentbothsetsofresultsinFigure5(jointly)andTable1(separately).
+Weemphasizetwokeypointsregardingourcomparisons:
+1. LookingataccuracyalonefavorsAC/DC++,asithasahigherdensebaseline: sinceweuseseveralrecenttraining
+innovations,thedensemodelcanreachcloseto79%denseaccuracyover100epochs. Therefore,itbecomesmore
+challenging to maintain the performance of the dense model for highly sparse model compared to less-optimized
+baseline.
+2. Thisiswhywealsoexamineaccuracydifferencerelativetothedensebaseline: thisfavorsothermethods,astheyare
+benchmarkedagainstastandard-recipemodelthatreacheslower76.8%accuracy(77.1%forST-3).
+Results. The results are presented in Figure 5 and Table 1. We observe that, for uniform pruning budgets, the AC/DC++
+modelsoutperformothermethods,bothintermsofabsoluteandrelativevalidationaccuracy. Thisistrueevenwhenweconsider
+extended-trainingschedulesforothermethods,althoughwebelievewearethefirsttosystematicallyinvestigatetheimpactof
+increasingtrainingschedulesatthesesparsitylevels.6 Whenlookingatmodelstrainedwithglobalpruningbudgets,weobserve
+thatAC/DC++obtainsthehighestabsolutevalidationaccuracy,comparedtoresultsreportedpreviouslyinliterature. When
+consideringaccuracychangefromthedenseline, AC-DC++loseslessaccuracythanothermethodsatveryhighsparsities
+(lowestFLOPs),despitehavingthehighest-performingdensebaseline;atlowersparsity(90%),itiscompetitivewithother
+extendedtrainingmethods.
+3.4 AdditionalResults
+Different sparsity patterns Since the ResNet models increase the number of channels with the decrease of feature map
+resolution,onewouldexpectthatbottomlayers(thosewithmorechannels)shouldbeprunedmoreaggressivelycomparedtothe
+onewithlesschannels. Hereourresultsareconsistentwiththeknownobservationsfromliteraturethatglobalsparsityachieves
+higherperformanceforthesamesparsity. Inaddition,wehavecarriedoutexperimentswiththemorehardware-friendlyblock-4
+sparsitypattern.
+78
+77
+76
+75
+74
+73
+0.90 0.92 0.94 0.96 0.98
+Sparsity
+ycaruccA
+Global
+Uniform
+block4
+Figure6: Accuracyvssparsityfordifferentsparsitydistributions. Block4denotesglobalpruningwithweightsprunedingroups
+of4.
+6Inpriorwork,RigLexecuted>5xextendedtrainingfora99%-sparsemodelonly[16].
+10
+Top-1accuracy(%) RelativeDrop Sparsity
+Method Dense(D) Pruned(P) 100×(P−D)
+D
+72.74 72.49 -0.25 75.00
+AC/DC++
+72.74 70.80 -1.94 90.00
+Table2: SparsetrainingofMobileNet-V1withAC/DC++onImageNet-1k.
+MobileNetresults Inaddition,weconductedsparsificationoftheMobileNet-V1model[30],aCNNoptimizedforinference
+onmobiledevices. WeappliedAC/DCfor1000epochswithsparsitytargets75%and90%usingasimilartrainingrecipeto
+ResNet50exceptforsomedifferencesspecifiedinAppendixA.Toachievethebestresultswedonotprunetheinputconvolution,
+aswellastheclassificationheadanddepthwiseconvolutions,duetotheirminorcontributiontotheoverallamountofFLOPs
+andsignificantimpactontheperformanceofthemodel.
+With a longer training recipe one can achieve almost negligible accuracy drop at 75% sparsity and moderate performance
+decreaseat90%. TheresultscanbefoundinTable2.
+3.5 Maskanalysis
+Sparsemethodsconsideredinourworkdifferintheamountofsparsitymaskexploration. GMPgraduallyincreasessparsity;
+oncetheweightispruned,itisneverreintroduced. RigLdecreasesthefractionofupdatedparametersfollowingthecosine
+annealingrule:
+(cid:18) (cid:18) (cid:19)(cid:19)
+α πt
+f (t;α;T )= 1+cos (3)
+decay end 2 T
+end
+Thisfractionofconnectionsisdroppedandreintroducedinasinglestep.AC/DCmakesallparameterstrainableondecompression
+phases,thereforeanyparametercouldbepotentiallyreintroduced.However,asshownlater,somefractionofweightsremainszero
+evenondecompression. TomeasurethedifferencebetweentwoconsecutivesparsitymaskswecomputetheirIoU(Intersection
+overUnion), theamountofparametersthatarenonzeroforbothcheckpointsdividedbytheamountofparametersthatare
+nonzeroineitherofcheckpoints. HighIoUvalue(closeto1)meansthattwosparsitymasksoverlapsignificantly,whereaslow
+IoU(closeto0)implieslowsimilarlybetweensparsitymasks.
+Wehavetakencheckpointssavedonthe109th,119th,...999thepoch(takenattheendofeveryAC/DCstepandatthesame
+epochsforothermethodsforaconsistentcomparison)collectedduring1000epochsrunswith95%and98%targetsparsityand
+measuredIoUbetweentwoconsecutivemasksforparametersbeingpruned(skippingbiasesandbatchnormparameters). For
+GMPandRigL,maskIoUcanbecomputedanalyticallybasedontheupdaterule. TheevolutionofsparsitymaskIoUduring
+trainingispresentedonFigure7. OnecanobservethatAC/DCshowssignificantlystrongermaskexplorationcomparedtoGMP
+andRigL.ThisbehaviorcouldaccountforthebetterperformanceofAC/DCasasparsetrainer.
+1.0
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+200 400 600 800 1000
+Epoch
+UoI
+Sparsity=95%
+1.0
+0.8
+AC/DC
+0.6
+GMP
+RigL
+0.4
+0.2
+200 400 600 800 1000
+Epoch
+UoI
+Sparsity=98%
+AC/DC
+GMP
+RigL
+Figure7: MaskIoUbetweentwoconsecutivecheckpoints.
+11
+Channelsparsity
+Sparsity Epochs layer1.0.conv2 layer2.1.conv2 layer4.2.conv2 avg
+100 0 0 0 1.07
+80
+1000 18.75 0 35.35 4.91
+100 4.69 1.56 0.78 3.58
+90
+1000 31.25 19.53 61.91 10.68
+100 0 7.03 22.85 8.8
+95
+1000 26.56 22.66 80.27 16.76
+100 7.81 12.5 75.59 23.65
+98
+1000 48.44 37.5 96.68 27.93
+Table3: Fractionofzerooutputchannelsforspecificlayersandonaverage.
+3.6 Structuredsparsityinunstructuredsparsemodels
+Inthiswork,weconsideronlyunstructuredsparsity,thereforegroupsofweightsandentirechannelsinparticulardonothaveto
+besparse. However,weobservedthatsomeofthechannelsinconvolutionalkernelsareentirelypruned. Theeffectbecomes
+morepronouncedwithhighersparsityandlongertraining.
+InTable3,weshowthefractionofsparseoutputchannelsforlayersinthefront,middleandtheendofthemodelandtheglobal
+fractionofzerochannelsacrossallconvolutionallayersinthemodel. Weobservethatchannelsparsityincreasesproportionally
+withtheunstructuredsparsitytargetandwithtrainingtime, andthat, forhighsparsity, weobtainaveryhighproportionof
+zeroed-outoutputchannels,especiallyinthewiderbottomlayers. Thisisintunewithpreviousworkobservingtheemergenceof
+structuredsparsityindynamicsparsetraining[60,33,77]. Weprovideafirstexplanationforthisbehaviorinthenextsection.
+3.7 Impactofweightdecayonsparsityandmodelperformance
+RecallthatAC/DCmakesallparameterstrainableondecompression,therefore,onemightexpectthatsparsityondecompression
+phasewouldbenearzero. However,weobservedthatalargefractionofweightsremainszeroevenwhenthesparsitymask
+isnotimposed. Thiseffectislinkedtothechannelsparsitydiscussedintheprevioussection: onceachanneliscompletely
+zeroedout,itwillcontinuetoreceivezerogradientsevenwhenthesparsitymaskisremoved. Further,weprovideevidencethat
+thisphenomenonislinkedtoincreasingtheweightdecaymechanism,andinparticularthevalueofthisparameter: intuitively,
+weightdecayslowlydrivesweightstowardszero;wheneverafullchanneliszeroedoutinthecompressionphase,itremains
+“captured”underthesparsitymaskuntiltheendoftraining.
+WeinvestigatedthisempiricallybytrainingImageNetmodelsonResNet50with95%compressionsparsityusingAC/DC++for
+100epochs,varyingtheweightdecayparameterfrom10−6 to10−3. OurresultsareshowninFigure8. Weobservethatthe
+fractionofzeroparametersincreaseswiththemagnitudeofweightdecayandalsooverthecourseoftraining. Concretely,we
+observethatallweightdecayvaluesleadtoalmostfullydensemodelsduringthefirstdecompressionphase. Fromthere,very
+lowweightdecayvaluesof10−6and10−5leadtoverylittlesparsityduringthenexttwodecompressionphases,andabout10%
+sparsityduringthefinalfive. Conversely,veryhighweightdecayof10−3leadstoanimmediatejumpto50%sparsityduringthe
+seconddecompressionphases,whichthenincreasesto60%overtherestoftraining. Theintermediatevalueof10−4,whichis
+thestandardsettingandwasusedinourexperiments,leadstoanintermediatesparsity,whichgraduallyrisestoabout24%over
+successivedecompressionphases.
+We further present the accuracy of the resulting models in Table 4. We observe that properly setting the weight decay
+hyperparameteriscrucialforgoodperformanceofAC/DC++,andconfirmthatthestandardvalue10−4isclosetotheoptimal
+value,astheTable4shows.
+12
+60
+50
+40
+30
+20
+10
+0
+0 1 2 3 4 5 6
+Decompression phase
+ytisrapS
+Weightdecay Top-1accuracy(%)
+10−6 70.52
+10−5 73.54
+10−4 74.90 1e-3
+10−3 68.57
+1e-4
+1e-5
+Table4: Accuracyvsweightdecay.
+1e-6
+Decompressionsparsity Top-1accuracy(%)
+0 74.82
+50 75.09
+60 74.81
+70 74.83
+80 74.38
+Figure 8: Sparsity on decompression phases for 100-epoch
+AC/DC++runswithvaryingvaluesofweightdecay. Wepoint
+Table5: Accuracyvsdecompressionsparsity.
+outthatondecompressionphasesnosparsityisenforced.
+SparseDecompression. Buildingonthisobservation,weaskhowimposingafixedminimalsparsityalsoondecompression
+stageimpactsthefinalperformance. Weconductedafew100-epochlongAC/DCexperimentswith95%targetsparsityandset
+thesparsityondecompressiontosomefixedvalue,smallerthancompressionsparsity. Weobservethattheperformanceisalmost
+unaffectedupto80%decompressionsparsity,showingthatfullmaskexplorationisnotnecessaryduringtraining.
+3.8 Losslandscapeanalysis
+Inordertogetmoreinsightsintothereasonsforthedifficultyofoptimizingsparseneuralnetworks,weinvestigatetwoproperties
+ofthelosslandscape. First,wemeasuredlandscapesharpnessattheendofthetraining,definedasthemaximaleigenvalueof
+theHessianmatrix,forallsparsetrainingmethodsconsidered,varioussparsitiesandnumberoftrainingepochsandcompared
+withtheoneofstandarddensetraining. Second,weinterpolatedthetrainingandvalidationlossbetweencheckpointsobtainedat
+intermediatestepsthroughoutthe1000epochAC/DCrunwith95%targetsparsity.
+40
+30
+20
+10
+200 400 600 800 1000
+Epochs
+ssenprahS
+GMP RigL AC/DC
+40 40
+30 30
+20 20
+0.80 0.80 0.80
+0.90 0.90 0.90
+0.95 0.95 0.95
+10 10
+0.00 0.00 0.00
+200 400 600 800 1000 200 400 600 800 1000
+Epochs Epochs
+Figure9: Sharpness(highesteigenvalue)ofthelosssurfacevsnumberofepochs. Dashedlinescorrespondtothedensemodel.
+ThelargestHessianeigenvaluewasestimatedviathepoweriterationmethodbasedonHessian-vectorproductsusingacustomized
+versionoftheEigenthingslibrary[22]. MoredetailsaboutourexperimentalsetupareprovidedinAppendixI.InFigure9,
+weobservethat, acrossallmethods, sharpnessincreaseswiththelengthofthetrainingrun, indicatingthatsharperminima
+requireextendedtrainingtobereachedviaSGD.Additionally,sharpnessdecreaseswiththeincreaseofsparsity. Allsparse
+trainingmethodsattainlowersharpnesscomparedtothedensemodel. ModelstrainedwithAC/DCandRigLhaveslightlylower
+sharpnesscomparedtomodelstrainedwithGMP,presumablybecausetheformertwomethodsmanagetoreachflatteroptima
+whichareconjecturedtohavebettergeneralizationproperties[54].
+13
+To examine mode connectivity behavior, in Figure 10, we connected the checkpoint obtained on the 99th,199th,...999th
+epochviapiecewise-linearcurves. Anotableobservationisthatallcheckpointsareseparatedbyalossbarrier,whoseheightis
+increasingwiththenumberofepochs. Probably,thisbehaviorisamanifestationoftheprogressivesharpeningphenomenon[11]
+wherethemodelsharpnessisincreasinggraduallywithtraininguntilreachingthepeakvalueandthenplateaus. Yet,forsparse
+models,thedurationofthelongestrunsisnotlongenoughtoreachthesharpnessplateau.
+7.0
+6.5
+6.0
+5.5
+5.0
+4.5
+4.0
+3.5
+0.0 0.2 0.4 0.6 0.8 1.0
+α
+ssoL
+niarT
+7
+6
+5
+4
+3
+0.0 0.2 0.4 0.6 0.8 1.0
+α
+ssoL
+noitadilaV
+Figure10: Lossinterpolationcurvesonthetraining(left)andvalidation(right)checkpointsofthe95%sparse1000-epoch
+AC/DCmodel. αcorrespondstothefractionofpathstraversedfromthefirstcheckpointtothelast. Starsdenotecheckpoints
+betweenwhichlossisinterpolated.
+3.9 AdditionalqualityevaluationofAC/DC++
+Havingdemonstratedthatextendedtraininghasastrongpositiveeffectonsparsemodeltop-1testaccuracy,wefurtherinvestigate
+theimpactofextendedtrainingonotheraspectsofmodelquality. Weconsidertwoadditionalqualitymetrics: theirperformance
+intransferlearningscenariosandrobustnesstocommonimageperturbations.
+[33] demonstrated that equally sparse models with comparable performance on the original task can vary widely in their
+performanceoncefinetunedonother,smallertransfertasks. Wecomparethetransferperformanceofdenseand95%sparse
+AC/DC++models,bothtrainedfor100and1000epochsintwotransferlearningregimes: linearfinetuning,wherethehidden
+layersofthemodelaretrainedonlyonthelarger(ImageNet)task,andonlythefinalFClayeristrainedonthetransfertask,
+andfull-networkfinetuning,wherealllayersarefinetunedonthetransfertask. Wefindthatextendedtrainingimprovesthe
+transferperformanceforbothtransferscenariosfor95%sparsemodels,butislargelyneutralfordensemodels. Fulldetailsof
+theexperimentandevaluationaregiveninAppendixF.
+We test robustness by measuring model performance on the ImageNet-C dataset [26], which digitally adds 19 types of
+perturbationstotheImageNet-1Kvalidationset. [48]and[28]havefoundthatcompressedmodelsarelessrobustundermany
+typesofperturbations,comparedtodensemodels. Asbefore,weconsiderdenseand95%sparseAC/DC++modelstrainedfor
+100–1000totalepochs. Wefindthatrobustnesstoperturbationsincreaseswithtrainingtimeforsparsemodels,butstaysthe
+samefordenseones. FulldetailsoftheexperimentandevaluationaregiveninAppendixG.
+4 TheDifficultyofSparseTransferinLanguageModelling
+Motivatedbyourfindingsforcomputer-visionmodelsinprevioussections,weextendtheanalysistolanguagemodels,specifically
+totheverycommonscenarioinwhichalargelanguagemodel(BERT-base)isadaptedtoaspecifictaskviafinetuning. In
+contrasttoSection3.9,whereweexaminedtheeffectofextendedtrainingonthequalityoffeaturescreatedinupstreamtraining,
+hereweexaminetheimpactofsparsityontheoptimalrecipeforthetaskoffinetuningthemodelonthedownstreamdataset.
+Thissetupnaturallyleadstothefollowingquestions: “dofinetunedsparselanguagemodelssufferfrombeingundertrainedon
+thedownstreamtask?”,and“ifyes,doesthesimplerecipeofextendedtrainingsufficetomitigatetheissue?”. Inthissection,we
+willshowthatwhendensefinetuningrecipesareusedforsparsetransferlearninginlanguagemodels,theresultingmodelsare
+indeedundertrainedandhavepoortransferperformance. However,wealsonoteanadditionaldifficulty: extendedtrainingdoes
+notsufficetomitigatetheissue,becausesparselanguagemodelsquicklyshiftfrombeingundertrainedtoanoverfittingregime.
+Thelatterisafarlargerprobleminlanguageunderstandingtasksthaninvisualones,whichislikelywhywedon’tobservethe
+14
+sameissueswithvisualtransferlearninginAppendixF-therewesimplyusealongfinetuningscheduleinallcases. Inthis
+section,weexploretheproblemofbalancingunder-andover-traininginsparselanguagemodelsandproposeasparsefinetuning
+recipeforcreatingproperlytunedsparsemodels.
+4.1 UnderStandardDenseTransferLearningRecipes,SparseModelsareUndertrained
+Experimental Setup. In our experiments, we make use of open-sourced sparse pre-trained BERT-base models obtained
+by[43]. Ontopofthese,weapplyvarioustransferlearningrecipestoobtainfine-tunedsparsemodelsondatasetsfromthe
+popularGLUEbenchmark[73]. Forfaircomparisonswithresultsfrompriorwork,weemployearlystoppingforallmethods.
+WeprovidemoredetailsabouteachdatasetinAppendixH.
+Themostpopularandwidelyadopteddensetransferlearningrecipeconsistsoffine-tuningallweightswithlinearlydecaying
+learningrateforasmuchastwoorthreeepochsonthetargetdownstreamtask. InTable6wepresentresultsobtainedwiththis
+approachwhenappliedtosparsemodels,anddenoteitasadense-transferrecipe. Underthesametransferlearningrecipe,we
+clearlyobservesignificantgaps(upto14accuracypointsonRTEandCoLA)betweenthetransferaccuracyofthedensemodel
+(DenseBERT-base),andthetransferaccuracyofthesparsemodel(Dense-transferrecipe).
+4.2 ExtendedTrainingShiftsfromUndertrainingtoOverfitting
+Observingthatthedensetransferlearningrecipedoesnotproducecompetitivesparsefinetunedmodels,weattempttoscalethe
+lengthoftherecipetomitigateundertraining. Surprisingly,forsparselanguagemodels,thissimpletechniquedoesnotyielda
+uniquesetupwithconsistentlybetterresultsasmodelsquicklyshiftfromundertrainingtoanoverfittingregime,inwhichtraining
+lossgoestozero,whilevalidationaccuracydecreasessharply. Todemonstratethisoverfittingeffectwiththeextendedrecipe,in
+Table6,wecompareresultsobtainedwiththisapproach(Extendeddense-transferrecipe)againstresultsobtainedbydoingafull
+sweepoffinetuningrunswithrescaledrecipesto#epochs∈{1,2,3,...,extended−1}(Fullsweepofrescaledrecipes).
+Table6: Sparse-transferperformanceof90%sparsepre-trainedBERT-basemodelonthedev-setofthecorrespondingGLUE
+task,obtainedwithdenseandextendeddense(#epochs=8)transferlearningrecipes,aswellaswiththefullsweepofrescaled
+recipes(#epochs∈{1,2,...,7}).
+RTE QNLI MRPC SST-2 CoLA STS-B MNLI QQP
+Sparse-transfer
+Acc Acc Acc Acc Mcc Pear Acc Acc
+DenseBERT-base(baseline) 66.1 91.3 85.5 93.0 56.8 88.9 84.6 91.5
+Dense-transferrecipe 52.4 88.9 82.8 91.2 42.5 87.1 82.2 90.0
+Extendeddense-transferrecipe 55.2 88.7 85.6 91.4 47.2 87.6 81.6 90.3
+Fullsweepofrescaledrecipes 57.0 89.3 84.1 92.0 48.5 88.0 82.2 90.4
+Bestrecipelength 5ep 2ep 5ep 2ep 7ep 4ep 3ep 5ep
+Theresultssuggestthatwiththeexistingrecipes,thereisnoone-size-fits-allsolution. Versionsofthisrescalingapproachhave
+beenutilizedbypriorworkslike[43]and[79]toobtainaccuratesparsemodelsonvariousdownstreamdatasets. However,
+thisapproachcomeswithahugecomputationalburden: foreachrescaledrecipe,afullhyperparametersweepoverrelevant
+parametershastobedoneinordertoobtaincompetitivefinetunedsparsemodels. Duetopracticalityandassociatedcosts,thisis
+notadesirablesolutioninpractice.
+4.3 SparseTransferLearningforLanguageModels
+Intheprevioussection,wehavedemonstratedthefollowingthreeproblemswiththeexistingapproachofeitherusingthedense
+finetuningrecipe,orsimplyextendingitforsparsefinetuning:
+1. followingdense-transferrecipes,sparselanguagemodelsareundertrained;
+2. evenathighsparsities,thesemodelscanstillexhibitoverfittingbehaviorundertheextendedtrainingregime;
+3. findingtheoptimalrecipetomitigateundertrainingandoverfittinghasmajorcomputationalburdens.
+Toaddresstheseissues,weproposeasimpleapproachforsparsetransferinNLP,whichproduceshighlyaccurateandcompetitive
+sparse models on a wide range of downstream datasets with minimal hyperparameter tuning. Our technique is inspired by
+theideaofgraduallayerunfreezingpresentedintheULMFiTframework[31],whichintroducedauniversalframeworkfor
+fine-tuningdenselanguagemodelsfortext-classificationtasks,withafocusonLSTMmodels[54]. BasedonULMFiTand
+findingsof[78],whichsuggeststhatdifferentlayerscapturedifferentinformationandthereforeshouldbefine-tunedtodifferent
+extents,weadopttheideaofgradualunfreezingandadjustitfortransformer-based[71]sparselanguagemodels.
+15
+Table7:Oursparse-transferperformanceof90%sparsepre-trainedBERT-basemodelonthedev-setofthecorrespondingGLUE
+tasks,benchmarkedagainstthecurrentstate-of-the-artsparse-transferresultsfromPruneOFA[79]andoBERT[43].
+RTE QNLI MRPC SST-2 CoLA STS-B MNLI QQP
+Sparse-transfer
+Acc Acc F1/Acc Acc Mcc Pear/Spear m/mm Acc/F1
+DenseBERT-base 66.1 91.3 89.8/85.5 93.0 56.8 88.9/88.5 84.6/83.4 91.5/88.5
+PruneOFA[79] N/A 89.1 N/A 90.9 N/A N/A 81.5/82.4 90.9/87.6
+oBERT[43] 57.0 89.3 89.3/85.6 92.0 48.5 88.0/87.6 82.2/82.5 90.4/87.1
+Thiswork 60.1 90.5 89.7/85.2 91.8 51.4 87.2/87.1 83.7/83.8 90.9/87.6
+Morespecifically,wefocusonthepopularBERT-basemodelwhichconsistsofthreegroupsoflayers: embeddings,12identical
+transformerblocks,andatask-specificclassifierhead. Sparsifiedversionsofthismodel,whicharethemaininterestofthiswork,
+prunealllinearlayersacrossalltransformerblocks,whichisthestandardpracticeinliterature[64,42,43,79]andbringsthe
+bestaccuracy-vs-latencytrade-offs[43].
+0.80
+0.75
+0.70
+0.65
+0.60
+0.55
+0.50
+0.45
+0.40
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+Epoch
+ssol
+noitaulavE
+90
+Method
+Ours
+88
+oBERT
+86
+84
+82
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+Epoch
+erocs
+1F
+Method
+Ours
+oBERT
+Figure11: Evaluationloss(lowerisbetter)andF1score(higherisbetter)duringsparse-transferwithoBERT[43]andour
+approachonMRPCdataset.
+1.1
+1.0
+0.9
+0.8
+0.7
+0.6
+0.5
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+Epoch
+ssol
+noitaulavE
+Method 50
+Ours
+oBERT 40
+30
+20
+10
+0
+1 2 3 4 5 6 7 8 9 10 11 12 13 14 15
+Epoch
+tneiciffeoc
+noitalerroc
+s'wehttaM Method
+Ours
+oBERT
+Figure12: Evaluationloss(lowerisbetter)andMatthew’scorrelationcoefficient(higherisbetter)duringsparse-transferwith
+oBERT[43]andourapproachonCoLAdataset.
+Ourapproachcanbesummarizedasfollows. Foreachdownstreamtask,westartfromasparsepre-trainedmodelproduced
+by[43]andrandomlyinitializeatask-specificclassifierhead. Thenwefreezeallembeddingsandsparsifiedlinearweights,
+whilekeepingtheirbiasesandcorrespondingLayerNorm[3]layersunfrozenandtrainable. Westartbyfinetuningonlythe
+classifierheadandallothertrainableparameters(biasesandLayerNorms)foroneepoch,andthenfollowthesameprocessfrom
+back-to-frontbyunfreezingtheunprunedlinearweightsinprecedingtransformerblocks. Afterthelastlayerisunfrozenand
+finetuned,wecontinuefinetuningalllayerstogetherforonemoreepoch.
+Giventhatateachepochwehaveadifferentmodelarchitecture(onemoresparsetransformerblockunfrozenrelativetothe
+previousepoch),wefinetuneitwiththelinearlydecayinglearningrateandthenrewindbacktotheinitialvalueforthenext
+epoch. WehavealsotriedtheslantedtriangularlearningratescheduleproposedinULMFiT,butwefoundthewarmupphase
+notveryhelpfulasitisknownthatsparselanguagemodelsusuallyrequiremuchhigherlearningratesrelativetotheirdense
+counterpartsinordertotrainandconvergesuccessfully[42].
+16
+Tovalidatetheeffectivenessofourproposedsparsetransferapproach,webenchmarkitagainstthetwocurrentstate-of-the-art
+sparse-transferresultspresentedinPruneOnceforAll(PruneOFA)[79]andTheOptimalBERTSurgeon(oBERT)[43]papers.
+Theformermakesuseofknowledgedistillationfromafinetuneddenseteachermodel,whilethelatterusesafullsweepover
+extendedandrescaleddensetransferrecipes,suchastheoneswepresentedinSection4.2. AscanbeseenfromTable7,our
+approachoutperformshighlycompetitiveresultsbyPruneOFAinall,andoBERTineightoutoftwelvedatasets,settingnew
+state-of-the-artaccuracy-vs-sparsityresultsformanytasksintheGLUEbenchmarksuite. Itisworthemphasizingthatallofour
+resultsareobtainedwithsignificantlylesshyperparametertuningthantheothertwocompetingmethods,whichalignswithour
+goaloffindingastableone-size-fits-allsolutionforthesparse-transferproblem. Wesearchandtunetheinitiallearningratein
+{1e-4,2e-4,3e-4},anddropoutin{0.05,0.1},andreportmeanperformanceoverthetwobestruns. Thus,ourgridconsistsof
+only6differentcombinationsforeachconsidereddataset,whereascompetingapproachessweepover54([79])and24([43])
+differentcombinations. Itisworthemphasizingthatalloftheconsideredmethods,includingours,havenoticeablevariabilityin
+resultsonsmalldatasetsacrossdifferentseedsandhyperparameterconfigurations,whichalignswithfindingsof [12].
+Tobetterunderstandwhathappensduringourproposedsparsetransferlearningsetup,andtodevelopanintuitionaboutwhy
+itisabletoprovidestableandcompetitiveresultsacrossmanydifferentdatasetsranginginsizesfrom2.4k(RTE)and392k
+(MNLI)labeledsamples,wevisualizeevaluationlossandevaluationaccuracymetricsovertheentiretransferlearningprocess
+inFigures11and12. Ascanbeseen,ourapproachenablesslowerandthereforemorestabletransferlearningonthetarget
+datasetswhicheffectivelypreventsoverfitting,eventhoughthetotalnumberofepochsistwotimeslargerthantheextended
+dense-transferrecipesanalyzedinSection4.2. ThisalignswithfindingsinULMFiT,whichdemonstratesthatgradualunfreezing
+incombinationwithacarefullydesignedlearningrateschedulepreventscatastrophicforgettingandenablesrobusttransfer
+learningacrossawiderangeofdifferentdownstreamtasks.
+5 Conclusion
+Inthiswork,weexaminedtheimpactofhighsparsityonmodeltrainingunderstandardcomputervisionandnaturallanguage
+recognitionscenarios, andprovidedevidencethattraditionaltrainingrecipesusedfordensemodelsaregenerallytooshort
+forsparsetraining. Startingfromthisobservation,wewereabletoproducestate-of-the-artmodelsforsparsecomputervision
+ontwoclassicbenchmarksforpruning: theResNet50/ImageNetfrom-scratchtrainingbenchmark,andtransferlearningfrom
+BERT-baseonseveralNLPdatasets. Ourworkfocusedonthedifferencesbetweensparseanddensetrainingdynamicsand
+theireffectonoptimaltraining,providingadditionalanalysistowardsthedifficultyofsparsetraining. Themainmotivation
+forourworkistoinspirefurtherresearchinadaptingtrainingschedules,hyperparameters,andoptimizerstoimprovesparse
+modeltraininginordertoreachhigheraccuraciesundersparsity,butalsotodosoefficiently. Weleavethisasachallengetothe
+community.
+Acknowledgements
+WegratefullyacknowledgefundingfromtheEuropeanResearchCouncil(ERC)undertheEuropeanUnion’sHorizon2020
+programme (grant agreement No 805223 ScaleML). E.I. was supported in part by the FWF DK VGSCO, grant agreement
+numberW1260-N35. D.K.wassupportedbyRussianScienceFoundation,grant21-11-00373.
+17
+References
+[1] KaleabTessera,SaraHooker,andBenjaminRosman. Keepthegradientsflowing: Usinggradientflowtostudysparse
+networkoptimization,2021.
+[2] KyriakosAxiotisandMaximSviridenko. Sparseconvexoptimizationviaadaptivelyregularizedhardthresholding. In
+InternationalConferenceonMachineLearning(ICML),pages452–462.PMLR,2020.
+[3] JimmyLeiBa,JamieRyanKiros,andGeoffreyEHinton. Layernormalization. arXivpreprintarXiv:1607.06450,2016.
+[4] ThomasBerg,JiongxinLiu,SeungWooLee,MichelleL.Alexander,DavidW.Jacobs,andPeterN.Belhumeur. Birdsnap:
+Large-scalefine-grainedvisualcategorizationofbirds. InConferenceonComputerVisionandPatternRecognition(CVPR),
+pages2019–2026,2014. doi:10.1109/CVPR.2014.259.
+[5] ThomasBlumensathandMikeEDavies. Iterativethresholdingforsparseapproximations. JournalofFourierAnalysisand
+Applications,14(5-6):629–654,2008.
+[6] LukasBossard,MatthieuGuillaumin,andLucVanGool. Food-101–miningdiscriminativecomponentswithrandom
+forests. InEuropeanConferenceonComputerVision(ECCV),2014.
+[7] DanielCer,MonaDiab,EnekoAgirre,InigoLopez-Gazpio,andLuciaSpecia. Semantictextualsimilarity-multilingual
+andcross-lingualfocusedevaluation. InProceedingsofthe2017SEMVALInternationalWorkshoponSemanticEvaluation
+(2017).https://doi.org/10.18653/v1/s17-2001,2017.
+[8] MarkChen,JerryTworek,HeewooJun,QimingYuan,HenriquePondedeOliveiraPinto,JaredKaplan,HarriEdwards,
+YuriBurda,NicholasJoseph,GregBrockman,etal. Evaluatinglargelanguagemodelstrainedoncode. arXivpreprint
+arXiv:2107.03374,2021.
+[9] TianlongChen,JonathanFrankle,ShiyuChang,SijiaLiu,YangZhang,MichaelCarbin,andZhangyangWang. Thelottery
+ticketshypothesisforsupervisedandself-supervisedpre-trainingincomputervisionmodels. ConferenceonComputer
+VisionandPatternRecognition(CVPR),2021.
+[10] MirceaCimpoi,SubhransuMaji,IasonasKokkinos,SammyMohamed,andAndreaVedaldi. Describingtexturesinthe
+wild. InConferenceonComputerVisionandPatternRecognition(CVPR),2014.
+[11] JeremyM.Cohen,SimranKaur,YuanzhiLi,J.ZicoKolter,andAmeetTalwalkar. Gradientdescentonneuralnetworks
+typicallyoccursattheedgeofstability,2022.
+[12] JacobDevlin,Ming-WeiChang,KentonLee,andKristinaToutanova.BERT:Pre-trainingofdeepbidirectionaltransformers
+forlanguageunderstanding. InNorthAmericanChapteroftheAssociationforComputationalLinguistics(NAACL),2019.
+[13] BillDolanandChrisBrockett. Automaticallyconstructingacorpusofsententialparaphrases. InThirdInternational
+WorkshoponParaphrasing(IWP2005),2005.
+[14] XinDong,ShangyuChen,andSinnoJialinPan. Learningtoprunedeepneuralnetworksvialayer-wiseoptimalbrain
+surgeon. InConferenceonNeuralInformationProcessingSystems(NeurIPS),2017.
+[15] UtkuEvci,FabianPedregosa,AidanGomez,andErichElsen. Thedifficultyoftrainingsparseneuralnetworks. arXiv
+preprintarXiv:1906.10732,2019.
+[16] UtkuEvci,TrevorGale,JacobMenick,PabloSamuelCastro,andErichElsen. Riggingthelottery: Makingalltickets
+winners. InInternationalConferenceonMachineLearning(ICML),2020.
+[17] UtkuEvci,MaxVladymyrov,ThomasUnterthiner,BartvanMerrienboer,andFabianPedregosa. Gradmax: Growing
+neuralnetworksusinggradientinformation. InInternationalConferenceonLearningRepresentations(ICLR),2022.
+[18] Jonathan Frankle and Michael Carbin. The lottery ticket hypothesis: Finding sparse, trainable neural networks. In
+InternationalConferenceonLearningRepresentations(ICLR),2019.
+[19] JonathanFrankle,GintareKarolinaDziugaite,DanielMRoy,andMichaelCarbin. Stabilizingthelotterytickethypothesis.
+arXivpreprintarXiv:1903.01611,2019.
+[20] EliasFrantar,EldarKurtic,andDanAlistarh. M-FAC:Efficientmatrix-freeapproximationsofsecond-orderinformation.
+InConferenceonNeuralInformationProcessingSystems(NeurIPS),2021.
+[21] TrevorGale,ErichElsen,andSaraHooker. Thestateofsparsityindeepneuralnetworks. InInternationalConferenceon
+MachineLearning(ICML),2019.
+[22] Noah Golmant, Zhewei Yao, Amir Gholami, Michael Mahoney, and Joseph Gonzalez. pytorch-hessian-
+eigenthings: efficient pytorch hessian eigendecomposition, 2018. URL https://github.com/noahgolmant/
+pytorch-hessian-eigenthings.
+[23] GregoryGriffin,AlexanderD.Holub,andPietroPerona. TheCaltech256. CaltechTechnicalReport,2006.
+18
+[24] SongHan,JeffPool,JohnTran,andWilliamJDally. Learningbothweightsandconnectionsforefficientneuralnetworks.
+InConferenceonNeuralInformationProcessingSystems(NeurIPS),2015.
+[25] KaimingHe,XiangyuZhang,ShaoqingRen,andJianSun. Deepresiduallearningforimagerecognition. InConferenceon
+ComputerVisionandPatternRecognition(CVPR),2016.
+[26] DanHendrycksandThomasDietterich.Benchmarkingneuralnetworkrobustnesstocommoncorruptionsandperturbations.
+ProceedingsoftheInternationalConferenceonLearningRepresentations,2019.
+[27] TorstenHoefler,DanAlistarh,TalBen-Nun,NikoliDryden,andAlexandraPeste. Sparsityindeeplearning: Pruningand
+growthforefficientinferenceandtraininginneuralnetworks. arXivpreprintarXiv:2102.00554,2021.
+[28] Sara Hooker, Aaron Courville, Gregory Clark, Yann Dauphin, and Andrea Frome. What do compressed deep neural
+networksforget? arXivpreprintarXiv:1911.05248,2019.
+[29] SaraHooker,NyallengMoorosi,GregoryClark,SamyBengio,andEmilyDenton. Characterisingbiasincompressed
+models. arXivpreprintarXiv:2010.03058,2020.
+[30] AndrewGHoward,MenglongZhu,BoChen,DmitryKalenichenko,WeijunWang,TobiasWeyand,MarcoAndreetto,
+andHartwigAdam. MobileNets: Efficientconvolutionalneuralnetworksformobilevisionapplications. arXivpreprint
+arXiv:1704.04861,2017.
+[31] Jeremy Howard and Sebastian Ruder. Universal language model fine-tuning for text classification. arXiv preprint
+arXiv:1801.06146,2018.
+[32] Shaoyi Huang, Dongkuan Xu, Ian EH Yen, Yijue Wang, Sung-En Chang, Bingbing Li, Shiyang Chen, Mimi Xie,
+SanguthevarRajasekaran,HangLiu,etal. Sparseprogressivedistillation: Resolvingoverfittingunderpretrain-and-finetune
+paradigm. arXivpreprintarXiv:2110.08190,2021.
+[33] EugeniaIofinova,AlexandraPeste,andDanAlistarh. Howwelldosparseimagenetmodelstransfer? InConferenceon
+ComputerVisionandPatternRecognition(CVPR),2022.
+[34] EugeniaIofinova,AlexandraPeste,andDanAlistarh. Biasinprunedvisionmodels:In-depthanalysisandcountermeasures.
+InConferenceonComputerVisionandPatternRecognition(CVPR),2023.
+[35] AjayJaiswal,HaoyuMa,TianlongChen,YingDing,andZhangyangWang. Trainingyoursparseneuralnetworkbetter
+withanymask. InInternationalConferenceonMachineLearning(ICML),2022.
+[36] SiddhantJayakumar,RazvanPascanu,JackRae,SimonOsindero,andErichElsen. Top-KAST:Top-Kalwayssparse
+training. InConferenceonNeuralInformationProcessingSystems(NeurIPS),2020.
+[37] SiddhantMJayakumar,RazvanPascanu,JackWRae,SimonOsindero,andErichElsen. Top-KAST:Top-Kalwayssparse
+training. arXivpreprintarXiv:2106.03517,2021.
+[38] DiederikPKingmaandJimmyBa. Adam: Amethodforstochasticoptimization. InternationalConferenceonLearning
+Representations(ICLR),2015.
+[39] SimonKornblith,JonathonShlens,andQuocVLe.DobetterImageNetmodelstransferbetter? InConferenceonComputer
+VisionandPatternRecognition(CVPR),2019.
+[40] JonathanKrause,MichaelStark,JiaDeng,andLiFei-Fei. 3DObjectRepresentationsforFine-GrainedCategorization. In
+4thInternationalIEEEWorkshopon3DRepresentationandRecognition(3dRR-13),Sydney,Australia,2013.
+[41] AlexKrizhevsky,GeoffreyHinton,etal. Learningmultiplelayersoffeaturesfromtinyimages. 2009.
+[42] EldarKurticandDanAlistarh. Gmp*: Well-tunedglobalmagnitudepruningcanoutperformmostbert-pruningmethods.
+arXivpreprintarXiv:2210.06384,2022.
+[43] EldarKurtic,DanielCampos,TuanNguyen,EliasFrantar,MarkKurtz,BenjaminFineran,MichaelGoin,andDanAlistarh.
+TheoptimalBERTsurgeon: Scalableandaccuratesecond-orderpruningforlargelanguagemodels. InProceedingsofthe
+2022ConferenceonEmpiricalMethodsinNaturalLanguageProcessing,AbuDhabi,UnitedArabEmirates,2022.
+[44] AdityaKusupati,VivekRamanujan,RaghavSomani,MitchellWortsman,PrateekJain,ShamKakade,andAliFarhadi.
+Softthresholdweightreparameterizationforlearnablesparsity. InInternationalConferenceonMachineLearning(ICML),
+2020.
+[45] GuillaumeLeclerc,AndrewIlyas,LoganEngstrom,SungMinPark,HadiSalman,andAleksanderMadry. ffcv. https:
+//github.com/libffcv/ffcv/,2022.
+[46] NamhoonLee,ThalaiyasingamAjanthan,andPhilipHSTorr. SNIP:Single-shotnetworkpruningbasedonconnection
+sensitivity. InternationalConferenceonLearningRepresentations(ICLR),2019.
+[47] Fei-FeiLi,R.Fergus,andPietroPerona. Learninggenerativevisualmodelsfromfewtrainingexamples: anincremental
+Bayesianapproachtestedon101objectcategories. InConferenceonComputerVisionandPatternRecognition(CVPR),
+2004.
+19
+[48] LucasLiebenwein,CenkBaykal,BrandonCarter,DavidGifford,andDanielaRus. LostinPruning: TheEffectsofPruning
+NeuralNetworksbeyondTestAccuracy. ConferenceonMachineLearningandSystems(MLSys),2021.
+[49] Shiwei Liu, Lu Yin, Decebal Constantin Mocanu, and Mykola Pechenizkiy. Do we actually need dense over-
+parameterization? in-timeover-parameterizationinsparsetraining. InInternationalConferenceonMachineLearning
+(ICML),2021.
+[50] Shiwei Liu, Tianlong Chen, Xiaohan Chen, Zahra Atashgahi, Lu Yin, Huanyu Kou, Li Shen, Mykola Pechenizkiy,
+ZhangyangWang,andDecebalConstantinMocanu. Sparsetrainingviaboostingpruningplasticitywithneuroregeneration.
+InConferenceonNeuralInformationProcessingSystems(NeurIPS),2022.
+[51] ZiweiLiu,PingLuo,XiaogangWang,andXiaoouTang. Deeplearningfaceattributesinthewild. InProceedingsofthe
+IEEEinternationalconferenceoncomputervision,pages3730–3738,2015.
+[52] YuchengLu,ShivaniAgrawal,SuvinaySubramanian,OlegRybakov,ChristopherDeSa,andAmirYazdanbakhsh. Step:
+Learningn:mstructuredsparsitymasksfromscratchwithprecondition,2023.
+[53] SubhransuMaji,EsaRahtu,JuhoKannala,MatthewBlaschko,andAndreaVedaldi. Fine-grainedvisualclassificationof
+aircraft. arXivpreprintArXiv:1306.5151,2013.
+[54] StephenMerity,NitishShirishKeskar,andRichardSocher. Regularizingandoptimizinglstmlanguagemodels. arXiv
+preprintarXiv:1708.02182,2017.
+[55] Dmitry Molchanov, Arsenii Ashukha, and Dmitry Vetrov. Variational dropout sparsifies deep neural networks. In
+InternationalConferenceonMachineLearning(ICML),pages2498–2507.PMLR,2017.
+[56] NeuralMagic. TheDeepSparseInferenceEngine. https://github.com/neuralmagic/deepsparse,2022.
+[57] Mahdi Nikdan, Tomasso Pegolotti, Eugenia Iofinova, Eldar Kurtic, and Dan Alistarh. Sparseprop: Efficient sparse
+propagationforfastertrainingofneuralnetworks. arXivpreprintarXiv:2302.04852,2023.
+[58] Maria-ElenaNilsbackandAndrewZisserman. Avisualvocabularyforflowerclassification. InConferenceonComputer
+VisionandPatternRecognition(CVPR),volume2,pages1447–1454,2006.
+[59] OmkarM.Parkhi,AndreaVedaldi,AndrewZisserman,andC.V.Jawahar. Catsanddogs. InConferenceonComputer
+VisionandPatternRecognition(CVPR),2012.
+[60] Alexandra Peste, Eugenia Iofinova, Adrian Vladu, and Dan Alistarh. AC/DC: Alternating compressed/decompressed
+trainingofdeepneuralnetworks. InConferenceonNeuralInformationProcessingSystems(NeurIPS),2021.
+[61] OlgaRussakovsky,JiaDeng,HaoSu,JonathanKrause,SanjeevSatheesh,SeanMa,ZhihengHuang,AndrejKarpathy,
+Aditya Khosla, Michael Bernstein, et al. Imagenet large scale visual recognition challenge. International Journal of
+ComputerVision,115(3):211–252,2015.
+[62] HadiSalman,AndrewIlyas,LoganEngstrom,AshishKapoor,andAleksanderMadry. DoadversariallyrobustImageNet
+modelstransferbetter? ConferenceonNeuralInformationProcessingSystems(NeurIPS),2020.
+[63] VictorSanh,ThomasWolf,andAlexanderRush. Movementpruning: Adaptivesparsitybyfine-tuning. AdvancesinNeural
+InformationProcessingSystems,33:20378–20389,2020.
+[64] VictorSanh,ThomasWolf,andAlexanderM.Rush. Movementpruning: Adaptivesparsitybyfine-tuning. arXivpreprint
+arXiv:2005.07683,2020.
+[65] Pedro Savarese, Hugo Silva, and Michael Maire. Winning the lottery with continuous sparsification. arXiv preprint
+arXiv:1912.04427,2021.
+[66] JonathanSchwarz, SiddhantJayakumar, Razvan Pascanu, PeterLatham, and YeeTeh. Powerpropagation: Asparsity
+inducingweightreparameterisation. InConferenceonNeuralInformationProcessingSystems(NeurIPS),2021.
+[67] SidakPalSinghandDanAlistarh. WoodFisher: Efficientsecond-orderapproximationforneuralnetworkcompression. In
+ConferenceonNeuralInformationProcessingSystems(NeurIPS),2020.
+[68] RichardSocher,AlexPerelygin,JeanWu,JasonChuang,ChristopherDManning,AndrewYNg,andChristopherPotts.
+Recursivedeepmodelsforsemanticcompositionalityoverasentimenttreebank. InProceedingsofthe2013conferenceon
+empiricalmethodsinnaturallanguageprocessing,pages1631–1642,2013.
+[69] AntoineVanderschuerenandChristopheDeVleeschouwer. Arestraight-throughgradientsandsoft-thresholdingallyou
+needforsparsetraining? In2023IEEE/CVFWinterConferenceonApplicationsofComputerVision(WACV),2023.
+[70] HanVanholder. EfficientinferencewithTensorRT. NVIDIAGTCOn-Demand.Slidesavailableathttps://on-demand-
+gtc.gputechconf.com/gtcnew/sessionview.php?sessionName=23425-efficient+inference+with+tensorrt,2017.
+[71] AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,AidanNGomez,ŁukaszKaiser,andIllia
+Polosukhin. Attentionisallyouneed. InConferenceonNeuralInformationProcessingSystems(NeurIPS),2017.
+20
+[72] RichardvonMisesandHildaPollaczek-Geiringer. Praktischeverfahrendergleichungsauflösung. Zamm-zeitschriftFur
+AngewandteMathematikUndMechanik,1929.
+[73] Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and Samuel R Bowman. Glue: A multi-task
+benchmarkandanalysisplatformfornaturallanguageunderstanding. arXivpreprintarXiv:1804.07461,2018.
+[74] AlexWarstadt,AmanpreetSingh,andSamuelRBowman. Neuralnetworkacceptabilityjudgments. Transactionsofthe
+AssociationforComputationalLinguistics,7:625–641,2019.
+[75] AdinaWilliams,NikitaNangia,andSamuelRBowman. Abroad-coveragechallengecorpusforsentenceunderstanding
+throughinference. arXivpreprintarXiv:1704.05426,2017.
+[76] Jianxiong Xiao, James Hays, Krista A Ehinger, Aude Oliva, and Antonio Torralba. Sun database: Large-scale scene
+recognitionfromabbeytozoo. In2010IEEEcomputersocietyconferenceoncomputervisionandpatternrecognition,
+pages3485–3492.IEEE,2010.
+[77] Lu Yin, Gen Li, Meng Fang, Li Shen, Tianjin Huang, Zhangyang Wang, Vlado Menkovski, Xiaolong Ma, Mykola
+Pechenizkiy,andShiweiLiu. Dynamicsparsityischannel-levelsparsitylearner. arXivpreprintarXiv:2305.19454,2023.
+[78] JasonYosinski, JeffClune, YoshuaBengio, andHodLipson. Howtransferablearefeaturesindeepneuralnetworks?
+Advancesinneuralinformationprocessingsystems,27,2014.
+[79] OfirZafrir, ArielLarey, GuyBoudoukh, HaihaoShen, andMosheWasserblat. Pruneonceforall: Sparsepre-trained
+languagemodels. arXivpreprintarXiv:2111.05754,2021.
+[80] Qingru Zhang, Simiao Zuo, Chen Liang, Alexander Bukharin, Pengcheng He, Weizhu Chen, and Tuo Zhao. Platon:
+Pruninglargetransformermodelswithupperconfidenceboundofweightimportance. InInternationalConferenceon
+MachineLearning,pages26809–26823.PMLR,2022.
+[81] MichaelZhuandSuyogGupta. Toprune,ornottoprune: exploringtheefficacyofpruningformodelcompression. arXiv
+preprintarXiv:1710.01878,2017.
+21
+Appendix
+Table of Contents
+A Traininghyperparameters 22
+B Sparsetrainingalgorithmhyperparameters 22
+C AC/DCdensefractionablation 23
+D AC/DCphasedurationablation 23
+E Comparisonwiththesmalldensemodel 23
+F Impactofextendedtrainingontransferperformance 24
+G EvaluationonImageNet-C 24
+H Transferlearningdatasetsforlanguagemodels 25
+I Losslandscapeanalysisexperimentalsetup 25
+A Traininghyperparameters
+WeadoptandscalethetrainingrecipesproposedintheFFCVlibrary[45]. Allrunsusealineardecayinglearningratewitha
+peakvalueη =0.5at2ndepochthatisgraduallydecreasedto0attheendofthetraining. Wetrainthemodelswithbatch
+max
+sizeof1024.
+TableA.1: Augmentationandregularizationprocedureusedinthework.
+Method Value
+Weightdecay 1e-4
+Labelsmoothingε 0.1
+Dropout (cid:37)
+H.flip (cid:33)
+RRC (cid:33)
+Blurpool (cid:33)
+Progressiveresizing (cid:33)
+Testcropratio 0.875
+Weuseprogressiveresizingwithtrainingonrandomresizedcrops(RRC)ofsize160×160forthefirst80%oftrainingand
+theremaining20%oftrainingwithcropsofsize192×192. Werunclassifieron224×224centercropsfortheimageresized
+to256pxonvalidationfollowingthestandardImageNetevaluationprotocol. DifferentlyfromtheFFCVrecipes,wedonot
+usetest-timeaugmentationwithaveragingofthepredictionontheoriginalimageanditsflippedversionsinceitrequires2x
+moreinferenceFLOPs. ForMobileNetexperimentsweadoptedsmallervalueofweightdecay3e-5followingthe[44]workand
+learningrateη =1.024.
+B Sparsetrainingalgorithmhyperparameters
+Allsparsetrainingmethodsusethesameoptimizerandlearningrateschedulerhyperparametersanddifferonlyinthespecifics
+ofweightpruning/regrowthprocedure. Inourworkwepruneonlyweightsofconvolutional(wedonotprunebiasesandbatch
+22
+normparameters)andkeepthefirstconvolutionaswellastheclassificationhead(thelastlinearlayeroutputtingthelogitsfor
+classes)dense. Thissetupiscommonintheliterature.
+AC/DC InourAC/DCtrainingsetupwetrainthemodelwithoutsparsityforthefirst10%ofthetrainingandthenalternate
+betweensparseanddensetrainingeach5stepsfollowingtheoriginalpaper[60]. Werunthelastcompressionstepandlast
+decompressionstepfor10and15epochsrespectively,againfollowingtheprescriptionfromthepaper. Wehaveablatedthe
+durationofthecompressionanddecompressionphasesand5epochsappearedtoyieldthebestperformance.
+RigL In the original paper [16] authors train the models with fixed target sparsity and periodically update the fraction of
+connectionsineachprunedlayerlfollowingthecosinedecayrule:
+(cid:18) (cid:18) (cid:19)(cid:19)
+α πt
+1+cos (1−s ) (4)
+2 T l
+Aboves isthesparsityofagivenlayerlandαistheinitialfractionofupdatedconnections. Thechoiceofupdatefrequency
+l
+∆T has a strong impact on the method performance and in the original work authors obtained the best performance with
+∆T ≃100−300steps,whichcorrespondsroughlyto0.4-1.2epochsonImageNetwiththebatchsizeusedinthework. Inour
+workweupdatedconnectionseveryepochtohavesetupclosetotheoriginalwork. Wesetα=0.3asintheoneusedinthe
+RigLwork. Followingtheoriginalwork,wetrainwithafixedsparsitymaskforthelast25%oftraining. Forglobalsparsitywe
+applytheERK(Erdo˝s–Rényi-Kernel)sparsityprofileasintheoriginalpaperasitwasshowntoproducethebestperformance
+foragivensparsity.
+GMP Wegraduallyincreasethesparsityfrom0%(densemodel)tothetargetsparsityfollowingacubicinterpolationlaw.
+Sparsityisincreasedevery5epochs. WetrainwithafixedmaskforthelastquarteroftrainingdurationasinRigL.
+C AC/DCdensefractionablation
+TheoriginalAC/DCpaperhasequallengthofcompressionanddecompressionphasesandonemayraiseaquestion,whetherit
+wouldbebettertotrainthemodellongerincompressedstateordecompressedtoachievebetterperformanceforagivensparsity
+target. IntheexperimentsbelowwetraintheResNet-50modelfor1000epochswith95%sparsity. Itturnsoutthatallocating
+equaltimefordenseandsparsetrainingworksthebest, asonecanseefromtheTableC.2. Here0meanspruningatsome
+momentoftrainingandfinetuningwithfixedmaskand1istheaccuracyofdensemodel. Evenwhentrainingmostofthetimein
+sparseregimeonestilldoesn’tlosemuchinperformance.
+TableC.2: Ablationonthesparsetrainingfraction.
+Sparsetrainingfraction(%) Accuracy(%)
+0 79.0
+0.2 77.2
+0.5 77.5
+0.8 77.3
+1 75.0
+D AC/DCphasedurationablation
+AnotherhyperparameterthatmayhaveasignificantimpactonperformanceistheupdateintervalofAC/DCiteration. Intuitively,
+morefrequentupdatesmayallowformorechangesinthechoiceofsparsityofthepruningmaskandatthesamelongertraining
+withfixedmaskcanbeneededtotheweightstoadaptwellforagivensparsitypattern. WehavetrieddifferentchoicesofAC/DC
+iterationdurationforResNet-50trainedfor1000epochsand95%globalsparsityandthechosenfrequencyupdateof5epochsis
+closetotheoptimum.
+E Comparisonwiththesmalldensemodel
+Onemayaskwhetheronecanachievesimilarperformancewithasmallerdensemodel. Wehavetakenasmallerversionof
+ResNet50with2xsmallerhiddendimension(denotedResNet-50x0.5). Wetrainedthemodelwiththesametrainingprocedure
+asthebaselineResNet-50modelfor1000epochs. OnecanobservefromTableE.4thatevenforsmallernumberofFLOPs
+sparsemodelismuchbetterthanthedenseone.
+23
+TableD.3: AC/DCiterationlengthablation.
+Sparsetrainingfraction(%) Accuracy(%)
+1 77.0
+5 77.5
+10 77.2
+50 75.9
+TableE.4: Small-densevssparsemodelonImageNet-1k
+Model(%) Sparsity(%) FLOPs Accuracy(%)
+ResNet-50x0.5 0 - 69.8
+ResNet-50 95 - 77.5
+F Impactofextendedtrainingontransferperformance
+WefurthervalidateourresultsbyusingsparseanddenseResNet50modelspretrainedonImageNetfortransferlearningfor
+othervisionrecognitiontasks. Transferlearningisacommonparadigminwhichalargedatasetisusedtosetnetworkweights
+beforetheyarefurtherfine-tunedonthe(typically,smaller)datasetofinterest;thisapproachcanprovidesignificantgainsover
+directtrainingonthesmallertaskfromarandominitialization. Inthissection,werefertothelargerdataset/task(inourcase,
+ImageNet)astheupstreamtask,andthesmallerdataset/taskasthedownstreamtask.
+Therearetwocommonapproachestotransferlearning,thechoiceofwhichlargelydependsonthetechnologicalcapabilitiesof
+thesystemdoingthelearningtask. Ifalargeamountofcomputeisavailable,allmodelweightscanbetrainedonthedownstream
+task,inaprocesswecallfullfinetuning. Otherwise,ifcomputeislimited,allthelayersofthedeepneuralnetworkexceptforthe
+finalclassifierarefrozenafterdownstreamtrainingandusedpurelyasafeatureextractor,andonlythefinallayer(properly
+resized)istrainedonthedownstreamtask,asalinearclassifierontheextractedfeatures. Wecallthisprocesslinearfinetuning.
+Weapplybothtransferlearningapproachestoastandardsetoftwelvedownstreamtasks,whicharefrequentlyusedasbenchmarks
+fortransferlearningperformance[39,33,62]. Thetwelvedatasetsincludesixspecializedtasksandsixgeneraltasks;afulllist
+ofdownstreamtasksisgiveninAppendixTableF.6.
+WeusefourvariantsofResNet50modelspretrainedonImageNetastheupstreammodel: denseand95%globallysparsemodels
+trainedfor100and1000epochs. Otherwise,wefollowthetraininghyperparametersof[33],and,alsofollowingthiswork,we
+computeasinglemetricacrossalltwelvetasksbycomputingAverageIncreaseinErrorforasetoftasksT overabaseline
+model. Thismetriciscomputedasfollows: foreachofthedownstreamtasks,wecomparethedifferenceintheerror(1−Top-1
+accuracy)whenthebaseline(100-epochdense)modelisusedfortransferlearning,versuswhenanothermodel(eithersparse,
+orextended-trainingdense)isused. Theincreaseinerroristhedifferenceofthesetwoquantitiesdividedbythedenseerror;
+thefinalmetricistheaverageoftheserelativedifferencesacrossalldownstreamdatasets. Asarguedin[33],normalizingerror
+differencesbythedenseerrorallowsustoroughlyequalizedatasetimpactwhenwecomputeasinglemetricacrossdifferent
+datasetswithverydifferentmodelperformance(e.g.,nearly100%accuracyonthePetsdataset,butabout50%accuracyonthe
+Aircraftdataset. Formally,themetriciscomputedas:
+AIE=
+1 (cid:88)Err Model,t−Err
+Baseline,t (5)
+|T| Err
+Baseline,t
+t∈T
+WecomputetheAIEusingthe100-epochdensemodelasthebaselinemodel,andpresenttheresultsinTableF.5. Weobserve
+thattheeffectofextendedtrainingonthedensemodelisneutralatbest-thereisasmallincreaseinerrorwithextendedtraining
+inthelinearfinetuningregime,andnochangeinthefullfinetuningregime. Conversely,the1000epoch95%sparsemodel
+outperformsthe100-epochoneacrossbothregimes,withahighererrordropinthelinearfinetuningregimeandasmallererror
+increaseinthefullfinetuningregime.
+G EvaluationonImageNet-C
+Inordertoconfirmtherobustnessofourmodelsagainstperturbations,weevaluateAC/DCanddensemodelsontheImageNet-
+C[26]dataset,whichconsistsofthestandardImageNetvalidationdatasettowhichperturbationssuchasnoise,blur,photographic
+effects(suchascontrastenhancement)orweatherconditions(suchassnoworfog)weredigitallyadded. Weusethelowest
+“1”levelofperturbation,aswefindthatthequalityalreadydropsconsiderablyoverthecleandata. Ourresultsareshownin
+24
+TrainingDuration Linear-Dense Linear-95%Sparse Full-Dense Full-95%Sparse
+100ep. - -0.123 - 0.112
+1000ep. 0.026 -0.182 0.000 0.062
+TableF.5: Transferlearningforimagerecognition-AverageIncreaseinErroroverthe100-epochdensemodel. Lowerisbetter:
+positivenumbersindicatethatthemodelhas,onaverage,moreerrorthanthebaselinemodel;negativenumbersindicatethatthe
+modelhas,onaverage,lesserror.
+Dataset NumberofClasses Train/TestExamples AccuracyMetric
+SUN397[76] 397 19850/19850 Top-1
+FGVCAircraft[53] 100 6667/3333 MeanPer-Class
+Birdsnap[4] 500 32677/8171 Top-1
+Caltech-101[47] 101 3030/5647 MeanPer-Class
+Caltech-256[23] 257 15420/15187 MeanPer-Class
+StanfordCars[40] 196 8144/8041 Top-1
+CIFAR-10[41] 10 50000/10000 Top-1
+CIFAR-100[41] 100 50000/10000 Top-1
+DescribableTextures(DTD)[10] 47 3760/1880 Top-1
+Oxford102Flowers[58] 102 2040/6149 MeanPer-Class
+Food-101[6] 101 75750/25250 Top-1
+Oxford-IIITPets[59] 37 3680/3669 MeanPer-Class
+TableF.6: Datasetsusedasdownstreamtasksfortransferlearningwithcomputer-visionmodels.
+FigureG.2. Weobservethat,asexpectedandalsoasreportedin[48],densemodelsoutperformsparseonesoncorrupteddata.
+Further,andconsistentlywithourotherfindings,extendedtrainingonthedensemodeldoesnotimproveperformanceonthe
+ImageNet-Cdataset;conversely,suchimprovementcanbeseenforall19perturbationcategoriesfor95%sparsemodels.
+H Transferlearningdatasetsforlanguagemodels
+InTableH.7weprovideabriefsummaryofdatasetsinthepopularGLUEbenchmark[73]. Followingpreviouswork[63,79,42,
+43,80,32],weexcludeWNLIdatasetfromconsiderationinallexperiments.
+I Losslandscapeanalysisexperimentalsetup
+TocomputethelargestHessianeigenvalueweranpoweriterationmethod[72]for20iterationsusingthemodifiedversionofthe
+codefrom[22]package. 20iterationswereusuallyenoughfortheiterationstoconverge. Hessianiscomputedonlywithrespect
+tothenon-zeroweights.
+Toplot10weevaluatedtrainingloss(withaugmentationturnedoff)andvalidationlossonthewholedatasetateach. Wechose
+checkpointsobtainedonsteps{99,199,...,999}andspliteachintervalbetweentwoadjacentcheckpointsinto10pieces.
+Dataset Train/TestExamples AccuracyMetric
+RTE[73] 2.5k/3k Accuracy
+QNLI[73] 105k/5.4k Accuracy
+MRPC[13] 3.7k/1.7k F1scoreandAccuracy
+SST-2[68] 67k/1.8k Accuracy
+CoLA[74] 8.5k/1k Matthewscorrelationcoefficient
+STS-B[7] 7k/1.4k PearsonandSpearmancorrelation
+MNLI[75] 393k/20k Matched(m)andmismatched(mm)accuracy
+QQP[73] 364k/391k AccuracyandF1score
+TableH.7: Datasetsusedasdownstreamtasksfortransferlearningwithlanguagemodels.
+25
+0.8
+0.6
+0.4
+0.2
+0.0
+Aircraft Birds Caltech101 Caltech256 Cars CIFAR-10CIFAR-100 DTD Food-101 Pets SUN397 Flowers
+Downstream Task
+ycaruccA
+noitadilaV
+ssalC-reP
+naeM
+1.0
+0.8
+0.6
+0.4
+Dense - 1000 ep. 0.2
+Dense - 1000 ep.
+95% Sparse - 100 ep.
+95% Sparse - 1000 ep.
+0.0
+Aircraft Birds Caltech101 Caltech256 Cars CIFAR-10CIFAR-100 DTD Food-101 Pets SUN397 Flowers
+Downstream Task
+ycaruccA
+noitadilaV
+ssalC-reP
+naeM
+Dense - 1000 ep.
+Dense - 1000 ep.
+95% Sparse - 100 ep.
+95% Sparse - 1000 ep.
+FigureF.1: Linear(left)andFull-network(right)transferlearningmeanper-classaccuracyforindividualdatasets.
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0.0
+contrast pix ee ll aa st te ic_tran jsf po er g_m compression fog brightness frost snow motion_blur zoom_blur defocus_blur glass_blur shot_noi ise mpulse_noi gs ae ussian_noise spatte sr peckle_noise saturat ge aussian_blur
+Perturbation
+ycaruccA
+1-poT
+95% Sparse - 1000ep.
+95% Sparse - 250ep.
+95% Sparse - 100ep.
+Dense - 1000ep.
+Dense - 100ep.
+FigureG.2: Linear(left)andFull-network(right)transferlearningmeanper-classaccuracyforindividualdatasets.
+26

@@ -1,0 +1,617 @@
+Unicoder: A Universal Language Encoder by Pre-training with Multiple
+Cross-lingual Tasks
+HaoyangHuang§ YaoboLiang§ NanDuan§ MingGong† LinjunShou†
+DaxinJiang† MingZhou§
+§ MicrosoftResearchAsia,Beijing,China
+† STCANLPGroup,Microsoft,Beijing,China
+{haohua,yalia,nanduan,migon,lisho,djiang,mingzhou}@microsoft.com
+Abstract for cross-lingual tasks. Multilingual BERT trains
+a BERT model based on multilingual Wikipedia,
+WepresentUnicoder,auniversallanguageen-
+which covers 104 languages. As its vocabulary
+coderthatisinsensitivetodifferentlanguages.
+contains tokens from all languages, Multilingual
+Given an arbitrary NLP task, a model can be
+BERT can be used to cross-lingual tasks directly.
+trained with Unicoder using training data in
+XLM further improves Multilingual BERT by in-
+one language and directly applied to inputs
+of the same task in other languages. Com- troducing a translation language model (TLM).
+paring to similar efforts such as Multilingual TLMtakesaconcatenationofabilingualsentence
+BERT (Devlin et al., 2018) and XLM (Lam- pairasinputandperformsmaskedlanguagemodel
+ple and Conneau, 2019), three new cross-
+based on it. By doing this, it learns the mappings
+lingual pre-training tasks are proposed, in-
+among different languages and performs good on
+cluding cross-lingual word recovery, cross-
+theXNLIdataset.
+lingual paraphrase classification and cross-
+lingual masked language model. These tasks However,XLMonlyusesasinglecross-lingual
+helpUnicoderlearnthemappingsamongdif- task during pre-training. At the same time, Liu
+ferent languages from more perspectives. We et al. (2019) has shown that multi-task learn-
+also find that doing fine-tuning on multiple ing can further improve a BERT-style pre-trained
+languagestogethercanbringfurtherimprove-
+model. Sowethinkmorecross-lingualtaskscould
+ment. Experiments are performed on two
+furtherimprovetheresultingpre-trainedmodelfor
+tasks: cross-lingual natural language infer-
+cross-lingual tasks. To verify this, we propose
+ence (XNLI) and cross-lingual question an-
+Unicoder, a universal language encoder that is
+swering (XQA), where XLM is our baseline.
+On XNLI, 1.8% averaged accuracy improve- insensitive to different languages and pre-trained
+ment(on15languages)isobtained. OnXQA, based on 5 pre-training tasks. Besides masked
+which is a new cross-lingual dataset built by language model and translation language model,
+us, 5.5% averaged accuracy improvement (on 3 new cross-lingual pre-training tasks are used
+FrenchandGerman)isobtained.
+in the pre-training procedure, including cross-
+lingual word recovery, cross-lingual paraphrase
+Introduction
+classification and cross-lingual masked language
+Dataannotationisexpensiveandtime-consuming model. Cross-lingual word recovery leverage at-
+formostofNLPtasks. Recently,pre-trainedmod- tention matrix between bilingual sentence pair to
+els, such as ELMo (Peters et al., 2018), BERT learn the cross-lingual word alignment relation.
+(Devlin et al., 2018) and GPT (Radford et al., Cross-lingual paraphrase classification takes two
+2018), have shown strong capabilities of trans- sentences from different languages and classify
+ferring knowledge learned from large-scale text whethertheyhavesamemeaning. Thistaskcould
+corpus to specific NLP tasks with limited or no learn the cross-lingual sentence alignment rela-
+training data. But they still cannot handle tasks tion. Inspired by the successful of monolingual
+when training and test instances are in different pre-trainingonlongtext(Radfordetal.,2018;De-
+languages. vlinetal.,2018),weproposecross-lingualmasked
+Motivatedbythisissue,someeffortshavebeen language model whose input is document writ-
+made, such as Multilingual BERT (Devlin et al., ten by multiple languages. We also find that do-
+2018) and XLM (Lample and Conneau, 2019), ingfine-tuningonmultiplelanguagestogethercan
+bring further improvement. For the languages be applied to multiple languages (Ammar et al.,
+without training data, we use machine translated 2016). Artetxe and Schwenk (2018) use multi-
+datafromrich-resourcelanguages. lingual machine translation to train a multilingual
+Experiments are performed on cross-lingual sentence encoder and use this fixed sentence em-
+natural language inference (XNLI) and cross- beddingtoclassifyXNLI.Wetaketheseideasone
+lingual question answering (XQA), where both stepfurtherbyproducingapre-trainedencoderin-
+Multilingual BERT and XLM are considered as steadofwordembeddingorsentenceembedding.
+ourbaselines. OnXNLI,1.8%averagedaccuracy Our work is based on two recent pre-trained
+improvement (on 15 languages) is obtained. On cross-lingualencoders: multilingualBERT1 (De-
+XQA, which is a new cross-lingual dataset built vlin et al., 2018) and XLM (Lample and Con-
+by us, 5.5% averaged accuracy improvement (on neau, 2019). Multilingual BERT trains masked
+FrenchandGerman)isobtained. language model (MLM) with sharing vocabulary
+In short, our contributions are 4-fold. First, and weight for all 104 languages. But each train-
+3 new cross-lingual pre-training tasks are pro- ingsampleismonolingualdocument. Keepingthe
+posed, which can help to learn a better language- same setting, XLM proposed a new task TLM,
+independent encoder. Second, a cross-lingual which uses a concatenation of the parallel sen-
+question answering (XQA) dataset is built, which tencesintoonesampleformaskedlanguagemod-
+can be used as a new cross-lingual benchmark eling. Besidesthesetwotasks, weproposedthree
+dataset. Third, we verify that by fine-tuning mul- newcross-lingualpre-trainingtasksforbuildinga
+tiplelanguagestogether,significantimprovements betterlanguage-independentencoder.
+canbeobtained. Fourth,ontheXNLIdataset,new
+Approach
+state-of-the-artresultsareachieved.
+This section will describe details of Unicoder, in-
+Relatedwork
+cluding tasks used in the pre-training procedure
+Monolingual Pre-training Recently, pretrain- anditsfine-tuningstrategy.
+inganencoderbylanguagemodel(Radfordetal.,
+ModelStructure
+2018; Peters et al., 2018; Devlin et al., 2018) and
+machine translation (McCann et al., 2017) have Unicoder follows the network structure of XLM
+shown significant improvement on various natu- (Lample and Conneau, 2019). A shared vocab-
+rallanguageunderstanding(NLU)tasks,liketasks ulary is constructed by running the Byte Pair En-
+in GLUE (Wang et al., 2018). The application coding(BPE)algorithm (Sennrichetal.,2016)on
+scheme is to fine-tune the pre-trained encoder on corpusofalllanguages. Wealsodownsamplethe
+singlesentenceclassificationtaskorsequentialla- rich-resource languages corpus, to prevent words
+beling task. If the tasks have multiple inputs, of target languages from being split too much at
+just concatenate them into one sentence. This ap- thecharacterlevel.
+proach enables one model to be generalized to
+Pre-trainingTasksinUnicoder
+different language understanding tasks. Our ap-
+proach also is contextual pre-training so it could Both masked language model and translation lan-
+beenappliedtovariousNLUtasks. guage model are used in Unicoder by default, as
+theyhaveshownstrongperformanceinXLM.
+Cross-lingual Pre-training Cross-lingual Pre-
+Motivated by Liu et al. (2019), which shows
+training is a kind of transfer learning with dif-
+that pre-trained models can be further improved
+ferent source and target domain (Pan and Yang,
+by involving more tasks in pre-training, we in-
+2010). Ahigh-qualitycross-lingualrepresentation
+troducethreenewcross-lingualtasksinUnicoder.
+spaceisassumedtoeffectivelyperformthecross-
+Alltrainingdataforthesethreetasksareacquired
+lingual transfer. Mikolov et al. (2013) has been
+fromtheexistinglarge-scalehigh-qualitymachine
+applied small dictionaries to align word represen-
+translationcorpus.
+tationsfromdifferentlanguagesanditissufficient
+toaligndifferentlanguageswithorthogonaltrans- Cross-lingualWordRecovery Similartotrans-
+formation (Xingetal.,2015),evenwithoutparal- lationlanguagemodel,thistaskalsoaimstoletthe
+lel data (Lample et al., 2018). Following the line
+1https://github.com/google-
+of previous work, the word alignment also could research/bert/blob/master/multilingual.md
+Figure1: Unicoderconsistsofthreecross-lingualpre-trainingtasks: (a)Thecross-lingualwordrecoverymodelis
+tolearnwordrelationfromdifferentlanguages(b)Thecross-lingualparaphraseclassificationistoclassifywhether
+two sentences from different languages are paraphrase. (c) The cross-lingual masked language model is to train
+maskedlanguagemodelwithcross-lingualdocument.
+pre-trainedmodellearntheunderlyingwordalign- (xt,xt,...,xt) as input, and tries to predict the
+1 2 n
+ments between two languages. It is mainly mo- originalwordsequenceX.
+tivated by the attention matrix used in the neural Similar to translation language model in XLM,
+machinetranslationBahdanauetal.(2014)task. thistaskisbasedonthebilingualsentencepairsas
+Formally, given a bilingual sentence pair well. However,asitdoesn’tusetheoriginalwords
+(X,Y), where X = (x 1,x 2,...,x m) is a sen- as input, we can train this task by recovering all
+tence with m words from language s, Y = words at the same time. The model structure of
+(y 1,y 2,...,y n) is a sentence with n words from thistaskisillustratedinFigure1.a.
+language t, this task first represents each x as
+i
+xt ∈ Rh byallwordembeddingsofY: Cross-lingual Paraphrase Classification This
+i
+task takes two sentences from different languages
+n
+(cid:88) as input and classifies whether they are with the
+xt = softmax(A )yt (1)
+i ij j same meaning. Like the next sentence prediction
+j=1
+task in BERT, we concatenate two sentences as a
+where xs ∈ Rh and yt ∈ Rh denote the word sequence and input it to Unicoder. The represen-
+i j
+tation of the first token in the final layer will be
+embeddings of x and y respevtively, h denotes
+i j
+thewordembeddingdimension, A ∈ Rm×n isan used for the paraphrase classification task. This
+procedureisillustratedinFigure1.b.
+attentionmatrixcalculatedby:
+We created the cross-lingual paraphrase classi-
+A = W[xs,yt,xs(cid:12)yt] (2) fication dataset from machine translation dataset.
+ij i j i j
+Each bilingual sentence pair (X,Y) servers as a
+W ∈ R3∗h isatrainableweightand(cid:12)iselement- positive sample. For negative samples, the most
+wise multiplication. Then, Unicoder takes Xt = straight forward method is to replace Y to a ran-
+dom sampled sentence from target language. But TRANSLATE-TEST fine-tunes on source lan-
+this will make the classification task too easy. So guage training data, but translates the target lan-
+we introduce the hard negative samples followed guagetestdatatosourcelanguageandtestonit.
+Guo et al. (2018). First, we train a light-weight Inspired by multi-task learning (Liu et al.,
+paraphrase model with random negative samples. 2018, 2019) for improving pre-trained model, we
+Then we use this model to select sentence with proposeanewfine-tuningstrategyMulti-language
+high similarity score to X but doesn’t equal to Y Fine-tuning. We propose to fine-tune on both the
+ashardnegativesamples. WechooseDAN(Iyyer source language training data and pseudo target
+etal.,2015)asthelightmodel. Wecreatepositive language training data. If there are multiple tar-
+andnegativesamplesin1:1. get languages, we will fine-tune on all of them at
+sametime.
+Cross-lingual Masked Language Model Pre-
+Different languages may have totally different
+vious successful pre-training language model
+vocabularyandsyntax. Butourexperimentsshow
+(Devlin et al., 2018; Radford et al., 2018) is
+that in most cases, joint fine-tuning multiple lan-
+conducted on document-level corpus rather than
+guages could bring huge improvement. Only in
+sentence-level corpus. The language model per-
+justafewcases,thismayharmtheperformance.
+plexityondocumentalsoismuchlowerthansen-
+tence (Peters et al., 2018). So we propose cross-
+lingual masked language model, whose input is
+comefromcross-lingualdocument.
+Cross-lingual document is a sequence of sen-
+tences,andthesentencesarewrittenwithdifferent
+languages. Inmostcase,peoplewon’twritecross-
+lingual document. But we found that a large pro-
+portionofalignedsentencepairsinmachinetrans-
+lationareextractedfromparalleldocuments,such
+as MultiUN corpus and OpenSubtitles corpus. In
+otherwords, theseMTcorpusaredocument-level
+corpus in which each sentence and its translation
+is well aligned. We construct cross-lingual doc-
+ument by replacing the sentences with even in-
+dex to its translation as illustrated in Figure 1.c.
+Wetruncatethecross-lingualdocumentby256se- Figure2: Currentlycross-lingualfine-tuninghasthree
+baseline approaches, they could be defined based on
+quence length and feed it to Unicoder for masked
+their training data and test data. Suppose we target
+languagemodeling.
+to test on Chinese data, Translate-train is to train on
+ChinesetrainingdatawhichistranslatedfromEnglish
+Multi-languageFine-tuning
+andtestonChinesetestdata;Translate-Testistotrain
+A typical setting of cross-lingual language under- on English training data and test on English test data
+standing is only one language has training data, whichistranslatedfromChinese; Cross-lingualtestis
+but the test is conducted on other languages. We totraininEnglishtrainingdataandtestonChinesetest
+data. Multi-languagefine-tuningistotrainonEnglish
+denote the language has training data as source
+trainingdataandmultipleotherlanguagestrainingdata
+language,andotherlanguagesastargetlanguages.
+whicharetranslatedfromEnglish,thentestonChinese
+Ascalableway (Conneauet al.,2018)toaddress
+Testdata.
+this problem is through Cross-lingual TEST, in
+which a pre-trained encoder is trained on data in
+source language and directly evaluated on data in
+targetlanguages. Experiment
+There are two other machine translation meth-
+ods that make training and test belong to the Inthissection,wedescribethedataprocessingand
+same language. TRANSLATE-TRAIN translates training details. Then we compare the Unicoder
+the source language training data to a target lan- withthecurrentstateoftheartapproachesontwo
+guage and fine-tunes on this pseudo training data. tasks: XNLIandXQA.
+DataProcessing available in 15 languages, and we sample several
+languages with equal probability. And we use
+Our model is pre-trained on 15 languages, in-
+batchsize512bygradientaccumulation. Wetrain
+cludingEnglish(en),French(fr),Spanish(es),Ger-
+ourmodelwiththeAdamoptimizer(Kingmaand
+man(de), Greek(el), Bulgarian(bg), Russian(ru),
+Ba,2015),andlearningratestartsfrom1e−5with
+Turkish(tr), Arabic(ar), Vietnamese(vi), Thai(th),
+invert square root decay (Vaswani et al., 2017).
+Chinese(zh),Hindi(hi),Swahili(sw)andUrdu(ur).
+We run our pretraining experiments on a single
+For MLM, we use the Wikipedia from these lan-
+server with 8 V100 GPUs and use FP16 to save
+guages. The other four tasks need MT dataset.
+thememory.
+WeusesameMTdatasetas LampleandConneau
+The max sequence length of MLM and cross-
+(2019) which are collected from MultiUN (Eisele
+linguallanguagemodelis256. Fortheotherthree
+andChen,2010),IITBombaycorpus(Kunchukut-
+tasks with two sentences as input, we set the max
+tan et al., 2017), OpenSubtitles 2018, EUbook-
+sequencelengthto128sothesumofthemis256.
+shopcorpusandGlobalVoices. IntheMTcorpus,
+13 of 14 languages (except IIT Bombay corpus)
+Fine-tuning details For fine-tuning stage, we
+are from parallel document and could be used to
+use same optimizer and learning rate as pre-
+traincross-lingualdocumentlanguagemodel. The
+training. Wesetthebatchsizeto32.
+numberofdataweusedisreportedattable 1.
+For tokenization, we follows the line of Koehn Experimentalevaluation
+et al. (2007); Chang et al. (2008) for each lan-
+XNLI: Cross-lingual Natural Language In-
+guage. We use byte-pair encoding (BPE) to pro-
+ference NaturalLanguage Inference(NLI)takes
+cessthecorpusandbuildvocabulary.
+two sentences as input and determines whether
+oneentailstheother,contradictsitorneither(neu-
+language mono-lingual bi-lingual
+tral). XNLIisNLIdefinedon15languages. Each
+ar 3.8M 9.8M languagecontains5000humanannotateddevelop-
+bg 1.5M 0.6M
+ment and test set. Only English has training data,
+de 17.4M 9.3M
+el 1.3M 4.0M which is a crowd-sourced collection of 433k sen-
+en 43.2M -
+tencepairsfromMultiNLI (Williamsetal.,2018).
+es 11.3M 11.4M
+Theperformanceisevaluatedbyclassificationac-
+fr 15.5M 13.2M
+hi 0.6M 1.6M curacy.
+ru 12.6M 11.7M
+We report the results of XNLI in Table 2, by
+sw 0.2M 0.2M
+th 0.8M 3.3M comparing our Unicoder model with four base-
+tr 1.8M 0.5M lines: Conneau et al. (2018) uses LSTM as sen-
+ur 0.5M 0.7M
+tence encoder and constraints bilingual sentence
+vi 3.8M 3.5M
+zh 5.5M 9.6M pairs have similar embedding. The other base-
+lines are pre-training based approaches. Multilin-
+Table1: Sentencenumberweusedinpre-training. gualBERT(Devlinetal.,2018)istotrainmasked
+language model on multilingual Wikipedia. And
+Artetxe and Schwenk (2018) is pre-trained with
+TrainingDetails machine translation model and takes the MT en-
+coder to produce sentence embedding. XLM
+Model Structure Our Unicoder is a 12-layer
+(Lample and Conneau, 2019) explores masked
+transformer with 1024 hidden units, 16 heads,
+language model on multilingual Wikipedia, using
+GELU activation (Hendrycks and Gimpel, 2017).
+translation language model on MT bilingual sen-
+we set dropout to 0.1. The vocabulary size is
+tencepairforpre-traininginaddition.
+95,000.
+Based on the result, we could find our pre-
+Pre-training details To reduce pre-training training model Unicoder obtains the best result
+time,weinitializeourmodelfromXLM (Lample in every fine-tuning setting. In TRANSLATE-
+and Conneau, 2019). We pretrain Unicoder with TRAIN, TRANSLATE-TEST and Cross-lingual
+five tasks including MLM\TLM and our three TEST, Unicoder obtains 76.9%, 74.9% and
+cross-lingual tasks. In each step, we iteratively 75.4% accuracy on average, respectively. In
+train these five tasks. A batch for these tasks is Multi-language Fine-tuning, Unicoder outper-
+en fr es de el bg ru tr ar vi th zh hi sw ur average
+Machinetranslateattraining(TRANSLATE-TRAIN)
+Conneauetal.(2018) 73.7 68.3 68.8 66.5 66.4 67.4 66.5 64.5 65.8 66.0 62.8 67.0 62.1 58.2 56.6 65.4
+MultilingualBERT(Devlinetal.,2018) 81.9 - 77.8 75.9 - - - - 70.7 - - 76.6 - - 61.6 -
+MultilingualBERTfrom WuandDredze2019 82.1 76.9 78.5 74.8 72.1 75.4 74.3 70.6 70.8 67.8 63.2 76.2 65.3 65.3 60.6 71.6
+XLM(LampleandConneau,2019) 85.0 80.2 80.8 80.3 78.1 79.3 78.1 74.7 76.5 76.6 75.5 78.6 72.3 70.9 63.2 76.7
+Unicoder 85.1 80.0 81.1 79.9 77.7 80.2 77.9 75.3 76.7 76.4 75.2 79.4 71.8 71.8 64.5 76.9
+Machinetranslateattest(TRANSLATE-TEST)
+Conneauetal.(2018) 73.7 70.4 70.7 68.7 69.1 70.4 67.8 66.3 66.8 66.5 64.4 68.3 64.2 61.8 59.3 67.2
+MultilingualBERT(Devlinetal.,2018) 81.4 - 74.9 74.4 - - - - 70.4 - - 70.1 - - 62.1 -
+XLM(LampleandConneau,2019) 85.0 79.0 79.5 78.1 77.8 77.6 75.5 73.7 73.7 70.8 70.4 73.6 69.0 64.7 65.1 74.2
+Unicoder 85.1 80.1 80.3 78.2 77.5 78.0 76.2 73.3 73.9 72.8 71.6 74.1 70.3 65.2 66.3 74.9
+Evaluationofcross-lingualsentenceencoders(Cross-lingualTEST)
+Conneauetal.(2018) 73.7 67.7 68.7 67.7 68.9 67.9 65.4 64.2 64.8 66.4 64.1 65.8 64.1 55.7 58.4 65.6
+MultilingualBERT(Devlinetal.,2018) 81.4 - 74.3 70.5 - - - - 62.1 - - 63.8 - - 58.3 -
+MultilingualBERTfrom WuandDredze2019 82.1 73.8 74.3 71.1 66.4 68.9 69 61.6 64.9 69.5 55.8 69.3 60.0 50.4 58.0 66.3
+ArtetxeandSchwenk(2018) 73.9 71.9 72.9 72.6 73.1 74.2 71.5 69.7 71.4 72.0 69.2 71.4 65.5 62.2 61.0 70.2
+XLM(LampleandConneau,2019) 85.0 78.7 78.9 77.8 76.6 77.4 75.3 72.5 73.1 76.1 73.2 76.5 69.6 68.4 67.3 75.1
+Unicoder 85.1 79.0 79.4 77.8 77.2 77.2 76.3 72.8 73.5 76.4 73.6 76.2 69.4 69.7 66.7 75.4
+Multi-languageFine-tuning
+XLM(LampleandConneau,2019) 85.0 80.8 81.3 80.3 79.1 80.9 78.3 75.6 77.6 78.5 76.0 79.5 72.9 72.8 68.5 77.8
+Unicoderw/oWordRecovery 85.2 80.5 81.8 80.9 79.7 81.1 79.3 76.2 78.2 78.5 76.4 79.7 73.4 73.6 68.8 78.2
+Unicoderw/oParaphraseClassification 85.5 81.1 82.0 81.1 80.0 81.3 79.6 76.6 78.2 78.2 75.9 79.9 73.7 74.2 69.3 78.4
+Unicoderw/oCross-lingualLanguageModel 85.5 81.9 81.8 80.5 80.5 81.0 79.3 76.4 78.1 78.3 76.3 79.6 72.9 73.0 68.7 78.3
+Unicoder 85.6 81.1 82.3 80.9 79.5 81.4 79.7 76.8 78.2 77.9 77.1 80.5 73.4 73.8 69.6 78.5
+Table 2: Test accuracy on the 15 XNLI languages. This table is organized by fine-tuning and test approaches.
+TRANSLATE-TRAIN is to machine translate English training data to target language and fine-tune with this
+translated data; TRANSLATE-TEST is machine translate target language test data to English, the fine-tuning is
+conductedonEnglish; Cross-lingualTESTistofine-tuneonEnglishanddirectlytestontargetlanguage; Multi-
+languageFine-tuneistofine-tuneonmachinetranslatedtrainingdataonalllanguages.
+forms XLM by 0.7%. By translating the En- en fr de average
+glish training data to target language, both Machinetranslateattraining(TRANSLATE-TRAIN)
+TRANSLATE-TRAIN and Multi-language Fine- XLM(LampleandConneau,2019) 80.2 65.1 63.3 64.2
+tuning can outperform other fine-tuning ap- Unicoder 81.1 66.2 66.5 66.4
+Evaluationofcross-lingualsentenceencoders(Cross-lingualTEST)
+proaches on average no matter what encoder is
+XLM(LampleandConneau,2019) 80.2 62.3 61.7 62.0
+used. OurMulti-languageFine-tuningapproachis
+Unicoder 81.1 64.1 63.7 63.9
+even better than TRANSLATE-TRAIN. With this
+Multi-languageFine-tuning
+approach, XLM is been improved by 1.1% and
+BERT(Devlinetal.,2018) 76.4 61.6 64.6 63.1
+Unicoderisbeenimprovedby1.6%. XLM(LampleandConneau,2019) 80.7 67.1 68.2 67.7
+Unicoder 81.4 69.3 70.1 69.7
+By Combining Unicoder and Multi-language
+Fine-tuning, Unicoder achieves an new state of
+Table3: ResultsontheXQA.Theaveragecolumnis
+theartwith78.5%. Itobtains1.8%accuracygain
+theaverageoffrandderesult.
+compared to previous state of the art, XLM fine-
+tunedwithTRANSLATE-TRAIN.
+we also evaluate Unicoder on XQA and set XLM
+XQA: Cross-lingual Question Answering We fine-tuned on our dataset as baseline with their
+proposed a new dataset XQA. Question Answer- published code. We split 5K data from training
+ing takes a question and an answer as input, then datasetasdevelopmentdatatodomodelselection.
+classify whether the answer is relevant to ques- TheresultsareshowninTable 3.
+tion. Each answer is a short passage. XQA con- We could find that 1) Our model outper-
+tains three languages including English, French forms XLM at every fine-tuning setting. In
+and German. Only English have training data. Multi-language Fine-tuning, we achieved 2.0%
+The training data cover various domains, such as gain. 2)WithourUnicoder,Multi-languageFine-
+health,tech,sports,etc. TheEnglishtrainingdata tuning approach achieved 3.3% gain compared
+contains millions of samples and each languages to TRANSLATE-TRAIN. XLM also could been
+has500testdata. improved by 3.5%. 3) By combining Unicoder
+KeepingthesameexperimentalsetupasXNLI, and TRANSLATE-TRAIN, we achieve best per-
+language XNLI-en XNLI-ar XNLI-es XNLI-fr XNLI-ru XNLI-zh average
+number Acc[%] Acc[%] Acc[%] Acc[%] Acc[%] Acc[%] Acc[%]
+1 85.1 76.7 81.1 80.0 77.9 79.4 80.0
+2 85.2 77.5 81.5 80.0 77.6 80.0 80.3
+6 85.3 77.9 81.5 80.4 78.8 79.9 80.6
+15 85.6 78.2 82.3 81.1 79.7 80.5 81.2
+Table 4: Experiments of fine-tuning on different number of languages. The model is evaluated on 6 languages,
+andtheaverageresultisatlastcolumn. TheresultsinthelastrowcorrespondtotheresultsinlastrowofTable 2.
+formance 69.7% on XQA. Compared to XLM languages, we will analyze it below. Table 2
++ TRANSLATE-TRAIN baseline, we have 5.5% and Table 3 both show it can bring a significant
+gain. boostincross-linguallanguageunderstandingper-
+formance. With the help of Multi-language fine-
+Analysis tuning,Unicoderisbeenimprovedby1.6%ofac-
+curacyonXNLIand3.3%onXQA.
+In this section, we provide ablation analysis for
+different variants of our approaches and elucidate
+Therelationbetweenlanguagenumberand
+some interesting aspects of Unicoder. Sec. 5.1
+fine-tuningperformance
+is the ablation study of each cross-lingual pre-
+training task. It also shows the impact of Multi- In Table 2, we proved that Multi-language
+language Fine-tuning. Sec. 5.2 explores the im- Fine-tuning with 15 languages is better than
+pact of language numbers. Additionally, Sec. 5.3 TRANSLATE-TRAIN who only fine-tune on 1
+analyzes the relation between English and other language. In this sub-section, we try more setting
+language by joint fine-tune on two languages. to analysis the relation between language number
+Then we further explore the relation between any andfine-tuningperformance.
+languagepair(Sec. 5.4). In this experiment, only English has human la-
+beled training data, the other languages use ma-
+AblationStudy chine translated training data from English. The
+To examine the utility of our new cross-lingual experimentisconductedon6languageswhichare
+pre-trainingtasks,weconductedablationstudyon the languages of MT corpus Multilingual United
+XNLI dataset. For these three cross-lingual pre- Nations(MultiUN).
+trainingtasks,weremovethemandonlypre-train We have four settings: 1 language is equals
+on other tasks. To this end, we fine-tune the Uni- toTRANSLATE-TRAIN,thepre-trainedmodelis
+coder with Multi-language Fine-tuning. The re- fine-tuned on target language. 2 languages is to
+sultsarepresentatTable 2. fine-tuneonEnglishandtargetlanguage. ForEn-
+Ablation experiments for each factor showed glish, we report the average result when fine-tune
+that removing any tasks will lead to performance withother5languages, respectively. 6languages
+drop. Comparing Unicoder with XLM, We can is to fine-tune on 6 selected languages of this ex-
+draw several conclusions from the results in Ta- periment. 15 languages is to fine-tune on all 15
+ble 2. First, the cross-lingual paraphrase clas- languages our model support, and report the re-
+sification has least drop compared to others and sults on 6 languages. This setting is equals to last
+removing the word recovery task hurts perfor- rowofTable 2.
+mance significantly. For example, in the case The results are shown at Table 4. In most lan-
+of XNLI, using just the Cross-lingual Language guages,wecouldfindthatthemorelanguageswe
+ModelandParaphraseClassificationimprovestest used in fine-tuning, the better the performance.
+accuracy on average by 0.4%. And integrating ChineseandRussianhavetwonumbersdon’tfol-
+with Word Recovery model allows Unicoder to low this trend. But 15 languages always outper-
+learnabetterrepresentationimprovestheaverage form1languageforeachlanguages.
+accuracy another 0.3%. Second, Multi-language The most surprising result is English could be
+fine-tuning is helpful to find the relation between improved by Multi-language Fine-tuning even it
+Test
+en fr es de el bg ru tr ar vi th zh hi sw ur average
+Train
+en 85.1 79.0 79.4 77.8 77.2 77.2 76.3 72.8 73.5 76.4 73.6 76.2 69.4 69.7 66.7 75.4
+fr 77.0 80.0 79.1 76.9 77.4 78.6 76.1 73.1 73.7 75.3 73.4 76.2 70.1 70.3 66.2 74.9
+es 79.6 78.5 81.1 77.5 77.9 78.2 75.8 73.4 73.9 75.7 73.4 76.8 69.5 70.1 66.8 75.2
+de 78.2 77.3 78.3 79.9 77.1 77.5 76.7 73.1 73.8 75.2 73.4 76.6 70.9 71.3 66.7 75.1
+el 76.8 76.0 77.3 75.1 77.7 76.1 74.6 71.3 74.2 76.2 74.1 76.8 70.8 69.2 68.0 74.3
+bg 75.7 78.7 78.4 78.0 77.9 80.2 77.2 74.0 74.4 75.5 73.4 76.6 70.1 71.0 67.3 75.2
+ru 76.4 78.7 79.0 78.3 78.0 78.8 77.9 73.6 75.5 76.3 74.7 77.5 71.2 71.2 68.3 75.7
+tr 75.4 75.7 76.3 75.3 76.2 76.0 74.8 75.3 73.0 73.2 72.1 75.0 69.7 70.0 65.6 73.6
+ar 75.5 76.7 78.4 77.5 76.7 77.6 76.1 73.4 76.7 75.7 73.4 76.3 70.1 70.5 66.2 74.7
+vi 75.1 77.0 78.6 77.1 77.2 78.1 76.2 73.1 74.0 76.4 73.6 76.1 70.5 71.0 66.9 74.7
+th 75.8 76.0 76.8 74.3 75.7 76.5 74.8 74.8 73.1 75.4 75.2 76.1 68.7 69.1 67.0 74.0
+zh 78.0 77.5 78.3 76.6 76.9 77.4 75.8 73.4 73.9 76.1 75.2 79.4 69.9 70.8 67.4 75.1
+hi 76.4 76.5 77.5 75.9 76.4 74.9 72.7 72.9 73.1 74.3 72.6 75.7 71.8 70.1 67.8 73.9
+sw 76.2 76.0 76.8 74.6 75.8 75.8 74.7 72.4 73.2 74.4 72.7 74.8 70.0 71.8 66.3 73.7
+ur 72.1 70.5 71.0 70.5 70.5 70.2 69.9 66.9 67.7 68.8 69.2 71.5 67.2 66.9 64.5 69.2
+Table 5: Accuracy on the XNLI test set of when fine-tuning Unicoder with one language and testing on other
+languages. TheresultsinthediagonalcorrespondtotheTRANSLATE-TRAINaccuracyreportedinTable 2.
+is source language and has human-labeled train- TherelationbetweenEnglishandother
+ingdata. Innextexperiment,wewillshowthatin languages
+2 languages setting, the improvement on English
+In this experiment, we joint fine-tune English and
+isnotstableanddependsontheanotherlanguage.
+onelanguage. Withthisexperiment,wecouldtest
+Butfrom1languageto6languagesandto15lan-
+the relation between English and other languages
+guages,Englishhasstableimprovement.
+sincealllanguageshaveequalpositioninthepre-
+trainingandfine-tuning.
+We report the performance on English and av-
+erage of 15 languages. First, we could find most
+language XNLI-en average
+of the average results are improved by joint fine-
+pairs Acc[%] Acc[%]
+tuning two languages. Only Vietnamese(vi) and
+ar-en 84.8 76.0 Urdu(ur)leadtoperformancedrop. Secondly, the
+bg-en 85.1 76.5 improvement on English is not stable. French(fr)
+de-en 84.3 76.1 and Spanish(es) could improve English perfor-
+el-en 84.8 76.2 mance. But Vietnamese(vi) and Thai(th) lead to
+es-en 85.3 76.6 abigdrop.
+fr-en 85.4 76.8
+Therelationbetweendifferentlanguages
+hi-en 84.4 76.3
+ru-en 85.2 76.2 Soastobetterunderstandtherelationbetweendif-
+sw-en 85.0 75.7 ferent languages, we fine-tune Unicoder on one
+th-en 84.1 75.4 languageandtestonall15languages. Theresults
+tr-en 85.0 75.5 are shown in Table 5. The numbers in the diago-
+ur-en 85.0 75.2 nalcorrespondtotheTRANSLATE-TRAINresult
+vi-en 84.4 75.2 reportedinTable 2.
+zh-en 85.1 76.6 We observe that the Unicoder can transfer
+en 85.1 75.3 knowledge from one language to another lan-
+guage. We could find that fine-tune on one lan-
+Table 6: Result of joint fine-tuning two languages. guage often lead to best performance on this lan-
+ThistablereportstheresultonEnglishandaverageac- guage, except Greek(el) and Urdu(ur). In fact,
+curacy of 15 languages on XNLI. The last row means TRANSLATE-TRAINofUrduevenharmtheper-
+Unicoderonlyfine-tunesonEnglish. formance. Urdu also have worst generation abil-
+itytootherlanguages. Russian(ru)hasbestgener-
+alization ability, even better than source language
+English. Proceedings of the Seventh conference on Interna-
+We also could find that transfer between En- tional Language Resources and Evaluation, pages
+2868–2872.EuropeanLanguageResourcesAssoci-
+glish(en),Spanish(es)andFrench(fr)iseasierthat
+ation(ELRA).
+other languages. The MT system between these
+languagesalsooutperformotherlanguages (Con- Mandy Guo, Qinlan Shen, Yinfei Yang, Heming Ge,
+neauetal.,2018). Daniel M Cer, Gustavo Hernandez Abrego, Keith
+Stevens, Noah Constant, Yunhsuan Sung, Brian
+Strope,etal.2018. Effectiveparallelcorpusmining
+Conclusion
+usingbilingualsentenceembeddings. arXiv: Com-
+putationandLanguage,pages165–176.
+We have introduced the Unicoder which is insen-
+sitive to different languages. We pre-train Uni-
+Dan Hendrycks and Kevin Gimpel. 2017. Bridging
+coderwiththreenewcross-lingualtasks,including nonlinearitiesandstochasticregularizerswithgaus-
+cross-lingual word recovery, cross-lingual para- sianerrorlinearunits. arXiv: Learning.
+phraseclassificationandcross-lingualmaskedlan-
+Mohit Iyyer, Varun Manjunatha, Jordan Boyd-Graber,
+guage model. We also proposed a new Multi-
+and Hal Daume´ III. 2015. Deep unordered com-
+language Fine-tuning approach. The experiments position rivals syntactic methods for text classifica-
+on XNLI and XQA proved Unicoder could bring tion. InProceedingsofthe53rdAnnualMeetingof
+the Association for Computational Linguistics and
+large improvements. and our approach become
+the 7th International Joint Conference on Natural
+new state of the art on XNLI and XQA. We also
+LanguageProcessing(Volume1:LongPapers),vol-
+did experiments to show that the more languages ume1,pages1681–1691.
+weusedinfine-tuning,thebettertheresults. Even
+rich-resourcelanguagealsocouldbeenimproved. Diederik P Kingma and Jimmy Ba. 2015. Adam: A
+method for stochastic optimization. international
+conferenceonlearningrepresentations.
+References
+Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris
+Callisonburch, Marcello Federico, Nicola Bertoldi,
+Waleed Ammar, George Mulcaire, Yulia Tsvetkov,
+Brooke Cowan, Wade Shen, Christine Corbett
+GuillaumeLample,ChrisDyer,andNoahASmith.
+Moran, Richard Zens, et al. 2007. Moses: Open
+2016. Massively multilingual word embeddings.
+source toolkit for statistical machine translation.
+arXivpreprintarXiv:1602.01925.
+TheAssociationforComputationalLinguistics.
+Mikel Artetxe and Holger Schwenk. 2018. Mas-
+Anoop Kunchukuttan, Pratik Mehta, and Pushpak
+sively multilingual sentence embeddings for zero-
+Bhattacharyya.2017. Theiitbombayenglish-hindi
+shot cross-lingual transfer and beyond. arXiv
+parallelcorpus. languageresourcesandevaluation.
+preprintarXiv:1812.10464.
+DzmitryBahdanau,KyunghyunCho,andYoshuaBen- GuillaumeLampleandAlexisConneau.2019. Cross-
+gio. 2014. Neural machine translation by jointly lingual language model pretraining. CoRR,
+learning to align and translate. arXiv preprint abs/1901.07291.
+arXiv:1409.0473.
+GuillaumeLample,AlexisConneau,LudovicDenoyer,
+Pichuan Chang, Michel Galley, and Christopher D Herve´ Je´gou, et al. 2018. Word translation without
+Manning.2008. Optimizingchineseword segmen- paralleldata.
+tation for machine translation performance. pages
+224–232. Liyuan Liu, Jingbo Shang, Frank F Xu, Xiang Ren,
+Huan Gui, Jian Peng, and Jiawei Han. 2018. Em-
+AlexisConneau,RutyRinott,GuillaumeLample,Ad- powersequencelabelingwithtask-awareneurallan-
+ina Williams, Samuel Bowman, Holger Schwenk, guagemodel. nationalconferenceonartificialintel-
+andVeselinStoyanov.2018. Xnli:Evaluatingcross- ligence,pages5253–5260.
+lingualsentencerepresentations. InProceedingsof
+the2018ConferenceonEmpiricalMethodsinNat- XiaodongLiu,PengchengHe,WeizhuChen,andJian-
+uralLanguageProcessing,pages2475–2485. feng Gao. 2019. Improving multi-task deep neural
+networksviaknowledgedistillationfornaturallan-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and guageunderstanding. arXiv:ComputationandLan-
+Kristina Toutanova. 2018. BERT: pre-training of guage.
+deepbidirectionaltransformersforlanguageunder-
+standing. CoRR,abs/1810.04805. BryanMcCann,JamesBradbury,CaimingXiong,and
+RichardSocher.2017. Learnedintranslation: Con-
+Andreas Eisele and Yu Chen. 2010. Multiun: A mul- textualizedwordvectors. InAdvancesinNeuralIn-
+tilingual corpus from united nation documents. In formationProcessingSystems,pages6294–6305.
+TomasMikolov,QuocVLe,andIlyaSutskever.2013.
+Exploiting similarities among languages for ma-
+chine translation. arXiv: Computation and Lan-
+guage.
+Sinno Jialin Pan and Qiang Yang. 2010. A survey on
+transferlearning. IEEETransactionsonKnowledge
+andDataEngineering,22(10):1345–1359.
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt
+Gardner, Christopher Clark, Kenton Lee, and Luke
+Zettlemoyer.2018. Deepcontextualizedwordrepre-
+sentations. In Proceedings of the 2018 Conference
+of the North American Chapter of the Association
+for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long Papers), volume 1,
+pages2227–2237.
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+Ilya Sutskever. 2018. Improving language under-
+standingbygenerativepre-training. URLhttps://s3-
+us-west-2.amazonaws.com/openai-assets/research-
+covers/languageunsupervised/language under-
+standingpaper.pdf.
+Rico Sennrich, Barry Haddow, and Alexandra Birch.
+2016. Neuralmachinetranslationofrarewordswith
+subword units. In Proceedings of the 54th Annual
+Meeting of the Association for Computational Lin-
+guistics (Volume 1: Long Papers), volume 1, pages
+1715–1725.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In Advances in neural information pro-
+cessingsystems,pages5998–6008.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Hill, Omer Levy, and Samuel R Bowman. 2018.
+Glue:Amulti-taskbenchmarkandanalysisplatform
+fornaturallanguageunderstanding. pages353–355.
+Adina Williams, Nikita Nangia, and Samuel R Bow-
+man.2018. Abroad-coveragechallengecorpusfor
+sentence understanding through inference. north
+american chapter of the association for computa-
+tionallinguistics,1:1112–1122.
+Shijie Wu and Mark Dredze. 2019. Beto, bentz, be-
+cas: The surprising cross-lingual effectiveness of
+bert. arXivpreprintarXiv:1904.09077.
+ChaoXing,DongWang,ChaoLiu,andYiyeLin.2015.
+Normalized word embedding and orthogonal trans-
+form for bilingual word translation. In Proceed-
+ings of the 2015 Conference of the North Ameri-
+can Chapter of the Association for Computational
+Linguistics: Human Language Technologies, pages
+1006–1011.

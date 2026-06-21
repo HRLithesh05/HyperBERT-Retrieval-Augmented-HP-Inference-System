@@ -1,0 +1,1108 @@
+Explicit Grammar–Semantic Feature Fusion for
+Robust Cross-Domain Text Classification
+Azrin Sultana (25-93678-1@student.aiub.edu)1 and Firoz Ahmed
+(fahmed@aiub.edu)1,*
+1Department of Computer Science, American International
+University-Bangladesh, Dhaka-1229, Bangladesh
+*Corresponding author: fahmed@aiub.edu
+February 25, 2026
+1 Abstract
+Natural Language Processing (NLP) enables computers to understand human
+languageandanalyzeandclassifytextefficientlybyprocessingdeep-levelgram-
+matical and semantic features. Existing models capture features either by
+learning from large corpora with transformer models, which are computation-
+allyintensiveandunsuitableforresource-constrainedenvironments,orbyusing
+lightweight shallow models. Previous studies overlooked the importance of in-
+corporating comprehensive grammatical rules alongside semantic information
+to build a robust, lightweight classification model without resorting to full-
+parameterized transformer models or heavy deep learning architectures. To
+address this gap, we proposed a novel Grammar-Aware Feature Engineering
+framework for cross-domain text analysis. The novelty of our approach lies in
+its explicit encoding of sentence-level grammatical structure—including syntac-
+tic composition, phrase patterns, and complexity indicators—into a compact
+grammarvector, whichisthenfusedwithfrozencontextualembeddings. These
+heterogeneous elements unified a single representation that captures both the
+structural and semantic characteristics of the text. Deep learning models such
+as Deep Belief Network (DBN), Long Short-Term Memory (LSTM), BiLSTM,
+and transformer-based BERT and XLNET were used to train and evaluate the
+model, with the number of epochs varied. Based on experimental results, the
+unified feature representation model captures both the semantic and structural
+propertiesoftext,outperformingbaselinemodelsby2%-15%,enablingmoreef-
+fectivelearningacrossheterogeneousdomains. Unlikepriorsyntax-awaretrans-
+former models that inject grammatical structure through additional attention
+layers, tree encoders, or full fine-tuning, the proposed framework treats gram-
+1
+6202
+beF
+42
+]LC.sc[
+1v94702.2062:viXra
+mar as an explicit inductive bias rather than a learnable module resulting in a
+very lightweight model that delivers better performance on edge devices.
+2 Introduction
+NaturalLanguageProcessing(NLP)processestextualdata,whichenablescom-
+puterstounderstandandcommunicateinhumanlanguage. Itenablesmachines
+torecognize,understand,andgeneratetextandspeechbycombiningrule-based
+modelling of human language with statistical and machine learning models. [1]
+[2]. ThedemandfortheNLPmarketisincreasingsignificantly,projectedtoap-
+proximately15.1%from2023to2030[3]. Overthepast20years,computational
+linguisticshasgrownintobothascientificfieldandapracticaltechnology. This
+growth is attributed to the increasing demand for NLP solutions across vari-
+ous industries and applications, including healthcare, finance, e-commerce, and
+customer service [4].
+NLP tasks primarily involve syntactic and semantic analysis of the text [5].
+It is used for a wide range of language-related tasks, including answering ques-
+tions,classifyingtext,andconversingwithusers. Itstypicalapplicationsinclude
+sentiment analysis of text, primarily reviews; spam detection in email analysis;
+and token classification, also referred to as named entity recognition (NER),
+which labels each word in a sentence [6]. Question answering of an automatic
+chatbot system for product queries, where the model examines the question’s
+context and identifies the relevant information in the passage to provide an
+accurate answer [7]. Currently, NLP is widely used for translation generation
+from one language to another [8] [9]. The earliest applications of NLP were
+simpleif-thendecisionsthatrequiredpreprogrammedrulestoperformtheNLP
+task. They can provide answers only in response to specific prompts because
+rule-basedNLPlacksmachine-learningorAIcapabilities. StatisticalNLPauto-
+maticallyextracts,classifies,andlabelselementsoftextandassignsastatistical
+likelihood to each possible meaning of those elements. This relies on machine
+learning to enable sophisticated analysis of linguistic phenomena [10]. Statisti-
+calNLPintroducedtheessentialtechniqueofmappinglanguageelements, such
+as words and grammatical rules, to vector representations, enabling language
+modelingusingmathematicalmethods,includingregressionandMarkovmodels
+[11].
+Modelperformancelargelydependsonthequalityofdatausedduringtrain-
+ing. Feature engineering is a crucial preprocessing technique for NLP tasks, as
+machines cannot process raw text. Feature representation transforms raw text
+into a structured representation that a machine can use to extract meaningful
+information [12] [13]. Traditional NLP feature engineering techniques, such as
+bag-of-words, treat an unordered collection of words, disregarding word order
+and most syntactic or grammatical information [14] [15]. Another statistical
+method is TF-IDF, which quantifies how important a word is to a document
+relativetoalargercorpus[16]. Withadvancesindeeplearning,semanticfeature
+representations such as Word2Vec [17], GloVe [18], and FastText [19] embed-
+2
+dings have become widely used. Given a sequence of words in a sentence, the
+Word2Vec model takes a fixed number of context words as input, and each
+is represented as an embedding via a shared embedding layer. In contrast,
+GloVe generates dense vector representations by analyzing their co-occurrence
+patterns in a corpus. FastText can capture the semantic meaning of morpho-
+logically related words, even for out-of-vocabulary words or rare words, making
+it particularly useful for handling languages with rich morphology or for tasks
+whereout-of-vocabularywordsarecommon[19]. Amongthesefeatureselection
+methods, traditional approaches ignore word order, grammar, and context and
+are sensitive to domain-specific vocabulary. Transformer-based models leverage
+dense contextual embeddings to achieve state-of-the-art performance across a
+variety of tasks. However, while these models capture semantic and syntac-
+tic relationships, they often do so implicitly within their embedding space and
+are less robust across domains with divergent linguistic structures [20]. Addi-
+tionally, to obtain semantic and synthetic information from text, transformer
+models need to be trained with parameter counts ranging from millions to hun-
+dreds of billions. Training and even inference require massive matrix multipli-
+cations, which are energy-intensive on GPUs/TPUs, making it difficult to run
+theseheavymodelsonresource-limiteddevices. Mostsyntax-awaretransformer
+models incorporate syntax through additional attention heads, tree encoders,
+or fine-tuning, which increases parameter count and training cost. This con-
+tradicts deployment requirements for low-resource and edge environments [21].
+Therefore, critical grammatical signals—such as explicit syntactic dependen-
+cies, phrase-level patterns, and sentence complexity—may be underutilized or
+obscured during downstream learning.
+The core limitation of existing syntax-aware transformer architectures is
+that grammatical structure is introduced through additional trainable compo-
+nents, increasing model capacity and computational cost while tightly coupling
+syntax learning to domain-specific lexical statistics. In contrast, this work pro-
+posesafundamentallydifferentparadigm: grammarisintroducedasanexplicit
+inductivebiasthatconstrainsrepresentationlearningwithoutmodifyingorfine-
+tuning the transformer architecture. By freezing the transformer backbone and
+injectingalow-dimensionalgrammarvectorattherepresentationlevel,thepro-
+posed framework restricts the hypothesis space toward linguistically plausible
+configurations, improving domain robustness while preserving model efficiency.
+Based on these limitations, we proposed a novel, extensive, a grammar-based
+feature selection technique, which integrates a rich set of grammar-driven rules
+to understand the text features in depth with syntactic and structural insights,
+includingPOS,syntacticdependencyrelations,phrasestructurepatterns,verb-
+adverbratio, structureofthesentence, andcomplexsentenceindicatorstocap-
+ture the underlying grammatical style and discourse flow of each document. To
+incorporate contextual information, the extracted sentence-level grammar fea-
+tures are fused with token-level embeddings, thereby giving each token access
+to the global sentence context. Through this hybrid feature design, the model
+learnsdomain-invariantgrammaticalregularities, improvingbothinterpretabil-
+ity and robustness in cross-domain classification tasks.
+3
+The main contribution of our proposed model:
+• Designingagrammar-basedfeaturevectorwithtextembeddingforaclas-
+sification task
+• Integrated 11 different grammar rules for extracting grammar-based fea-
+tures.
+• extensive experiments on both document-level classification and token-
+level NER tasks, showing consistent performance gains across deep learn-
+ing and transformer-based models while maintaining a lightweight archi-
+tecture.
+• EvaluateandcomparetheeffectivenessofdeeplearningLSTM,BiLSTM,
+DBN,andtransformer-basedmodels,includingBERT,DistilBERT,using
+these combined grammar and contextual feature vectors.
+• To assess model performance in both binary and multi-class settings, we
+used accuracy, precision, recall, and F1-score.
+3 Literature Review
+Thepurposeoftextunderstandingistoenablemachinestoaccuratelyinterpret
+human language. Therefore, it is necessary to represent text as efficient feature
+vectorsusingextensivegrammaticalandtransformer-basedlearningsothatthe
+machinecanlearncomplexpatterns. Recentresearchongrammar-basedfeature
+engineering for NLP tasks remains limited.
+Existingwork,Mohassebetal.[22],exploredagrammar-based[22],explored
+a grammar-based question-answer classification framework. Three experimen-
+tal settingswere considered: baselineclassification, class-balanced classification
+via SMOTE, and binary classification. On the contrary, in [23], a new firefly
+algorithm-based feature selection method is proposed. To validate this tech-
+nique, a Support Vector Machine classifier is used, along with three evalua-
+tion metrics: precision, recall, and F1-score. Furthermore, experiments on the
+OSAC real dataset, along with comparisons with state-of-the-art methods, are
+conducted. POS tagging has been widely used in deep learning to extract fea-
+turesfromtext;recentresearchismodifyingPOSmodelswithnewalgorithmsto
+makethesystemmorerobustandlesserror-prone. [24]usedMarkovmodelsand
+the Viterbi algorithm with POS. In contrast, Han et al. [25] improved the POS
+tagging model for imperative sentences, which differ in syntax, and trained the
+POS tagger on a new corpus. With this technique, tagging precision increased
+by27%. Thelexicalambiguityisresolvedbyextractinglocalcontextualknowl-
+edge from attached images to help users better understand the process. POS
+taggingisalsousedforThaiwh-questionclassificationintext,employingfeature
+selection and word embedding techniques, as in Chotirat et al. [26]. conducted
+several experiments to evaluate the performance of the proposed methodol-
+ogy using two different datasets (the TREC-6 dataset and the Thai sentence
+4
+dataset), including Unigram, Unigram+Bigram, and Unigram+Trigram. POS
+tagging,withrule-baseddatapreprocessingproposedbyLietal. [27]. Bymask-
+ing a portion of the POS tags and using self-attention, the model can leverage
+bidirectional context. The proposed approach combines rule-based methods
+with deep learning, which is beneficial for POS tagging research. Experiments
+on the GMB dataset for POS tagging achieved a whole-sentence accuracy of
+76.04%.Kou et al. [28] proposed a model with a multi-criteria decision system-
+based evaluation method to assess feature selection methods’ performance for
+classification tasks with small numbers of samples. Feature selection methods
+such as bag-of-words and TF-IDF with transformer models are a new research
+direction. The authors use this to train the model to learn feature embeddings
+withgreateraccuracy. Chaudharyetal. [29]proposedanarchitecturewithTF-
+IDF feature extraction and GPT-2 integration, yielding a 4.6% improvement in
+precision and recall. A binary sentiment classification of user reviews in Brazil-
+ian Portuguese is proposed in [30] that provides a comprehensive experimental
+study of embedding approaches. This study includes classical Bag-of-Words
+to state-of-the-art Transformer-based models, evaluated with five open-source
+databases. Tounderstandshorttexts,Lietal. [31]proposedacombinedmethod
+that combines knowledge-based conceptualization with a transformer encoder.
+For each term in a brief text, obtain its concept base based on cooccurrence
+terms and concepts, construct a convolutional neural network to capture lo-
+cal context information, and introduce the subnetwork structure based on a
+transformer embedding encoder and embed these into a low-dimensional vector
+spacetoobtainmoreattentionfromtheseconceptsbasedonatransformerwith
+a precision of 81%.
+In summary, current grammar-based feature selection for textual data ap-
+proaches have demonstrated potential but remain fragmented, rule-bound, and
+domain-specific. In[22],[23]appliedaquestionansweringmodel; however, their
+modelsarelimitedtopredefinedgrammarrulesbasedonquestionanswerswith-
+outconsideringthecontextualinformation. WhereastheViterbialgorithm,ap-
+plied to sentiment analysis using a hidden Markov model [24], is limited to a
+singledataset. Thereisaneedtodevelopageneralizablegrammar-awarefeature
+engineering framework that can adapt to multiple domains and languages. Our
+proposed study can advance the field by unifying grammatical multiple rules,
+complex structures such as phrasal verbs, which are overlooked by almost all
+studies,intoalearnablegrammarembeddinglayer,applyingcross-domainclas-
+sification experiments, mainly sentiment, topic modeling, and question classifi-
+cation,andintroducinggrammar-awarebalancinganddimensionalityreduction
+techniques with transformer embedding. Additionally, our proposed system in-
+tegratestextembeddingswithgrammaticalfeaturesviaconcatenation,enabling
+themodeltojointlycapturesyntacticstructureandsemanticrepresentationfor
+more effective training and representation learning. To the best of our knowl-
+edge,thisisthefirstapproachtocombinein-depthgrammaticalstructureswith
+contextual text embeddings into a unified feature representation, resulting in a
+more informative and robust modeling framework.
+5
+4 Methodology
+This chapter describes the process adopted to design and experiment with the
+proposed grammar-based feature identification.
+4.1 Dataset description
+Forthisstudy,weusedtwodomain-specificdatasetstoevaluatetheeffectiveness
+of the proposed classification model and to capture deeper linguistic informa-
+tion using grammar-based features. Using two datasets allows us to assess the
+generality and robustness of grammar-based features across diverse linguistic
+settings and natural language processing (NLP) tasks, including classification,
+sentimentanalysis,andnamedentityrecognition. Fortheclassificationtask,the
+emailclassificationdataset[32]isused. Theclassificationdatasethas52,062in-
+stances. Initially, the dataset contains multiple columns; however, for our task,
+we retained only the text and label attributes. The dataset consisted of 52,062
+messages, of which 72.47% (37729) were categorized as “not spam” and 14,333
+(27.53%) were labeled as ”spam”, as depicted in Figure 1. From the figure 2
+approximately14,000emaillengthsareclosetozero, depictingthatmostofthe
+emails in this dataset are short; however, there are some email lengths that are
+above 5000 characters. For the NER model, the widely famous GNB dataset is
+used [33]. Each token in this dataset is assigned a label indicating entity (e.g.,
+person, organization, location) or a miscellaneous category. Labels are given in
+table 1. The dataset is extracted from the GMB corpus, which is tagged and
+explicitly annotated for training a classifier to predict named entities, such as
+names and locations. GMB is a relatively large corpus of 1 million data points
+with extensive annotations. It is labelled using the IOB tagging system, in
+which each entity label is prefixed with either B or I. B denotes the beginning,
+and I inside of an entity. The words that are not of interest are labelled with
+0. Sentence number, word, and POS are the features available in the dataset.
+The tag column, which is our target column, assigns a tag to each word in a
+sentence. From the count plot below, the distribution of the sentence character
+can be observed in Figure 3. From the figure, most of the sentence lengths are
+between 100 and 200 characters.
+4.2 GrammarasanExplicitInductiveBiasforLightweight
+and Domain-Robust Learning
+Althoughtransformer-basedarchitectureshavethetheoreticalpotentialtomodel
+syntacticdependenciesviaself-attention,thesesyntacticregularitiesarenotex-
+plicitly inducted; instead, they are implicitly inferred from data. The quality
+andgeneralityofthelearnedsyntacticrepresentationsremain,therefore,highly
+dependentonthelexicalcompositionanddomaincharacteristicsofthetraining
+corpus. When exposed to limited, noisy, or stylistically divergent data, trans-
+formermodelstendtointernalizedomain-specificlexicalcorrelationsratherthan
+6
+Table 1: Named Entity Categories Used in the GMB Dataset
+Label Description
+GEO Geographical Entity
+ORG Organization
+PER Person
+GPE Geopolitical Entity
+TIM Time Indicator
+ART Artifact
+EVE Event
+NAT Natural Phenomenon
+Figure 1: Classification dataset class distribution
+7
+Figure 2: Classification dataset text data length distribution
+Figure 3: NER dataset sentence length distribution
+8
+domain-invariant structural patterns, resulting in poor generalization perfor-
+mance.
+In contrast, features induced from grammar capture linguistic regularities
+that are, for the most part, domain-independent and independent of surface
+vocabulary. They cover aspects of structural properties, such as phrase hier-
+archy, dependency relations, and compositionality constraints, which remain
+stable across genres, topics, and styles. By incorporating such grammar-based
+informant signals into the representation space, the current framework makes
+an explicit inductive bias toward linguistically plausible configurations. This
+biases the hypothesis space toward structural coherence, reducing reliance on
+domain-specificterminologyandoverfittingundersmallorheterogeneoustrain-
+ing conditions.
+Importantly, it is emphasized that this proposed approach does not try to
+discard or suppress any kind of representation learning by transformers. Nor
+does it need to retrain or re-task complex syntax-conscious transformer mod-
+els. It should be noted that the grammar feature provides structural cues that
+supplement semantic representations. This enables a desired balance between
+structural guidance and expressive semantic capacity within a single model.
+This serves as a very valuable alternative to end-to-end approaches that com-
+bine transformers with syntax.
+Furthermore,withregardtogrammar-basedfeatures,itcanbearguedthat,
+in line with a learning theory perspective, grammar-based features should be
+understood as having provided an inductive bias in their capacity as analogues
+of a prior applied over the space of possible hypotheses. Finally, the strong
+consistency in model performance improvement across diverse data sets and
+model configurations supports the view that grammar-based inductive biases
+provide unconditional benefits for both model architecture and domain-specific
+semantics. Across diverse data sets and model configurations support the view
+thatgrammar-basedinductivebiasesprovideunconditionalbenefitswithregard
+to both model architecture and domain-specific semantics.
+4.3 Model diagram
+We proposed a hybrid, grammar-aware, transformer-based learning framework
+toimprovetextclassificationperformanceacrossmultipledomains. TheFigure
+4 shows the model architecture of our proposed system, comprising four steps:
+dataset preprocessing, extraction of grammar- and text-based features, feature
+fusion, and model training and evaluation.
+4.3.1 Text processing
+In Natural Language Processing (NLP), the manipulation, analysis, and inter-
+pretation of textual data using computational methods are crucial for enabling
+machines to understand and analyze natural language [34]. Text preprocessing
+is a vital step in preparing raw text data for NLP models. It involves clean-
+ing and transforming text to ensure that the algorithms can understand and
+9
+Figure 4: Model diagram of the proposed system
+10
+train the model effectively. Because both datasets contain emojis, emoticons,
+spaces,andpunctuation,theymaycomplicatetherobusttrainingofourmodels.
+Therefore,duringthepreprocessingandcleaningphase,weremovedemoticons,
+emojis, and extra spaces, and then corrected spelling. In the email classifica-
+tion dataset, many words were incorrect. The cleaned text is then fed into two
+parallel feature-extraction paths [35].
+4.3.2 Feature extraction
+Feature extraction is a fundamental task that converts raw text data into a
+format that is easily processed by machine learning algorithms [36]. After
+preprocessing the text, grammar-based and context features were extracted.
+Grammar-basedfeaturesincludesyntacticandstructuralinsights,suchasPOS,
+syntactic dependency relations, phrase-structure patterns, verb-adverb ratio,
+clause count, parse tree, and complex-sentence indicators, to capture the un-
+derlying grammatical style and discourse flow of each document. These depth
+featuresintexthelpmodelstoidentifycomplexpatternsinthetext. thevector
+isconstructedfromgrammaticalandtextualfeaturesandthenmergedwiththe
+vector representation of the sentence.
+4.3.3 Model training and validating
+Tomeasuretheeffectivenessoftheproposedmodel,wehaveusedmultipledeep
+learning and transformer-based models. We split the dataset 80:20 for training
+and testing the model.
+4.4 Proposed grammar feature extraction model
+Feature extraction is a technique in NLP that converts text into vector repre-
+sentations, reducing dimensionality and data complexity to improve algorith-
+mic performance and efficiency. The Advanced grammar feature extractor is
+designed to encode linguistic and syntactic properties of text into numerical
+features.
+4.4.1 Building grammar-based feature vector
+Syntactic analysis [37] gets the structure or grammar of the sentences. Pro-
+cessing a sentence syntactically involves determining the subject and predicate
+and the place of nouns, verbs, pronouns, etc. Table 2 provides the details of
+grammar-basedfeatures. POStagging’sprimaryroleistohelpNLPsystemsun-
+derstand the syntactic structure of text, which is critical for higher-level tasks
+such as parsing, semantic analysis, and machine translation. Calculating the
+POS ratio in a sentence would help detect sentence composition and writing
+style that vary by task [38]. Now for a text sentence S containing
+S ={t ,t ,...,t }
+1 2 N
+11
+tokens, and the set of POS tokens P for our proposed model are
+P ={NOUN, VERB, ADJ, ADV, PRON, PROPN, ADP, DET, NUM, CCONJ}
+(cid:80)N
+1
+POS (S)= i=1 {POS(ti)=p} (1)
+p (cid:80)N
+1
+i=1 {POS(ti)∈P}
+SentenceLengthisanimportantmetricforassessingReadabilitylevel,Writer’s
+style, and Text complexity. It also shows how complex the sentence is, as the
+longer the sentence, the more difficult it is to interpret. For a sentence S with
+t tokens, the average sentence length formula is
+N
+1 (cid:88)
+Avg length= |S | (2)
+N i
+i=1
+Here, N is the number of sentences in the text. Function words establish rela-
+tionshipsbetweenwords,showingtense,possession,orconnectingideas. Deter-
+miners,conjunctions,auxiliaries,andarticlesarefunctionwords. Theseinclude
+words such as he, the, and those, as well as and, or, and but. The more func-
+tionwordspresentinthesentence,themorecomplicatedthestructurebecomes,
+whereasmissingfunctionwordsdenotethatthestructureisincorrect. Basedon
+this feature, our model can also distinguish between formal and informal text,
+asacademictextscontainmorefunctionwords[39]. Fromapredefinedfunction
+words set F, our model detects those, and the formula is
+|{t :t ∈F}|
+R = i i (3)
+F T
+Here, T is the number of total tokens in the text.
+A noun phrase is a group of two or more words headed by a noun that
+includes modifiers. A typical noun phrase consists of a noun together with zero
+or more dependents of various types. Noun phrases typically bear argument
+functions [40]. Every sentence is structured around a verb and a predicate, and
+everypredicateisconsideredasaverbphrase;. Itrepresentsacrucialtechnique
+in NLP for identifying and isolating the core semantic units within a sentence.
+In information extraction models, such as NER models that incorporate these
+noun and verb phrases, systems can efficiently identify entities, events, and
+relations. These two noun and verb phrase formulas count how many phrases
+are in the text.
+K
+NP
+count=(cid:88) 1(cid:0)
+tokens ∈{NOUN, PROPN,
+ADJ}+(cid:1)
+(4)
+k
+k=1
+N
+(cid:88)
+VP count= 1(POS(t )∈V ∧ (i=1 ∨ POS(t )∈/ V)) (5)
+i i−1
+i=1
+Here, V ={AUX,VERB,ADV,PART}
+12
+A clause is a combination of words that make up a sentence. It consists of
+a subject and a predicate. There are two types of clauses: independent and
+dependent. The clause count used to build a grammar-based feature vector
+directly measures syntactic maturity, cognitive complexity, and expressive ca-
+pacityintexts[41]. Ourclause-countformuladeterminesthenumberofclausal
+relations in the dependency tree.
+N
+(cid:88) (cid:0) (cid:1)
+clause count= 1 dep(t )∈C (6)
+i
+i=1
+C ={csubj, csubjpass, ccomp, advcl, acl, xcomp}
+The ratio of adverbs to verbs indicates to the model whether the sentence is
+descriptive or complex. The larger the ratio value, the greater the emphasis on
+the manner, time, or frequency of actions.
+N
+adv verb ratio= ADV (7)
+N +ε
+VERB
+where
+N =number of adverbs in the sentence or text
+ADV
+N =number of verbs (may include auxiliaries if desired)
+VERB
+ε=small constant (e.g., 10−6) to avoid division by zero
+The passive voice represents that the subject is one acted upon by the action
+or verb in the sentence. In our proposed model, we calculated the passive ratio
+to assess the formal or descriptive writing style.
+N
+passive ratio= passive (8)
+N +ε
+VERB
+where
+N =number of verbs in passive constructions
+passive
+N =total number of verbs
+VERB
+ε=small constant (e.g., 10−6) to avoid division by zero
+A parse tree is an ordered tree that represents the syntactic structure of a
+string or a sentence. It helps identify the sentence’s complexity [42]. The parse
+tree equation based on our proposed model
+N
+1 (cid:88)
+parse tree depth= d(t ) (9)
+N i
+i=1
+where
+d(t )=depth of token t in the dependency parse tree
+i i
+N =total number of tokens in the sentence or text
+13
+Table 2: Linguistic Feature Groups with Descriptions and Advantages
+Feature Group Description Advantage
+POS Ratios Ratio of different part-of-speech Captures syntactic distribution
+tags (nouns, verbs, adjectives, and word-class patterns
+etc.)
+Sentence Length Number of words or tokens per Indicates structural complexity
+sentence
+Function Words Frequency of prepositions, con- Reflectsgrammaticalcorrectness
+junctions, articles, pronouns
+NP/VP Counts Count of noun phrases and verb Captures phrase structure pat-
+phrases terns
+Clause Count Number of clauses (main and Measures syntactic complexity
+subordinate) per sentence
+Adv/Verb Ratio Ratio of adverbs to verbs Stylistic and linguistic emphasis
+Passive Ratio Proportion of passive voice con- Formality indicator
+structions
+Parse Tree Depth Maximum depth of syntactic Overall sentence complexity
+parse tree
+When all the features of your grammar-based model are ready, we have
+created a fixed-length feature vector of
+ 
+POS ratio Avg length R
+f
+F = NP count VP count Clause count 
+adv verb ratio passive ratio parse tree depth
+14
+Algorithm 1 Grammar Feature Extractor
+1: Class GrammarExtractor:
+2: ▷ INIT():
+3: Load spaCy, add sentencizer, define F, P
+4:
+5: ▷ count clauses(doc):
+6: C ←{csubj,...,xcomp}
+7: return #{t∈doc|t.dep∈C}
+8:
+9: ▷ parse depth(doc):
+10: for t∈doc: d←1+steps to root(t)
+11: return mean(depths) or 0
+12:
+13: ▷ passive ratio(doc):
+14: V ←{t∈doc|t.pos=VERB}
+15: P v ←{v ∈V |v.tag =VBN∨v.dep=auxpass}
+16: return |P v|/|V| if |V|>0 else 0
+17:
+18: ▷ extract(texts):
+19: for doc in nlp.pipe(texts):
+20: 1. POS ratios: R p = (cid:80) #{t #|t {.p to |ts .= pop s} =p}
+p∈P
+21: 2. Avg sent len: L=mean(|s| for s∈doc.sents)
+22: 3. Func word ratio: F r = # |{ dt o∈ cF |}
+23: 4. NP/VP counts: Count sequences, count verbs
+24: 5. Advanced: clauses, adv/verb, passive, parse depth
+25: return DataFrame→numpy array
+4.4.2 Fusion of Grammar-Based Features with Contextual Embed-
+dings
+To enrich token-level representations with explicit syntactic information, we
+integrate the extracted grammar features with contextual embeddings derived
+from a pre-trained BERT model. In semantic analysis, word sense disambigua-
+tion is the automated process of determining a word’s sense in a given context.
+Asnaturallanguageconsistsofwordswithseveralmeanings, theobjectivehere
+is to recognize the correct meaning based on its use. Semantic analysis facil-
+itates the processing of queries and their interpretation, thereby enabling an
+organization to discern the customer’s preferences. The goal of semantic analy-
+sisistoextractexactmeaning,ordictionarymeaning,fromthetext. Extracting
+boththesemanticandsyntacticstructuresofthesentencewouldprovideamore
+precise representation for learning complex patterns from texts.
+Let a sentence S = {t ,t ,...,t } have a grammar feature vector G(S) ∈
+1 2 N
+Rdg and BERT produce contextual embeddings
+E =[e 1,e 2,...,e N]∈RN×db
+15
+Where d and d are the dimensions of the grammar vector and BERT embed-
+g b
+dings, respectively.
+Concatenation can be applied:
+e˜ =[e ∥G′(S)] (10)
+i i
+where ∥ denotes vector concatenation. The fused embeddings
+E˜ =[e˜ ,...,e˜ ] (11)
+1 N
+are then fed into downstream layers, such as a transformer encoder or a task-
+specific classifier.
+Now, the fuse vector combines contextual information about the text with
+linguistic details about its structure.
+4.5 Algorithm used
+4.6 Deep Belief Network
+A DBN is a graphical representation of a deep neural network composed of
+multiple layers of hidden variables, with connections between layers but not
+within each layer. It can be denoted as a collection of simple learning models,
+each a restricted type of RBM. A DBN is constructed by stacking multiple
+RBMs trained in a greedy layer-wise fashion. The joint distribution is defined
+as:
+1
+P(v,h)= exp(−E(v,h)) (12)
+Z
+Here h(1),......,h(L) denotes hidden layers DBN uses a loss function L to
+CE
+measure the error between the predicted and true value.
+N C
+1 (cid:88)(cid:88)
+L =− y log(yˆ ) (13)
+CE N n,i n,i
+n=1i=1
+here,N isthenumberofsamples,y truelevel,andlog(yˆ )errorinpredicted
+n,i n,i
+level.
+Alayerofhiddenunitsrepresentsfeaturesthatcapturehigher-orderpatterns
+inthetext’scorrelations. ThekeyideabehindDBNarchitectureisitsweight,w,
+which an RBM learns, defines both p(v|h,w) and the prior distribution over
+hidden layers vector p(h|w). The probability of generating a visible vector
+(cid:88)
+p(v)= p(h|w)p(v |h,w) (14)
+h
+4.6.1 BiLSTM
+The BiLSTM model efficiently captures temporal dependencies in sequential
+data, thereby improving input representation by accurately tracking the input
+16
+direction using forward and backward modules. Each is constructed with a
+bidirectionalLSTMfeaturingdistinctarchitectures[43]. Thesemodulessharea
+common output layer, allowing each unit to access comprehensive information
+from both past and future inputs simultaneously. Each operation in the model
+is associated with a weight w. During Bi-LSTM operation, data flows through
+both forward and backward hidden states, yielding a hidden-layer output that
+incorporates bidirectional temporal processing [44]
+4.6.2 BIDIRECTIONALENCODERREPRESENTATIONSFROM
+TRANSFORMERS (BERT)
+BERTisatransformer-basedlanguagemodeldesignedtolearndeepword-level
+semantics by analyzing context. In contrast to other language models that
+process text sequentially from left to right, BERT’s bidirectionality enables it
+to capture more subtle syntactic and semantic dependencies by simultaneously
+consideringtheentiresentenceorpassage. Itsglobalperspectiveallowsamodel
+to capture subtle linguistic phenomena, such as polysemy (multiword meaning)
+and long-distance dependencies [45]. It pretrains BERT on large amounts of
+text using two general approaches. The first is masked language modeling, in
+which words in a sentence are randomly masked, and the Model is prompted to
+predict them from the context provided by the exposed words alone [46]. The
+architecture of the transformer based model are given in 5. The mask language
+model equation
+L
+=−(cid:88)
+log
+exp(w x⊤ ih i)
+(15)
+MLM (cid:80)V exp(w⊤h )
+i∈M j=1 j i
+Here,M ismaskedtokenposition,h ,hiddenstateatithposition,andw isthe
+i j
+weight. This leads BERT to learn how words interact with one another across
+diverse contexts. The second task, Next Sentence Prediction, trains the model
+to predict whether two given sentences are logically ordered, in the sense that
+it learns semantic relations between sentences, which is crucial for sentence-
+pair tasks. This pretraining makes BERT an extremely context-sensitive word-
+andsentence-embeddinggeneratorand,whenfine-tunedondownstreamnatural
+language processing tasks such as NER, question answering, sentiment analy-
+sis, and text classification, performs exceptionally well. By incorporating more
+contextual information than previous models, BERT significantly improved the
+state of the art across a wide range of NLP tasks [47].
+4.6.3 XLNET
+XLNetisatransformer-basedmodelthatintroducesanovelpermutation-based
+training. Themodelistrainedoneachpermutationoftheinputsequencerather
+than on a predetermined order. This method enables efficient management of
+bidirectional context without using masked tokens or artificial token masking
+for specific tokens [49]. XLNet adopts the Transformer-XL architecture and
+employsarecurrencemechanismthatextendsthecontextwindowbeyondfixed-
+sizedsegments, therebyefficientlymodelinglong-rangetextdependencies. This
+17
+Figure5: Transnformerbasedmodelarchitecturewithencoderanddecoder[48]
+18
+makes XLNet particularly well-suited to learning and processing longer text,
+where it is desirable to capture how distant words relate to one another. By
+predicting tokens in random order, XLNet can discover patterns in higher-level
+dependencies and model language more effectively [50].
+4.7 performance Metrics
+To compare the performance of the proposed system, four key measures of per-
+formance accuracy, precision, recall, and F1-score were used to assess the pro-
+posed model. Accuracy is the proportion of correctly predicted values among
+all instances. It quantifies the model’s overall accuracy by calculating the ratio
+of correctly labeled sensitive and non-sensitive entities to the total number of
+predictions. While helpful, it is misleading in biased datasets where sensitive
+data is less frequent. Precision is the proportion of true positive (TP) predic-
+tions among all positive predictions. Precision is used to determine the number
+of sensitive cases identified, thereby reducing false positives (FPs) and unnec-
+essary encryption, which can affect performance and storage. Recall examines
+how well the model detects all the present sensitive data. It is significant that
+missing a positive instance, such as a false negative (FN), is more costly than
+misclassifying a negative instance as positive (false positive, FP). A high recall
+rate ensures that sensitive information is not left behind, reducing the risk of
+data breaches. Since precision and recall are in trade-off, the F1-score is the
+harmonic mean of the two, providing a balanced measure of the model’s ac-
+curacy in identifying sensitive [51]. The equations for these metrics are given
+below:
+TP +TN
+Accuracy= (16)
+TP +TN +FP +FN
+TP
+Precision= (17)
+TP +FP
+TP
+Recall= (18)
+TP +FN
+Precision×Recall
+F1-score=2× (19)
+Precision+Recall
+5 Result and Discussion
+We have used five algorithms, such as BiLSTM, BERT, XLNet, LSTM, and
+DBN, with varied epoch numbers to measure the effectiveness of our proposed
+modelstructureofthetransformer,whichisgiveninTable7. Wehavecompared
+resultsacrosstwodatasetstoassesstheefficacyofthiscombinedgrammar-based
+and contextual-feature approach in diverse domains, with respect to robustness
+andadaptability. Whetherourmodelcanlearncomplexpatternsacrossdiverse
+environmentsandtexttypes. Additionally, acomparisonofmodelperformance
+with and withoutthe grammarfeature was conductedto assessits contribution
+to the overall effectiveness of the proposed method.
+19
+Table3: PerformanceMetricsofDifferentAlgorithmswithoutgrammarfeature
+Model Accuracy (%) Precision (%) Recall (%) F1-Score (%)
+LSTM 93.00 89.90 84.10 86.00
+BiLSTM 89.80 84.70 77.11 80.74
+DBN 91.15 88.12 78.43 82.90
+BERT 94.00 90.52 89.59 90.00
+XLNET 94.50 90.60 89.25 89.90
+5.1 Classification dataset performance
+Thetable3presentsthebaselineperformanceoffivealgorithms,namely,LSTM,
+BiLSTM, DBN, BERT, and XLNet, without the proposed grammar-based fea-
+tures of the classification dataset. We used only contextual feature vectors,
+BERT tokenization, word embeddings, and TF-IDF, and compared model per-
+formance. Amongthefivealgorithms,theBERTmodelperformedbest,achiev-
+ing an accuracy of 93%, with precision and recall of 90%, and only the F1 score
+wasbelow90%. XLNetmodelperformanceisalsocomparabletothatofBERT.
+Among three deep learning algorithms, DBN, LSTM, and BiLSTM, LSTM has
+the highest accuracy of 93%. The LSTM’s recall value is very low, at 84%,
+indicating that it missed many actual values. On the other hand, BiLSTM
+and DBN recall values are below 80%. The BiLSTM demonstrates the lowest
+performance among the models. 6.
+Figure 6: Classification model performance without grammar features
+Thetable4. Thistableshowstheperformanceclassificationdatasetwiththe
+proposed feature fusion model that enhanced the model’s overall performance
+by 2-7%. BiLSTM performance increased significantly with an accuracy of
+96.19%, a precision of 94.69%, a recall of 91.45%, and an f1 score of 93%.
+On the contrary, the performance metrics of the DBN algorithm are the lowest
+among the others, with a recall of 85%; however, it showed progress compared
+20
+Table4: PerformanceMetricsofDifferentModelswithgrammar-basedfeatures
+Model Accuracy (%) Precision (%) Recall (%) F1-Score (%)
+BiLSTM 96.19 94.69 91.45 93.04
+BERT 96.48 93.46 93.91 93.69
+XLNet 96.01 95.11 90.29 92.64
+LSTM 95.82 94.76 89.94 92.28
+DBN 93.27 89.43 85.97 87.66
+with the baseline model. Additionally, the performance of BERT and XLNet
+is similar, as they are both transformer models, achieving an accuracy of 96%.
+These comparisons highlight that fused feature vectors provide complementary
+structural information that significantly enhances the representational quality
+of sentence embeddings, leading to improved classification performance across
+diverse models 7.
+Figure 7: Classification model performance with grammar features
+5.2 NER dataset performance
+The performance of the NER model without a grammar-based feature vector is
+demonstrated in Table 5. According to the table, the BERT model performed
+best, achieving an accuracy of 93.29%, precision of 92.8%, recall of 90.32%,
+and F1 score of 92.73%. Bert is the only model whose performance across all
+metrics exceeds 90%. Except for the precision value (88.80%). The DBN algo-
+rithm’s precision value is 88.8%. Both LSTM (85.45% accuracy) and BiLSTM
+(85.25% accuracy) show similar moderate performance with notably lower pre-
+cision around 72-74%, indicating they produce more false positives. In this
+NER dataset, XLNet performed worst with the lowest accuracy of 84.53% and
+precision of 71.61% depicts in Figure 8
+21
+Table 5: Performance Metrics of NER models without grammatical feature
+Model Accuracy (%) Precision (%) Recall (%) F1-Score (%)
+DBN 91.88 88.80 90.88 90.01
+LSTM 85.45 74.10 86.5 78.93
+BiLSTM 85.25 72.67 83.25 78.46
+BERT 93.29 92.80 90.32 92.73
+XLNet 84.53 71.61 88.26 79.43
+Figure 8: NER model performance without grammar features
+22
+Figure 9: NER model performance without grammar features
+Accordingtothetable6,theperformanceofallalgorithmsincreaseddramat-
+ically, except XLNet. The accuracy of the DBN algorithm increased by almost
+4%comparedwithfeaturetrainingwithoutgrammarrules. Moreover,precision
+and recall increased by approximately 5%, from 88% to 94%. The accuracy of
+the LSTM and BiLSTM models increased significantly, from 85% to 97% for
+theBiLSTMmodel. WhentheBiLSTMmodelwastrainedwithoutacombined
+feature vector, the precision and F1 scores of these two algorithms were below
+80%; however, with our grammar-based feature model, they exceeded 90%, as
+shown in Figure 9. Thus, the NER model performs better when feature vectors
+are combined with contextual and linguistic information. The observed perfor-
+Table 6: Performance Metrics of NER models with grammatical feature
+Model Accuracy (%) Precision (%) Recall (%) F1-Score (%)
+DBN 95 94 95 94
+LSTM 96 94.1 96.5 93.93
+BiLSTM 97 93 94 93.3
+BERT 95 96 95 93
+XLNet 88.67 87 89 87.48
+mance gains, achieved without transformer fine-tuning or additional syntactic
+encoders, indicate that explicit grammatical inductive biases can substitute for
+architecturalcomplexity,enablinglightweightmodelstoapproachorexceedthe
+performance of fully fine-tuned transformers in cross-domain settings.
+6 discussion
+Thisstudyintroducesanovelhybridframeworkthatintegratesgrammar-aware
+linguisticfeatures withtransformer-basedembeddings toimproverobustnessin
+23
+domain-divergent linguistic settings text classification. By combining syntac-
+tic structure with deep contextual semantics, the proposed approach effectively
+captures domain-invariant patterns and enhances generalization to unseen do-
+mains. Our proposed grammar-based feature model has 11 attributes, provid-
+ing extensive grammatical information about the sentence. Details are given
+in the Table 2. Our framework first extracts structured grammatical features
+and then fuses them with Transformer-generated embeddings to train a robust
+model. The experimental results demonstrate that integrating grammar-aware
+featureextractionsignificantlyenhancescross-domaintextclassificationperfor-
+mance. Thebinaryclassificationdatasetperformancewithoutgrammarfeatures
+was better, especially for transformer-based models, which can learn more ef-
+fectivelythroughtheirattentionmechanisms. However,thecombinedgrammar
+and text-based feature vector increased overall performance from 2% to 7% in
+the binary classification dataset. In the NER dataset, our proposed grammar-
+based features performed best, as entity identification also requires grammar
+rules. Because the NER model requires proper grammatical structure to de-
+tect entities accurately, our proposed feature vector combines grammatical and
+contextual information and could be transformative for textual models. From
+Table7,BERT-baseandXLNet-base,whicharestandard12-layerarchitectures,
+take almost 440 MB to train, whereas BERT-large and XLNet-large, with 24-
+layer versions and larger hidden dimensions, are 1.36GB in size and have 340
+million parameters each. On the contrary, our proposed model used only a
+frozen BERT model to learn only semantic information. Concatenating them
+with frozen embeddings adds very few extra parameters compared to train-
+ing a full transformer. Transformers learn general contextual embeddings, but
+somedomain-specificpatternsaresubtle. Grammarfeaturesprovidestructured
+clues that the model might otherwise take longer to learn from data. Grammar
+features are symbolic and don’t depend on patterns in large datasets. When
+you train on one domain and test on another, grammar features help maintain
+performance. and Embeddings capture semantic meaning, grammar features
+capture syntactic structure. Concatenating both more informative represen-
+tations without adding trainable transformer parameters. Grammar features
+provide prior knowledge, reducing overfitting and boosting accuracy with fewer
+samples. Therefore, our proposed model is not only lightweight but also main-
+tains performance through smart concatenation with contextual features and
+grammar features.
+7 Conclusion
+This paper proposes an extensive grammar-based feature-extraction algorithm
+that combines a deep neural network and a transformer-based model. Whereas
+transformer-basedmodels’featurevectorscapturesemanticandsyntacticinfor-
+mation, often by pre-training on large-scale text corpora, they usually fail to
+capturein-depthgrammaticalstructuresandperformbetterondomain-specific
+corpora. To verify the effectiveness of the proposed model, a series of compara-
+24
+tive experiments is carried out. To assess the model’s robustness, our proposed
+model uses two datasets: classification datasets and an NER dataset. The
+experimental results indicate that the proposed feature extraction model effec-
+tively extracts features across domains, with an average increase of 2%-15% in
+accuracy. Theapproachsystematicallyleveragesgrammar-awarefeaturesalong-
+side transformer embeddings for robust domain-divergent text classification in
+low-resource settings, leading to low-resource model design. Our lightweight
+framework combines frozen transformer representations with explicit grammar-
+based features, drastically reducing computational overhead without sacrificing
+accuracy. This synergy enables efficient learning and improved generalization
+compared to fully fine-tuned models.
+The main limitation of our proposed system is that grammatical structures
+varysubstantiallyacrossdomains(e.g.,socialmediatextversusformalwriting).
+We tested only our proposed system on the email classification model and the
+NERmodel. Testingonadiversedomainwouldgeneratemoreaccuratereason-
+ing for our system. Combining sparse grammar vectors with dense contextual
+embeddings requires specialized fusion strategies; however, resource limitations
+in our model led us to use a concatenation-based data fusion method.
+Inthefuture,wecanintegrateatree-basedencodertolearnsyntacticstruc-
+turesdirectlyfromdataandevaluatethemodelacrossawiderrangeofdomains
+in a multilingual setting. The proposed framework offers a scalable and reliable
+approach to cross-domain text classification, contributing meaningful insights
+to the development of domain-agnostic natural language processing systems.
+References
+[1] K. Chowdhary, “Natural language processing,” Fundamentals of artificial
+intelligence, pp. 603–649, 2020.
+[2] P. M. Nadkarni, L. Ohno-Machado, and W. W. Chapman, “Natural lan-
+guage processing: an introduction,” Journal of the American Medical In-
+formatics Association, vol. 18, no. 5, pp. 544–551, 2011.
+[3] M. Gupta, “Global natural language processing (nlp) market – industry
+trends and forecast to 2030,” Data Bridge Market Research, Tech. Rep.,
+Sep. 2023, market Research Report, 350 pages, 220 tables, 60 figures.
+[Online]. Available: https://www.databridgemarketresearch.com/reports/
+global-natural-language-processing-nlp-market
+[4] J. Hirschberg and C. D. Manning, “Advances in natural language process-
+ing,” Science, vol. 349, no. 6245, pp. 261–266, 2015.
+[5] I. J. B. Young, S. Luz, and N. Lone, “A systematic review of natural
+languageprocessingforclassificationtasksinthefieldofincidentreporting
+and adverse event analysis,” International journal of medical informatics,
+vol. 132, p. 103971, 2019.
+25
+[6] J. R. Jim, M. A. R. Talukder, P. Malakar, M. M. Kabir, K. Nur, and
+M.F.Mridha,“Recentadvancementsandchallengesofnlp-basedsentiment
+analysis: A state-of-the-art review,” Natural Language Processing Journal,
+vol. 6, p. 100059, 2024.
+[7] D. Braun, A. H. Mendez, F. Matthes, and M. Langen, “Evaluating natu-
+ral language understanding services for conversational question answering
+systems,” in Proceedings of the 18th annual SIGdial meeting on discourse
+and dialogue, 2017, pp. 174–185.
+[8] K. Jiang and X. Lu, “Natural language processing and its applications in
+machine translation: a diachronic review,” in 2020 IEEE 3rd international
+conference of safe production and informatization (IICSPI). IEEE, 2020,
+pp. 210–214.
+[9] I. Awasthi, K. Gupta, P. S. Bhogal, S. S. Anand, and P. K. Soni, “Natural
+languageprocessing(nlp)basedtextsummarization-asurvey,” in2021 6th
+InternationalConferenceonInventiveComputationTechnologies(ICICT).
+IEEE, 2021, pp. 1310–1317.
+[10] Y. Kang, Z. Cai, C.-W. Tan, Q. Huang, and H. Liu, “Natural language
+processing (nlp) in management research: A literature review,” Journal of
+Management Analytics, vol. 7, no. 2, pp. 139–172, 2020.
+[11] T.Berg-Kirkpatrick,D.Burkett,andD.Klein,“Anempiricalinvestigation
+ofstatisticalsignificanceinnlp,”inProceedingsofthe2012jointconference
+onempiricalmethodsinnaturallanguageprocessingandcomputationalnat-
+ural language learning, 2012, pp. 995–1005.
+[12] C.R.Turner,A.Fuggetta,L.Lavazza,andA.L.Wolf,“Aconceptualbasis
+for feature engineering,” Journal of Systems and Software, vol. 49, no. 1,
+pp. 3–15, 1999.
+[13] S. Scott and S. Matwin, “Feature engineering for text classification,” in
+ICML, vol. 99, 1999, pp. 379–388.
+[14] D.Wang,J.Su,andH.Yu,“Featureextractionandanalysisofnaturallan-
+guage processing for deep learning english language,” IEEE Access, vol. 8,
+pp. 46335–46345, 2020.
+[15] A. Onan, “An ensemble scheme based on language function analysis and
+feature engineering for text genre classification,” Journal of Information
+Science, vol. 44, no. 1, pp. 28–47, 2018.
+[16] R. Dziseviˇc and D. Sˇeˇsok, “Text classification using different feature ex-
+traction approaches,” in 2019 Open Conference of Electrical, Electronic
+and Information Sciences (eStream). IEEE, 2019, pp. 1–4.
+26
+[17] S. J. Johnson, M. R. Murty, and I. Navakanth, “A detailed review on word
+embedding techniques with emphasis on word2vec,” Multimedia Tools and
+Applications, vol. 83, no. 13, pp. 37979–38007, 2024.
+[18] T. Cerqueira, F. M. Ribeiro, V. H. Pinto, J. Lima, and G. Gon¸calves,
+“Glove prototype for feature extraction applied to learning by demonstra-
+tion purposes,” Applied Sciences, vol. 12, no. 21, p. 10752, 2022.
+[19] M. Busta, L. Neumann, and J. Matas, “Fastext: Efficient unconstrained
+scene text detector,” in Proceedings of the IEEE international conference
+on computer vision, 2015, pp. 1206–1214.
+[20] D.Wang,J.Su,andH.Yu,“Featureextractionandanalysisofnaturallan-
+guage processing for deep learning english language,” IEEE Access, vol. 8,
+pp. 46335–46345, 2020.
+[21] L.Liu,X.Liu,J.Gao,W.Chen,andJ.Han,“Understandingthedifficulty
+of training transformers,” arXiv preprint arXiv:2004.08249, 2020.
+[22] A. Mohasseb, A. Kanavos, and E. Amer, “Enhancing text classification
+through grammar-based feature engineering and learning models,” Infor-
+mation, vol. 16, no. 6, p. 424, 2025.
+[23] S. L. Marie-Sainte and N. Alalyani, “Firefly algorithm based feature se-
+lection for arabic text classification,” Journal of King Saud University-
+Computer and Information Sciences, vol. 32, no. 3, pp. 320–328, 2020.
+[24] S. T. Chavali, C. T. Kandavalli et al., “Grammar detection for sentiment
+analysis through improved viterbi algorithm,” in 2022 International Con-
+ference on Advances in Computing, Communication and Applied Informat-
+ics (ACCAI). IEEE, 2022, pp. 1–6.
+[25] X. Han, Y. Dang, L. Mei, Y. Wang, S. Li, and X. Zhou, “A novel part
+of speech tagging framework for nlp based business process management,”
+in 2019 IEEE International Conference on Web Services (ICWS). IEEE,
+2019, pp. 383–387.
+[26] S.ChotiratandP.Meesad,“Part-of-speechtaggingenhancementtonatural
+languageprocessingforthaiwh-questionclassificationwithdeeplearning,”
+Heliyon, vol. 7, no. 10, 2021.
+[27] H. Li, H. Mao, and J. Wang, “Part-of-speech tagging with rule-based data
+preprocessing and transformer,” Electronics, vol. 11, no. 1, p. 56, 2021.
+[28] G. Kou, P. Yang, Y. Peng, F. Xiao, Y. Chen, and F. E. Alsaadi, “Evalua-
+tion of feature selection methods for text classification with small datasets
+usingmultiplecriteriadecision-makingmethods,”Applied Soft Computing,
+vol. 86, p. 105836, 2020.
+27
+[29] A.ChaudharyandS.Jain,“Enhancingtextclassificationusinghybridem-
+beddings and advanced machine learning techniques,” International Jour-
+nal of System Assurance Engineering and Management, pp. 1–16, 2025.
+[30] F. D. Souza and J. B. d. O. e. S. Filho, “Embedding generation for text
+classification of brazilian portuguese user reviews: from bag-of-words to
+transformers,” Neural Computing and Applications, vol. 35, no. 13, pp.
+9393–9406, 2023.
+[31] J. Li, G. Huang, J. Chen, and Y. Wang, “Short text understanding com-
+bining text conceptualization and transformer embedding,” IEEE Access,
+vol. 7, pp. 122183–122191, 2019.
+[32] B. Klimt and Y. Yang, “The enron corpus: A new dataset for email classi-
+ficationresearch,” inEuropean conference on machine learning. Springer,
+2004, pp. 217–226.
+[33] J.Bos,V.Basile,K.Evang,N.J.Venhuizen,andJ.Bjerva,“Thegroningen
+meaning bank,” in Handbook of linguistic annotation. Springer, 2017, pp.
+463–496.
+[34] C.P.Chai,“Comparisonoftextpreprocessingmethods,”Natural language
+engineering, vol. 29, no. 3, pp. 509–553, 2023.
+[35] R. Egger and E. Gokce, “Natural language processing (nlp): An introduc-
+tion: making sense of textual data,” in Applied data science in tourism:
+Interdisciplinary approaches, methodologies, and applications. Springer,
+2022, pp. 307–334.
+[36] D.Wang,J.Su,andH.Yu,“Featureextractionandanalysisofnaturallan-
+guage processing for deep learning english language,” IEEE Access, vol. 8,
+pp. 46335–46345, 2020.
+[37] M. J. Pickering and R. P. Van Gompel, “Syntactic parsing,” in Handbook
+of psycholinguistics. Elsevier, 2006, pp. 455–503.
+[38] D.KumawatandV.Jain,“Postaggingapproaches: Acomparison,”Inter-
+national Journal of Computer Applications, vol. 118, no. 6, 2015.
+[39] L.Guthrie,J.Pustejovsky,Y.Wilks,andB.M.Slator,“Theroleoflexicons
+in natural language processing,” Communications of the ACM, vol. 39,
+no. 1, pp. 63–72, 1996.
+[40] R.SubhashiniandV.J.S.Kumar,“Shallownlptechniquesfornounphrase
+extraction,” in Trendz in information sciences & computing (tisc2010).
+IEEE, 2010, pp. 73–77.
+[41] R. M. Losee, “Natural language processing in support of decision-making:
+phrases and part-of-speech tagging,” Information processing & manage-
+ment, vol. 37, no. 6, pp. 769–787, 2001.
+28
+[42] E. M. Sibarani, M. Nadial, E. Panggabean, and S. Meryana, “A study of
+parsing process on natural language processing in bahasa indonesia,” in
+2013 IEEE 16th International Conference on Computational Science and
+Engineering. IEEE, 2013, pp. 309–316.
+[43] J. Sangeetha and U. Kumaran, “A hybrid optimization algorithm using
+bilstmstructureforsentimentanalysis,”Measurement: Sensors,vol.25,p.
+100619, 2023.
+[44] Y. Lu, L. Tang, C. Chen, L. Zhou, Z. Liu, Y. Liu, Z. Jiang, and B. Yang,
+“Reconstructionofstructurallong-termaccelerationresponsebasedonbil-
+stm networks,” Engineering Structures, vol. 285, p. 116000, 2023.
+[45] G. Jawahar, B. Sagot, and D. Seddah, “What does bert learn about the
+structure of language?” in ACL 2019-57th Annual Meeting of the Associ-
+ation for Computational Linguistics, 2019.
+[46] M. V. Koroteev, “Bert: a review of applications in natural language pro-
+cessing and understanding,” arXiv preprint arXiv:2103.11943, 2021.
+[47] K. Clark, U. Khandelwal, O. Levy, and C. D. Manning, “What does bert
+lookat? ananalysisofbert’sattention,” arXiv preprint arXiv:1906.04341,
+2019.
+[48] A. Vaswani, S. Bengio, E. Brevdo, F. Chollet, A. Gomez, S. Gouws,
+L. Jones, L(cid:32) . Kaiser, N. Kalchbrenner, N. Parmar et al., “Tensor2tensor
+for neural machine translation,” in Proceedings of the 13th Conference of
+the Association for Machine Translation in the Americas (Volume 1: Re-
+search Track), 2018, pp. 193–199.
+[49] Z.Yang,Z.Dai,Y.Yang,J.Carbonell,R.R.Salakhutdinov,andQ.V.Le,
+“Xlnet: Generalized autoregressive pretraining for language understand-
+ing,” Advances in neural information processing systems, vol. 32, 2019.
+[50] A. F. Adoma, N.-M. Henry, and W. Chen, “Comparative analyses of bert,
+roberta, distilbert, and xlnet for text-based emotion recognition,” in 2020
+17th international computer conference on wavelet active media technology
+and information processing (ICCWAMTIP). IEEE, 2020, pp. 117–121.
+[51] X.-H. Sun and J. L. Gustafson, “Toward a better parallel performance
+metric,” Parallel Computing, vol. 17, no. 10-11, pp. 1093–1109, 1991.
+29
+nosirapmoC
+erutcetihcrA
+ledoM
+:7
+elbaT
+ledoM
+.xorppA
+-aP
+elbaniarT
+-emaraP
+latoT
+noitnettA
+eziS
+neddiH
+sreyaL
+desU
+enobkcaB
+ledoM
+)23PF(
+eziS
+sretemar
+sret
+sdaeH
+BM23.5
+M33.1
+M33.1
+A/N
+46
+sreyal5
+sgniddebmEelbaniarT
+MTSL
+BM25.5
+M83.1
+M83.1
+A/N
+2×84
+sreyal5
+sgniddebmEelbaniarT
+MTSLiB
+BM36.0
+K751
+K751
+A/N
+46→821→652
+sreyal3
+2v-6L-MLiniMnezorF
+desoporp(TREB
+)ledom
+BM54.0
+K211
+K211
+A/N
+84→69→291
+sreyal3
+2v-6L-MLiniMnezorF
+-orp(
+teNLX
+)ledomdesop
+BM02.0
+K94
+K94
+A/N
+46→652
+sreyal2
+-821(
+FDI-FT-ACP
+NBD
+)mid
+BM8.09
+)nezorf(0
+M7.22
+21
+483
+remrofsnarT6
+2v-6L-MLiniM
+enobkcaBTREB
+BM044
+M011
+M011
+21
+867
+remrofsnarT21
+esab-TREB
+esab-TREBlluF
+BG63.1
+M043
+M043
+61
+4201
+remrofsnarT42
+egral-TREB
+egral-TREBlluF
+BM044
+M011
+M011
+21
+867
+remrofsnarT21
+esab-teNLX
+esab-teNLXlluF
+BG63.1
+M043
+M043
+61
+4201
+remrofsnarT42
+egral-teNLX
+egral-teNLXlluF
+30

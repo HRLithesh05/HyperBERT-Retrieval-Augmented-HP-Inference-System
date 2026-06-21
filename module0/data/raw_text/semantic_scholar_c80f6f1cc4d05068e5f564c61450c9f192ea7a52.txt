@@ -1,0 +1,770 @@
+Knowledge Enhanced Masked Language Model for Stance Detection
+KornraphopKawintiranon and LisaSingh
+DepartmentofComputerScience
+GeorgetownUniversity
+Washington,DC,USA
+{kk1155,lisa.singh}@georgetown.edu
+Abstract obviouspositivesentiment,butanopposingstance
+towardsDonaldTrump.
+DetectingstanceonTwitterisespeciallychal-
+lenging because of the short length of each
+I’m so happy Biden beat Trump in the
+tweet, the continuous coinage of new termi-
+debate.
+nologyandhashtags,andthedeviationofsen-
+tence structure from standard prose. Fine-
+tuned language models using large-scale in- Stancedetectionisanespeciallydifficultprob-
+domain data have been shown to be the new lem on Twitter. A large part of this difficulty
+state-of-the-artformanyNLPtasks,including comes from the fact that Twitter content is short,
+stance detection. In this paper, we propose a highlydynamic,continuallygeneratingnewhash-
+novelBERT-basedfine-tuningmethodthaten-
+tagsandabbreviations,anddeviatesfromstandard
+hancesthemaskedlanguagemodelforstance
+prosesentencestructure. Recently,learningmod-
+detection. Instead of random token masking,
+elsusingpre-training(Petersetal.,2018;Radford
+weproposeusingaweightedlog-odds-ratioto
+etal.,2018;Devlinetal.,2019;Yangetal.,2019)
+identify words with high stance distinguisha-
+bilityandthenmodelanattentionmechanism haveshownastrongabilitytolearnsemanticrep-
+thatfocusesonthesewords. Weshowthatour resentation and outperform many state-of-the-art
+proposedapproachoutperformsthestateofthe approachesacrossdifferentnaturallanguagepro-
+art for stance detection on Twitter data about
+cessing (NLP) tasks. This is also true for stance
+the2020USPresidentialelection.
+detection. Thestrongestmodelsforstancedetec-
+tiononTwitterusepre-trainedBERT(Ghoshetal.,
+1 Introduction
+2019;Senetal.,2018).
+Stance detection refers to the task of classifying A recent study that proposed models for senti-
+a piece of text as either being in support, oppo- mentanalysis(Tianetal.,2020)showedthatfocus-
+sition, or neutral towards a given target. While ingthelearningmodelonsomerelevantwords,i.e.
+thistypeoflabelingisusefulforawiderangeof sentimentwordsextractedusingPointwiseMutual
+opinionresearch,itisparticularlyimportantforun- Information(PMI)(Bouma,2009),performedbet-
+derstandingthepublic’sperceptionofgiventargets, terthanusingthestandardpre-trainedBERTmodel.
+for example, candidates during an election. For Weareinterestedinunderstandingwhetherornot
+thisreason,ourfocusinthispaperisondetecting focusing attention on specific stance-relevant vo-
+stancetowardspoliticalentities,namelyJoeBiden cabularyduringthelearningprocesswillimprove
+andDonaldTrumpduringthe2020USPresidential stancedetection. Toaccomplishthis,weconsider
+election. the following two questions. First, how do we
+Stancedetectionisrelatedto,butdistinctfrom identifythemostimportantstance-relevantwords
+the task of sentiment analysis, which aims to ex- withinadataset? Andsecond,howmuchattention
+tract whether the general tone of a piece of text needstobepaidtothesewordsversusrandomdo-
+is positive, negative, or neutral. Sobhani and col- mainwords? Towardthatend,weproposebuilding
+leagues(Sobhanietal.,2016)showthatmeasures differentknowledgeenhancedlearningmodelsthat
+of stance and sentiment are only 60% correlated. integrate an understanding of important context-
+Forexample,thefollowingsampletweet1 hasan specificstancewordsintothepre-trainingprocess.
+1All of the sample tweets in this paper are invented by correspond to any actual tweet in the data set in order to
+theauthors. Theyarerepresentativeofrealdata,butdonot preservetheprivacyofTwitterusers.
+WhileweconsiderPMIasawaytoidentifyimpor- in reviews, e.g., the price of a laptop versus its
+tantstancewords,wefindthatusingthelog-odds CPUperformance(Schmittetal.,2018;Chenetal.,
+ratioperformsbetter. 2017;Poddaretal.,2017;Tianetal.,2020). Dif-
+Wealsoconsiderdifferentoptionsforfine-tuning ferent approaches have been proposed to tackle
+anattention-basedlanguagemodel. Tofine-tunean thisproblem. Chenandcolleaguescombineatten-
+attention-basedlanguagemodeltoaspecifictask, tion with recurrent neural networks (Chen et al.,
+the most common approach is to fine-tune using 2017). Schmitt and colleagues propose combin-
+unlabeleddatawithrandommasking(Devlinetal., ing a convolutional neural network and fastText
+2019;Liuetal.,2019). Becauseofthenoisewithin embeddings(Schmittetal.,2018). Arecentstudy
+socialmediaposts,randomtokensthatarenottask- proposes modifying the learning objective of the
+relevantcanimpactsentencerepresentationnega- maskedlanguagemodeltopayattentiontoaspe-
+tively. Therefore,insteadoflettingthemodelpay cificsetofsentimentwordsextractedbyPMI(Tian
+attention to random tokens, we introduce Knowl- et al., 2020). The model achieves new state-of-
+edgeEnhancedMaskedLanguageModeling(KE- the-art results on most of the test data sets. Be-
+MLM), where significant tokens generated using cause stance is a different task,3 we will adjust
+thelog-oddsratioareincorporatedintothelearning theirtarget-directedsentimentapproachforstance
+processandusedtoimproveadownstreamclassi- andcomparetoitinourempiricalevaluation.
+fication task. To the best of our knowledge, this The most well-known data for political stance
+is the first work that identifies significant tokens detectionispublishedbytheSemEval2016(Mo-
+using log-odds-ratio for a specific task and inte- hammadetal.,2016b;AldayelandMagdy,2019).
+gratesthosetokensintoanattention-basedlearning Thepaperdescribingthedatasetprovidesahigh-
+processforbetterclassificationperformance. levelreviewofapproachestostancedetectionus-
+In summary, we study stance detection on En- ingTwitterdata. Thebestuser-submittedsystem
+glish tweets and our contributions are as follows. wasaneuralclassifierfromMITRE(Zarrellaand
+(i)Weproposeusingthelog-odds-ratiowithDirich- Marsh,2016)whichutilizedapre-trainedlanguage
+letpriorforknowledgeminingtoidentifythemost model on a large amount of unlabeled data. An
+distinguishable stance words. (ii) We propose a importantcontributionofthisstudywasusingpre-
+novel method to fine-tune a pre-trained masked trained word embeddings from an auxiliary task
+languagemodelforstancedetectionthatincorpo- where a language model was trained to predict a
+ratesbackgroundknowledgeaboutthestancetask. missinghashtagfromagiventweet. Therunner-up
+(iii)Weshowthatourproposedknowledgemining modelwasaconvolutionalneuralnetworkfortext
+approach and our learning model outperform the classification(Weietal.,2016).
+fine-tunedBERTinalowresourcesettinginwhich FollowingtheMITREmodel,therewereanum-
+thedatasetcontains2500labeledtweetsaboutthe berofbothtraditionalandneuralmodelsproposed
+2020USPresidentialelection. (iv)Wereleaseour for stance detection. A study focusing on tradi-
+labeled stance data to help the research commu- tional classifiers proposed using a support vector
+nitycontinuetomakeprogressonstancedetection machine(SVM)withlexicon-basedfeatures,senti-
+methods.2 mentfeaturesandtextualentailmentfeature(Sen
+et al., 2018). Another SVM-based model con-
+2 RelatedWork sisted of two-step SVMs (Dey et al., 2017). In
+the first step, the model predicts whether an in-
+In the NLP community, sentiment analysis is a
+put sequence is relevant to a given target. The
+moreestablishedtaskthathasreceivedmoreatten-
+next step detects the stance if the input sequence
+tionthanstancedetection. Asub-domainofsenti-
+is relevant. Target-specific attention neural net-
+mentanalysisistarget-directedoraspect-specific
+work(TAN)isanovelbidirectionalLSTM-based
+sentiment,whichreferstothetonewithwhichan
+attentionmodel. Inthisstudy,Deyandcolleagues
+author writes about a specific target/entity or an
+trained it on unpublished unlabeled data to learn
+aspectofatarget(Mitchelletal.,2013;Jiangetal.,
+the domain context (Du et al., 2017). Recently,
+2011). One common use case is breaking down
+sentiment toward different aspects of a product 3Stancedetectionaimstodetecttheopinionstothespe-
+cifictargete,aspect-basedsentimentfocusesonextracting
+2https://github.com/GU-DataLab/ theaspectatowardsthetargeteandcorrespondingopinion
+stance-detection-KE-MLM s(Wangetal.,2019).
+aneuralensemblemodelconsistingofbi-LSTM, edgeresultinginbettersentimentclassificationper-
+nested LSTMs, and an attention model was pro- formance. SentiLARE (Ke et al., 2020) uses an
+posed for stance detection on Twitter (Siddiqua alternativeapproachthatinjectsword-levellinguis-
+etal.,2019). Themodel’sembeddingweightswere tic knowledge, including part-of-speech tags and
+initialized with the pre-trained embeddings from sentimentpolarityscoresobtainedbySentiWord-
+fastText(Bojanowskietal.,2017). Net (Guerini et al., 2013), into the pre-training
+process. Following these works, SENTIX (Zhou
+Theemergenceoftransformer-baseddeeplearn-
+etal.,2020)wasproposedtoincorporatedomain-
+ing models has led to high levels of improve-
+invariant sentiment knowledge for cross-domain
+ment for many NLP tasks, including stance de-
+sentimentdatasets. Ourworkdiffersbecauseour
+tection(Ghoshetal.,2019;KüçükandCan,2020;
+task is stance detection and we employ a novel
+AlDayelandMagdy,2020). BERT(Devlinetal.,
+knowledge mining step that uses log-odds-ratio
+2019)isthemostuseddeeptransformerencoder.
+to determine significant tokens that need to be
+More specifically, BERT uses Masked Language
+masked.
+Modeling (MLM) to pre-train a transformer en-
+coderbypredictingmaskedtokensinordertolearn
+3 KE-MLM:KnowledgeEnhanced
+the semantic representation of a corpus. Ghosh
+MaskedLanguageModeling
+andcolleagues(Ghoshetal.,2019)showthatthe
+originalpre-trainedBERTwithoutanyfurtherfine- We propose Knowledge Enhanced Masked Lan-
+tuning outperforms other former state-of-the-art guage Modeling (KE-MLM), which integrates
+modelsontheSemEvalsetincludingthemodelthat knowledgethatenhancestheclassificationtaskin
+utilizesbothtextanduserinformation(DelTredici thefine-tuningprocess. Weidentifytask-relevant
+etal.,2019). Becauseweareinterestedinthe2020 tokensusingtextmining(Section3.1). Wethenuse
+US Presidential election and many temporal fac- thesediscoveredtokenswithinamaskedlanguage
+torsrelevanttostanceexist(e.g. politicaltopics), model(Section3.2).
+we introduce a new Election 2020 data set. For
+our empirical analysis, we will use this data set, 3.1 KnowledgeMiningforClassification
+andcompareourapproachtootherstate-of-the-art
+WhileTF-IDFisthepreferredmethodforidentify-
+methodsthatusedtheSemEvaldataset. Ourdata
+ingimportantwordsinacorpus,weareinterested
+setsaredescribedinSection5.1.
+inidentifyingimportantwordsfordistinguishing
+InspiredbyBERT,differentvariationsofBERT stance,notjustwordsthatareimportantwithinthe
+havebeenproposedtosolvedifferentspecificNLP corpus. Therefore,weproposeusingtheweighted
+tasks. SpanBERT (Joshi et al., 2019) masks to- log-odds-ratiotechniquewithinformedDirichlet
+kenswithinagivenspanrange. ERNIE(Sunetal., priorsproposedbyMonroeandcolleagues(Mon-
+2019)findsandmasksentitytokensachievingnew roeetal.,2008)tocomputesignificantwordsfor
+state-of-the-artresultsonmanyChineseNLPtasks, eachstanceclass. Intuitively,thismeasureattempts
+includingsentimentanalysis. GlossBERT(Huang toaccountfortheamountofvarianceinaword’s
+et al., 2019) uses gloss knowledge (sense defini- frequencyanduseswordfrequenciesfromaback-
+tion)toimproveperformanceonawordsensedis- groundcorpusaspriorstoreducethenoisegener-
+ambiguationtask. SenseBERT(Levineetal.,2020) atedbyrarewords. Thistechniquehasbeenshown
+aimstopredictbothmaskedwordsandtheWord- tooutperformothermethodsthatweredesignedto
+Netsuper-sensetoimproveword-in-contexttasks. findsignificantwordswithinacorpussuchasPMI
+Zhangandcolleaguesintroduceentitytokenmask- andTF-IDF(Monroeetal.,2008;Jurafskyetal.,
+ing(Zhangetal.,2019)forrelationclassification 2014;Budak,2019).
+wherethegoalistoclassifyrelationlabelsofgiven Moreformally,wecomputetheusagedifference
+entity pairs based on context. A number of stud- forwordw amongtwocorporausingthelog-odds-
+ies have been working on adjusting transformers ratiowithinformativeDirichletpriorsasshownin
+forsentimentanalysistasks. Arecentstudy(Tian theEquation1,whereni isthesizeofcorpusiand
+et al., 2020) proposes a sentiment knowledge en- nj isthesizeofcorpusj. yi andyj indicatethe
+w w
+hancedpre-trainingmethod(SKEP).Itshowsthat wordcountofwincorpusiandj,respectively. α
+0
+maskingsentimentwordsextractedbyPMIguides isthesizeofthebackgroundcorpusandα isthe
+w
+thelanguagemodeltolearnmoresentimentknowl- wordcountofw inthebackgroundcorpus.
+astandardlanguagemodelingobjective,predicting
+thenexttokengivenallprevioustokensintheinput
+yi +α
+δ(i−j) =log w w − sequence. Thismeansthatitneedstolearntokens
+w ni+α −yi −α
+0 w w inorderandcanonlyseetheprevioustokens. On
+(1)
+y wj +α
+w
+the other hand, MLM uses a masking technique
+log
+nj +α −yj −α thatismoreflexible,allowingresearcherstoexplic-
+0 w w
+itlyassignwhichtokenstomask. Theothertokens
+To measure the significance of each word, we areusedformaskedtokenrecovery. Intuitively,a
+firstcomputethevariance(σ2)ofthelog-odds-ratio
+languagemodelthatlearnstorecoveraspecificset
+using Equation 2, and then compute the Z-score oftokenswellwilltendtoproduceabetterseman-
+using Equation 3. A higher score indicates more tic representation for sequences containing those
+significanceofwordwwithincorpusicomparedto tokens (Tian et al., 2020; Ke et al., 2020; Zhou
+corpusj. Alowerscoremeansmoresignificance etal.,2020). Generally,randomlymaskingtokens
+ofwordw withincorpusj comparedtocorpusi. is preferred when the task requires the language
+modeltolearntorecoveralltokensequally. This
+tendstoresultinasemanticrepresentationthatis
+1 1
+σ2(δ w(i−j)) ≈
+y wi +α w
++
+y wj +α w
+(2) equallygoodforanyinputsequences.
+InmanyBERT-basedmodels,whentrainingthe
+transformer encoder with masked language mod-
+(i−j)
+δ
+Z = w (3) eling,theinputsequenceismodifiedbyrandomly
+(cid:113)
+σ2(δ(i−j) ) substituting tokens of the sequence. Specifically,
+w
+BERTuniformlychooses15%ofinputtokensof
+Sincestancehasthreedifferentclasses(support,
+which80%arereplacedwithaspecialmaskedto-
+oppositionandneutral),weneedtoadjustthelog-
+ken [MASK], 10% are replaced with a random
+odds-ratio technique in order to obtain a set of
+token, and 10% are not replaced and remain un-
+significantstancewords. Usingatrainingset,we
+changed. The goal of significant token masking
+findstancetokenswhicharesignificanttokensfor
+is to produce a corrupted version of the input se-
+support/non-supportoropposition/non-opposition
+quence by masking the significant tokens rather
+asfollows:
+than random tokens. We keep the same ratio of
+maskedtokensbymaskingupto15%ofthesignif-
+• Supportive & Non-supportive tokens are
+icanttokens. Iffewerthan15%ofthetokensare
+thehighestandlowestZ-scoretokens,respec-
+significant,werandomlymaskothertokenstofill
+tivelywhenionlycontainsthesupportclass
+upto15%.4
+andj containsonlytheoppositionandneutral
+Formally,significantwordmaskingcreatesacor-
+classes.
+ruptedversionX´ foraninputsequenceX thatis
+• Opposing & Non-opposing tokens are the influencedbytheextractedknowledgeG. Tokens
+highest and lowest Z-score tokens, respec- of sequences X and X´ are denoted by x i and x´ i,
+tively when i only contains the opposition respectively. Inthefine-tuningprocess,thetrans-
+classandj onlycontainsthesupportandneu- former encoder is trained using a masked word
+tralclasses. predictionobjectivethatissupervisedbyrecover-
+ingmaskedsignificantwordsusingthefinalstate
+Weselectthehighestandlowestk tokensbased oftheencoderx´,...,x´ ,wherenisthelengthof
+1 n
+onZ-scorefromeachtokenlistabove. Thisresults thesequence.
+infourk-tokenlists. Thecombinedtokensofthese Afterconstructingthiscorruptedversionofthe
+listsafterremovingduplicatesaredefinedtobethe sequence,MLMaimstopredictthemaskedtokens
+stance tokens. We hypothesize that these stance to recover the original tokens. In this paper, we
+tokenswillplayakeyroleduringstancedetection. injectknowledgeforourspecificclassificationtask
+during MLM, causing the model to pay more at-
+3.2 SignificantTokenMasking
+tentiontostancetokensinsteadofrandomtokens.
+There are two main approaches to train a trans-
+4Withasetof20-40significantwords,theirwordcounts
+formerencoder,CausalLanguageModeling(CLM)
+areroughly1%ofthetotalnumberoftokensoftheunlabeled
+andMaskedLanguageModeling(MLM).CLMhas datathatwetrainedthelanguagemodelon.
+Table1: ExamplesetsofstrongsupportiveandopposingtokensforbothcandidatesonTwitter.
+Biden Trump
+administration,ballot,bluewave,early, americafirst,follow,help,ifbap,kag,
+Support
+kamala,rule,safe,show,trust,voteblue maga,patriots,retweet,thanks,votered
+bernie,black,blah,cities,kag,maga, bluewave,consequences,demconvention,
+Oppose
+money,patriots,woman,wwg1wga division,liar,make,republicans,resist,stand
+Theseresultsarebasedonrealdata.Tokensaresortedalphabetically.
+Formally,wegetanembeddingvectorx˜ fromthe supportTrumpbutopposeBiden). Oncewehavea
+i
+transformerencoderbyfeedingthecorruptedver- setoftokensforthefourcategories,weunionthese
+sionX´ ofinputsequenceX. Next,theembedding four token sets. After removing duplicates, there
+vectorisfedintoasinglelayerofneuralnetwork areroughly30stancetokensforeachcandidate.
+withasoftmaxactivationlayerinordertoproduce
+anormalizedprobabilityvectoryˆ overtheentire 4.2 LanguageModels
+i
+vocabularyasshowninEquation4,whereW isa
+Becausethestate-of-the-artmodelsforstancede-
+weightvectorandbisabiasvector. Therefore,the
+tection are neural models with pre-trained lan-
+prediction objective L is to maximize the proba-
+guagemodelsonalargeamountofin-domaindata,
+bilityoforiginaltokenx computedinEquation5,
+i (ZarrellaandMarsh,2016;KüçükandCan,2020),
+where m = 1 if the token at the i-th position is
+i weusebothoriginalpre-trainedBERTandBERT
+masked, otherwise m = 0 and y is a one-hot
+i i fine-tuned on the unlabeled election data as our
+representationoftheoriginaltoken.
+benchmarks. Wefine-tunedBERTfortwoepochs
+since it gives the best perplexity score5. For KE-
+yˆ = softmax(x˜W +b) (4)
+i i MLM,wefirstinitializetheweightsofthemodel
+usingthesamevaluesastheoriginalBERT,then
+i=n wefine-tunethemodelwithunlabeledelectiondata
+(cid:88)
+L = − m i×y ilogyˆ i (5) usingtheidentifiedstancetokensmasked. Weex-
+i=1 haustivelyfine-tunedKE-MLMtoproducethelan-
+Finally, we fine-tune a pre-trained BERT with guage model that focuses attention on the stance
+unlabeled in-domain (election 2020) data. The tokensfromthetrainingset.
+representation learned by the language model is BecauseBERT’stokenizerusesWordPiece(Wu
+expectedtobecustomizedforthestancedetection et al., 2016), a subword segmentation algorithm,
+task. it cannot learn new tokens after the pre-training
+is finished without explicitly specifying it. How-
+4 ExperimentalDesign
+ever,addingnewtokenswithrandomembedding
+weightswouldcausethepre-trainedmodeltowork
+Inthissectionwedescribeourexperimentaldesign,
+differentlysinceitwasnotpre-trainedwiththose
+beginning with the knowledge mining decisions,
+new tokens. We realize that some significant to-
+followedbythedecisionsandparametersusedfor
+kens for the stance of Election 2020 are new to
+thelanguagemodels.
+theBERTandwerenotintheoriginalBERTpre-
+4.1 StanceKnowledgeMining training process. Therefore, we consider adding
+all the stance words to the BERT tokenizer. We
+Webeginbydeterminingthenumberofsignificant
+hypothesize that adding such a small number of
+stance words to identify. Based on a sensitivity
+tokenswillbarelyaffectthepre-trainedmodel. To
+analysis,wesetk = 10toextractthetop-10signif-
+testtheeffectofaddingstancetokensintothenor-
+icantwordsforeachstancecategoryasdescribed
+malfine-tuningprocess,wetrainlanguagemodels
+inSection3.1(support,non-support,oppose,non-
+inwhichstancetokensareadded,butwefine-tune
+oppose). Examplesofsignificanttokensfromthe
+themwiththenormalrandommaskingmethod. We
+strong supportive/opposing stance are shown in
+refertothismodelasa-BERT,wherestancetokens
+Table1. Ourstancedetectionmodelsareindepen-
+dentlytrained foreachcandidate, sooverlapping
+5Perplexityisaperformancemeasurementofthemasked
+tokensareallowed(e.g. thewordpatriotstendsto languagemodel,alowerscoreisbetter.
+areaddedtotheBERTtokenizer,butonlythestan- sizeisconstantlysetto32duringtheclassification
+dardfine-tuningmethodisperformed. Tocompare learningprocess.
+our performance to the sentiment knowledge en- Wetrainandtestourmodelsoneachcandidate
+hancedpre-trainingmethodorSKEP(Tianetal., independently with five different learning rates.
+2020),weusethepre-trainingmethodproposedin The best model is determined by the best macro
+theirpaperandthenfine-tunethemodelusingour average F1 score over three classes among five
+election2020data(SKEP). learningrates. Becausetheweightsoftheclassifier
+We hypothesize that applying KE-MLM may layerarerandomlyinitialized,weruneachmodel
+guidethelanguagemodeltofocustoomuchatten- five times. The average F1 score is reported in
+tiononthestanceknowledgeandlearnlessseman- Table2astheclassificationperformance.
+ticinformationabouttheelectionitself. Therefore,
+5 EmpiricalEvaluation
+weconsiderahybridfine-tuningstrategy. Webegin
+byfine-tuningBERTforoneepoch. Thenwefine-
+After describing our data set (Section 5.1), we
+tune using KE-MLM in the next epoch. This hy-
+present our experimental evaluation, both quan-
+bridstrategyforcesthemodeltocontinuallylearn
+titative(Section5.2),andqualitative(Section5.3).
+stanceknowledgealongwithsemanticinformation
+abouttheelection. Weexpectthatthisduallearning 5.1 DataSets
+willconstructalanguagemodelbiasedtowardnec-
+Forthisstudy,ourresearchteamcollectedEnglish
+essarysemanticinformationabouttheelection,as
+tweets related to the 2020 US Presidential elec-
+wellasthenecessaryembeddedstanceknowledge.
+tion. ThroughtheTwitterStreamingAPI,wecol-
+We refer to this approach as our KE-MLM (with
+lecteddatausingelection-relatedhashtagsandkey-
+continuousfine-tuning),whileKE-MLM–refersto
+words. BetweenJanuary2020andSeptember2020,
+amodelthatisoverlyfine-tunedwithonlystance
+wecollectedover5milliontweets, notincluding
+tokenmasking.
+quotesandretweets. Theseunlabeledtweetswere
+To summarize, the language models we will
+usedtofine-tuneallofourlanguagemodels.
+evaluate are as follows: the original pre-trained
+Our specific stance task is to determine the
+BERT(o-BERT),anormallyfine-tunedBERTthat
+stance for the two presidential candidates, Joe
+uses our election data (f-BERT), a normally fine-
+Biden and Donald Trump. For each candidate,
+tuned BERT that uses stance tokens as part of
+we had three stance classes: support, opposition,
+itstokenizer(a-BERT),afine-tunedBERTusing
+andneutral.6 Weconsidertwostance-labeleddata
+theSKEPmethod(Tianetal.,2020)(SKEP),our
+sets, one for each candidate, Biden and Trump.
+overlyfine-tunedmodel(KE-MLM–),andourhy-
+OurdatawerelabeledusingAmazonMechanical
+bridfine-tunedmodel(KE-MLM).Forallthelan-
+Turk (MTurk) workers (Crowston, 2012). These
+guagemodels,wetruncatethesizeofaninputse-
+workers were not trained. Instead, we provided
+quenceto512tokens. Thelearningrateisconstant
+a set of examples for each stance category that
+at1e−4andthebatchsizeis16.
+theycouldrefertoastheyconductedthelabeling
+task. ExamplesofstatementspresentedtoMTurk
+4.3 ClassificationModels
+workers are presented in Table 3. We asked an-
+In masked language modeling, we fine-tune the notators to carefully review each tweet ti from
+c
+modelusinganeurallayerontopwiththelearning the tweet set T C = {t1 c,t2 c,...} and determine
+objectivetopredictmaskedtokens. Inthisstep,we whetherthetweetti is(i)clearlyinsupportofC,
+c
+substitute that layer with a new neural layer as a (ii) clearly in opposition to C or (iii) not clearly
+stance classifier layer. Its weights are arbitrarily in support or opposition to C, where ti c ∈ T C
+initialized. The prediction equation is similar to andC ∈ {DonaldTrump,JoeBiden}. Toincrease
+Equation4butnowtheinputisnotcorrupted,and the labeling yield, we verify that two tweet sets
+theoutputisavectorofthenormalizedprobability T C=DonaldTrump and T C=JoeBiden are mutually ex-
+ofthethreestanceclasses. Weuseacross-entropy clusive. Eachtweetwaslabeledbythreeannotators
+lossfunctionandtheobjectiveistominimizeit. We andthemajorityvoteisconsideredtobethetrue
+use the Adam optimizer (Kingma and Ba, 2015) label. If all three annotators vote for three differ-
+withfivedifferentlearningrates,including2e−5,
+6Ourdefinitionofstancelabelsisconsistentwiththedefi-
+1e − 5, 5e − 6, 2e − 6 and 1e − 6. The batch nitionfrom(Mohammadetal.,2016a)
+Table 2: The average F1 scores over five runs. The confidence intervals for the macro F1 scores are computed
+basedonasignificancelevelof0.05,meaninga95%confidencelevel. Thehighestscoresareshowninboldface.
+Biden Trump
+Model F1-Support F1-Oppose F1-Neutral F1-macro F1-Support F1-Oppose F1-Neutral F1-macro
+o-BERT 0.7324 0.6875 0.7151 0.7117(±0.0063) 0.7574 0.8101 0.6955 0.7543(±0.0069)
+f-BERT 0.7743 0.7226 0.7347 0.7439(±0.0049) 0.7921 0.8147 0.6961 0.7677(±0.0084)
+a-BERT 0.7905 0.7234 0.7432 0.7523(±0.0049) 0.8090 0.8154 0.6926 0.7724(±0.0078)
+SKEP 0.7923 0.7153 0.7349 0.7475(±0.0047) 0.7852 0.8169 0.7151 0.7724(±0.0067)
+KE-MLM– 0.7618 0.7303 0.7380 0.7434(±0.0040) 0.7854 0.7968 0.7083 0.7635(±0.0081)
+KE-MLM 0.7927 0.7329 0.7475 0.7577(±0.0032) 0.8094 0.8184 0.7354 0.7877(±0.0075)
+Table 3: Sample of stance examples presented to sets.7 Weevaluatetheclassificationperformance
+MTurklabelers.
+using the macro-average F1 score along with the
+F1 score of each class. The results presented in
+Candidate Statement Stance
+Bidenwillbeagreatpresident.Iamvoting Table2showtheaverageF1scoresoverfiveruns
+Support
+forhiminNovember.
+Biden withdifferentrandomseeds. Thehighestscorefor
+Bidenhashandledthepandemicpoorly. Oppose
+BidenspokeinPennsylvania. Neutral eachevaluationmetricishighlightedinbold.
+Trumphasbeenagreatpresident.Iamvoting Support For Biden-stance, every fine-tuning method (f-
+forhiminNovember.
+Trump Trumphashandledthepandemicpoorly. Oppose BERT,a-BERT,SKEP,KE-MLM–andKE-MLM)
+Trumpheldarallyyesterday. Neutral improves the average F1 score from the original
+pre-trainedmodelby3.2%,4.1%,3.6%,3.2%and
+4.6%, respectively. For Trump-stance, the aver-
+entclasses,weassumethetweet’slabelisneutral
+age F1 scores are also improved by 1.3%, 1.8%,
+becausethestanceisambiguous.
+1.8%,0.9%and3.3%. Theimprovementistwice
+Ourdatasetcontains1250stance-labeledtweets
+asmuchforBidenthanforTrump. Thisisanindi-
+foreachcandidate. Thestancelabeldistributions
+cationthattheadditionalbackgroundknowledgeis
+are shown in Table 4. The distributions of both
+moreimportantfordetectingstanceforBidenthan
+candidatesareskewedtowardstheoppositionlabel.
+for Trump. In general, our knowledge enhanced
+Overall,thestanceclassproportionsvaryfrom27%
+model performs better than all the other models
+to39%. Theinter-annotatoragreementscoresfrom
+and outperforms the original BERT by three to
+different metrics are shown in Table 5. The task-
+fivepercent. a-BERTperformssimilarlytoSKEP
+basedandworker-basedmetricsarerecommended
+forTrump,butitsperformanceisbetterforBiden.
+bytheMTurkofficialsite(Amazon,2011),given
+Themodel’soverallperformancesaresecond-best
+theirannotatingmechanism. Allscoresarerange
+with only a difference of 0.5% and 1.5% in the
+from86%upto89%,indicatingthehighinter-rater
+average F1-macro score when compared to KE-
+reliabilityforthesedatasets.
+MLM for Biden and Trump, respectively. These
+Table4: StancedistributionforBidenandTrump. results further highlight the importance of incor-
+porating stance tokens into the tokenizer. While
+%SUPPORT %OPPOSE %NEUTRAL addingstancetothetokenizationisimportant,the
+Biden 31.3 39.0 29.8
+additionalimprovementofKE-MLMcomesfrom
+Trump 27.3 39.9 32.8
+focusingattentiononboththestancetokensandthe
+generalelectiondata. Theresultalsosupportsour
+hypothesisthattrainingKE-MLM–alonefortwo
+Table 5: Mechanical Turk inter-annotator agreement
+epochs would result in better accuracy than orig-
+forBidenandTrump.
+inal BERT (o-BERT), but a lower accuracy than
+Metric Biden Trump normally fine-tuned BERT (f-BERT) because it
+Task-based 0.8693 0.8920 learnsstanceknowledgebutlacksin-domainelec-
+Worker-based 0.8915 0.8969 tionknowledge.
+Tobetterunderstandtherobustnessofourmod-
+els,weanalyzethevarianceintheF1scoresacross
+5.2 ExperimentalResults
+7Becausewedonothavesufficientunlabeledelectiondata
+Weconductedexperimentsontrain-testsetsusing
+from2016,wecannotfairlytestourmodelwiththeSemEval
+a 70:30 split for both the Biden and Trump data 2016stancedata.
+the different runs. Figure 1 shows the box plots set five times. The average F1 scores are shown
+of the macro average F1 scores for each model. in Fig 2. For Biden, the average F1 score is 3%
+Thescoresofbothcandidatesfollowasimilarpat- lower when there is no fine-tuning compared to
+tern. ForBiden,thehighestF1scoreandthelowest using all 5M tweets. For Trump, the score only
+variance is KE-MLM. For Trump, the highest F1 improvesalittleover1%. Interestingly,asthesize
+scoreisKE-MLM,butthevarianceiscomparable oftheunlabeleddataincreases,theF1scorealso
+to the other models. The model with the lowest increases even though the increase is not always
+varianceisSKEP.Thesefiguresfurtheremphasize large. Therefore,pre-trainingusingasmallersize
+KE-MLM’sabilitytodetectstancebetterthannor- unlabeleddatasetdoesstillproducebenefits,but
+mallyfine-tuningmethods. Interestingly,a-BERT when possible, using a large sample does lead to
+performssecond-best(seegrayboxesinFigure1), improvement.
+further highlighting the importance of not ignor-
+ingstancetokens. Forcefullyaddingunseenstance
+tokenstotheBERTtokenizerwithrandominitial
+weightsbenefitsoverallclassificationperformance.
+Figure 2: The model performance by f-BERT pre-
+trained on different sizes of unlabeled data. We train
+eachmodelfivetimesandreporttheaverageF1scores.
+(a)Biden
+5.3 QualitativeAnalysisoftheEffectof
+StanceKnowledge
+WhileweseefromTable2thatKE-MLMoutper-
+forms all baselines on average, we are interested
+inunderstandingwhen thereislabelingdisagree-
+mentbetweenothermethodsandKE-MLM,what
+features are driving the disagreement. Therefore,
+wemanuallyinvestigatesamplesinwhichf-BERT
+anda-BERTproducedincorrectpredictions,while
+KE-MLMproducedcorrectones. Onaverageover
+(b)Trump multiple runs, 28.8% and 38.5% of misclassified
+tweets by f-BERT are correctly predicted by KE-
+Figure1: ThedistributionofmacroaverageF1scores
+MLM for Biden and Trump, respectively. For a-
+fromfiveindependentruns.
+BERT,theyare22.5%and25.7%onaverage. Asa
+caseexample,Table6illustratestheattentiondis-
+Additionally, we conducted a sensitivity anal-
+tributionofthesequencerepresentationlearnedby
+ysis on different sizes of unlabeled data for pre-
+eachlanguagemodelforafewmislabeledtweets.
+training to verify that the large unlabeled data is
+Significantwordsarecolored. Thecolordarkness
+actually beneficial. We fine-tune f-BERT using
+isdeterminedbytheattentionweightsoftherepre-
+differentsizesofdata(100K,500K,1M,2M)and
+sentationlearnedfortheclassificationtoken.8 The
+compare the results to those of BERT with zero-
+fine-tuning(o-BERT)andfine-tuningusingtheen- 8Therepresentationofclassificationtokensproducedbya
+transformerencoderisusuallyreferredtoas[CLS]. Please
+tire5Mtweets(f-BERT).Wetraineachpre-trained
+see(Devlinetal.,2019)fordetailsabouttheattentionweight
+languagemodelontrainingandtestontestingdata calculation.
+Table6: Visualizationofselectedsampleswithattentionweightdistributionbycolordarkness.
+Candidate Model SampledSentence Prediction
+The democrats and @joebiden believe inthepowerof the government.
+f-BERT Neutral
+The #gop and @realdonaldtrump believeinthepoweroftheamericanpeople.#maga
+The democrats and @joebiden believe in thepower of thegovernment.
+Biden a-BERT Neutral
+The #gop and@realdonaldtrump believe in thepoweroftheamerican people.#maga
+The democrats and @joebiden believe in thepowerofthegovernment.
+KE-MLM Opposition
+The #gop and@realdonaldtrump believe in thepower of the american people. #maga
+f-BERT Covid-19wasTrump’s biggest test.Hefailed miserably.#demconvention Neutral
+Trump a-BERT Covid-19wasTrump’s biggest test.He failed miserably.#demconvention Neutral
+KE-MLM Covid-19 was Trump’s biggest test.He failed miserably. #demconvention Opposition
+darkerthecolorthemoreimportanttheword. From thenormalfine-tuningmethodandanotherepoch
+theselectedsamples,weknowfromtheknowledge withKE-MLM,wecouldreducethemaskingprob-
+mining step that the word "maga" and "demcon- abilityofstancedistinguishingwordsfrom100%to
+vention"aretwoofthemostdistinguishingstance somethinglowerbasedonthedistinguishabilityof
+words(seeTable1),butbothf-BERTanda-BERT thetoken. Theoretically,thiswouldgiveahigher
+failtoidentifythesestrongstancewordsandthere- weight to words that are more polarizing. This
+fore, produced incorrect predictions. In contrast, also relaxes the potential overfitting that may oc-
+KE-MLMproducesthecorrectpredictionsbypay- curwhenlearningonlystanceknowledgeandlets
+ingreasonableattentiontothestanceinformation, the model randomly learn more tokens. Another
+furthersupportingthenotionthatKE-MLMisus- future direction is to test our language modeling
+ingmeaningful,interpretabletokens. methodonotherclassificationtasks(e.g. sentiment
+analysis, spam detection). Also, this paper uses
+6 ConclusionsandFutureDirections BERTasthebaselanguagemodel. Therearemany
+variationsofBERTthatcanbefurtherinvestigated
+Intuitively,alanguagemodelfine-tunedusingin-
+(e.g. RoBERTa). Finally,weviewstanceasanim-
+domainunlabeleddatashouldresultinbetterclas-
+portanttaskforunderstandingpublicopinion. As
+sification performance than using the vanilla pre-
+ourmodelsgetstronger,usingthemtogaininsight
+trained BERT. Since our goal is to maximize the
+intopublicopiniononissuesofthedayisanother
+accuracyofaspecificclassificationtask,wetrain
+importantfuturedirection.
+anattention-basedlanguagemodeltopayattention
+towordsthathelpdistinguishbetweentheclasses. Acknowledgements
+Wehaveshownthatforstancedetection,usingthe
+log-odds-ratio to identify significant tokens that This research was funded by National Science
+separatetheclassesisimportantknowledgeforthis Foundationawards#1934925and#1934494,and
+classification task. Once these important tokens the Massive Data Institute (MDI) at Georgetown
+are identified, forcing the language model to pay University. We would like to thank our funders,
+attentiontothesetokensfurtherimprovestheper- theMDIstaff,andthemembersoftheGeorgetown
+formance when compared to using standard data DataLabfortheirsupport. Wewouldalsoliketo
+forfine-tuning. Tothebestofourknowledge,our thanktheanonymousreviewersforthedetailedand
+approach is better than the other state-of-the-art thoughtfulreviews.
+approachesforstancedetection. Additionally,we
+arereleasingourdatasettothecommunitytohelp
+References
+otherresearcherscontinuetomakeprogressonthe
+stance detection task. We believe this is the first
+Abeer Aldayel and Walid Magdy. 2019. Your stance
+stance-labeledTwitterdataforthe2020USPresi- is exposed! analysing possible factors for stance
+dentialelection. detection on social media. The ACM on Human-
+ComputerInteraction,3(CSCW):1–20.
+Thereareseveralfuturedirectionsofthiswork.
+First,torelaxthetrade-offbetweenlearningelec-
+Abeer AlDayel and Walid Magdy. 2020. Stance de-
+tion semantics in general and learning stance
+tection on social media: State of the art and trends.
+knowledge,insteadoffine-tuningoneepochwith arXivpreprintarXiv:2006.03644.
+Amazon. 2011. Hit review policies. https: MarcoGuerini,LorenzoGatti,andMarcoTurchi.2013.
+//docs.aws.amazon.com/AWSMechTurk/ Sentiment analysis: How to derive prior polarities
+latest/AWSMturkAPI/ApiReference_ from SentiWordNet. In Proceedings of the Confer-
+HITReviewPolicies.html. ence on Empirical Methods in Natural Language
+Processing(EMNLP).
+PiotrBojanowski,EdouardGrave,ArmandJoulin,and
+TomasMikolov.2017. Enrichingwordvectorswith Luyao Huang, Chi Sun, Xipeng Qiu, and Xuanjing
+subword information. Transactions of the Associa- Huang. 2019. GlossBERT: BERT for word sense
+tion for Computational Linguistics (TACL), 5:135– disambiguation with gloss knowledge. In Proceed-
+146. ingsoftheConferenceonEmpiricalMethodsinNat-
+uralLanguageProcessing(EMNLP).
+Gerlof Bouma. 2009. Normalized (pointwise) mutual
+information in collocation extraction. In Proceed- Long Jiang, Mo Yu, Ming Zhou, Xiaohua Liu, and
+ings of the biennial Conference of the German So- Tiejun Zhao. 2011. Target-dependent twitter senti-
+ciety for Computational Linguistics and Language ment classification. In Proceedings of the Annual
+Technology(GSCL). Meeting of the Association for Computational Lin-
+guistics(ACL).
+Ceren Budak. 2019. What happened? the spread of
+fakenewspublishercontentduringthe2016uspres-
+MandarJoshi,DanqiChen,YinhanLiu,DanielSWeld,
+identialelection. InProceedingsoftheWorldWide
+Luke Zettlemoyer, and Omer Levy. 2019. Span-
+WebConference(WWW).
+BERT: Improving pre-training by representing and
+predicting spans. Transactions of the Association
+Peng Chen, Zhongqian Sun, Lidong Bing, and Wei
+forComputationalLinguistics(TACL),8:64–77.
+Yang. 2017. Recurrent attention network on mem-
+ory for aspect sentiment analysis. In Proceedings
+Dan Jurafsky, Victor Chahuneau, Bryan R Routledge,
+oftheConferenceonEmpiricalMethodsinNatural
+andNoahASmith.2014. Narrativeframingofcon-
+LanguageProcessing(EMNLP).
+sumer sentiment in online restaurant reviews. First
+Monday.
+Kevin Crowston. 2012. Amazon mechanical turk: A
+researchtoolfororganizationsandinformationsys-
+PeiKe,HaozheJi,SiyangLiu,XiaoyanZhu,andMin-
+tems scholars. In Shaping the Future of ICT Re-
+lieHuang.2020. SentiLARE:Sentiment-awarelan-
+search.MethodsandApproaches.
+guagerepresentationlearningwithlinguisticknowl-
+Marco Del Tredici, Diego Marcheggiani, Sabine edge. In Proceedings of the Conference on Em-
+Schulte im Walde, and Raquel Fernández. 2019. pirical Methods in Natural Language Processing
+You shall know a user by the company it keeps: (EMNLP).
+Dynamic representations for social media users in
+Diederik P Kingma and Jimmy Ba. 2015. Adam: A
+NLP. In Proceedings of the Conference on Empir-
+methodforstochasticoptimization. InProceedings
+ical Methods in Natural Language Processing and
+oftheInternationalConferenceonLearningRepre-
+the 9th International Joint Conference on Natural
+sentations(ICLR).
+LanguageProcessing(EMNLP-IJCNLP).
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and DilekKüçükandFazliCan.2020. Stancedetection: A
+Kristina Toutanova. 2019. BERT: Pre-training of survey. ACMComputingSurveys(CSUR),53(1).
+deep bidirectional transformers for language under-
+Yoav Levine, Barak Lenz, Or Dagan, Dan Padnos,
+standing. In Proceedings of the Conference of the
+Or Sharir, Shai Shalev-Shwartz, Amnon Shashua,
+NorthAmericanChapteroftheAssociationforCom-
+and Yoav Shoham. 2020. SenseBERT: Driving
+putationalLinguistics(NAACL).
+some sense into BERT. In Proceedings of the An-
+Kuntal Dey, Ritvik Shrivastava, and Saroj Kaushik. nual Meeting of the Association for Computational
+2017. Twitter stance detection—a subjectivity and Linguistics(ACL).
+sentiment polarity inspired two-phase approach. In
+IEEEinternationalconferenceondataminingwork- YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+shops(ICDMW). dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+JiachenDu,RuifengXu,YulanHe,andLinGui.2017. Roberta: A robustly optimized bert pretraining ap-
+Stance classification with target-specific neural at- proach. arXivpreprintarXiv:1907.11692.
+tention networks. In Proceedings of the Twenty-
+SixthInternationalJointConferenceonArtificialIn- Margaret Mitchell, Jacqui Aguilar, Theresa Wilson,
+telligence(IJCAI). andBenjaminVanDurme.2013. Opendomaintar-
+geted sentiment. In Proceedings of the Conference
+Shalmoli Ghosh, Prajwal Singhania, Siddharth Singh, onEmpiricalMethodsinNaturalLanguageProcess-
+KoustavRudra,andSaptarshiGhosh.2019. Stance ing(EMNLP).
+detection in web and social media: a comparative
+study. ExperimentalIRMeetsMultilinguality, Mul- Saif Mohammad, Svetlana Kiritchenko, Parinaz Sob-
+timodality,andInteraction,pages75–87. hani, Xiaodan Zhu, and Colin Cherry. 2016a. A
+dataset for detecting stance in tweets. In Proceed- Hao Tian, Can Gao, Xinyan Xiao, Hao Liu, Bolei He,
+ings of the International Conference on Language HuaWu,HaifengWang,andFengWu.2020. SKEP:
+ResourcesandEvaluation(LREC). Sentimentknowledgeenhancedpre-trainingforsen-
+timentanalysis. InProceedingsoftheAnnualMeet-
+Saif Mohammad, Svetlana Kiritchenko, Parinaz Sob- ingoftheAssociationforComputationalLinguistics
+hani, Xiaodan Zhu, and Colin Cherry. 2016b. (ACL).
+Semeval-2016task6: Detectingstanceintweets. In
+Proceedings of the International Workshop on Se- Rui Wang, Deyu Zhou, Mingmin Jiang, Jiasheng Si,
+manticEvaluation(SemEval). and Yang Yang. 2019. A survey on opinion min-
+ing: From stance to product aspect. IEEE Access,
+Burt L Monroe, Michael P Colaresi, and Kevin M 7:41101–41124.
+Quinn. 2008. Fightin’words: Lexical feature selec-
+tionandevaluationforidentifyingthecontentofpo- Wan Wei, Xiao Zhang, Xuqin Liu, Wei Chen, and
+liticalconflict. PoliticalAnalysis,16(4):372–403. Tengjiao Wang. 2016. pkudblab at SemEval-2016
+task6: Aspecificconvolutionalneuralnetworksys-
+MatthewEPeters, MarkNeumann, MohitIyyer, Matt temforeffectivestancedetection. InProceedingsof
+Gardner, Christopher Clark, Kenton Lee, and Luke theInternationalWorkshoponSemanticEvaluation
+Zettlemoyer. 2018. Deep contextualized word rep- (SemEval).
+resentations. In Proceedings of the Conference of
+the North American Chapter of the Association for Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V
+ComputationalLinguistics(NAACL). Le, Mohammad Norouzi, Wolfgang Macherey,
+Maxim Krikun, Yuan Cao, Qin Gao, Klaus
+Lahari Poddar, Wynne Hsu, and Mong Li Lee. 2017. Macherey, et al. 2016. Google’s neural machine
+Author-aware aspect topic sentiment model to re- translation system: Bridging the gap between hu-
+trieve supporting opinions from reviews. In Pro- man and machine translation. arXiv preprint
+ceedings of the Conference on Empirical Methods arXiv:1609.08144.
+inNaturalLanguageProcessing(EMNLP).
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+AlecRadford,KarthikNarasimhan,TimSalimans,and bonell,RussRSalakhutdinov,andQuocVLe.2019.
+Ilya Sutskever. 2018. Improving language under- XLNet: Generalized autoregressive pretraining for
+standing with unsupervised learning. Technical re- language understanding. In Advances in Neural In-
+port,OpenAI. formationProcessingSystems(NeurIPS).
+Martin Schmitt, Simon Steinheber, Konrad Schreiber, Guido Zarrella and Amy Marsh. 2016. Mitre at
+and Benjamin Roth. 2018. Joint aspect and polar- semeval-2016 task 6: Transfer learning for stance
+ity classification for aspect-based sentiment analy- detection. InProceedingsoftheInternationalWork-
+siswithend-to-endneuralnetworks. InProceedings shoponSemanticEvaluation(SemEval).
+oftheConferenceonEmpiricalMethodsinNatural
+Zhengyan Zhang, Xu Han, Zhiyuan Liu, Xin Jiang,
+LanguageProcessing(EMNLP).
+Maosong Sun, and Qun Liu. 2019. ERNIE: En-
+hancedlanguagerepresentationwithinformativeen-
+Anirban Sen, Manjira Sinha, Sandya Mannarswamy,
+tities. In Proceedings of the Annual Meeting of the
+and Shourya Roy. 2018. Stance classification of
+AssociationforComputationalLinguistics(ACL).
+multi-perspective consumer health information. In
+Proceedings of the ACM India Joint International
+Jie Zhou, Junfeng Tian, Rui Wang, Yuanbin Wu,
+Conference on Data Science and Management of
+Wenming Xiao, and Liang He. 2020. SentiX: A
+Data.
+sentiment-awarepre-trainedmodelforcross-domain
+sentiment analysis. In Proceedings of the Inter-
+Umme Aymun Siddiqua, Abu Nowshed Chy, and
+national Conference on Computational Linguistics
+Masaki Aono. 2019. Tweet stance detection using
+(COLING).
+an attention based neural ensemble model. In Pro-
+ceedings of the Conference of the North American
+Chapter of the Association for Computational Lin-
+guistics(NAACL).
+Parinaz Sobhani, Saif Mohammad, and Svetlana Kir-
+itchenko.2016. Detectingstanceintweetsandana-
+lyzingitsinteractionwithsentiment. InProceedings
+oftheFifthJointConferenceonLexicalandCompu-
+tationalSemantics(*SEM).
+YuSun,ShuohuanWang,YukunLi,ShikunFeng,Xuyi
+Chen, Han Zhang, Xin Tian, Danxiang Zhu, Hao
+Tian, and Hua Wu. 2019. ERNIE: Enhanced rep-
+resentation through knowledge integration. arXiv
+preprintarXiv:1904.09223.

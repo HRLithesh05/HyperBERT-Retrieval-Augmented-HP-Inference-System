@@ -1,0 +1,648 @@
+An Empirical Study of Multi-Task Learning on BERT
+for Biomedical Text Mining
+YifanPeng QingyuChen ZhiyongLu
+NationalCenterforBiotechnologyInformation
+NationalLibraryofMedicine,NationalInstitutesofHealth
+Bethesda,MD,USA
+{yifan.peng, qingyu.chen, zhiyong.lu}@nih.gov
+Abstract et al., 2019), to health informatics (Zhou et al.,
+2011; He et al., 2016; Harutyunyan et al., 2019).
+Multi-task learning (MTL) has achieved re- MTLhasalsobeenstudiedinbiomedicalandclin-
+markablesuccessinnaturallanguageprocess-
+ical natural language processing (NLP) such as
+ing applications. In this work, we study a
+namedentityrecognitionandnormalizationandthe
+multi-task learning model with multiple de-
+relationextraction. However,mostofthesestudies
+coders on varieties of biomedical and clini-
+focusoneitheronetaskwithmulticorpora(Khan cal natural language processing tasks such as
+text similarity, relation extraction, named en- etal.,2020;Wangetal.,2019b)ormulti-taskson
+tity recognition, and text inference. Our em- a single corpus (Xue et al., 2019; Li et al., 2017;
+pirical results demonstrate that the MTL fine- Zhaoetal.,2019).
+tunedmodelsoutperformstate-of-the-arttrans-
+Tobridgethisgap,weinvestigatetheuseofMTL
+former models (e.g., BERT and its variants)
+withtransformer-basedmodels(BERT)onmultiple
+by 2.0% and 1.3% in biomedical and clinical
+biomedical and clinical NLP tasks. We hypothe-
+domains, respectively. Pairwise MTL further
+sizetheperformanceofthemodelsonindividual
+demonstrates more details about which tasks
+can improve or decrease others. This is par- tasks (especially in the same domain) can be im-
+ticularlyhelpfulinthecontextthatresearchers provedviajointlearning. Specifically,wecompare
+areinthehassleofchoosingasuitablemodel three models: the independent single-task model
+for new problems. The code and models are
+(BERT), the model refined via MTL (called MT-
+publiclyavailableathttps://github.com/
+BERT-Refinement),andthemodelfine-tunedfor
+ncbi-nlp/bluebert.
+eachtaskusingMT-BERT-Refinement(calledMT-
+BERT-Fine-Tune). Weconductextensiveempirical
+1 Introduction
+studiesontheBiomedicalLanguageUnderstand-
+Multi-task learning (MTL) is a field of machine ing Evaluation (BLUE) benchmark (Peng et al.,
+learningwheremultipletasksarelearnedinparal- 2019),whichoffersadiverserangeoftextgenres
+lel while using a shared representation (Caruana, (biomedicalandclinicaltext)andNLPtasks(such
+1997). Comparedwithlearningmultipletasksindi- as text similarity, relation extraction, and named
+vidually,thisjointlearningeffectivelyincreasesthe entityrecognition). Whenlearnedandfine-tuned
+samplesizefortrainingthemodel,thusleadstoper- onbiomedicalandclinicaldomainsseparately,we
+formanceimprovementbyincreasingthegeneral- findthatMTLachievedover2%performanceon
+izationofthemodel(ZhangandYang,2017). This average,creatednewstate-of-the-artresultsonfour
+isparticularlyhelpfulinsomeapplicationssuchas BLUEbenchmarktasks. Wealsodemonstratethe
+medical informatics where (labeled) datasets are useofmulti-tasklearningtoobtainasinglemodel
+hard to collect to fulfill the data-hungry needs of thatstillproducesstate-of-the-artperformanceon
+deeplearning. alltasks. Thispositiveanswerwillbeveryhelpful
+MTL has long been studied in machine learn- inthecontextthatresearchersareinthehassleof
+ing (Ruder, 2017) and has been used success- choosingasuitablemodelfornewproblemswhere
+fully across different applications, from natural trainingresourcesarelimited.
+languageprocessing(CollobertandWeston,2008; Our contribution in this work is three-fold:
+Luong et al., 2016; Liu et al., 2019c), computer (1) We conduct extensive empirical studies on 8
+vision(Wangetal.,2009;Liuetal.,2019a;Chen tasksfromadiverserangeoftextgenres. (2)We
+0202
+yaM
+6
+]LC.sc[
+1v99720.5002:viXra
+demonstratethattheMTLfine-tunedmodel(MT- exploiteddomain-invariantknowledgetosegment
+BERT-Fine-Tune)achievedstate-of-the-artperfor- Chinesewordinmedicaltext.
+mance on average and there is still a benefit to The other direction is to apply MTL on differ-
+utilizing the MTL refinement model (MT-BERT- ent tasks, but the annotations are from a single
+Refinement). PairwiseMTL,wheretwotaskswere corpus. Li et al. (2017) proposed a joint model
+trained jointly, further demonstrates which tasks extractbiomedicalentitiesaswellastheirrelations
+canimproveordecreaseothertasks. (3)Wemake simultaneouslyandcarriedoutexperimentsonei-
+codes and pre-trained MT models publicly avail- thertheadversedrugeventcorpus(Gurulingappa
+able. etal.,2012)orthebacteriabiotopecorpus(Dele´ger
+The rest of the paper is organized as follows. etal.,2016). Shietal.(2019)alsojointlyextract
+We first present related work in Section 2. Then, entities and relations but focused on the BioCre-
+we describe the multi-task learning in Section 3, ative/OHNLP2018challengeregardingfamilyhis-
+followed by our experimental setup, results, and toryextraction(Liuetal.,2018). Xueetal.(2019)
+discussioninSection4. Weconcludewithfuture integrated the BERT language model into joint
+workinthelastsection. learning through dynamic range attention mech-
+anismandfine-tunedNERandrelationextraction
+2 Relatedwork tasks jointly on one in-house dataset of coronary
+arteriographyreports.
+Multi-taskinglearning(MTL)aimstoimprovethe
+Differentfromtheseworks,westudiedtojointly
+learningofamodelfortasktbyusingtheknowl-
+learn8differentcorporafrom4differenttypesof
+edge contained in the tasks where all or a sub-
+tasks. WhileMTLhasbroughtsignificantimprove-
+set of tasks are related (Zhang and Yang, 2017).
+mentsinmedicinetasks,no(ormixed)resultshave
+It has long been studied and has applications on
+been reported when pre-training MTL models in
+neural networks in the natural language process-
+different tasks on different corpora. To this end,
+ing domain (Caruana, 1997). Collobert and We-
+wedeemthatourmodelcanprovidemoreinsights
+ston (2008) proposed to jointly learn six tasks
+aboutconditionsunderwhichMTLleadstogains
+suchaspart-of-speechtaggingandlanguagemod-
+inBioNLPandclinicalNLP,andshedslightonthe
+elinginatime-decayneuralnetwork. Changpinyo
+specifictaskrelationsthatcanleadtogainsfrom
+etal.(2018)summarizedrecentstudiesonapply-
+MTLmodelsoversingle-tasksetups.
+ing MTL in sequence tagging tasks. Bingel and
+Søgaard (2017) and Mart´ınez Alonso and Plank
+3 Multi-taskmodel
+(2017) focused on conditions under which MTL
+leadstogaininNLP,andsuggestthatcertaindata ThearchitectureoftheMT-BERTmodelisshown
+featuressuchaslearningcurveandentropydistri- in Figure 1. The shared layers are based on
+butionareprobablybetterpredictorsofMTLgains. BERT (Devlin et al., 2018). The input X can be
+In the biomedical and clinical domains, MTL eitherasentenceorapairofsentencespackedto-
+hasbeenstudiedmostlyintwodirections. Oneis gether by a special token [SEP]. If X is longer
+to apply MTL on a single task with multiple cor- thantheallowedmaximumlength(e.g.,128tokens
+pora. Forexample,manystudiesfocusedonnamed in the BERT’s base configuration), we truncate
+entity recognition (NER) tasks (Crichton et al., X to the maximum length. When X is packed
+2017; Wang etal., 2019a,b). Zhang et al.(2018), by a sequence pair, we truncate the longer se-
+Khanetal.(2020),andMehmoodetal.(2019)in- quence one token at a time. Similar to (Devlin
+tegrated MTL in the transformer-based networks etal.,2018),twoadditionaltokensareaddedatthe
+(BERT),whichisthestate-of-the-artlanguagerep- start([CLS])andend([SEP])ofX,respectively.
+resentationmodelanddemonstratedpromisingre- Similarto(Leeetal.,2020;Pengetal.,2019),in
+sultstoextractbiomedicalentitiesfromliterature. thesequencetaggingtasks,wesplitonesentence
+Yangetal.(2019)extractedclinicalnamedentity into several sub-sentences if it is longer than 30
+from Electronic Medical Records using LSTM- words.
+CRFbasedmodel. BesidesNER,Lietal.(2018) Inthesharedlayers,theBERTmodelfirstcon-
+andLiandJi(2019)proposedtouseMTLonre- verts the input sequence to a sequence of embed-
+lation classification task and Du et al. (2017) on ding vectors. Then, it applies attention mecha-
+biomedicalsemanticindexing. Xingetal.(2018) nisms to gather contextual information. This se-
+𝑠𝑖𝑚(𝑋 ,𝑋 ) 𝑃(𝑐|𝑋) 𝑃(𝑟|𝑃⨁𝐻) 𝑃(𝑦|𝑋)
+1 2 𝑖
+Text Relation Named entity
+Inference Task specific layers
+similarity extraction recognition
+Shared layers [CLS] ℎ 1 ℎ 2 ℎ 𝑛 [SEP] … ℎ 𝑚 [SEP]
+BERT
+[CLS] Tok 1 Tok 2 … Tok n [SEP] … Tok m [SEP]
+Single sentence 𝑋or a sentence pair (𝑋 ,𝑋 )
+1 2
+Figure1: ThearchitectureoftheMT-BERTmodel.
+manticrepresentationissharedacrossalltasksand widelyusedinthetransformer-basedmodels(De-
+istrainedbyourmulti-taskobjectives. Finally,the vlinetal.,2018;Pengetal.,2019;Liuetal.,2019c).
+BERTmodelencodesthatinformationinavector This task is trained using the categorical cross-
+foreachtoken(h ,...,h ). entropyloss: −(cid:80) δ(y = yˆ)log(P(c|X)),where
+0 n c c
+On top of the shared BERT layers, the task- δ(y c = yˆ) = 1 if the classification yˆof X is the
+specificlayerusesafully-connectedlayerforeach correctground-truthfortheclassc ∈ C;otherwise
+task. Wefine-tunetheBERTmodelandthetask- δ(y c = yˆ) = 0.
+specificlayersusingmulti-taskobjectivesduring
+3.3 Inference
+thetrainingphase. Moredetailsofthemulti-task
+objectivesintheBLUEbenchmarkaredescribed After packing the pair of premise sentences with
+below. hypothesis into one sequence, this task can also
+betreatedasasinglesentenceclassificationprob-
+3.1 Sentencesimilarity lem. TheaimistofindlogicalrelationRbetween
+premise P and hypothesis H. Suppose that that
+Suppose that h is the BERT’s output of the to-
+0
+h istheoutputembeddingofthetoken[CLS]in
+ken [CLS] in the input sentence pair (X ,X ). 0
+1 2
+X = P ⊕H,P(R|P ⊕H) = softmax(ah +b).
+We use a fully connected layer to compute the 0
+This task is trained using the categorical cross-
+similarity score sim(X ,X ) = ah +b, where
+1 2 0
+entropylossasabove.
+sim(X ,X ) is a real value. This task is trained
+1 2
+using the Mean Squared Error (MSE) loss: (y −
+3.4 Namedentityrecognition
+sim(X ,X ))2,wherey isthereal-valuesimilar-
+1 2
+The output of the BERT model produces a fea-
+ityscoreofthesentencepair.
+turevectorsequence{h }n withthesamelength
+i i=0
+3.2 Relationextraction as the input sequence X. The MTL model pre-
+dicts the label sequence by using a softmax out-
+Thistaskextractsbinaryrelations(twoarguments)
+put layer, which scales the output for a label
+from sentences. After replacing two arguments
+l ∈ {1,2,...,L} as follows: P(yˆ = j|x) =
+i
+of interest in the sentence with pre-defined tags
+exp(hiWj)
+, where L is the total number of
+(e.g., GENE, or DRUG), this task can be treated (cid:80)L l=1exp(hiWj)
+as a classification problem of a single sentence tags. Thistaskistrainedusingthecategoricalcross-
+X. Suppose that h 0 is the output embedding of entropyloss: −(cid:80) i(cid:80) yiδ(y i = yˆ i)logP(y i|X).
+the token [CLS], the probability that a relation
+3.5 Thetrainingprocedure
+is labeled as class c is predicted by a fully con-
+nectedlayerandalogisticregressionwithsoftmax: ThetrainingprocedureforMT-BERTconsistsof
+P(c|X) = softmax(ah +b). This approach is three stages: (1) pretraining the BERT model,
+0
+(2)refiningitviamulti-tasklearning(MT-BERT- anewone, thenweuseasmallerlearningrateto
+Refinement),and(3)fine-tuningthemodelusing trainthenetwork.
+thetask-specificdata(MT-BERT-Fine-Tune).
+4 Experiments
+3.5.1 Pretraining
+WeevaluatetheproposedMT-BERTon8tasksin
+ThepretrainingstagefollowsthatoftheBERTus-
+BLUE benchmarks. We compare three types of
+ingthemaskedlanguagemodelingtechnique(De-
+models: (1)existingstart-of-the-artBERTmodels
+vlin et al., 2018). Here we used the base version.
+fine-tuned directly on each task, respectively; (2)
+Themaximumlengthoftheinputsequencesisthus
+refinementMT-BERTwithmulti-tasktraining(MT-
+128.
+BERT-Refinement); and(3)MT-BERTwithfine-
+3.5.2 RefiningviaMulti-tasklearning tuning(MT-BERT-Fine-Tune).
+Inthisstep,werefinealllayersinthemodel. Al-
+4.1 Datasets
+gorithm1demonstratestheprocessofmulti-task
+learning(Liuetal.,2019c). Wefirstinitializethe We evaluate the performance of the models on 8
+shared layers with the pre-trained BERT model datasets in the BLUE benchmark used by (Peng
+andrandomlyinitializethetask-specificlayerpa- et al., 2019). Table 1 gives a summary of these
+rameters. Then we create the dataset by merging datasets. Briefly, ClinicalSTS is a corpus of sen-
+mini-batchesofallthedatasets. Ineachepoch,we tence pairsselected fromMayo Clinics’s clinical
+randomlyselectamini-batchb oftasktfromall datawarehouse (Wangetal.,2018). Thei2b22010
+t
+datasetsD. Thenweupdatethemodelaccording dataset was collected from three different hospi-
+tothetask-specificobjectiveofthetaskt. Sameas talsandwasannotatedbymedicalpractitionersfor
+in(Liuetal.,2019c),weusethemini-batchbased eighttypesofrelationsbetweenproblemsandtreat-
+stochasticgradientdescenttolearntheparameters. ments(Uzuneretal.,2011). MedNLIisacollection
+ofsentencepairsselectedfromMIMIC-III(Shiv-
+ade,2017). Forafaircomparison,weusethesame
+Algorithm1:Multi-tasklearning. training,developmentandtestsetstotrainandeval-
+Initializemodelparametersθ uate the models. ShARe/CLEF is a collection of
+SharedlayerparametersbyBERT; 299de-identifiedclinicalfree-textnotesfromthe
+Task-specificlayerparametersrandomly; MIMIC-IIdatabase(Suominenetal.,2013). This
+end corpusisfordiseaseentityrecognition.
+CreateD bymergingmini-batchesforeach In the biomedical domain, the ChemProt con-
+dataset; sists of 1,820 PubMed abstracts with chemical-
+forepochin1,2,...,epoch do proteininteractions(Krallingeretal.,2017). The
+max
+ShuffleD; DDI corpus is a collection of 792 texts selected
+forb inDdo fromtheDrugBankdatabaseandother233Med-
+t
+Computeloss: L(θ)basedontaskt; line abstracts (Herrero-Zazo et al., 2013). These
+Computegradient: ∇(θ) two datasets were used in the relation extraction
+Updatemodel: θ = θ−η∇(θ) task for various types of relations. BC5CDR is
+end acollectionof1,500PubMedtitlesandabstracts
+end selectedfromtheCTD-Pfizercorpusandwasused
+inthenamedentityrecognitiontaskforchemical
+anddiseaseentities(Lietal.,2016).
+3.5.3 Fine-tuningMT-BERT
+4.2 Training
+Wefine-tuneexistingMT-BERTthataretrainedin
+Our implementation of MT-BERT is based on
+the previous stage by continue training all layers
+the work of (Liu et al., 2019c).1 We trained
+oneachspecifictask. Providedthatthedatasetis
+the model on one NVIDIA(cid:13)R V100 GPU using
+notdrasticallydifferentincontexttootherdatasets,
+the PyTorch framework. We used the Adamax
+theMT-BERTmodelwillalreadyhavelearnedgen-
+optimizer (Kingma and Ba, 2015) with a learn-
+eralfeaturesthatarerelevanttoaspecificproblem.
+ing rate of 5e−5, a batch size of 32, a linear
+Specifically,wetruncatethelastlayer(softmaxand
+linearlayers)oftheMT-BERTandreplaceitwith 1https://github.com/namisan/mt-dnn
+Corpus Task Metrics Domain Train Dev Test
+ClinicalSTS Sentencesimilarity Pearson Clinical 675 75 318
+ShARe/CLEFE NER F1 Clinical 4,628 1,075 5,195
+i2b22010 Relationextraction F1 Clinical 3,110 11 6,293
+MedNLI Inference Accuracy Clinical 11,232 1,395 1,422
+BC5CDRdisease NER F1 Biomedical 4,182 4,244 4,424
+BC5CDRchemical NER F1 Biomedical 5,203 5,347 5,385
+DDI Relationextraction F1 Biomedical 2,937 1,004 979
+ChemProt Relationextraction F1 Biomedical 4,154 2,416 3,458
+Table1: SummaryofeighttasksintheBLUEbenchmark. Moredetailscanbefoundin(Pengetal.,2019).
+Model ClinicalSTS i2b22010re MedNLI ShARe/CLEFE Avg
+BlueBERT 0.848 0.764 0.840 0.771 0.806
+clinical
+MT-BlueBERT-Refinement 0.822 0.745 0.835 0.826 0.807
+clinical
+MT-BlueBERT-Fine-Tune 0.840 0.760 0.846 0.831 0.819
+clinical
+Table2: Testresultsonclinicaltasks.
+BC5CDR BC5CDR
+Model ChemProt DDI Avg
+disease chemical
+BlueBERT 0.725 0.739 0.866 0.935 0.816
+biomedical
+MT-BlueBERT-Refinement 0.714 0.792 0.824 0.930 0.815
+biomedical
+MT-BlueBERT-Fine-Tune 0.729 0.820 0.865 0.931 0.836
+biomedical
+Table3: Testresultsonbiomedicaltasks.
+learning rate decay schedule with warm-up over biomedical tasks and clinical tasks, respectively.
+0.1, and a weight decay of 0.01 applied to every BlueBERT is the base BlueBERT model
+clinical
+epochoftrainingbyfollowing(Liuetal.,2019c). pretrained on PubMed abstracts and MIMIC-III
+We use the BioBERT (Lee et al., 2020), Blue- clinicalnotes,andfine-tunedforeachBLUEtask
+BERT base model (Peng et al., 2019), and Clin- on task-specific data. MT- model are the pro-
+icalBERT (Alsentzer et al., 2019) as the domain- posed models described in Section 3. We used
+specific language model2. As a result, all the to- the pre-trained BlueBERT to initialize its
+clinical
+kenized texts using wordpieces were chopped to shared layers, refined the model via MTL on the
+spansnolongerthan128tokens. Wesetthemax- BLUE tasks (MT-BlueBERT-Refinement ).
+clinical
+imum number of epochs to 100. We also set the Wekeepfine-tuningthemodelforeachBLUEtask
+dropoutrateofallthetask-specificlayersas0.1. To usingtask-specificdata,thengotMT-BlueBERT-
+avoidtheexplodinggradientproblem,weclipped Fine-Tune .
+clinical
+the gradient norm within 1. To fine-tune the MT-
+Table2showstheresultsonclinicaltasks. MT-
+BERTonspecifictasks,wesetthemaximumnum-
+BlueBERT-Fine-Tune creatednewstate-of-
+clinical
+berofepochsto10andlearningratee−5.
+the-art results on 2 tasks and pushing the bench-
+mark to 81.9%, which amounts to 1.3% abso-
+4.3 Results
+lution improvement over BlueBERT and
+clinical
+Oneofthemostimportantcriteriaofbuildingprac-
+1.2%absoluteimprovementoverMT-BlueBERT-
+tical systems is fast adaptation to new domains.
+Refinement . OntheShAReCLEFEtask,the
+clinical
+To evaluate the models on different domains, we
+modelgainedthelargestimprovementby6%. On
+multi-task learned various MT-BERT on BLUE
+theMedNLItask,theMTmodelgainedimprove-
+2https://github.com/ncbi-nlp/bluebert ment by 2.4%. On the remaining tasks, the MT
+i2b2 2010 re DDI
+ClinicalSTS MedNLI ChemProt BC5CDR disease
+ShARe/CLEFE BC5CDR chemical
+Figure2: PairwiseMTLrelationshipsinclinical(left)andbiomedical(right)domains.
+Model ClinicalSTS i2b22010re MedNLI ShARe/CLEFE Avg
+MT-ClinicalBERT-Fine-Tune 0.816 0.746 0.834 0.817 0.803
+MT-BioBERT-Fine-Tune 0.837 0.741 0.832 0.818 0.807
+MT-BlueBERT-Fine-Tune 0.824 0.738 0.824 0.825 0.803
+biomedical
+MT-BlueBERT-Fine-Tune 0.840 0.760 0.846 0.831 0.819
+clinical
+Table4: TestresultsofMT-BERT-Fine-Tunemodelsonclinicaltasks.
+BC5CDR BC5CDR
+Model ChemProt DDI Avg
+disease chemical
+MT-BioBERT-Fine-Tune 0.729 0.812 0.851 0.928 0.830
+MT-BlueBERT-Fine-Tune 0.729 0.820 0.865 0.931 0.836
+biomedical
+MT-BlueBERT-Fine-Tune 0.714 0.792 0.824 0.930 0.815
+clinical
+Table5: TestresultsofMT-BERT-Fine-Tunemodelsonbiomedicaltasks.
+model also performed well by reaching the state- BlueBERT and 2.1% absolute improve-
+biomedical
+of-the-art performance with less than 1% differ- ment over MT-BlueBERT-Refinement .
+biomedical
+ences. Whencomparedthemodelswithandwith- On the DDI task, the model gained the largest
+out fine-tuning on single datasets, Table 2 shows improvementby8.1%.
+thatthemulti-taskrefinementmodelissimilarto
+4.4 Discussion
+single baselines on average. Consider that MT-
+BlueBERT-Refinement isonemodelwhile 4.4.1 PairwiseMTL
+clinical
+BlueBERT are4individualmodels,webe-
+clinical Toinvestigatewhichtasksarebeneficialorharm-
+lievetheMTrefinementmodelwouldbringtheben-
+ful to others, we train on two tasks jointly us-
+efitwhenresearchersareinthehassleofchoosing
+ingMT-BlueBERT-Refinement andMT-
+biomedical
+thesuitablemodelfornewproblemsorproblems
+BlueBERT-Refinement . Figure2givespair-
+clinical
+withlimitedtrainingdata.
+wiserelationships. Thedirectedgreen(orredand
+In biomedical tasks, we used grey) edge from s to t means s improves (or de-
+BlueBERT as the baseline because creasesandhasnoeffecton)t.
+biomedical
+it achieved the best performance on the BLUE Intheclinicaltasks,ShARe/CLEFEalwaysgets
+benchmark. Table 3 shows the similar results benefitsfrommulti-tasklearningtheremaining3
+as in the clinical tasks. MT-BlueBERT-Fine- tasks as the incoming edges are green. One fac-
+Tune creatednewstate-of-the-artresults tor might be that ShARe/CLEFE is an NER task
+biomedical
+on 2 tasks and pushing the benchmark to 83.6%, thatgenerallyrequiresmoretrainingdatatofulfill
+whichamountsto2.0%absoluteimprovementover the data-hungry need of the BERT model. Clini-
+BlueBERT BlueBERT MT-BioBERT MT-BlueBERT MT-BlueBERT
+Model
+Fine-Tune Fine-Tune Fine-Tune
+biomedical clinical biomedical clinical
+ClinicalSTS 0.845 0.848 0.807 0.820 0.807
+i2b22010re 0.744 0.764 0.740 0.738 0.748
+MedNLI 0.822 0.840 0.831 0.814 0.842
+ChemProt 0.725 0.692 0.735 0.724 0.686
+DDI 0.739 0.760 0.810 0.808 0.779
+BC5CDRdisease 0.866 0.854 0.849 0.853 0.848
+BC5CDRchemical 0.935 0.924 0.928 0.928 0.914
+ShARe/CLEFE 0.754 0.771 0.812 0.814 0.830
+Avg 0.804 0.807 0.814 0.812 0.807
+Table6: TestresultsoneightBLUEtasks.
+calSTShelpsMedNLIbecausethenatureofboth tinuouslypretrainedthemodel. Giventhatthereare
+arerelatedandtheirinputsareapairofsentences. limiteddetailsofpretrainingClinicalBERT,further
+MedNLIcanhelpothertasksexceptClinicalSTS investigationmaybenecessary.
+partially because the test set of ClinialSTS is too In the biomedical tasks, Table 5 shows that
+smalltoreflectthechanges. Wealsonotethati2b2 MT-BioBERT-Fine-TuneandMT-BlueBERT-Fine-
+2010recanbebothbeneficialandharmful,depend- Tune reachedcomparableresultsandpre-
+biomedical
+ingonwhichothertaskstheyaretrainedwith. One trainingonclinicalnoteshasanegligibleimpact.
+potentialcauseisi2b22010rewascollectedfrom
+4.4.3 ResultsonallBLUEtasks
+threedifferenthospitalsandhavethelargestlabel
+sizeof8. Next, we also compare MT-BERT with its vari-
+Inthebiomedicaltasks,bothDDIandChemProt ants on all BLUE tasks. Table 6 shows that MT-
+taskscanbeimprovedbyMTLonothertasks,po- BioBERT-Fine-Tunereachedthebestperformance
+tentiallybecausetheyareharderwithlargestsizeof onaverageandMT-BlueBERT-Fine-Tune biomedical
+labelthusrequiremoretrainingdata. Inthemean- stays closely. While confusing results were ob-
+while,BC5CDRchemicalanddiseasecanbarely tained when combing variety of tasks in both
+beimprovedpotentiallybecausetheyhavealready biomedical and clinical domains, we observed
+gotlargedatasettofitthemodel. againthatMTLmodelspretrainedonbiomedical
+literatureperformbetterinbiomedicaltasks;and
+4.4.2 MTLonBERTvariants MTLmodelspretrainedonbothbiomedicalliter-
+ature and clinical notes perform better in clinical
+First, we would like to compare multi-task
+tasks. Theseobservationsmaysuggestthatitmight
+learning on BERT variants: BioBERT, Clinical-
+be helpful to train separate deep neural networks
+BERT, and BlueBERT. In the clinical tasks (Ta-
+ondifferenttypesoftextgenresinBioNLP.
+ble 4), MT-BlueBERT-Fine-Tune outper-
+clinical
+formsothermodelsonalltasks. Whencompared
+5 Conclusionsandfuturework
+theMTLmodelsusingBERTmodelpretrainedon
+PubMedonly(rows2and3)andonthecombina- In this work, we conduct an empirical study on
+tionofPubMedandclinicalnotes(row4),itshows MTL for biomedical and clinical tasks, which so
+the impact of using clinical notes during the pre- farhasbeenmostlystudiedwithoneortwotasks.
+trainingprocess. Thisobservationisconsistently Ourresultsprovideinsightsregardingdomainadap-
+asshownin(Pengetal.,2019). Ontheotherhand, tation and show benefits of the MTL refinement
+MT-ClinicalBERT-Fine-Tune,whichusedClinical- andfine-tuning. Werecommendacombinationof
+BERTduringthepretraining,drops∼1.6%across theMTLrefinementandtask-specificfine-tuning
+thetasks. ThedifferencesbetweenClinicalBERT approach based on the evaluation results. When
+and BlueBERT are at least in 2-fold. (1) Clini- learnedandfine-tunedonadifferentdomain,MT-
+calBERTused“cased”textwhileBlueBERTused BERTachievedimprovementsby2.0%and1.3%
+“uncased”text;and(2)thenumberofepochstocon- in biomedical and clinical domains, respectively.
+Specifically, it has brought significant improve- Soravit Changpinyo, Hexiang Hu, and Fei Sha. 2018.
+mentsin4tasks. Multi-tasklearningforsequencetagging: anempiri-
+calstudy. InCOLING,pages2965–2977.
+Therearetwolimitationstothiswork. First,our
+results on MTL training across all BLUE bench- Qingyu Chen, Yifan Peng, Tiarnan Keenan, Shazia
+markshowthatMTLisnotalwayseffective. We Dharssi, Elvira Agro N, Wai T. Wong, Emily Y.
+Chew, and Zhiyong Lu. 2019. A multi-task deep
+are interested in exploring further the character-
+learning model for the classification of age-related
+ization of task relationships. For example, it is
+maculardegeneration. AMIA2019InformaticsSum-
+notclearwhethertherearedatacharacteristicsthat mit,2019:505–514.
+helptodetermineitssuccess(Mart´ınezAlonsoand
+RonanCollobertandJasonWeston.2008. Aunifiedar-
+Plank, 2017; Changpinyo et al., 2018). In addi-
+chitecturefornaturallanguageprocessing. InICML,
+tion,ourresultssuggestthatthemodelcouldben- pages160–167.
+efit more from some specific examples of some
+GamalCrichton,SampoPyysalo,BillyChiu,andAnna
+of the tasks in Table 1. For example, it might
+Korhonen.2017. Aneuralnetworkmulti-tasklearn-
+be of interest to not using the BC5CDR corpus ing approach to biomedical named entity recogni-
+in the relation extraction task in future. Second, tion. BMCBioinformatics,18:368.
+we studied one approach to MTL by sharing the
+Louise Dele´ger, Robert Bossy, Estelle Chaix,
+encoder between all tasks while keeping several MouhamadouBa,ArnaudFerre´,PhilippeBessie`res,
+task-specificdecoders. Otherapproaches,suchas andClaireNe´dellec.2016. Overviewofthebacteria
+biotope task at BioNLP shared task 2016. In
+fine-tuning only the task specific layers, soft pa-
+Proceedings of BioNLP Shared Task Workshop,
+rametersharing(Ruder,2017),knowledgedistilla-
+pages12–22.
+tion(Liuetal.,2019b),needtobeinvestigatedin
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+thefuture.
+Kristina Toutanova. 2018. BERT: pre-training of
+While our work only scratches the surface of
+deep bidirectional transformers for language under-
+MTLinthemedicaldomain,wehopeitwillshed standing. arXivpreprint: 1810.04805.
+light on the development of generalizable NLP
+Yongping Du, Yunpeng Pan, and Junzhong Ji. 2017.
+models and task relations that can lead to gains
+A novel serial deep multi-task learning model for
+fromMTLmodelsoversingle-tasksetups. large scale biomedical semantic indexing. In IEEE
+International Conference on Bioinformatics and
+Acknowledgments Biomedicine(BIBM),pages533–537.
+Harsha Gurulingappa, Abdul Mateen Rajput, Angus
+This work was supported by the Intramural Re-
+Roberts, Juliane Fluck, Martin Hofmann-Apitius,
+search Programs of the NIH National Library and Luca Toldo. 2012. Development of a bench-
+of Medicine. This work was also supported mark corpus to support the automatic extraction of
+drug-related adverse effects from medical case re-
+by the National Library of Medicine of the Na-
+ports. Journal of Biomedical Informatics, 45:885–
+tional Institutes of Health under award number
+892.
+K99LM013001. We are also grateful to the au-
+HrayrHarutyunyan,HrantKhachatrian,DavidC.Kale,
+thorsofmt-dnn(https://github.com/namisan/
+Greg Ver Steeg, and Aram Galstyan. 2019. Multi-
+mt-dnn)tomakethecodespubliclyavailable.
+task learning and benchmarking with clinical time
+seriesdata. Scientificdata,6:96.
+DanHe,DavidKuhn,andLaxmiParida.2016. Novel
+References
+applications of multitask learning and multiple out-
+Emily Alsentzer, John Murphy, William Boag, Wei- put regression to multiple genetic trait prediction.
+Hung Weng, Di Jindi, Tristan Naumann, and
+Bioinformatics(Oxford,England),32:i37–i43.
+MatthewMcDermott.2019. Publiclyavailableclini-
+Mar´ıa Herrero-Zazo, Isabel Segura-Bedmar, Paloma
+cal BERT embeddings. In Proceedings of the 2nd
+Mart´ınez, and Thierry Declerck. 2013. The DDI
+Clinical Natural Language Processing Workshop,
+corpus: an annotated corpus with pharmacological
+pages72–78.
+substances and drug-drug interactions. Journal of
+BiomedicalInformatics,46:914–920.
+Joachim Bingel and Anders Søgaard. 2017. Identify-
+ing beneficial task relations for multi-task learning Muhammad Raza Khan, Morteza Ziyadi, and Mo-
+indeepneuralnetworks. InEACL,pages164–169. hamed AbdelHady. 2020. MT-BioNER: multi-task
+learningforbiomedicalnamedentityrecognitionus-
+Rich Caruana. 1997. Multitask learning. Machine ingdeepbidirectionaltransformers. arXivpreprint:
+Learning,28(1):41–75. 2001.08904.
+Diederik P. Kingma and Jimmy Ba. 2015. Adam: a XiaodongLiu,PengchengHe,WeizhuChen,andJian-
+methodforstochasticoptimization. InInternational feng Gao. 2019c. Multi-task deep neural networks
+Conference on Learning Representations (ICLR), for natural language understanding. In ACL, pages
+pages1–15. 4487–4496.
+Martin Krallinger, Obdulia Rabal, Saber A. Akhondi, Minh-ThangLuong,QuocV.Le,IlyaSutskever,Oriol
+Mart´ın Pe´rez Pe´rez, Jesu´s Santamar´ıa, Gael Pe´rez Vinyals, and Lukasz Kaiser. 2016. Multi-task se-
+Rodr´ıguez, Georgios Tsatsaronis, Ander Intxau- quencetosequencelearning. InICLR.
+rrondo, Jose´ Antonio Lo´pez1 Umesh Nandal,
+Erin Van Buel, Akileshwari Chandrasekhar, Mar- He´ctor Mart´ınez Alonso and Barbara Plank. 2017.
+leen Rodenburg, Astrid Laegreid, Marius Doornen- When is multitask learning effective? semantic se-
+bal,JulenOyarzabal,AnaliaLourenc¸o,andAlfonso quencepredictionundervaryingdataconditions. In
+Valencia. 2017. Overview of the BioCreative VI EACL,pages44–53.
+chemical-protein interaction track. In Proceedings
+oftheBioCreativeworkshop,pages141–146. Tahir Mehmood, Alfonso E Gerevini, Alberto Lavelli,
+and Ivan Serina. 2019. Multi-task learning applied
+Jinhyuk Lee, Wonjin Yoon, Sungdong Kim, tobiomedicalnamedentityrecognitiontask. InItal-
+Donghyeon Kim, Sunkyu Kim, Chan Ho So, ianConferenceonComputationalLinguistics.
+and Jaewoo Kang. 2020. BioBERT: a pre-trained
+biomedical language representation model for Yifan Peng, Shankai Yan, and Zhiyong Lu. 2019.
+biomedical text mining. Bioinformatics (Oxford, Transfer learning in biomedical natural language
+England),36:1234–1240. processing: an evaluation of BERT and ELMo on
+ten benchmarking datasets. In Proceedings of the
+Diya Li and Heng Ji. 2019. Syntax-aware multi-task
+WorkshoponBiomedicalNaturalLanguageProcess-
+graph convolutional networks for biomedical rela-
+ing(BioNLP),pages58–65.
+tion extraction. In Proceedings of the Tenth Inter-
+nationalWorkshoponHealthTextMiningandInfor-
+Sebastian Ruder. 2017. An overview of multi-task
+mationAnalysis(LOUHI2019),pages28–33.
+learning in deep neural networks. arXiv preprint:
+1706.05098.
+FeiLi,MeishanZhang,GuohongFu,andDonghongJi.
+2017. Aneuraljointmodelforentityandrelationex-
+Xue Shi, Dehuan Jiang, Yuanhang Huang, Xiaolong
+tractionfrombiomedicaltext. BMCBioinformatics,
+Wang, Qingcai Chen, Jun Yan, and Buzhou Tang.
+18:198.
+2019. Family history information extraction via
+deep joint learning. BMC medical informatics and
+Jiao Li, Yueping Sun, Robin J. Johnson, Daniela Sci-
+decisionmaking,19:277.
+aky, Chih-Hsuan Wei, Robert Leaman, Allan Peter
+Davis, Carolyn J. Mattingly, Thomas C. Wiegers,
+ChaitanyaShivade.2017. Mednli–anaturallanguage
+and Zhiyong Lu. 2016. BioCreative V CDR task
+inferencedatasetfortheclinicaldomain.
+corpus: a resource for chemicaldisease relation ex-
+traction. Database(Oxford),2016.
+Hanna Suominen, Sanna Salantera¨, Sumithra Velupil-
+lai, Wendy W. Chapman, Guergana Savova,
+Qingqing Li, Zhihao Yang, Ling Luo, Lei Wang, Yin
+Noemie Elhadad, Sameer Pradhan, Brett R. South,
+Zhang, Hongfei Lin, Jian Wang, Liang Yang, Kan
+Danielle L. Mowery, Gareth J. F. Jones, et al.
+Xu, and Yijia Zhang. 2018. A multi-task learning
+2013. OverviewoftheShARe/CLEFeHealthevalu-
+basedapproachtobiomedicalentityrelationextrac-
+ation lab 2013. In International Conference of the
+tion. InIEEEInternationalConferenceonBioinfor-
+Cross-Language Evaluation Forum for European
+maticsandBiomedicine(BIBM),pages680–682.
+Languages,pages212–231.
+Shikun Liu, Edward Johns, and Andrew J. Davison.
+2019a. End-to-end multi-task learning with atten- O¨zlem Uzuner, Brett R. South, Shuying Shen, and
+tion. In Proceedings of the IEEE Conference on Scott L. DuVall. 2011. 2010 i2b2/VA challenge on
+Computer Vision and Pattern Recognition (CVPR), concepts, assertions, and relations in clinical text.
+pages1871–1880. Journal of the American Medical Informatics Asso-
+ciation: JAMIA,18:552–556.
+Sijia Liu, Majid Rastegar Mojarad, Yanshan Wang,
+Liwei Wang, Feichen Shen, Sunyang Fu, and Xi Wang, Jiagao Lyu, Li Dong, and Ke Xu. 2019a.
+Hongfang Liu. 2018. Overview of the BioCre- Multitask learning for biomedical named entity
+ative/OHNLP 2018 family history extraction task. recognition with cross-sharing structure. BMC
+InProceedingsoftheBioCreativeWorkshop,pages Bioinformatics,20:427.
+1–5.
+Xiaogang Wang, Cha Zhang, and Zhengyou Zhang.
+XiaodongLiu,PengchengHe,WeizhuChen,andJian- 2009. Boosted multi-task learning for face verifi-
+fengGao.2019b. Improvingmulti-taskdeepneural cation with applications to web image and video
+networks via knowledge distillation for natural lan- search. In IEEE Conference on Computer Vision
+guageunderstanding. arXivpreprint: 1904.09482. andPatternRecognition(CVPR),pages142–149.
+Xuan Wang, Yu Zhang, Xiang Ren, Yuhao Zhang,
+MarinkaZitnik,JingboShang,CurtisLanglotz,and
+Jiawei Han. 2019b. Cross-type biomedical named
+entity recognition with deep multi-task learning.
+Bioinformatics(Oxford,England),35:1745–1752.
+Yanshan Wang, Naveed Afzal, Sunyang Fu, Liwei
+Wang, Feichen Shen, Majid Rastegar-Mojarad, and
+HongfangLiu.2018. MedSTS:aresourceforclini-
+calsemantictextualsimilarity. LanguageResources
+andEvaluation,pages1–16.
+Junjie Xing, Kenny Zhu, and Shaodian Zhang. 2018.
+Adaptive multi-task transfer learning for Chinese
+word segmentation in medical text. In COLING,
+pages3619–3630.
+Kui Xue, Yangming Zhou, Zhiyuan Ma, Tong Ruan,
+Huanhuan Zhang, and Ping He. 2019. Fine-tuning
+BERTforjointentityandrelationextractioninChi-
+nesemedicaltext. In2019IEEEInternationalCon-
+ferenceonBioinformaticsandBiomedicine(BIBM),
+pages892–897.
+JianliangYang,YuenanLiu,MinghuiQian,Chenghua
+Guan,andXiangfeiYuan.2019. Informationextrac-
+tionfromelectronicmedicalrecordsusingmultitask
+recurrent neural network with contextual word em-
+bedding. AppliedSciences,9(18):3658.
+QunZhang,ZhenzhenLi,DaweiFeng,DongshengLi,
+Zhen Huang, and Yuxing Peng. 2018. Multitask
+learning for Chinese named entity recognition. In
+Advances in Multimedia Information Processing –
+PCM,pages653–662.
+Yu Zhang and Qiang Yang. 2017. A survey on multi-
+tasklearning. arXivpreprint: 1707.08114.
+SendongZhao,TingLiu,SichengZhao,andFeiWang.
+2019. A neural multi-task learning framework to
+jointlymodelmedicalnamedentityrecognitionand
+normalization. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, volume 33, pages
+817–824.
+Jiayu Zhou, Lei Yuan, Jun Liu, and Jieping Ye. 2011.
+Amulti-tasklearningformulationforpredictingdis-
+ease progression. In Proceedings of the 17th ACM
+SIGKDD international conference on Knowledge
+discoveryanddatamining,pages814–822.

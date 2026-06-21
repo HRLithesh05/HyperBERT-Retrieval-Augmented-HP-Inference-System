@@ -1,0 +1,542 @@
+Evaluating Unsupervised Representation Learning
+for Detecting Stances of Fake News
+MaikeGuderlei MatthiasAßenmacher
+DepartmentofStatistics DepartmentofStatistics
+Ludwig-Maximilians-Universita¨t Ludwig-Maximilians-Universita¨t
+Munich,Germany Munich,Germany
+maike@guderlei.de matthias@stat.uni-muenchen.de
+Abstract
+Ourgoalistoevaluatetheusefulnessofunsupervisedrepresentationlearningtechniquesforde-
+tecting stances of Fake News. Therefore we examine several pretrained language models with
+respect to their performance on two Fake News related data sets, both consisting of instances
+with a headline, an associated news article and the stance of the article towards the respective
+headline. Specifically, the aim is to understand how much hyperparameter tuning is necessary
+when finetuning the pretrained architectures, how well transfer learning works in this specific
+caseofstancedetectionandhowsensitivethemodelsaretochangesinhyperparameterssuchas
+batch size, learning rate (schedule), sequence length as well as the freezing technique. The re-
+sultsindicatethatthecomputationallymoreexpensiveautoregressionapproachofXLNet(Yang
+et al., 2019) is outperformed by BERT-based models, notably by RoBERTa (Liu et al., 2019).
+While the learning rate seems to be the most important hyperparameter, experiments with dif-
+ferent freezing techniques indicate that all evaluated architectures had already learned powerful
+languagerepresentationsthatposeagoodstartingpointforfinetuningthem.
+1 Introduction
+Withtheriseofsocialmedia,exchangeofopinionsandnewshappensfasterthanever. Newscirculation
+is therefore less and less bound to traditional print journalism that usually requires extensive research,
+fact checking and accurate coverage in order to be a reliable news resource. It is relatively easy to
+share opinions that are either not supported by researched facts or simply wrong. In the worst case a
+largeamountofpeoplecanbetargetedbypropagandainordertoshiftsocietaldiscussionsinfavorofa
+wantedagenda. HumanresourcesarelimitedtoidentifysuchFakeNews,sincetheycoverawiderange
+oftopicsandlinguisticwritingstyles(Shuetal.,2017,p.2). AutomatedFakeNewsdetection(FND)has
+thereforeproventobeanimportantchallengeforNLPresearchersinrecentyears. Tothisday,avariety
+ofapproachesdealingwithFNDexists(Khanetal.,2019).
+In2017,theFakeNewsChallengeStage1wasintroducedwhichtacklesFNDasastancedetectiontask
+(PomerleauandRao,2017),wheretheideaistodeterminethestanceofanewsarticletoagivenheadline
+(Hanselowskietal.,2018,p.1). WenowevaluatethefivemodelsBERT(Devlinetal.,2019),RoBERTa
+(Liu et al., 2019), DistilBERT (Sanh et al., 2019), ALBERT (Lan et al., 2019) and XLNet (Yang et al.,
+2019)whichweredevelopedandenhancedrecently. Allarchitectureswerepretrainedonlargeunlabeled
+corporausingaself-supervisedobjectiveandcanbefinetunedonadesiredtaskathand. Ourmainfocus
+is toevaluate thenecessity of hyperparameter tuning aswell asthe general performance.1 Besides this,
+it is of special interest to examine the differences between auto-encoding (BERT-based models) and
+auto-regressivearchitectures(XLNet).
+Inthiscontext,thetermFakeNewsisdefinedasatextpiecethatisverifiablywrongandspreadwitha
+maliciousintention. Indoingso,othermediasourcessuchasvideo,imagesoraudioareexcluded. Since
+the intention has to be malicious all sorts of entertainment related false news such as hoaxes and april
+foolsareexcluded. ThedefinitionissimilartothenarrowdefinitionthatShuetal.(2017)undertake.
+ThisworkislicensedunderaCreativeCommonsAttribution4.0InternationalLicense.
+Licensedetails:http://creativecommons.org/licenses/by/4.0/.
+1CodeanddatasetsavailableonGitHub:https://github.com/magud/fake-news-detection
+2 TheFakeNewsChallenge(FNC-1)
+In 2017, the Fake News Challenge Stage 1 (FNC-1) was published. Organizers from industry and
+academia created an online challenge accessible via http://www.fakenewschallenge.org/
+(Pomerleau and Rao, 2017). The FNC-1 is conceptualized as an important pre-step in identifying Fake
+Newsandexploringhowartificialintelligencetoolscanbeleveragedincombattingthem. Givenacertain
+claimaboutatopic,whataredifferentnewsagenciesreportingaboutthisclaim? Ifmostnewsagencies
+agreewithaclaim,thiscanbeinterpretedasanindicatorofthetruthfulnessoftheclaim. Onthecontrary,
+if a lot of news disagree with the claim, the claim is likely Fake News. Statistically speaking this idea
+istranslatedintoastancedetectiontaskwiththeclaimbeingtreatedasaheadlineandthestanceofthe
+article body being either Agree, Disagree, Discuss or Unrelated. FND is thus treated as a classification
+taskwithfourcategorieswhichareinterpretedasthestanceofanarticlebodytowardsagivenheadline
+claim. Alongwithabaselinemodel,atrainingandtestsetwaspublished. AccordingtoHanselowskiet
+al.(2018),50teamsparticipatedinthechallenge.
+3 RelatedWork
+In general, FND can be interpreted as a binary classification task where a text document is classified as
+eitherFakeNewsorNoFakeNewsorasamulti-classproblemoftenwithordinallabels. Onemajordis-
+tinctionindifferentclassificationalgorithmscanbedrawnintheconsiderationofauxiliaryinformation.
+Most contributions take a purely feature-oriented approach, while others try to incorporate information
+revolving around spreading Fake News and the respective dissemination process. The feature-based
+approach focuses on extracting relevant linguistic peculiarities associated with Fake News. Typical ex-
+amples are characters n-grams, words or a measure of the readability and syntax of an article body
+(Pe´rez-Rosas et al., 2018, p.5). Other authors included the average word length, counts of exclamation
+marks or the sentiment of an article (Khan et al., 2019, p.6). After finding appropriate features, tradi-
+tional machine learning algorithms as well as (deep) neural networks are proposed to classify the text
+instancegiventheextractedfeatures. Otherfeature-basedapproachesdirectlyrelyondeeplearning,us-
+ingneuralnetworksforlearninggoodrepresentationsofthetextinputbyastackofhiddenlayerswhich
+isthenfedinalastclassificationlayer. ThisapproachisusedbyYangetal.(2018)whosimultaneously
+trainaCNNontextand imagedatatoclassifyfakeentitiesandbyDongetal.(2019)whoimplementa
+two-step approach of using supervised and unsupervised learning with a CNN as well. But despite the
+fact that feature-based approaches are fairly popular within the FND research, Shu et al. (2017) argue
+thattheyarenotsufficient. Approachesthatuseauxiliaryinformatione.g. revolvearoundmodelingthe
+disseminationprocessofFakeNewsbyincorporatingspatio-temporalinformationaboutuserswholike,
+share or publish (potential) Fake News (Ruchansky et al., 2017; Ren and Zhang, 2020). The FNC-1
+organizers use a feature-based approach by proposing a baseline model that extracts various features
+fromtheheadlinesandarticlebodies. Theapproachofspecificallymodelingtherelationshipbetweena
+headlineandarespectivearticlebodywasalsoexploitedbyYoonetal.(2019)inthecontextofclickbait
+detectionwhiletheFNC-1takesthisapproachasapre-steptoFND.
+4 MaterialandMethods
+4.1 Modelarchitectures
+Representationlearningcanbeseenasoneofthecrucialsuccessfactorsoflargepretrainedmodelssuch
+asBERTorXLNetthatyieldoutstandingperformancesonavarietyofNLPtasks. Withtheintroduction
+of BERT (Devlin et al., 2019) - short for Bidirectional Encoder Representations from Transformers -
+the possibility of simultaneously learning left and right word context was introduced. Up to this point,
+consideringbidirectionalitywasonlypossiblebymodelingtwoseparatenetworksforeachdirectionthat
+would later be combined (Peters et al., 2018). After learning deep bidirectional representations from
+unlabeledtext,BERTcanbeusedforeitherfinetuningorfeatureextraction. Themodelispretrainedon
+the combined objective of masked language modeling (MLM) and next-sentence prediction. The main
+premise of RoBERTa (Liu et al., 2019) is the assumption that BERT was seriously undertrained during
+pretraining. RoBERTa is thus trained on larger batches of longer sequences from a larger per-training
+corpus for a longer time. In addition, Liu et al. (2019) argue that the second task of the next-sentence
+prediction does not improve BERT’s performance in a way worth mentioning and therefore remove the
+taskfromthetrainingobjective. WhileRoBERTafocusesonimprovingpretraining,DistilBERT(Sanhet
+al.,2019)andALBERT(Lanetal.,2019)wereintroducedaslighterversionsofBERTapplyingparam-
+eter reduction techniques in order to be usable under constrained computational training and inference
+budgets. Sanh et al. (2019) criticize the idea of simply enlarging data sets and running more and more
+exhaustivepretrainingsincethisdoesnotconsidercomputationalcosts,memoryrequirementsandeven
+environmentalaspectsthatareoftenneglectedforthesakeoffurtherenhancingperformance(Strubellet
+al.,2019;Hao,2019;Peng,2019). DistilBERTendsupdiminishingBERT’sarchitecturebyaround40%
+while retaining around 97% of its language understanding capabilities and being 60% faster by using a
+distinct knowledge distillation approach (Hinton et al., 2015), while ALBERT relies on factorized em-
+beddingparameterizationandcross-layerparametersharing. Lanetal.(2019)specificallypointoutthat
+simplyenlargingmodelarchitecturesbyusingbiggerhiddensizedimensionsormorelayerscanleadto
+unexpectedmodeldegradation2. WhileRoBERTa,DistilBERTandALBERTfocusoneitherimproving
+or reducing the size of BERT, the overall bidirectional encoder architecture with the MLM objective
+remains the same. With XLNet, Yang et al. (2019) propose an alternative approach that works in an
+auto-regressive manner. Since BERT’s objective is to reconstruct a corrupted input, it can be described
+as a denoising autoencoder (DAE) approach. In contrast to the denoising autoencoder, auto-regressive
+(AR)languagemodelingusesasequentialtokenpredictionthatcanonlyconditiononeitherleftorright
+context. XLNet combines the advantages of both approaches, namely the bidirectionality while captur-
+ingdependencystructuresamongtokensbetterbyemployingasocalledpermutationlanguagemodeling
+objective(PLM).
+The pretrained models are all implemented in PyTorch (Paszke et al., 2019) using the huggingface
+transformers library (Wolf et al., 2019) that makes a large variety of the SOTA models in NLP
+available and ready to use. Architecture-wise, the base-cased implementations with the suitable
+head for sequence classification (i.e. <model name>ForSequenceClassification) are used.
+For DistilBERT and XLNet the weights of the pooling layers are randomly initialized, while BERT,
+RoBERTa and ALBERT rely on pretrained pooler layers. The weights for the softmax classification
+layerarerandomlyinitializedforallfivemodels. ForDistilBERTamodelversionthatisdistilledfrom
+theRoBERTabasemodelwaschosen. AllmodelsarefinetunedusinganUbuntu18.04.3LTSOSimage
+with40CPUs(IntelXeon,2.4GHzclockspeed),736GBofRAMandamaximumoftwoTeslaV100-
+PCIE-16GBGPUs.
+All models were finetuned using the Adam algorithm with default values for its hyperparameters as
+indicated by Kingma and Ba (2014). As warmup ratio, we chose a value of 0.06 complemented by a
+more extensive evaluation when it comes to the learning rate schedule, where we conduct small grid
+search experiments later on. In order to avoid gradient explosion, the norm of all gradients is clipped
+with a maximum value of 1. Gradients are not accumulated. For all models, the pretrained weights of
+the specified huggingface version are loaded once. The experiments and grid search steps thus use the
+samerandomlyinitializedweightsforthefinetuninglayerspermodel3.
+4.2 Data
+The FNC-1 data set was created from the Emergent data set (Ferreira and Vlachos, 2016) which was
+developed for an online journalism project about rumour debunking. The project is still running and a
+website with manually checked claims is available (Silverman, 2019). Rumours were extracted from
+websitessuchassnopes.comandtwitteraccountssuchas@Hoaxalizer. Journaliststhenfirstidentified
+therespectiveclaimandsearchedforarticlesmentioningthisclaim. Asanextstepthejournalistslabeled
+2However,theperformanceofBERT,RoBERTaandXLNetcanonlybeexceededwhenthemodelisupscalingitswidth
+againwhichiscontrarytotheauthorsinitialideaofpresentingaleanermodelarchitecture.
+3Pleasenotethatthetermfinetuninglayerreferstotheadditionallayersthatareputontopofthemainmodelarchitecture,
+whilepretraininglayersarethoselayersthatarepartofallmodelsnomatterwhichfinetuningtaskisused.Whichlayerswere
+updatedduringthefinetuningisnotindicatedbytheseterms,butisratherdefinedbythespecifiedfreezingtechnique.
+thearticleasFor,AgainstorObservingandthensummarizedthearticleintoaheadline. Asanadditional
+step the veracity level of the claim was labeled as True, False or Unverified. In total, 300 rumoured
+claims and 2,595 associated news with an average ratio of 8.65 (sd = 7.31) articles per claim were
+considered. The data set thus contains real world data which was manually labeled by journalists with
+regard to their stance and veracity level. For the FNC-1, organizers matched every article body with its
+respectiveheadlineandadditionallycreatedthefourthclassUnrelated byrandomlymatchingheadlines
+andarticlebodiesthatbelongedtodifferenttopics. Furthermore,266instanceswerecreatedinaddition
+topreventparticipationteamsfromderivinglabelsforthetestsetsincetheEmergentdatasetispublicly
+available. The class distribution over the four classes in the FNC-1 data set is heavily skewed towards
+the Unrelated class. The 49,972 instances each consist of a headline (i.e. the claim to be looked at),
+the respective article body and label. In total, there are 1,669 unique article bodies and 1,648 unique
+headlines. The 300 topics are divided into 200 topics for training and 100 topics for testing. Not every
+claimisassociatedwithallfourlabels.
+Hanselowski et al. (2018) introduce the extended data set FNC-1 ARC as follows: ARC consists
+of 188 manually selected debate topics of popular questions from the user debate section of the New
+York Times. For each of these debate topics those user posts were selected that were highly ranked by
+otherusers. Thesehighlyrankeduserpostswereprocessedbyproducingtwoopposingclaimsforthem.
+Afterwards,crowdworkersdecidedonthestanceoftheuserpostswithregardtothetwoopposingclaims
+andlabeledthepostaseitherAgree,DisagreeorDiscuss. TheUnrelatedlabelwascreatedbyrandomly
+matching user posts to different topics. As this data set is built on user posts as opposed to the online
+news articles of the original FNC-1 data set, it consists of shorter documents that tend to express one
+viewpointonlyandarelessbalancedintheiropinionasnewsarticles. Usingthisadditionaldataset,the
+robustnessoftheprovidedmodelscanthusbetested. TheextendedFNC-1ARCdatasetcombinesthe
+FNC-1withtheARCdataset. Itcomprises64,205instances,14,233morethantheFNC-1dataset. The
+labeldistributionisoverallsimilartotheoriginaldatabuttheDisagreecategoryhasabiggerproportion.
+4.3 Pre-Processing
+Asafirststep,headlinesandarticlebodiesareconcatenatedintoonelongsequencewithheadlinecom-
+ingfirstandtherespectivearticlebodyfollowing. Indoingso,themodelscanbeevaluatedwithrespect
+to their capabilities of learning the semantic structures of one instance as a whole. All model architec-
+tures can be used with their own respective tokenizer. Since every tokenizer provides the possibility to
+process cased text, it was decided to not perform lower-casing. All tokenizers can detect and ignore
+controlcharacters. Itwasthusnotnecessarytoexplicitlyremovethem. Theremovalofseeminglyunin-
+formativewords,socalledstopwords,waskeptaslowaspossibleandconsistedofamanuallyselected
+list containing the words The, the, A, a, An, an. In order to remove stop words, it was necessary to first
+tokenizethe instancesto beable tofilterout thementioned stopwords. Aftertokenizingeach instance,
+theremainingtokenswerepadded. Instancesthathavealongersequencelengththan512weretruncated.
+Asafinalresult,alltokenshaveasequencelengthofT =512includingallnecessaryspecialtokens. In
+addition,themodelisfedwithanidentifierofwhichtokenispaddedandwhichisnot. Thisisnecessary
+toonlyplacetheattentionoverthespanof”true”tokensthatisofnon-paddedtokens.
+5 Results
+5.1 InitialExperiments
+The goal of the exploration step is to evaluate the general performance and gain insights as to how
+usefulthegivenrecommendationsforhyperparameterchoicesare. Therefore,themainhyperparameters
+of interest, namely the sequence length, batch size, learning rate and learning rate schedule are kept
+fixed to determine how well the models perform with respect to different freezing techniques. The
+drawnconclusionsarethenconsideredforthegridsearch. Theexplorationsteptakesthefullmaximum
+sequencelengththatisavailableforeachmodelwhichconsistsof512tokens. Thecommonassumption
+for batch sizes is that a higher batch size yields a more accurate estimate of the gradients (Goodfellow
+et al., 2016, p.276). For the given hardware resources this results in a batch size of 8 which is the best
+possiblevalueforthegivensequencelengthandmemorycapacityofthehardware. Thelearningrateis
+setto3e-5withalinearschedule. Thenumberofepochsis2sinceitisnotthegoaloftheexperimental
+steptoreceivethebestpossibleperformancebutrathertogainfirstinsightsintothegeneraladaptability
+oftransferlearningforthestancedetectionofFakeNews.
+Concerning freezing, different degrees can be considered: It is obviously possible to finetune all lay-
+ers, that is to use the pretrained weights as starting point and then update all parameter weights during
+finetuning. The other extreme would be to only train the additional task-specific layers that are placed
+on top of the general model structure. For the setup of the initial experiments, three different versions
+areconsidered: ThefirstonewecallFreeze,meaningthatalllayersexceptforthelastprojectionaswell
+as the final classification layer are frozen. Second, No Freeze uses no freezing at all which means that
+allparametersareupdatedduringfinetuning,whilethelastapproachFreezeEmbed isdonewithfrozen
+embeddinglayersonly. Foreveryfreezingtechniquefinetuningwasperformedthreetimes. Theresults
+aregiveninTab. 1andreportedwithrespecttothemeanmacro-averagedF -mmetricwhichisknown
+1
+tohandleimbalancedclassdistributionsmoreeffectivelycomparedtotheaccuracy.
+FNC-1 FNC-1ARC
+Freeze NoFreeze FreezeEmbed Freeze NoFreeze FreezeEmbed
+BERT 20.88 75.62 74.93 21.06 75.16 75.31
+RoBERTa 20.88 79.27 81.72 21.00 78.89 77.64
+DistilBERT 20.88 76.57 76.46 21.00 75.31 76.62
+ALBERT 34.66 67.91 68.16 34.70 69.49 69.97
+XLNet 27.51 80.95 82.18 25.72 80.20 78.88
+Table 1: Mean F -m metric over three runs for the exploration step. For Freeze only the last projection
+1
+and classification layers are updated. For No Freeze all layers are updated, while for Freeze Embed all
+embedding-specific layers are excluded from updating. Results are on the dev set of a train/dev split of
+theactualtrainingset. AnoverviewontheruntimescanbefoundinTab. 5inAppendixA.
+The results indicate the importance of not freezing too many layers. All models have problems to
+accurately learn when the main layers (id est the encoder layers for the BERT-based and the relative-
+attention with feed-forward layers for XLNet) are frozen. Most models still predict every instance as
+Unrelated after two epochs. ALBERT performs best in this setting. This is not surprising since all
+encoderlayersinALBERTshareweightsandthemodelthuslearnslessinformationingeneral. Freezing
+theencoderlayersthereforeleadstolessinformationlossforALBERT.XLNetperformsslightlybetter
+compared to BERT, RoBERTa and DistilBERT. For both No Freeze and Freeze Embed all models are
+able to accurately learn to classify the given data sets. For the FNC-1 data set, the performances of
+XLNet and RoBERTa are very close. Overall, there is a slight tendency for models to perform better
+whenonlytheembeddinglayersarefrozen. Themaintakeawayisthatonlyfinetuningthetask-specific
+layers is not sufficient. Between not freezing any layers and freezing the embedding related layers, the
+difference in performance with respect to the F -m metric is often neglectable. For the grid search,
+1
+all models are finetuned with frozen embedding layers since this bears the advantage of speeding up
+training. Furthermore,modelsaretrainedfor3insteadof2epochsforthegridsearch.
+5.2 DetailedGridSearch
+Since traditional research on hyperparameter optimization focuses on training a model from scratch,
+someofthegeneratedinsightsandalgorithmsmightnotbeappropriateforthesettingoftransferlearn-
+ing and finetuning (Li et al., 2020). There is little research on the effectiveness and necessity of hy-
+perparameter optimization when finetuning, especially for NLP tasks. The biggest difference between
+pretraining and finetuning lies in the initialization of the weights. In the case of finetuning this initial-
+ization relies on the pretrained model which hopefully captures some intrinsic knowledge, whilst the
+pretrainingphaseusuallyworkswithrandominitialization. Thegoalofthisexperimentalsetupisthusto
+gainmoreinsightsontheeffectivenessandnecessityofhyperparametertuningforfinetuninginanNLP
+context. Therefore,agridsearchforthehyperparametersbatchsize,maximalsequencelengthandtype
+oflearningratescheduleandlearningrateisconductedasindicatedinTab. 2.
+Thelearningrateisthemostcommonhyperparameterthatistuned. ItissoimportantthatGoodfellow
+et al. (2016) state to only tune the learning rate, if one has only time/budget to address one hyperpa-
+rameter. For the finetuning setting, it is usually assumed that a drastically smaller learning rate should
+be used in comparison to pretraining (Li et al., 2020, p.1). During pretraining the model already learns
+fairly good representations which are valuable for any downstream task. These should therefore not be
+destroyedbyusingatoobiglearningratethatstridesawaytoofastfromthealreadygainedknowledge.
+Thus,learningratevaluesof1e-5,2e-5,3e-5and4e-5areconsidered.
+Hyperparameter ConsideredConfigurations
+Batchsize/Sequencelength 16/256;32/256;4/512;8/512
+Learningrate 1e-05;2e-05;3e-05;4e-05
+Learningrateschedule constant(cst),linear(lin),cosine(cos)
+Table2: Searchspaceoverchosenhyperparameters. Thesequencelengthandbatchsizedependonone
+anotherduetomemorycapacityreasons. Forthelongersequencelengthonlysmallerbatchsizescould
+beconsidered. Alllearningrateschedulesuseawarmupperiodof6%ofthetotaloptimizationsteps.
+Inaddition,theschedulethatisusedalongwiththelearningrateitselfplaysanimportantrole. Inthis
+context, three different schedule types are considered, namely a constant, linear and a cosine schedule.
+Allthreetypesofschedulesusethesamewarmupstrategyforwhichalowerlearningrateisusedatthe
+startoftrainingtoovercomeoptimizationdifficulties. Afterawarmupperiodthetargetedlearningrateis
+reached. Theschedulesnowdifferinthesuccessivehandlingofthelearningrate. Theconstantschedule
+keepsitatthetargetedvalue,whilethelinearandcosinescheduledecayitaccordingly.
+For the sequence length the naive assumption is that using as much context as possible is beneficial
+for the performance. A longer sequence length that does not truncate input sequences might therefore
+performbetter. Ontheotherhanditisimaginablethatnewsarticlesmightnotneedtobefedfullytothe
+modelsincetheymightcontainredundantdiscussionparts. Often,themainargumentsarealreadyshared
+atthebeginningofthearticlewiththefullarticlefurtherelaboratingontheinitiallymadestatements. It
+mightbesufficienttolookatthebeginningofarticleswhichtranslatestoashortersequencelength. For
+thegridsearch,sequencelengthsofT =256andT =512areexamined.
+1 2
+Lastly, a shorter sequence length bears the possibility to increase the batch size which was found to
+be rather low in the exploration step due to limited memory capacities. A larger batch size is usually
+affiliatedwithamoreaccurateestimateofthegradient(Goodfellowetal.,2016,p.276). Onthecontrary,
+smaller batch sizes oftenhave a regularizing effect which might be dueto the additional noise they add
+to the learning process. The values for the batch sizes are chosen such that a constant tokens per batch
+ratio is reached. Given the memory constraints, the highest possible batch sizes are 32 and 8 for a a
+sequence length of T = 256 and T = 512 respectively. Given the defined search space in Tab. 2, 48
+1 2
+combinations are evaluated for each model and data set. The combinations are examined per learning
+rateandpresentedinTab. 3.
+Whenitcomestothesequencelength,avalueof256ispreferredbymostmodelsfortheFNC-1data
+set, while for the FNC-1 ARC data set there is no preferred choice. This means that even though, the
+FNC-1datasetcontainslongersequencesonaverage,ashortersequencelengthisoftenpreferred. This
+can be interpreted as an indication that the similarity of instances is more important than the average
+sequencelength. ApartfromthefactthattheFNC-1ARCdatasetcontainsmoreinstancescomparedto
+theFNC-1dataset,thebiggestdistinctionisthattheadditionalinstancesweregeneratedfromadifferent
+context. Hanselowskietal.(2018)specificallyintroducedtheextendeddatasettotestaproposedmodel’s
+robustness by using the more heterogeneous FNC-1 ARC data set. The general performance on the
+differentdatasetsiselaboratedatalaterpointwhendiscussingtheindicationsofTab. 4.
+ForasequencelengthofT =512abatchsizeof8leadstothebestperformancemoreoften. Theonly
+2
+exceptions are found for a smaller learning rate of 1e-5 or 2e-5. This is not surprising since a smaller
+batchsizeintroducesmoreuncertaintyinestimatingthegradient. Thisuncertaintyisthencompensated
+by a smaller learning rate. For a sequence length of T = 256 the affiliated preferred batch size is more
+1
+evenly distributed. For the FNC-1 data set a sequence length of 256 is chosen 14 times in total with
+eightconfigurationspreferringabatchsizeof16andsixconfigurationsoneof32. Hence,fortheFNC-1
+data set a smaller batch size is preferred for a sequence length of 256. For the FNC-1 ARC and the
+same sequence length a similar even distribution can be reported, with the batch size 16 being chosen
+fourandthebatchsize32beingchosenfivetimes. Thereisthusanindicationthatthebatchsizeseems
+to be especially important for longer sequence lengths where a higher batch size is preferred unless the
+models are trained on a very small learning rate. For both data sets a higher batch size of 32 tends to
+occuralongwithahigherlearningrateof4e-5.
+BERT RoBERTa DistilBERT ALBERT XLNet
+LR Winner F -m Winner F -m Winner F -m Winner F -m Winner F -m
+1 1 1 1 1
+1-CNF
+1e-5 16,256,cos 62.46 4,512,lin 78.18 8,512,cst 65.72 4,512,lin 56.62 4,512,cos 73.47
+2e-5 16,256,cst 70.18 16,256,lin 76.54 16,256,lin 67.64 8,512,cos 59.74 16,256,cos 75.00
+3e-5 16,256,cst 69.36 32,256,cos 76.52 32,256,cst 69.64 16,256,lin 59.80 32,256,cos 73.27
+4e-5 8,512,lin 68.09 32,256,lin 74.84 32,256,cst 72.11 16,256,lin 58.33 32,256,lin 73.46
+CRA1-CNF
+1e-5 8,512,lin 68.87 4,512,lin 78.19 8,512,lin 71.99 8,512,cst 63.40 4,512,lin 74.42
+2e-5 4,512,lin 72.20 8,512,lin 77.27 8,512,cst 73.59 8,512,cos 65.01 8,512,lin 75.47
+3e-5 8,512,cos 70.93 16,256,lin 77.54 32,256,lin 72.99 16,256,lin 64.67 16,256,lin 73.97
+4e-5 32,256,lin 70.83 32,256,lin 77.54 16,256,lin 73.13 32,256,lin 63.63 32,256,lin 75.57
+Table 3: Overview over the results of the grid search with respect to the learning rate (LR) in the left.
+Winner denotes the winning configuration (chosen with respect to F -m on the evaluation set) out of
+1
+the 12 possible configurations per LR. The values in the Winner column indicate batch size, sequence
+length and LR schedule (abbreviated by cst for constant, lin for linear and cos for cosine) in this order.
+TheF -mofthewinningconfigurationpermodelisindicatedinbold,valuesintealindicatetheoverall
+1
+winning configuration per data set. The overall winning configuration over both data sets (RoBERTa;
+F -m=78.19)isadditionallymarkedbyabox. Allreportedvaluesareobtainedontheofficialtestset.
+1
+Evaluatingthelearningrateschedule,themostsurprisingfindingisthatthelinearscheduleischosen
+mostfrequentlywithbeingthepreferredchoicein25ofall40reportedwinningconfigurations. Thecon-
+stantandthecosinescheduleareverymuchonparwithbeingchosensevenandninetimesrespectively.
+FortheFNC-1datasetthedistributionoftheschedulersismoreequalwithnineconfigurationschoosing
+thelinear,fivetheconstantandsixthecosineschedule. FortheFNC-1ARCdatasetaclearpreference
+towardsthelinearschedulercanbeobserved. Itseemsthatalineardecayissufficientbutimportantfor
+both data sets. There are no peculiarities when it comes to ALBERT which uses a different optimizer
+duringpretraining.
+When it comes to the learning rate, most models perform best for a smaller value of either 1e-5 or
+2e-5. There is a difference in the two data sets however. For FNC-1 ARC the overall winning configu-
+ration is always either one of the two smaller learning rates for all models. Looking at the FNC-1 data
+set, DistilBERT and ALBERT yield an overall winning configuration with a learning of 4e-5 and 3e-5
+respectively. ForDistilBERTthiscanbeexplainedbythefactthatitonlyuseshalfthelayerscompared
+to its teacher RoBERTa which might require the model to stride away more from its pretrained version
+incomparisontotheothermodelsinordertoadequatelycapturethegivendownstreamtask. ForFNC-1
+ARC this might not be observable since the heterogeneous data set requires a smaller learning rate in
+general. Both DistilBERT and ALBERT perform relatively bad for a learning rate of 1e-5 on the FNC-
+1 data set. Given the data set of the finetuning task is relatively homogeneous in its instances, lighter
+BERT-basedframeworksrequirealargerlearningratethan1e-5inordertoachieveabetterperformance.
+Thegeneralbestperforminglearningratesare1e-5and2e-5. Itseemsthatamorecautiousupdating
+of the pretrained parameters is important which is a strong indication of how well the large pretrained
+models already perform. Li et al. (2020) note that ”it is believed that adhering to the original hyperpa-
+rametersforfinetuningwithsmalllearningratepreventsdestroyingtheoriginallylearnedknowledgeor
+features.”(Lietal.,2020,p.1). Asmalllearningrateisseeminglythemostimportantfactorforcorrectly
+using large pretrained NLP models for downstream tasks. BERT and RoBERTa prefer a learning rate
+of2e-5and1e-5respectivelyandshowthesametendenciesinperformancewithrespecttothelearning
+rateforbothdatasets. Thusthisrecommendationisrelativelystable. DistilBERTandALBERTprefera
+larger learning rate for the more homogeneous FNC-1 data set and a smaller learning rate for the more
+heterogeneous FNC-1 ARC data set. Later, it will become evident that ALBERT’s better performance
+fortheFNC-1ARCdatasetcanbeexplainedlargelybytheimprovedpredictionstrengthonthesparse
+categoryofDisagreeinstances. ThemoreevenlydistributedclasslabelsofFNC-1ARChavethebiggest
+impactonBERTandALBERT.
+Looking at the overall performance, ALBERT performs the worst and even worse than BERT. This
+confirmsthestatementsofLanetal.(2019)whohavereportedthatALBERTcanonlyoutperformBERT
+for the xlarge and xxlarge variant. Surprisingly, DistilBERT can outperform BERT on the FNC-1 ARC
+datasetandpartlyontheFNC-1dataset. WhencomparingthetwodifferentapproachesofDAEversus
+AR, the best BERT-based model (RoBERTa) performs better than XLNet. XLNet still outperforms
+BERT,DistilBERTandALBERTonbothdatasetsandisthusthesecond-bestoverallmodel. However,
+XLNet bears the additional disadvantage of a much longer training time than any BERT-based model.
+While RoBERTa trains for around 59 minutes for one configuration, XLNet takes around 140 minutes
+whichismorethantwicethefinetuningtimeofRoBERTa. AllotherBERT-basedmodeltrainfasterthan
+RoBERTa. ThereasonwhyXLNetdoesnotbeatRoBERTamightoriginatefromthespecificadvantage
+that XLNet introduces. Yang et al. (2019) criticize BERT for making the assumption that all masked
+tokens in a sequence are independent. By using the PLM objective, XLNet can avoid making such an
+assumption and is furthermore able to capture dependencies between tokens better than BERT-based
+architectures. The given task of stance detection is not a token-level but a segment-level task. The
+advantageofXLNetofbettercapturingthedependenciesbetweentokensmightthusbenotofmuchuse
+inthiscontext. TheoverallwinningmodelisRoBERTawithabatchsizeof4,asequencelengthof512
+andalearningrateof1e-5withalinearscheduleforbothdatasets.
+The evaluation done so far focused on the F -m metric. Since both data sets consist of unevenly
+1
+distributedandheavilyskewedclasslabels,theclass-wiseF isnowconsideredinordertogainfurther
+1
+insights: In general, the performance improves for the extended data set FNC-1 ARC for all models.
+AllmodelsexceptforRoBERTacandrasticallyimprovetheirpredictionstrengthfortheDisagreeclass
+whichhasthefewesttraininginstances,precisely1.7%(FNC-1)and3.5%(FNC-1ARC).RoBERTacan
+notpushtheperformanceontheextendeddatasetasmuchonthiscategoryasothermodels. Thiscould
+be interpreted as some sort of saturation effect, since using more evenly distributed data only helps to
+a certain degree. The FNC-1 ARC data set is still heavily skewed and in addition more heterogeneous
+than the FNC-1 data set. If the overall model architecture is already very powerful, as is the case for
+RoBERTa,theheterogeneityinthetraininginstancesmightoutweighthepositivefactorofhavingmore
+evenlydistributeddata.
+XLNetcanboostitsperformancefortheextendeddatasetmore,inrelativecomparisontoRoBERTa.
+This can be largely attributed to the boosted performance on the Disagree class. All models perform
+relativelywellontheDiscussandextraordinarilywellontheUnrelatedclass. TheworstF -UNRvalues
+1
+occurforALBERTwith96.65fortheFNC-1and96.83fortheFNC-1ARCdataset.
+RoBERTa is the strongest model since it also outperforms XLNet. This better performance is not
+attributable to one specific class, since RoBERTa performs stronger on all classes. When considering
+F -m, all models improve their performance when finetuned on more data, especially on the hardest to
+1
+predictclassDisagree.
+In summary, the grid search showed a very strong performance of RoBERTa which also outperforms
+XLNet. This might be due to the specific FND task that is on a segment- rather than a token-level. In
+BERT RoBERTa DistilBERT ALBERT XLNet
+Metric FNC-1 +ARC FNC-1 +ARC FNC-1 +ARC FNC-1 +ARC FNC-1 +ARC
+F -m 70.18 72.20 78.18 78.19 72.11 73.59 59.80 65.01 75.00 75.57
+1
+F -AGR 60.31 63.48 70.69 70.57 61.95 65.29 53.19 53.97 68.00 68.57
+1
+F -DSG 41.76 48.28 56.15 58.92 45.09 50.46 13.21 34.07 49.47 53.69
+1
+F -DSC 80.36 78.82 86.78 84.16 82.83 80.22 76.16 75.18 83.73 81.43
+1
+F -UNR 98.28 98.22 99.10 99.09 98.58 98.38 96.65 96.83 98.80 98.60
+1
+Table 4: Model performances with respect to class-wise F as well as F -m in comparison for FNC-1
+1 1
+andFNC-1ARC.ForbetterreadabilityweindicatethecolumnsforFNC-1ARCjustwith”+ARC”.
+addition to performing better, RoBERTa also trains much faster than XLNet. The learning rate is the
+mostimportanthyperparameterwhichisinlinewithcurrentresearch. ForBERTandRoBERTaaclear
+recommendation for the learning rate can be drawn, while DistilBERT, ALBERT and XLNet exhibit
+theirbestperformancesfordifferentvaluesofthelearningrate. Thesequencelengthisnotasimportant
+anddominatedbythesimilarityoftraininginstanceswithinadataset. Iftheinstancesaremoresimilar,
+themodelsmanagefinetuningwellwithshortersequences. Amoreheterogeneousdatasetrequiresthe
+modeltoconsidermorecontextandthusalongersequences. Asalearningrateschedule,alinearchoice
+issufficientandacosinescheduleisnotnecessaryperse.
+6 Conclusion
+Theoverallconclusionthatcanbedrawnfromthisworkishowpowerfulandstrongtheevaluatedarchi-
+tectures are for the examined task related to Fake News Detection. Even with minimal hyperparameter
+tuning and only finetuning for 3 epochs, the models already performed considerably well on both data
+sets. Withrespecttotheconsideredhyperparametersthetwomostimportantconclusionsaretonotonly
+finetune the classification and pooling layers that are stacked on top of the pretrained models4. Sec-
+ondly, the most important hyperparameter is the learning rate. The recommendation of Goodfellow et
+al. (2016) to focus on the learning rate, when one has only time to address one single hyperparameter
+canbeconfirmed. Atlast,themodelsarerelativelyrobustwithrespecttothelearningrateschedule,the
+batch size, as long as it is adjusted to the learning rate and to a certain degree also the sequence length.
+Furthermore,theexcessivepretrainingapproachofRoBERTacanoutperformthepermutationlanguage
+modelobjectiveofXLNet.
+Fake News detection itself is often time treated as a inherently binary task5 (i.e. a document either
+contains Fake News or it does not). The underlying truth, however, might be more complicated, since
+mostofthetimesadocumentcannotunambiguouslybeassignedtoeitherofthesetwoclasses. Thisis
+why our experiments on the FNC-1 data sets, which comprehend Fake News detection as a multi-class
+classification problem, might be more beneficial for this field of research compared to experiments on
+data sets with a binary target. We would not a go as far as concluding that these findings are without
+further ado transferable to other Fake News related data sets using different tasks or label sets, but
+neverthelessthinkthatourfindingscanserveasstartingpointsforfurtherexperimentsinrelatedfields.
+Acknowledgements
+We want to express our sincere gratitude to Christian Heumann (Ludwig-Maximilians-Universita¨t) and
+Matthias Wissel (Capgemini Deutschland GmbH) for their help and constant support and advice dur-
+ing the process of conducting this research project. We would also like to thank the three anonymous
+reviewersfortheirinsightfulcommentsandtheirfeedbackonourwork.
+4For some models the pooling layer is already incorporated in the main architecture but still it does not suffice to only
+finetunethelastpoolingandclassificationlayer.
+5SeeforexampletheSharedTask2(Fakenewsdetection)oftheKDD2020TrueFactWorkshop,wherethetextsarelabeled
+eitheras”reliable”or”unreliable”.
+References
+JacobDevlin,Ming-WeiChang,KentonLee,andKristinaToutanova. 2019. BERT:Pre-trainingofdeepbidirec-
+tionaltransformersforlanguageunderstanding. InProceedingsofthe2019ConferenceoftheNorthAmerican
+ChapteroftheAssociationforComputationalLinguistics:HumanLanguageTechnologies,Volume1(Longand
+ShortPapers),pages4171–4186,Minneapolis,Minnesota,June.AssociationforComputationalLinguistics.
+XishuangDong,UbohoVictor,ShantaChowdhury,andLijunQian. 2019. Deeptwo-pathsemi-supervisedlearn-
+ingforfakenewsdetection. ArXiv,1906.05659.
+William Ferreira and Andreas Vlachos. 2016. Emergent: a novel data set for stance detection. Proceedings of
+NAACL-HLT201,pages1163–1168.
+IanGoodfellow,YoshuaBengio,andAaronCourville. 2016. DeepLearning. MITPress.
+Andreas Hanselowski, Avinesh PVS, Benjamin Schiller, Felix Caspelherr, Debanjan Chaudhuri, Christian M
+Meyer, andIrynaGurevych. 2018. Aretrospectiveanalysisofthefakenewschallengestancedetectiontask.
+arXivpreprintarXiv:1806.05180.
+Karen Hao. 2019. Training a single ai model can emit as much carbon as five cars in their life-
+times. https://www.technologyreview.com/s/613630/training-a-single-ai-model-
+can-emit-as-much-carbon-as-five-cars-in-their-lifetimes/. Accessed: 2020-02-18.
+GeoffreyE.Hinton,OriolVinyals,andJeffreyDean. 2015. Distillingtheknowledgeinaneuralnetwork. ArXiv,
+abs/1503.02531.
+JunaedYounusKhan,MdKhondaker,TawkatIslam,AnindyaIqbal,andSadiaAfroz. 2019. Abenchmarkstudy
+onmachinelearningmethodsforfakenewsdetection. arXivpreprintarXiv:1905.04749.
+DiederikP.KingmaandJimmyBa. 2014. Adam: Amethodforstochasticoptimization. ArXiv,1412.6980.
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, and Radu Soricut. 2019.
+Albert: Alitebertforself-supervisedlearningoflanguagerepresentations. arXivpreprintarXiv:1909.11942.
+Hao Li, Pratik Chaudhari, Hao Yang, Michael Lam, Avinash Ravichandran, Rahul Bhotik, and Stefano Soatto.
+2020. Rethinking the hyperparameters for fine-tuning. In International Conference on Learning Representa-
+tions.
+Yinhan Liu, Myle Ott, Naman Goyal, Jingfei Du, Mandar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Luke
+Zettlemoyer, and Veselin Stoyanov. 2019. Roberta: A robustly optimized bert pretraining approach. arXiv
+preprintarXiv:1907.11692.
+Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory Chanan, Trevor Killeen,
+Zeming Lin, Natalia Gimelshein, Luca Antiga, et al. 2019. Pytorch: An imperative style, high-performance
+deeplearninglibrary. InAdvancesinneuralinformationprocessingsystems,pages8026–8037.
+Tony Peng. 2019. The staggering cost of training sota ai models. https://syncedreview.com/2019/06/27/the-
+staggering-cost-of-training-sota-ai-models/. Accessed: 2020-02-20.
+Vero´nicaPe´rez-Rosas,BennettKleinberg,AlexandraLefevre,andRadaMihalcea. 2018. Automaticdetectionof
+fake news. In Proceedings of the 27th International Conference on Computational Linguistics, pages 3391–
+3401,SantaFe,NewMexico,USA.AssociationforComputationalLinguistics.
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, and Luke Zettle-
+moyer. 2018. Deep contextualized word representations. Proceedings of the 2018 Conference of the North
+AmericanChapteroftheAssociationforComputationalLinguistics: HumanLanguageTechnologies,Volume1
+(LongPapers).
+Dean Pomerleau and Delip Rao. 2017. Webpage of the fake news challenge 1 (fnc-1).
+http://www.fakenewschallenge.org/. Accessed: 2020-10-23.
+YuxiangRenandJiaweiZhang. 2020. Hgat:Hierarchicalgraphattentionnetworkforfakenewsdetection. ArXiv,
+2002.04397.
+Natali Ruchansky, Sungyong Seo, and Yan Liu. 2017. Csi: A hybrid deep model for fake news detection. In
+Proceedingsofthe2017ACMonConferenceonInformationandKnowledgeManagement,pages797–806.
+VictorSanh, LysandreDebut, JulienChaumond, andThomasWolf. 2019. Distilbert, adistilledversionofbert:
+smaller,faster,cheaperandlighter. arXivpreprintarXiv:1910.01108.
+KaiShu,AmySliva,SuhangWang,JiliangTang,andHuanLiu. 2017. Fakenewsdetectiononsocialmedia: A
+dataminingperspective. ACMSIGKDDExplorationsNewsletter,19(1):22–36.
+CraigSilverman. 2019. Emergent: Areal-timetracker. http://www.emergent.info/. Accessed: 2020-10-
+23.
+Emma Strubell, Ananya Ganesh, and Andrew McCallum. 2019. Energy and policy considerations for deep
+learninginnlp. arXivpreprintarXiv:1906.02243.
+ThomasWolf,LysandreDebut,VictorSanh,JulienChaumond,ClementDelangue,AnthonyMoi,PierricCistac,
+TimRault,R’emiLouf,MorganFuntowicz,andJamieBrew. 2019. Huggingface’stransformers: State-of-the-
+artnaturallanguageprocessing. ArXiv,1910.03771.
+Yang Yang, Lei Zheng, Jiawei Zhang, QingcaiCui, ZhoujunLi, andPhilip S. Yu. 2018. Ti-cnn: Convolutional
+neuralnetworksforfakenewsdetection. ArXiv,1806.00749.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Carbonell, Russ R Salakhutdinov, and Quoc V Le. 2019. Xl-
+net: Generalized autoregressive pretraining for language understanding. In Advances in neural information
+processingsystems,pages5753–5763.
+SeunghyunYoon,KunwooPark,JoongboShin,HongjunLim,SeungpilWon,MeeyoungCha,andKyominJung.
+2019. Detectingincongruitybetweennewsheadlineandbodytextviaadeephierarchicalencoder. InProceed-
+ingsoftheAAAIConferenceonArtificialIntelligence,volume33,pages791–800.
+Appendix
+A Finetuningtimefordifferentfreezingtechniques
+FNC-1 FNC-1ARC
+Freeze NoFreeze FreezeEmbed Freeze NoFreeze FreezeEmbed
+BERT 00:27:11 01:01:45 00:57:49 00:32:40 01:17:33 01:12:37
+(sd=4sec) (sd=6sec) (sd=6sec) (sd=2sec) (sd=6sec) (sd=11sec)
+RoBERTa 00:28:24 01:03:01 00:58:59 00:33:50 01:18:49 01:13:40
+(sd=11sec) (sd=7sec) (sd=6sec) (sd=5sec) (sd=5sec) (sd=5sec)
+DistilBERT 00:17:05 00:35:19 00:34:08 00:19:03 00:43:30 00:38:33
+(sd=1sec) (sd=2min) (sd=0sec) (sd=2sec) (sd=5sec) (sd=25sec)
+ALBERT 00:20:01 00:49:28 00:47:36 00:25:25 01:03:43 01:01:14
+(sd=3sec) (sd=3sec) (sd=2sec) (sd=3sec) (sd=2sec) (sd=3sec)
+XLNet 01:26:46 02:26:01 02:20:44 01:49:07 03:06:21 02:58:49
+(sd=50sec) (sd=10sec) (sd=18sec) (sd=26sec) (sd=53sec) (sd=25sec)
+Table 5: Mean finetuning time in hh:mm:ss over three runs for the exploration step. For Freeze only
+the last projection and classification layers are updated. For No Freeze all layers are updated, while for
+Freeze Embed all embedding-specific layers are excluded from updating. The learning rate was kept
+fixedat3e-5withalinearschedule. Thebatchsizewas8withasequencelengthof512tokens.

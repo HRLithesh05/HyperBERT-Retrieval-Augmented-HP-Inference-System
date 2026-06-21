@@ -1,0 +1,702 @@
+Model Compression with Two-stage Multi-teacher Knowledge
+Distillation for Web Question Answering System*
+ZeYang† LinjunShou† MingGong
+yaze@microsoft.com lisho@microsoft.com migon@microsoft.com
+STCANLPGroup,Microsoft STCANLPGroup,Microsoft STCANLPGroup,Microsoft
+WutaoLin DaxinJiang
+wutlin@microsoft.com djiang@microsoft.com
+STCANLPGroup,Microsoft STCANLPGroup,Microsoft
+ABSTRACT Table1:AnexampleofQ&Arelevancetask.
+Deeppre-trainingandfine-tuningmodels(suchasBERTandOpe-
+nAIGPT)havedemonstratedexcellentresultsinquestionanswering Question: WhatcanIdowhenIhaveheadache?
+areas.However,duetothesheeramountofmodelparameters,the
+Passage: Drinkingwarmwatermixedwithjuicesqueezed
+inferencespeedofthesemodelsisveryslow.Howtoapplythese
+fromone-halfofalemonwillreducetheintensity
+complexmodelstorealbusinessscenariosbecomesachallenging
+ofaheadache.Thisparticularremedyisbenefi-
+butpracticalproblem.Previousmodelcompressionmethodsusu-
+cialforheadachescausedbygasinthestomach.
+ally suffer from information loss during the model compression
+Anotheroptionistoapplylemoncrusts,pounded
+procedure,leadingtoinferiormodelscomparedwiththeoriginal
+intoapaste,onyourforeheadtoimmediately
+one.Totacklethischallenge,weproposeaTwo-stageMulti-teacher
+relievepain...
+KnowledgeDistillation(TMKDforshort)methodforwebQues-
+tionAnsweringsystem.WefirstdevelopageneralQ&Adistillation Label: Relevant
+taskforstudentmodelpre-training,andfurtherfine-tunethispre-
+trainedstudentmodelwithmulti-teacherknowledgedistillationon
+downstreamtasks(likeWebQ&Atask,MNLI,SNLI,RTEtasks has110Mparameters,andBERT largehas340M.),bothmodeltrain-
+fromGLUE),whicheffectivelyreducestheoverfittingbiasinin- ingandinferencebecomeverytime-consuming.Althoughseveral
+dividualteachermodels,andtransfersmoregeneralknowledgeto workshavestudiedtheoptimizationofmodeltraining[30],there
+thestudentmodel.Theexperimentresultsshowthatourmethod islittleworkdiscussingthemodelinferencechallengeofdeeppre-
+cansignificantlyoutperformthebaselinemethodsandevenachieve trainingmodelslikeBERT/GPTmodels.Infact,forawebscale
+comparable results with the original teacher models, along with Q&Asystem,theefficiencyofmodelinferencemaybeevenmore
+substantialspeedupofmodelinference. criticalthanthatofmodeltraining,duetotheconcernsofbothof-
+flinethroughputandonlinelatency(wewillelaboratemoreinthe
+KEYWORDS followingparagraphs).
+Table 2 shows the inference speed of BERT models [5] with
+modelcompression,two-stage,multi-teacher,knowledgedistillation,
+a 1080Ti GPU. The throughout of Q&A pairs are 624 and 192
+distillationpre-training
+persecondonaverageforBERT andBERT ,respectively.
+base large
+In other words, the average latency are 1.6 and 5.2 milliseconds
+1 INTRODUCTION
+respectively.
+Question Answering relevance, which aims to rank the text pas-
+sages to natural language questions issued by users, is a critical Table2:TheinferencespeedofBERTon1080TiGPU.
+task in Question Answering (Q&A) system [1]. In recent years,
+almostallcommercialwebsearchenginesprovideQuestionAn-
+Samples
+sweringservice,inadditiontothetraditionalwebdocumentslinks. Model Parameter Latency
+Persecond
+Table1showsanexampleforQuestionAnsweringfromacommer-
+cialsearchengine.Comparedwiththe“ten-blue-links”,Q&Aisa BERT 110M 624 1.6ms
+base
+morenaturalinterface,andthousandsofmillionsofusersenjoythe BERT 340M 192 5.2ms
+large
+efficiencyofdirectlyaccessingtheinformationfortheirquestions.
+Inrecentyears,deeppre-trainingapproaches[5,25]havebrought
+InacommercialwebQ&Asystem,thereareoftentwocomple-
+bigbreak-throughinNLPtasks.Theyalsoshowverypromising
+mentarypipelinesfortheQ&Aservice.Onepipelineisforpopular
+resultsfortheparticulartaskofQ&Arelevance.However,duetothe
+queriesthatfrequentlyappearinthesearchtraffic.Theanswersare
+hugeparametersizeofthesemodels(Forexample,GPT/BERT
+base pre-computedofflineinabatchmodeandthenservedonlinebysim-
+plelook-up.ThemagnitudeofthenumberofQ&Apairsprocessed
+*ThispaperhasbeenacceptedbyWSDM2020.
+†Theseauthorscontributedequally. isaround10billions.Theotherpipelineisfortailqueriesthatare
+9102
+tcO
+81
+]LC.sc[
+1v18380.0191:viXra
+rarelyorneverseenbefore.Forsuchtailqueries,theanswersare modelperformsbetterthanthem-o-mmodel,whilethememory
+rankedontheflyandthelatencybudgetforonlinemodelinference consumptionisthesamewiththe1-o-1model.
+istypicallywithin10milliseconds.Therefore,forbothofflineor Thenovelm-o-1approachresultsindecentcompressedmodels.
+onlinepipelines,itiscriticaltoimprovemodelinferenceefficiency. However,theperformanceofthecompressedmodelsstillhassmall
+Toimprovemodelinferenceefficiency,weconsidermodelcom- gapwiththeoriginallargemodel.Oneobviousreasonisthatthe
+pressionapproach.Inotherwords,weaimtotrainasmallermodel original large model has a large-scale pre-training stage, where
+withfewerparameterstosimulatetheoriginallargemodel.Apopular it learns the language model through an unsupervised approach.
+method,calledknowledgedistillation[11]hasbeenwidelyusedfor Wethereforeexplorehowtosimulateapre-trainingstageforthe
+modelcompression.Thebasicideaisateacher-studentframework, compressedmodels,suchthatitcanbenefitfromlarge-scaletraining
+inwhichtheknowledgefromacomplexnetwork(teachermodel) dataandlearnthefeaturerepresentationsufficiently.
+istransferredtoasimplenetwork(studentmodel)bylearningthe Ourempiricalstudyshowsthatthepre-trainingstagesignificantly
+outputdistributionoftheteachermodelasasofttarget.Tobemore improvesthemodelperformance.Whenweadoptaverylargepre-
+specific,whentrainingthestudentmodel,wenotonlyprovidethe trainingdata,followedbythem-o-1fine-tuningstrategy,thecom-
+human-labeledgoldengroundtruth,butalsofeedtheoutputscore pressedmodelcanachievecomparableorevenbetterperformance
+fromtheteachermodelasasecondarysoftlabel.Comparedwith thantheteachermodel.Anotherinterestingfindingisthatalthough
+thediscretehumanlabels(forclassificationtask),thecontinuous thepre-trainedmodelisderivedfromQ&Apairs,itcanserveasa
+scoresfromtheteachermodelsgivemoresmoothandfine-grained genericbaselineformultipletasks.Asweshowintheexperiment
+supervisiontothestudentmodel,andthusresultinbettermodel part,whenwefine-tunetheQ&Apre-trainedmodelwithvarious
+performance.Werefertothisbasicknowledgedistillationapproach textmatchingtasks,suchasthoseinGLUE[26],itoutperformsthe
+as1-o-1model,inthesensethatoneteachertransfersknowledgeto compressedmodelwithoutpre-trainingoneachtask.Tothebest
+onestudent. ofourknowledge,thisisthefirstworkdiscussingthedistillation
+Althoughthe1-o-1modelcaneffectivelyreducethenumberof pre-trainingandmultipleteacherdistillationforWebQ&A.
+parametersaswellasthetimeformodelinference,duetotheinfor- Inthispaper,weproposeaTwo-stageMulti-teacherKnowledge
+mationlossduringtheknowledgedistillation,theperformanceof Distillation(TMKDforshort)methodformodelcompression,and
+studentmodelusuallycannotreachtheparitywithitsteachermodel. makethefollowingmajorcontributions.
+This motivates us to develop the second approach, called m-o-m
+ensemblemodel.Tobemorespecific,wefirsttrainmultipleteacher • Inthefirststage(i.e.,thepre-trainingstage)ofTMKD,we
+models,forexample,BERT(baseandlarge)[5]andGPT[25]with createageneralQ&Adistillationpre-trainingtasktoleverage
+differenthyper-parameters.Thentrainaseparatestudentmodelfor large-scaleunlabeledquestion-passagepairsderivedfroma
+eachindividualteachermodel.Finally,thestudentmodelstrained commercialsearchengine.Thecompressedmodelbenefits
+fromdifferentteachersareensembledtogeneratetheultimateresult. fromsuchlarge-scaledataandlearnsfeaturerepresentation
+Ourexperimentalresultsshowedthatthem-o-mensemblemodel sufficiently.Thispre-trainedQ&Adistillationmodelcanbe
+performsbetterthanthe1-o-1model.Therationaleisasfollows. alsoappliedtothemodelcompressionofvarioustextmatch-
+Eachteachermodelistrainedtowardsaspecificlearningobjective. ingtasks.
+Therefore,variousmodelshavedifferentgeneralizationability,and • In the second stage (i.e., the fine-tuning stage) of TMKD,
+theyalsooverfitthetrainingdataindifferentways.Whenensem- wedesignamulti-teacherknowledgedistillationparadigm
+blethesemodels,theover-fittingbiasacrossdifferentmodelscan tojointlylearnfrommultipleteachermodelsondownstream
+be reduced by the voting effect. That say, the ensemble models tasks.The“earlycalibration”effectrelievestheover-fitting
+automatically“calibrate”theresults. biasinindividualteachermodels,andconsequently,thecom-
+Whenwecomparethem-o-mensemblemodelwiththe1-o-1 pressedmodelcanachievecomparableorevenbetterperfor-
+model,althoughtheformerhasbetterperformance,italsoconsumes mancewiththeteachermodel.
+muchlargermemorytohostmultiplestudentmodels.Thismotivates • Weconductintensiveexperimentsonseveraldatasets(both
+ustolookforanewapproach,whichhasbetterperformancethan openbenchmarkandcommerciallarge-scaledatasets)tover-
+the1-o-1modelandconsumeslessmemorythanthem-o-mmodel. ifytheeffectivenessofourproposedmethod.TMKDoutper-
+Oneobservationforthem-o-mensembleapproachisthatitconducts formsvariousstate-of-the-artbaselinesandhasbeenapplied
+themodelensembletoolate.Infact,oncethetrainingprocessfor torealcommercialscenarios.
+astudentmodelshasfinished,theoverfittingbiasfromthecorre-
+spondingteachermodelhasalreadybeentransferredtothestudent Therestofthepaperisorganizedasfollows.Afterasummaryof
+model.Thevotingeffectacrossstudentmodelscanbeconsidered relatedworkinSection2,wedescribeourproposedmodelindetails
+asa“latecalibration”process.Ontheotherhand,ifwefeedthe inSection3,followedbycomprehensiveevaluationsinSection4
+scoresfrommultipleteacherstoasinglestudentmodelduringthe andSection5.Finally,Section6concludesthispaperanddiscuss
+trainingstage,thatmodelisreceivingguidancefromvariousteach- futuredirections.
+erssimultaneously.Therefore,theoverfittingbiascanbeaddressed
+by“earlycalibration”.Basedonthisobservation,wedevelopthe
+2 RELATEDWORK
+novelm-o-1approach,wherewetrainasinglestudentmodelby
+Inthissectionwebrieflyreviewtworesearchareasrelatedtoour
+feedingthescoresfrommultipleteachersatthesametimeasthe
+work:modelcompressionandmulti-tasklearning.
+supervisionsignals.Theexperimentalresultsshowedthatthem-o-1
+ModelCompressionwithTwo-stageMulti-teacherKnowledgeDistillationforWebQuestionAnsweringSystem
+Q&A RTE Q&A MNLI
+… … … …
+T 1 T 2 T 3 T N T 0 T 0T 1 T 0T 1T 2 T 1T 2T 3 T 2T 3 T n T 3T n T N
+DDiissttiillllaattiioonn DDiissttiillllaattiioonn DDiissttiillllaattiioonn DDiissttiillllaattiioonn GGoollddeenn DDiissttiillllaattiioonn DDiissttiillllaattiioonn DDiissttiillllaattiioonn DDiissttiillllaattiioonn
+TTaasskk 11 TTaasskk 22 TTaasskk 33 TTaasskk NN TTaasskk TTaasskk 11 TTaasskk 22 TTaasskk 33 TTaasskk NN
+QQ&&AA UUnnssuuppeerrvviisseedd LLaarrggee CCoorrppuuss TTaasskk SSppeecciiffiicc CCoorrppuuss
+SSuuppeerrvviisseeSSdduu DDppeeaarrttaavviisseedd DDaattaa
+((wwiitthh ssoofftt llaabbeellss)) ((ggoollddeenn llaabbeell aanndd ssoofftt llaabbeellss))
+SSttuuddeenntt MMooddeell
+SSttuuddeenntt MMooddeell EnhanEcnehda Sntcuedde Snttu MdEneohndaten Mlceod dSteuldent Model
+Stage 1: Distillation Pre-training Stage 2: Task Specific Distillation Fine-tuning
+Figure1: TheOverallArchitectureofOurTwo-stageMulti-teacherDistillationModel.
+2.1 ModelCompression performanceofdifferentensemblemethodsundertheframeworkof
+Astheparametersizeofneuralnetworkmodelisgettinglargerand multi-tasklearning.
+larger[5,12,23],howtomakeitfeasibletodeployandapplythe Youetal.[29]presentedamethodtotrainathindeepnetworkby
+modelsinindustrialenvironmentbecomesanimportantproblem. incorporatingintheintermediatelayersandimposingaconstraint
+Anaturalprocessistocompressthemodel[8,11,16].Low-rank about the dissimilarity among examples. Wu et al. [27] propose
+approximationwasafactorizationmethod[4,13,31],whichused amulti-teacherknowledgedistillationframeworkforcompressed
+multiplelowrankmatricestoapproximatetheoriginalmatrixto videoactionrecognitiontocompressthismodel.Theseeffortshave
+reducemodelredundancy[9,10,16].Hintonetal.proposedaknowl- triedmultipleteacherdistillationmethodsinthefieldofcomputer
+edgedistillationmethod(KDforshort)[11].Intheirwork,theoutput vision,butlittleresearchhasbeendoneontheNLPdeeppre-training
+ofthecomplexnetworkwasusedasasofttargetforthetrainingof basedmodel.Concurrentlywithourwork,severalworksalsocom-
+simplenetwork.Bythisway,theknowledgeofcomplexmodelscan binethemulti-tasklearningwithknowledgedistillation[2,18,19].
+betransferredtosimplemodels.Distillingcomplexmodelsintosim- However, they applied the knowledge distillation and multi-task
+plemodelshasbeenshowntoimprovemanyNLPtaskstoachieve learningtoenhancetheoriginalmodelperformance,insteadoftar-
+impressiveperformance[14,15,18,20].Polinoetal.[24]proposed getingmodelcompression.
+a quantized distillation method. In their work, they incorporated Ourapproachisalsoaknowledgedistillationbasedmethodfor
+distillationloss,andexpressedwithrespecttotheteachernetwork, modelcompression.Differentfrompreviousapproaches,wedevelop
+intothetrainingprocessofasmallerstudentnetworkwhoseweights a novel Q&A distillation pre-training task leveraging large-scale
+werequantizedtoalimitedsetoflevels.Papernotetal.[21]proposed unsupervisedQ&Adata.Moreover,wedesignamulti-taskparadigm
+atrainingdataprotectedmethodbasedonknowledgedistillation.In inthefine-tuningstagetojointlydistilltheknowledgefromdifferent
+theirwork,anensembleofteacherswastrainedondisjointsubsets teachermodelsintoasinglestudentmodel.
+ofthesensitivedata,andthenastudentmodelwastrainedonpublic
+datalabeledusingtheensembleofteachers. 3 OURAPPROACH
+Inthissection,wefirstlydescribetheoveralldesignofourmodel,
+2.2 Multi-taskLearning andthendescribetheproposedapproachTMKDindetails.Finally,
+wediscusstheprocedureofmodeltrainingandprediction.
+Multi-tasklearninghasbeenwidelystudiedindeeplearning,which
+leveragestheinformationamongdifferenttaskstoimprovethegener-
+3.1 Overview
+alizationperformance[3,6,28].Faresetal.[7]empiricallyevaluated
+theutilityoftransferandmulti-tasklearningonsemanticinterpreta- Figure1showsthearchitectureofTMKD.Itconsistsoftwostages:
+tionofnoun-nouncompounds.Itshowedthattransferlearningvia distillationpre-trainingandtaskspecificdistillationfine-tuning.In
+parametersharingcanhelpaneuralclassificationmodelgeneralize termsofteachermodelfordistillation,wetakelabeleddatabycrowd
+over a highly skewed distribution of relations. Pentina and Lam- sourcingjudgesasonespecificteacher(T0)whichhastheground-
+pert[22]studiedavariantofmulti-tasklearninginwhichannotated truthknowledge(e.g.0or1).Wealsohaveseveralotherteachers
+datawasavailableonsomeofthetasks.Leeetal.[17]studiedthe (T1-TN)trainedondifferentpre-trainedmodels(e.g.,BERT[5]and
+GPT[25])orwithdifferenthyper-parameters,whichprovidethe thelexiconembeddingtocontextualembedding;Multi-headerlayer
+softknowledgeaspseudosupervision(scorein[0,1]). jointlylearnsfrommultipleteacherssimultaneouslyduringtraining,
+aswellasgeneratesfinalpredictionoutputduringinference.
+3.1.1 Stage1-DistillationPre-training. Deeppre-trainedmod-
+elslikeBERT/GPTbenefitfromthepre-trainingstageonlarge-scale 3.2.1 EncoderLayer. InQ&Asystem,eachquestionandpas-
+unsuperviseddataforbetterrepresentationlearning.Inspiredbythis, sage are described by a set of words. We take the word pieces
+weexplorehowtosimulateapre-trainingstageforthecompressed as the input just like BERT. X = {x(1),x(2),...,x(|X|)} is to de-
+models.Onemethodistoleveragelarge-scaleunsuperviseddataof note all the instances, and each instance has a ⟨Q,P⟩ pair. Let
+specifictaskforknowledgedistillation.Howeveritisusuallyhard Q = {w1,w2,w3,...,wm} beaquestionwithm wordpieces,P =
+toobtainlarge-scaletask-specificunsuperviseddataforNLPtasks, {w1,w2,w3,...,wn}beapassagewithnwordpieces,andwi isthe
+suchasNLItasksfromGLUEdatasets.Toaddressthischallenge,a bag-of-wordrepresentationofi-thwordpiece.C ={c1,c2,...,c|C|}
+Q&Aknowledgedistillationtaskisproposedtopre-trainthecom- representsthelabelsettoindicate⟨Q,P⟩’srelation.Eachtokenrepre-
+pressedstudentmodelonalarge-scaleQ&Aunlabeleddatawhich sentationisconstructedbythesumofthecorrespondingtoken,seg-
+arederivedfromacommercialsearchengine.Tobemorespecific: mentandpositionembeddings.LetV={v(cid:174)
+t
+∈RDv|t =1,...,M}
+• Step 1: For each question, top 10 relevant documents are denoteallthesummedvectorsinaDv dimensioncontinuousspace.
+returnedbythecommercialsearchenginetoform<Question, Weconcatenatethe⟨Q,P⟩pair,andadd⟨CLS⟩asthefirsttoken,
+Url> pairs, and passages are further extracted from these thenadd⟨SEP⟩betweenQandP.Afterthat,weobtaintheconcatena-
+documentstoform<Question,Passage>pairs. tioninputxc = {w1,w2,w3,...,wm+n+2}ofagiveninstancex(i).
+• Step2:ThenweleverageseveralQ&Ateachermodels(such Withtheencoderlayer,wemapxc intocontinuousrepresentations
+asBERT largefine-tunedmodels)toscoretheabove<Ques- He ={v1,v2,...,vm+n+2}.
+tion,Passage>pairs.
+3.2.2 Transformer Layer. We also use the bidirectional trans-
+• Step3:Weusethe<Question,Passage>corpusaswellastheir
+correspondingteachermodels’outputscoresasthepseudo
+formerencodertomapthelexiconembeddingHe intoasequenceof
+groundtruthtopre-trainthestudentmodel1. continuouscontextualembeddingHs ={h1,h2,h3,...,hm+n+2}.
+WithStep1andStep2,wecouldcollectalarge-scaleautolabelled 3.2.3 Multi-headerLayer. Inourproposedapproach,firstlysev-
+corpus(i.e.softlabels)forpre-training,whichisseveralmagnitudes eralteachermodelsarebuiltwithdifferenthyper-parameters.Then,
+largerthanthatofthehumanlabeledtrainingset.ForStep3,we inordertoletthestudentmodeltojointlylearnfromtheseteacher
+propose the novel multi-teacher knowledge distillation (i.e. m-o- models,amulti-headerlayerisdesignedconsistingoftwoparts,i.e.
+1 approach) for pre-training. The distillation pre-trained student goldenlabelheaderandsoftlabelheaders:
+model2withQ&AtasknotonlygreatlyboostsfinalQ&Afine-tuned
+GoldenLabelHeader. Giveninstancex(i),thisheaderaimsto
+modelbutalsootherNLUtasks(likeNLItasksfromGLUE),which
+learnthegroundtruthlabel.FollowingtheBERT,weselectx(i)’s
+areshowninexperimentsectionlater.
+firsttoken’stransformerhiddenstateh1astheglobalrepresentation
+3.1.2 Stage2-TaskSpecificDistillationFine-tuning. Through ofinput.Theprobabilitythatx(i)islabeledasclasscisdefinedas
+thelarge-scaledistillationpre-trainingstage,ourstudentmodelis follows:
+a Nb Lle Uto tal se ka srn (ld ike ece Wnt ef bea Qtu &re Are tap sr kes ,e Mnt Nat Lio In
+,
+Sca Np La Ib ,il Rit Tie Esf to asr kg sen fre or mal P(c|⟨Q,P⟩)=softmax(W дT ·h1) (1)
+GLUE).Atthefine-tuningstage,thestudentmodelisfirstlyini- whereWT isalearnableparametermatrix,c ∈Cindicatestherela-
+д
+tializedwiththepre-trainedparametersintheaboveStage1,and tionbetween⟨Q,P⟩.Theobjectivefunctionofgoldenlabelheader
+thenalloftheparametersarefine-tunedusinglabeleddatafrom taskisthendefinedasthecross-entropy:
+thedownstreamspecifictasks.Atthisstage,weproposeanovel
+(cid:213)
+multi-teacherknowledgedistillationmethod(i.e.m-o-1approach). lд =− c·loд(P(c|⟨Q,P⟩)) (2)
+To be more specific, for each downstream task, we use both c∈C
+the golden label (i.e. ground-truth knowledge ofT0) on the task SoftLabelHeaders. Takethei-thsoftlabelasanexample,iin[1,|N|],
+specific corpus and the soft labels ofT1-TN (i.e. pseudo ground- Nisthenumberofsoftlabels.Foragiveninstancex(i),wealso
+truthknowledge)onthesamecorpustojointlyfine-tunetogetan
+selectthefirsttoken’shiddenstateh1astheglobalrepresentation
+enhancedstudentmodel.Thisisjustlikethelearningprocessof ofinput.Theprobabilitythatx(i)islabeledasclasscisdefinedas
+human beings that we simultaneously gain knowledge from our
+follows:
+teachersaswellasthetextbooksthatourteachershavestudied.
+Psi(c|⟨Q,P⟩)=softmax(W sT
+i
+·h1) (3)
+3.2 TMKDArchitecture whereW sT
+i
+isalearnableparametermatrix.WesupportRsi(c|⟨Q,P⟩)
+TMKDisimplementedfromBERT[5].Ourmodelconsistsofthree =W sT
+i
+·h1asthelogitsofi-thsoftheaderbeforenormalization.
+layers:Encoderlayerutilizesthelexicontoembedboththequestion Forainstance⟨Q,P⟩,teachermodelcanpredictprobabilitydistri-
+andpassageintoalowembeddingspace;Transformerlayermaps butionstoindicatethatQandParerelevantornot.Softlabelheaders
+aimtolearntheteachers’knowledgethroughsoftlabels.Theobjec-
+1TheBERTstudentmodelisinitializedbythebottomthreelayersoftheBERTmodel.
+tivefunctionofsoftlabelheadersisdefinedasmeansquarederror
+Therefore,ithascapturedaroughlanguagemodelfromlargecorpus.
+2Thedistillationpre-trainedmodelofstage1willbereleasedsoon. asfollows:
+ModelCompressionwithTwo-stageMulti-teacherKnowledgeDistillationforWebQuestionAnsweringSystem
+Table3:Statisticsofexperimentdatasets(ForDeepQAdataset,wehaveatestdataset,whichisnon-overlappingwiththetrainingset.
+ForGLUE,pleasenotethattheresultsondevelopmentsetsarereported,sinceGLUEdoesnotdistributelabelsforthetestsets).
+SizeofSamples AverageQuestionLength AverageAnswerLength
+Dataset
+(Train/Test) (Words) (Words)
+DeepQA 1M/10K 5.86 43.74
+CommQA-Unlabeled 4M(base)40M(large)0.1B(extreme) 6.31 42.70
+CommQA-Labeled 12M/2.49K 5.81 45.70
+MNLI 392.70K/19.64K 20.52 10.90
+SNLI 549.36K/9.84K 13.80 10.90
+QNLI 108.43K/5.73K 9.93 28.07
+RTE 2.49K/0.27K 45.30 9.77
+question,top10relevantdocumentsreturnedbythesearch
+1 (cid:213)
+lsi =
+|C|
+(Rsi(c|⟨Q,P⟩)−Rti(c|⟨Q,P⟩))2 e san gg ein se aa rr ee fs ue rl te hc et red exto trf ao cr tm ed< fQ rou mest ti ho en s, eU dr ol> cup mai ers n; tsTh toen fop ra ms-
+c∈C
+(4) <Question,Url,Passage>triples;These<Query,Passage>
+N
+1 (cid:213)
+ls =
+N
+i=1lsi p caa li lr ys ,a er ae chsa <m Qp ule ed rya ,n Pd ass se an gt et >o pc aro irw id srs eo qu ur ic ri en dg toju gd eg te js u. dS gp ee dci bfi y-
+whereRti(c|⟨Q,P⟩) represents thei-th soft label teacher’s logits threejudges.Thosecaseswithmorethan2/3positivelabels
+beforenormalizationandN isthenumberofsoftlabelheaders. willgetpositivelabels,otherwisenegative.
+• CommQA-Unlabeled A large-scale unlabeled Q&A data
+3.3 TrainingandPrediction coming from a commercial search engine. The collection
+methodof<Query,Passage>pairsissameasDeepQA,and
+InordertolearnparametersofTMKDmodel,ourproposedTMKD
+thedifferenceisthatthequestiontypeanddomainofthis
+modelhasatwo-stagetrainingstrategy.Atthefirststage,weuse
+datasetismorediversethanDeepQA.Wesampled4million
+theEquation(4)tolearnthegeneralizednaturallanguageinference
+(namedbasedataset)and40million(namedlargedataset)as
+capabilityfromtheunlabeleddatawithsoftlabels.Atthesecond
+thepre-trainingdata.Besides,inourcommercialscenario,we
+stage,wecombineEquation(2)andEquation(4)tolearnthetask-
+haveoneextremelylargeQ&Aunlabeleddataset(0.1billion)
+specificknowledgefromthelabeleddatawithgoldenlabelsandsoft
+cookedbythesamedatacollectionapproach.
+labels,thenobtainourfinallearningobjectivefunctionasfollows:
+• CommQA-LabeledAlarge-scalecommercialQ&Atrain-
+l =(1−α)lд+αls (5) ingdata,whichissampledfromCommQA-Unlabeled,and
+w thh ee ir ne feα rei ns ca elo sts as gw e,e wig eh ute sd er aa nti ao g, gls
+ri
+egis att ih oe nl oo pss ero af tii o- nth toso cf at lh ce ua lad te er. thIn
+e •
+l Gab Le Ule Ed [b 2y 6c ]:ro Aw cd os llo eu cr tic oin ng oj fu dd ag tae ss e.
+tsforevaluatingNLUsys-
+finalresultasfollows: tems,includingninelanguageunderstandingtasks.Among
+1 them, we choose textual entailment tasks (MNLI, SNLI,
+O(c|⟨Q,P⟩)=
+N
++1(P(c|⟨Q,P⟩)+
+QNLI, RTE), which are similar to Q&A task. For MNLI
+N (6) andQNLI,giventwosentences(premiseandhypothesis),the
+(cid:213)
+Psi(c|⟨Q,P⟩)) taskistopredictwhetherthepremiseentailsthehypothesis
+i=1 (entailment),contradicts(contradiction),orneither(neutral).
+WhileforSNLIandRTE,therelationshipdoesnotcontain
+where Psi is the i-th student header’s output and N denotes the
+neutraltype.
+numberofsoftlabelheaders.
+4 EXPERIMENT 4.2 EvaluationMetrics
+Inthissection,weconductempiricalexperimentstoverifytheef- Weusethefollowingmetricstoevaluatemodelperformance:
+fectivenessofourproposedTMKDonmodelcompression.Wefirst • Accuracy(ACC):Numberofcorrectpredictionsdividedby
+introducetheexperimentalsettings,thencompareourmodeltothe thetotalnumberofsamples.
+baselinemethodstodemonstrateitseffectiveness. • QueriesPerSecond(QPS):Averagenumberofcasespro-
+cessedpersecond.Weusethismetrictoevaluatethemodel
+4.1 Dataset inferencespeed.
+Weconductexperimentsonseveraldatasetsasfollows.
+4.3 Baselines
+• DeepQA:AnEnglishQ&Ataskdatasetfromonecommer-
+cialQ&Asystem,with1millionlabeledcases.Eachcase Wecompareourmodelwithseveralstrongbaselinestoverifythe
+consistsofthreeparts,i.e.question,passage,andbinarylabel effectivenessofourapproach.
+(i.e. 0 or 1) by crowd sourcing judges indicating whether • BERT-3:astudentmodelwithoutanyknowledgedistillation
+thequestioncanbeansweredbythepassage.Thefollowing butinsteadtrainedasasmallversionofBERT/GPT,which
+brieflydescribeshowthedataiscollected.Firstly,foreach initializedbythebottom3-layerweightofBERT.
+Table4:Modelcomparisonbetweenourmethodsandbaselinemethods.ACCdenotesaccuracy(allACCmetricsinthetablearepercentagenumbers
+with%omitted).SpeciallyforMNLI,weaveragetheresultsofmatchedandmismatchedvalidationset.
+Performance(ACC) Inference Parameters
+Model
+DeepQA MNLI SNLI QNLI RTE Speed(QPS) (M)
+BERT-3 75.78 70.77 77.75 78.51 57.42 207 50.44
+OriginalModel BERTlarge 81.47 79.10 80.90 90.30 68.23 16 333.58
+BERTlargeensemble 81.66 79.57 81.39 90.91 70.75 16/3 333.58*3
+Bi-LSTM(1-o-1) 71.69 59.39 69.59 69.12 56.31 207 50.44
+Bi-LSTM(1avg-o-1) 71.93 59.60 70.04 69.53 57.35 207 50.44
+TraditionalDistillation Bi-LSTM(m-o-m) 72.04 61.71 72.89 69.89 58.12 207/3 50.44*3
+Model BERT-3(1-o-1) 77.35 71.07 78.62 77.65 55.23 217 45.69
+BERT-3(1avg-o-1) 77.63 70.63 78.64 78.20 58.12 217 45.69
+BERT-3(m-o-m) 77.44 71.28 78.71 77.90 57.40 217/3 45.69*3
+Bi-LSTM(TMKDbase) 74.73 61.68 71.71 69.99 62.74 207 50.45
+OurDistillationModel
+∗TMKDbase 79.93 71.29 78.35 83.53 66.64 217 45.70
+∗TMKDlarge 80.43 73.93 79.48 86.44 67.50 217 45.70
+∗ThesetwomodelsareBERT-3basedmodels.
+• BERT [5]:WeusetheBERT fine-tuningmodel(24- as300.Top15thousandsofwordsareselectedasvocabularyand
+large large
+layertransformerblocks,1024hiddensize,and16heads)as 300dimensionGloveisusedforembeddingweightinitialization.
+anotherstrongbaseline. WordsnotinGlovevocabularyarerandomlyinitializedwithnormal
+• BERT Ensemble:WeuseBERT fine-tuningmodel distribution.TheparametersareoptimizedusingAdamoptimizer
+large large
+ensembleasanotherstrongbaseline(theoutputprobability withlearningrateas1×10−3.
+distributiondecidedbytheaverageprobabilitydistributions ThoseteachermodelsusedforTMKDandm-o-mtrainingare
+ofallmodels). identicalforfaircomparison.TheonlydifferencebetweenTMKD
+base
+• Single Student Model (1-o-1 and 1avg-o-1) [11]: Student andTMKD
+large
+isthetrainingdatainthedistillationpre-training
+modellearnsfromonesingleteachermodelusingknowledge stage.Tobemorespecific,TMKD leveragesCommQA-Unlabeled
+base
+distillation.Forteachermodelselection,wehavetwostrate- basecorpusforpre-trainingwhileTMKD ispre-trainedusing
+large
+gies.Firstly,wepickthebestmodelselectedfromOriginal CommQA-Unlabeledlargecorpus.
+BERTteachermodelstodistillonesinglemodel(called1-
+o-1).Secondly,wepicktheaveragescoreofteachermodels 4.5 ComparisonAgainstBaselines
+asanotherspecialteachertodistillonesinglestudent(called
+Inthissection,weconductexperimentstocompareTMKDwith
+1avg-o-1).Weimplementthismethodundertwoarchitectures:
+baselinesintermsofthreedimensions,i.e.inferencespeed,parame-
+BERT-3modelandBi-LSTMmodel.Inthefollowingsec-
+tersizeandperformanceontaskspecifictestset.Fromtheresults
+tions,wherewedonotclarifythebasicmodelisBERT-3
+showninTable4,itisintuitivetohavethefollowingobservations:
+model.
+• StudentModelEnsemble(m-o-m):Foreachteachermodel, • ItisnotsurprisingthatoriginalBERTteachermodelshows
+1-o-1isusedtotrainasinglestudentmodel.Basedonthis thebestperformanceduetoitssheeramountofparameters
+method, 3 separate student models are trained based on 3 (340M),butinferencespeedissuperslowandmemorycon-
+differentteachermodels.Finallyanensembleaggregationis sumptionishugeforproductionusage.
+usedbysimplyaveragingtheoutputscorestoformthefinal • 1-o-1 and 1avg-o-1 (BERT-3 and Bi-LSTM) obtain pretty
+results.WealsoimplementitunderBERT-3basemodeland goodresultsregardinginferencespeedandmemorycapacity.
+Bi-LSTMmodel. Howevertherearestillsomegapscomparedtotheoriginal
+BERTmodelintermsofACCmetric.
+4.4 ParameterSettings • m-o-mperformsbetterthan1-o-1.However,theinference
+speedandmemoryconsumptionincreaseinproportiontothe
+ForallBERTbasedmodels,weimplementontopofthePyTorch
+numberofstudentmodelsusedforensemble.
+implementation of BERT3. All teacher models are trained using
+• Comparedwith1-o-1,1avg-o-1andm-o-m,TMKDachieves
+BERT withbatchsizeof128for10epochs,andmaxsequence
+large optimuminallthreedimensions.Intermsofmemory,TMKD
+length as 150. On each dataset, we train three different teacher
+onlyneedssmallamountofadditionalmemoryconsumption
+modelswithdifferentlearningratesin{2,3,5}×10−5.ForBERT-
+sincethemajorityofparametersaresharedacrossdifferent
+3studentmodel,weoptimizethestudentmodelusingalearning
+distillationtaskscomparedwiththe1-o-1.Inaddition,TMKD
+rateof1×10−4,andallBERT-basedmodelsareinitializedusing
+performssignificantbetterthanBERT-3,whichfurtherproves
+pre-trainedBERTmodelweights.
+theeffectiveofourmodel.
+ForallBi-LSTMbasedmodels,wesettheLSTMhiddenunits
+as256,LSTMlayercountas2,andwordembeddingdimension Toconclude,TMKDperformsbetterinthreedimensionsthan
+severalstrongbaselinecompressedmodelswithknowledgedistil-
+3github.com/huggingface/pytorch-pretrained-BERT. lation(i.e.1-o-1,1avg-o-1,m-o-m)onalltheevaluationdatasets,
+ModelCompressionwithTwo-stageMulti-teacherKnowledgeDistillationforWebQuestionAnsweringSystem
+andalsofurtherdecreasesperformancegapwiththeoriginalBERT FromTable6,MKDoutperformsKD(1avg-o-1)onthemajority
+model,whichverifiestheeffectivenessofTMKD. oftasks,whichdemonstratesthatmulti-teacherdistillationapproach
+(m-o-1)isabletohelpstudentmodellearnmoregeneralizedknowl-
+5 ABLATIONSTUDIES edgebyfusingknowledgefromdifferentteachers.
+TMKDconsistsofmultipleteacherdistillationpre-trainingstage
+5.1.3 Dual-Impact of Two Stages. Finally, TKD, MKD and
+anddistillationfine-tuningstage.Inthissection,wefurtherconduct
+TMKD are compared altogether. From Figure 2, TMKD signifi-
+severalexperimentstoanalyzethecontributionofeachfactorin
+cantlyoutperformsTKDandMKDinalldatasets,whichverifiesthe
+TMKD,inordertoobtainabetterunderstandingoftheproposed
+complementaryimpactofthetwostages(distillationpre-training&
+approach.
+m-o-1fine-tuning)forthebestresults.
+5.1 ImpactofDifferentTrainingStages 5.1.4 Extensive Experiments: Multi-teacher Ensemble or
+Multi-teacherDistillation? TMKDleveragemulti-teacherdistilla-
+5.1.1 ImpactofDistillationPre-trainingStage. Oneadvantage
+tioninbothpre-trainingandtaskspecificfine-tuningstages.This
+ofTMKDistointroduceamulti-teacherdistillationtaskforstudent
+multi-teacher mechanism actually introduces multi-source infor-
+model pre-training to boost model performance. We analyze the
+mationfromdifferentteachers.Acommonapproachtointroduce
+impactofpre-trainingstagebyevaluatingtwonewmodels:
+multi-sourceinformationisensemble(e.g.averagescoreofthepre-
+TKD:A3-layerBERT modelwhichisfirstlytrainedusing
+base
+dictionoutputsfrommultiplemodels).Comparedwiththecommon
+1-o-1distillationpre-trainingonCommQA-Unlabeledlarge-scale
+multi-teacherensembleapproach,arethereextrabenefitsfrommulti-
+dataset(i.e.40M<Question,Passage>pairs),thenfine-tunedontask
+teacherdistillation?Weconductfurtherexperimentstoexplorethis
+specificcorpuswithgoldenlabelandsinglesoftlabel(i.e.byonly
+question.
+oneteacher)ofeachtask.
+Forclearcomparisons,weapplysomedegradationoperations
+KD(1-o-1):Another3-layerBERT modelwhichisfine-tuned
+base
+to TMKD. We remove the multi-teacher distillation mechanism
+ontaskspecificcorpuswithgoldenlabelandsinglesoftlabelof
+from TMKD, and then use ensemble teacher score (the average
+eachtaskbutwithoutdistillationpre-trainingstage.
+scoreofsoftlabelsbymultipleteachers)andsingleteacherscore
+FromtheresultsinTable5,wehavethefollowingobservations:
+(fromthebestteacher)totraintwonewmodelswithatwo-stage
+(1)OnDeepQAdataset,TKDshowssignificantgainsbyleveraging
+large-scaleunsupervisedQ&Apairsfordistillationpre-training.(2)
+settingrespectively,whicharedenotedasTKD base(1avg-o-1)and
+TKD (1-o-1).ExperimentsusingbothBERT-3andBi-LSTMas
+AlthoughQ&AtaskisdifferentwithGLUEtasks,thestudentmodel base
+thestudentmodelarchitectureareconducted,asshowninTable7.
+ofGLUEtasksstillbenefitalotfromthedistillationpre-training
+stageleveragingQ&Atask.Thisprovestheeffectofthedistillation
+Table7: ComparisonbetweenTKDandTMKD
+pre-trainingstageleveragingQ&Alargecorpus.
+Model Dataset
+Table5: ComparisonbetweenKDandTKD
+DeepQA MNLI SNLI QNLI RTE
+Bi-LSTM(TKDbase(1-o-1)) 74.26 61.43 71.54 69.2 59.56
+Model Performance(ACC) Bi-LSTM(TKDbase(1avg-o-1)) 74.38 61.55 71.7 69.08 61.01
+DeepQA MNLI SNLI QNLI RTE Bi-LSTM(TMKDbase) 74.73 61.68 71.71 69.99 62.74
+KD(1-o-1) 77.35 71.07 78.62 77.65 55.23
+∗TKDbase(1-o-1) 79.5 71.07 77.66 82.79 63.89
+TKD 80.12 72.34 78.23 85.89 67.35
+∗TKDbase(1avg-o-1) 79.73 71.21 77.70 83.40 67.10
+∗TMKDbase 79.93 71.29 78.35 83.53 66.64
+∗ThesethreemodelsareBERT-3basedmodels.
+5.1.2 ImpactofMulti-teacherDistillationvsSingle-teacher
+Distillation. AnotheradvantageofTMKDisdesigningaunified From the results, we have the following observations: (1) For
+frameworktojointlylearnfrommultipleteachers.Weanalyzethe bothBERT-3adBi-LSTMbasedmodels,theTKD base(1avg-o-1)
+impactofmulti-teacherversussingle-teacherknowledgedistillation performsbetterthanTKD (1-o-1).Thisdemonstratesthatensem-
+base
+bythefollowingthreemodels: bleofteachermodelsisabletoprovidemorerobustknowledgethan
+MKD:A3-layerBERT basemodeltrainedbyMulti-teacherdistil- singleteachermodelwhendistillthestudentmodel.(2)Compared
+lation(m-o-1)withoutpre-trainingstage. withTKD base(1-o-1)andTKD base(1avg-o-1),TMKD baseobtainsthe
+KD (1avg-o-1): A 3-layer BERT base model trained by Single- bestperformancenomatterusingBi-LSTMorBERT-3.Itbecause
+teacherdistillation(1avg-o-1)withoutpre-trainingstage,whichisto thatthemulti-sourceinformationwasdilutedbytheaveragescore.
+learnfromtheaveragescoreofteachermodels. TMKDintroducesthedifferenceswhentraining,themulti-source
+informationcanbeadpativeatthetrainingstage.
+Table6: ComparisonBetweenKD(1avg-o-1)andMKD
+5.2 ImpactofTrainingDataSize
+Model Performance(ACC) TofurtherevaluatethepotentialofTMKD,weconductextensive
+DeepQA MNLI SNLI QNLI RTE experimentsonCommQA-Unlabeledextremelylarge-scalecorpus
+data(0.1billionunlabeledQ&Apairs)andCommQA-Labeled(12M
+KD(1avg-o-1) 77.63 70.63 78.64 78.20 58.12
+MKD 78.21 71.98 78.80 77.80 59.92
+labeledQ&Alabeledpairs).Fourseparateteachermodels(T1-T4)are
+90
+80
+70
+60
+50
+40
+TKD MKD TMKD
+DeepQA
+)%(CCA
+90
+80.12 80.43 78.21 80
+70
+60
+50
+40
+TKD MKD TMKD
+MNLI
+)%(CCA
+90
+80
+73.93
+72.34 71.98
+70
+60
+50
+40
+TKD MKD TMKD
+SNLI
+)%(CCA
+90
+78.23 78.8 79.48 80
+70
+60
+50
+40
+TKD MKD TMKD
+QNLI
+)%(CCA
+90
+85.89 86.44
+77.8 80
+70
+60
+50
+40
+TKD MKD TMKD
+RTE
+)%(CCA 67.35 67.5
+59.92
+Figure2: PerformancecomparisonofTKD,MKDandTMKDondifferentdatasets
+trainedwithbatchsizeof128andlearningratewith{2,3,4,5}∗e−5.
+80.6
+Maxsequencelengthissetas200,andnumberofepochsas4.The
+settingsofKD,MKD,andTMKDkeepthesameasSection5.1.
+80.4
+TheresultsareshowninTable8.Interestingly,onthisextremely
+large Q&A dataset, TMKD even exceeds the performance of its 80.2
+teacher model (ACC: 79.22 vs 77.00), which further verifies the
+effectivenessofourapproach.
+80.0
+79.8
+Table8: ExtremelylargeQ&Adatasetresults.
+Performance(ACC) 79.6
+0.0 0.2 0.4 0.6 0.8 1.0 1.2
+BERTlarge KD MKD TMKD
+Ratio α
+77.00 73.22 77.32 79.22
+5.3 ImpactofTransformerLayerCount
+Inthissection,wediscusstheimpactoftransformerlayercountn
+forTMKD4withn∈{1,3,5}.AsobservedfromTable9:(1)With
+nincreasing,ACCincreasesaswellbutinferencespeeddecreases,
+whichalignswithourintuition.(2)Withnincreasing,theperfor-
+mancegainbetweentwoconsecutivetrialsdecreases.Thatsay,when
+nincreasesfrom1to3,theACCgainsofthe5datasetsare(3.87,
+9.90,7.46,11.44,11.19)whichareverybigjump;whilenincreases
+from3to5,gainsdecreaseto(1.08,1.63,0.53,2.89,0.37),without
+decentadd-onvaluecomparedwiththesignificantlydecreasedQPS.
+Table9: Comparedifferentnumberoftransformerlayer.
+Dataset Metrics LayerNumber
+1 3 5
+DeepQA ACC 74.59 78.46 79.54
+MNLI ACC 61.23 71.13 72.76
+SNLI ACC 70.21 77.67 78.20
+QNLI ACC 70.60 82.04 84.94
+RTE ACC 54.51 65.70 66.07
+QPS 511 217 141
+Basedontheaboveresults,wesetnas3sinceithasthehighest
+performance/QPSratioforwebQuestionAnsweringSystem.Inreal
+productionscenarios,weneedtobalancebetweenperformanceand
+latency.
+)%(CCA
+Figure3: Theimpactofdifferentlossweightedratio.
+5.4 ImpactofLossWeightedRatio
+Wealsoconductsseveralexperimentstoanalyzetheimpactofthe
+lossweightedratioαdefinedinSection3.3,whereα ∈{0.1,0.3,0.5,
+0.7,0.9,1.0}.Specially,whensettheratioas1.0,weonlyusethe
+softlabelheaderstocalculatethefinaloutputresult.Theresultsof
+TMKDagainstdifferentα valuesareshowninFigure3.Wecan
+observe:(1)Thelargervaluetheratiois,thebetterperformance
+is obtained (except whenα is 1.0). (2) Without the golden label
+supervision(i.e.α is1.0),theperformancedecreases.Theintuition
+isjustliketheknowledgelearningprocessofhumanbeings.Welearn
+knowledgenotonlyfromteachersbutalsothroughreadingbooks
+whichcanprovideusacomprehensivewaytomasterknowledge
+withlessbias.
+6 CONCLUSIONANDFUTUREWORK
+Inthispaper,weproposeanovelTwo-stageMulti-teacherKnowl-
+edgeDistillation(TMKD)approachformodelcompression.Firstly
+aQ&Amulti-teacherdistillationtaskisproposedforstudentmodel
+pre-training,thenamulti-teacherparadigmisdesignedtojointly
+learnfrommultipleteachermodels(m-o-1)formoregeneralized
+knowledgedistillationondownstreamspecifictasks.Experiment
+results show that our proposed method outperforms the baseline
+state-of-artmethodsbygreatmarginandevenachievescompara-
+bleresultswiththeoriginalteachermodels,alongwithsignificant
+speedup of model inference. The compressed Q&A model with
+4Inordertosaveexperimentalcosts,wechooseTMKDbaseforexperimentation.
+ModelCompressionwithTwo-stageMulti-teacherKnowledgeDistillationforWebQuestionAnsweringSystem
+TMKDhasalreadybeenappliedtorealcommercialscenarioswhich [19] XiaodongLiu,PengchengHe,WeizhuChen,andJianfengGao.2019.Multi-Task
+bringssignificantgains. DeepNeuralNetworksforNaturalLanguageUnderstanding.InProceedingsof
+the57thConferenceoftheAssociationforComputationalLinguistics,ACL2019,
+Inthefuture,wewillextendourmethodstomoreNLUtasks,
+Florence,Italy,July28-August2,2019,Volume1:LongPapers.4487–4496.
+suchassequencelabelling,machinereadingcomprehension,etc.On [20] LiliMou,RanJia,YanXu,GeLi,LuZhang,andZhiJin.2016. Distilling
+theotherhand,wewillexplorehowtoselectteachermodelsmore WordEmbeddings:AnEncodingApproach.InProceedingsofthe25thACM
+InternationalConferenceonInformationandKnowledgeManagement,CIKM
+effectivelyforbetterstudentmodeldistillation. 2016,Indianapolis,IN,USA,October24-28,2016.1977–1980. https://doi.org/
+10.1145/2983323.2983888
+[21] NicolasPapernot,MartínAbadi,ÚlfarErlingsson,IanJ.Goodfellow,andKunal
+REFERENCES Talwar.2017.Semi-supervisedKnowledgeTransferforDeepLearningfromPri-
+vateTrainingData.In5thInternationalConferenceonLearningRepresentations,
+[1] PhilippCimiano,ChristinaUnger,andJohnMcCrae.2014. Ontology-based ICLR2017,Toulon,France,April24-26,2017,ConferenceTrackProceedings.
+interpretationofnaturallanguage.SynthesisLecturesonHumanLanguageTech- https://openreview.net/forum?id=HkwoSDPgg
+nologies7,2(2014),1–178. [22] AnastasiaPentinaandChristophHLampert.2017. Multi-TaskLearningwith
+[2] KevinClark,Minh-ThangLuong,UrvashiKhandelwal,ChristopherD.Manning, LabeledandUnlabeledTasks.stat1050(2017),1.
+andQuocV.Le.2019. BAM!Born-AgainMulti-TaskNetworksforNatural [23] MatthewE.Peters,MarkNeumann,MohitIyyer,MattGardner,Christopher
+LanguageUnderstanding.InProceedingsofthe57thConferenceoftheAssociation Clark,KentonLee,andLukeZettlemoyer.2018. DeepContextualizedWord
+forComputationalLinguistics,ACL2019,Florence,Italy,July28-August2,2019, Representations.InProceedingsofthe2018ConferenceoftheNorthAmerican
+Volume1:LongPapers.5931–5937. ChapteroftheAssociationforComputationalLinguistics:HumanLanguage
+[3] RonanCollobertandJasonWeston.2008. Aunifiedarchitecturefornatural Technologies,NAACL-HLT2018,NewOrleans,Louisiana,USA,June1-6,2018,
+languageprocessing:Deepneuralnetworkswithmultitasklearning.InProceed- Volume1(LongPapers).2227–2237.
+ingsofthe25thinternationalconferenceonMachinelearning.ACM,160–167. [24] AntonioPolino,RazvanPascanu,andDanAlistarh.2018.Modelcompression
+https://doi.org/10.1145/1390156.1390177 viadistillationandquantization.CoRRabs/1802.05668(2018).
+[4] EmilyL.Denton,WojciechZaremba,JoanBruna,YannLeCun,andRobFergus. [25] AlecRadford.2018. ImprovingLanguageUnderstandingbyGenerativePre-
+2014.ExploitingLinearStructureWithinConvolutionalNetworksforEfficient Training.
+Evaluation.InAdvancesinNeuralInformationProcessingSystems27:Annual [26] Alex Wang, Amanpreet Singh, Julian Michael, Felix Hill, Omer Levy, and
+ConferenceonNeuralInformationProcessingSystems2014,December8-132014, SamuelR.Bowman.2019. GLUE:AMulti-TaskBenchmarkandAnalysis
+Montreal,Quebec,Canada.1269–1277. PlatformforNaturalLanguageUnderstanding.In7thInternationalConferenceon
+[5] JacobDevlin,Ming-WeiChang,KentonLee,andKristinaToutanova.2019.BERT: LearningRepresentations,ICLR2019,NewOrleans,LA,USA,May6-9,2019.
+Pre-trainingofDeepBidirectionalTransformersforLanguageUnderstanding. [27] Meng-ChiehWu,Ching-TeChiu,andKun-HsuanWu.2019. Multi-teacher
+(2019),4171–4186. KnowledgeDistillationforCompressedVideoActionRecognitiononDeepNeural
+[6] YuxiaoDong,YangYang,JieTang,YangYang,andNiteshVChawla.2014. Networks.InIEEEInternationalConferenceonAcoustics,SpeechandSignal
+Inferringuserdemographicsandsocialstrategiesinmobilesocialnetworks.In Processing,ICASSP2019,Brighton,UnitedKingdom,May12-17,2019.2202–
+Proceedingsofthe20thACMSIGKDDinternationalconferenceonKnowledgedis- 2206.
+coveryanddatamining.ACM,15–24. https://doi.org/10.1145/2623330.2623703 [28] JunhoYim,HeechulJung,ByungInYoo,ChangkyuChoi,DusikPark,andJunmo
+[7] MurhafFares,StephanOepen,andErikVelldal.2018.TransferandMulti-Task Kim.2015. Rotatingyourfaceusingmulti-taskdeepneuralnetwork.InPro-
+LearningforNoun-NounCompoundInterpretation.InProceedingsofthe2018 ceedingsoftheIEEEConferenceonComputerVisionandPatternRecognition.
+ConferenceonEmpiricalMethodsinNaturalLanguageProcessing,Brussels, 676–684. https://doi.org/10.1109/CVPR.2015.7298667
+Belgium,October31-November4,2018.1488–1498. [29] ShanYou,ChangXu,ChaoXu,andDachengTao.2017.LearningfromMultiple
+[8] JonathanFrankleandMichaelCarbin.2018.Thelotterytickethypothesis:Finding TeacherNetworks.InProceedingsofthe23rdACMSIGKDDInternationalCon-
+sparse,trainableneuralnetworks.arXivpreprintarXiv:1803.03635(2018). ferenceonKnowledgeDiscoveryandDataMining,Halifax,NS,Canada,August
+[9] BabakHassibiandDavidG.Stork.1993.Secondorderderivativesfornetwork 13-17,2017.1285–1294.
+pruning:OptimalBrainSurgeon.InAdvancesinNeuralInformationProcessing [30] YangYou,JingLi,JonathanHseu,XiaodanSong,JamesDemmel,andCho-Jui
+Systems5,S.J.Hanson,J.D.Cowan,andC.L.Giles(Eds.).Morgan-Kaufmann, Hsieh.2019. ReducingBERTPre-TrainingTimefrom3Daysto76Minutes.
+164–171. CoRRabs/1904.00962(2019).
+[10] YihuiHe,XiangyuZhang,andJianSun.2017.ChannelPruningforAccelerating [31] XiangyuZhang,JianhuaZou,XiangMing,KaimingHe,andJianSun.2015.
+VeryDeepNeuralNetworks.InIEEEInternationalConferenceonComputer Efficientandaccurateapproximationsofnonlinearconvolutionalnetworks.In
+Vision,ICCV2017,Venice,Italy,October22-29,2017.1398–1406. https://doi. IEEEConferenceonComputerVisionandPatternRecognition,CVPR2015,
+org/10.1109/ICCV.2017.155 Boston,MA,USA,June7-12,2015.1984–1992.
+[11] GeoffreyEHinton,OriolVinyals,andJeffreyDean.2015.DistillingtheKnowl-
+edgeinaNeuralNetwork.arXiv:MachineLearning(2015).
+[12] JeremyHowardandSebastianRuder.2018. UniversalLanguageModelFine-
+tuningforTextClassification.InProceedingsofthe56thAnnualMeetingofthe
+AssociationforComputationalLinguistics,ACL2018,Melbourne,Australia,July
+15-20,2018,Volume1:LongPapers.328–339. https://doi.org/10.18653/v1/
+P18-1031
+[13] Max Jaderberg, Andrea Vedaldi, and Andrew Zisserman. 2014. Speeding
+upconvolutionalneuralnetworkswithlowrankexpansions. arXivpreprint
+arXiv:1405.3866(2014).
+[14] YoonKimandAlexanderM.Rush.2016.Sequence-LevelKnowledgeDistillation.
+InProceedingsofthe2016ConferenceonEmpiricalMethodsinNaturalLanguage
+Processing,EMNLP2016,Austin,Texas,USA,November1-4,2016.1317–1327.
+[15] AdhigunaKuncoro,MiguelBallesteros,LingpengKong,ChrisDyer,andNoahA.
+Smith.2016. DistillinganEnsembleofGreedyDependencyParsersintoOne
+MSTParser.InProceedingsofthe2016ConferenceonEmpiricalMethodsin
+NaturalLanguageProcessing,EMNLP2016,Austin,Texas,USA,November1-4,
+2016.1744–1753.
+[16] YannLeCun,JohnS.Denker,andSaraA.Solla.1989.OptimalBrainDamage.In
+AdvancesinNeuralInformationProcessingSystems2,[NIPSConference,Denver,
+Colorado,USA,November27-30,1989].598–605.
+[17] StefanLee,SenthilPurushwalkam,MichaelCogswell,DavidJ.Crandall,and
+DhruvBatra.2015. WhyMHeadsareBetterthanOne:TrainingaDiverse
+EnsembleofDeepNetworks.CoRRabs/1511.06314(2015).arXiv:1511.06314
+http://arxiv.org/abs/1511.06314
+[18] XiaodongLiu,PengchengHe,WeizhuChen,andJianfengGao.2019.Improv-
+ingMulti-TaskDeepNeuralNetworksviaKnowledgeDistillationforNatural
+LanguageUnderstanding.CoRRabs/1904.09482(2019).

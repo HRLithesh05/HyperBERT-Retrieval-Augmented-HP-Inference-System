@@ -1,0 +1,1297 @@
+Pyramid-BERT: Reducing Complexity via
+Successive Core-set based Token Selection
+XinHuang AshishKhetan
+AmazonAWS,USA AmazonAWS,USA
+xinxh@amazon.com khetan@amazon.com
+ReneBidart ZoharKarnin
+UniversityofWaterloo,Canada AmazonAWS,Israel
+rbbidart@uwaterloo.ca zkarnin@amazon.com
+Abstract whichisabottleneckespeciallyforlong-sequence
+data.
+Transformer-based language models such as Giventhischallenge,intensiveeffortshavebeen
+BERT(Devlinetal.,2018)haveachievedthe focused on compressing and accelerating Trans-
+state-of-the-art performance on various NLP
+formerstoreducethecostofpre-trainingandfine-
+tasks, but are computationally prohibitive. A
+tuning. This work is particularly inspired by the
+recent line of works use various heuristics
+sequence-level NLP tasks such as text classifica-
+tosuccessivelyshortensequencelengthwhile
+transformingtokensthroughencoders,intasks tionandranking. Thestate-of-the-artTransformer
+such as classification and ranking that re- modelsforthesetasksutilizeasingleembedding
+quire a single token embedding for predic- from the top encoder layer, such as the CLS to-
+tion. We present a novel solution to this ken,forprediction. Undersuchregime,retaining
+problem, called Pyramid-BERT where we re-
+full-length sequence till the last encoder creates
+place previously used heuristics with a core-
+unnecessarycomplexity. Wefollowalineofworks
+set based token selection method justified by
+detailedinSection2thataimtograduallyreduce
+theoretical results. The core-set based token
+thesequencelengthinthepipelineofencoders. On
+selection technique allows us to avoid expen-
+sive pre-training, gives a space-efficient fine a high level, the existing works have two compo-
+tuning, and thus makes it suitable to handle nents: Select: amechanisminchargeofreducing
+longersequencelengths.Weprovideextensive thesequencelength,eitherbypruningorpooling,
+experiments establishing advantages of pyra- Train-Select : a training or fine-tuning procedure
+mid BERT over several baselines and exist-
+dedicatedtothismechanism.
+ingworksontheGLUEbenchmarksandLong
+OurmaincontributionisanovelsolutionforSe-
+RangeArena(Tayetal.,2020)datasets.
+lect,motivatedfromthefollowingobservation: As
+we consider the token representations in top lay-
+1 Introduction
+ers,theyhaveincreasingredundancyamongthem-
+Transformers(Vaswanietal.,2017)havegradually selves. Weprovideaquantitativestudydemonstrat-
+become a key component for many state-of-the- ing this in Figure 1. A collection of tokens with
+artnaturallanguagerepresentationmodels. Are- highredundancycanintuitivelyberepresentedbya
+centTransformerbasedmodelBERT(Devlinetal., smallcore-set,composedofasubsetofthetokens.
+2018),anditsvariations,achievedthestate-of-the- Inspiredbythis,oursolutionforSelectisbasedon
+artresultsonvariousnaturallanguageprocessing the idea of core-sets. We provide a theoretically
+tasks,includingmachinetranslation(Wangetal., motivated approach that becomes more effective
+2019a;Liuetal.,2020),question-answering(De- astheredundancyintherepresentationincreases.
+vlinetal.,2018;Yangetal.,2019),textclassifica- This concept separates our work from previous
+tion(Goyaletal.,2020;Xuetal.,2019),semantic artthatprovideheuristictechniquesforsequence
+rolelabeling(Strubelletal.,2018),andsoon. How- lengthreduction,orapproachesthatrequireexpen-
+ever,ittakessubstantialcomputationalresourcesto sivetraining. Allofthesecaninfactbeshownto
+pre-train,fine-tune,orinfersuchmodels. Thecom- failintoyexampleswithhighredundancy,e.g.the
+plexityofTransformersismainlyduetoapipeline samerepresentationduplicatedmultipletimes.
+ofencoders,eachofwhichcontainsamulti-head ForTrain-Selectthereissomevarietyinprevious
+self-attention layer. The self-attention operation art. Somerequireafullpre-trainingprocedure,and
+scalesquadraticallywiththeinputsequencelength, othersrequireafine-tuningprocedurethatworks
+2202
+raM
+72
+]LC.sc[
+1v08341.3022:viXra
+onthefulluncompressedmodel,meaningonethat Wuetal.,2021a),whichremovescoherentgroups
+keepsalltokensuntilthefinalencoderlayer. The ofweightstopreservetheoriginalstructureofthe
+highqualityofoursolutiontoSelectallowsusto network,isonecommonstrategy. Inaddition,var-
+simply avoid this additional training phase alto- ious types of distillation techniques (Sanh et al.,
+gether. The result of this simplification is quite 2019;Sunetal.,2019;Jiaoetal.,2019;Wangetal.,
+impactful. We obtain a speedup and memory re- 2020b)havebeenproposedtoremoveencodersby
+ductionnotonlytotheinferencebuttothetraining training a compact Transformer to reproduce the
+process itself. This makes it possible to use stan- output of a larger one. Other strategies include
+dardhardware(andtrainingscripts)inthetraining weightquantization(Bhandareetal.,2019;Zafrir
+procedureevenforverylongsequences. etal.,2019;Shenetal.,2020;Fanetal.,2020)and
+In Section 6 we provide an empirical compari- weight sharing (Dehghani et al., 2018; Lan et al.,
+son of our technique with SOTA alternatives and 2019). Thesecondlineofworkfocusonreducing
+showthatitissuperiorineliminatingredundancy thequadraticoperationoftheself-attentionmatri-
+among the tokens, and thus greatly improves the ces. The quadratic time and space complexity of
+finalclassificationaccuracy. Inparticular,ourex- theattentionmechanismwithrespecttotheinput
+perimentsontheGLUEbenchmarksshowthatour sequenceservesthemainefficiencybottleneckof
+method achieves up to 3-3.5X inference speedup Transformers,andthusisprohibitivelyexpensive
+while maintaining an accuracy (mean value over for training long-sequence data. One popular ap-
+allGLUEdatasets)dropof1.5%,whereasthebest proach is to sparsify the self-attention operation
+baseline suffers a 2.5% drop. We show that our byrestrictingeachtokentoonlyattendasubsetof
+methodcanbecombinedwithlong-textTransform- tokens(Childetal.,2019;Kitaevetal.,2020;Ye
+erssuchasBigBird (Zaheeretal.,2020)andPer- etal.,2019;Qiuetal.,2019;Ainslieetal.,2020;
+formers (Choromanski et al., 2020) to further al- Zaheeretal.,2020;Beltagyetal.,2020). Inpartic-
+leviatethequadraticspacecomplexityoftheself- ular,themostrecentBigBird (Zaheeretal.,2020)
+attention mechanism. Empirical experiments on and Longformer (Beltagy et al., 2020) introduce
+the Long Range Arena (LRA) (Tay et al., 2020) sparsemodelswhichscalelinearlywiththeinput
+showthatourmodelachievesabettertrade-offbe- sequence. Anotherpopularapproach(Wangetal.,
+tweenspacecomplexityreductionandaccuracyin 2020a;Choromanskietal.,2020)istoapproximate
+comparisontoitscompetitors. Inparticular,when theself-attentiontoreduceitsquadraticcomplexity
+working with Performers and reducing the space tolinear,wherethemostrecentPerformers(Choro-
+complexityby70%,whilebaselinessufferadrop manski et al., 2020) provides an unbiased linear
+inaccuracyof4%ormore,ourtechniqueactually estimationoftheattentionmatrices.
+improvestheaccuracyasitactsasaregularizer.
+The third line, which our work lies in, focus
+Concluding, our paper provides a novel, theo-
+ontheredundancyinmaintainingafull-lengthse-
+retically justified technique for sequence length
+quenceoftoken-levelrepresentationacrossallen-
+reduction,achievingaspeedupandmemoryreduc-
+coders(Daietal.,2020;Pietruszkaetal.,2020;Ye
+tionforbothtrainingandinferenceoftransformers,
+etal.,2021;KimandCho,2020). Thisworkispar-
+whilesufferingsignificantlylessintermsofpredic-
+ticularlyinspiredbythesequence-levelNLPtasks
+tiveperformancewhencomparedtootherexisting
+suchastextclassificationandranking,wherethe
+techniques. Ourmethodsarevettedviathorough
+state-of-the-art approach utilizes a single embed-
+empiricalstudiescomparingitagainstSOTAmeth-
+dingfromthetopencoderlayerofaTransformer,
+odsandexaminingitsdifferentcomponents.
+suchastheCLStoken,forprediction. Undersuch
+2 RelatedWorks regime, retainingthefull-lengthsequencetillthe
+lastencodercreatesunnecessarycomplexity.Dai
+Therehavebeenanumberofinterestingattempts, etal.(2020)appliedasimpleststridedmeanpool-
+thatwereaimedatmodelcompressionforTrans- ingtoeachslidingwindowofthesequencetograd-
+formers, which can be broadly categorized into uallycompresstokens. Thepaperproposedaspe-
+threedirections. Thefirstlineofworkfocusonthe cializedpre-trainingprocedureforthisprocessthat
+redundancyofmodelparameters. Structureprun- achievesagoodbalancebetweenspeedupandac-
+ing (McCarley, 2019; Michel et al., 2019; Voita curacy drop. In comparison we aim to avoid the
+et al., 2019; Wang et al., 2019b; Fan et al., 2019; costlypre-trainingstepandfocusonamethodthat
+requiresonlyalightweightfine-tuning. Wuetal. embeddingsaretransformedthroughapipelineof
+(2021b) define a centroid attention operator that encodersandtheself-attentionmechanism. Each
+given centroids, computes their embeddings via encodertakesalltheN embeddingsasinput,and
+anattentionmechanism. Thesecentroidsarecho- outputs updated N embeddings of the same di-
+sen either as a random subset of the original to- mension. The time and space complexity of the
+kens,orviastridedmeanpooling. Thisresultsin self-attention scales quadratically with the input
+asimilartechniquetothatofDaietal.(2020),in sequencelengthN.
+termsofhavinganaivesequencelengthreduction Motivation. Thestate-of-the-artBERTutilizes
+method. Pietruszkaetal.(2020)provideavariant onlytheCLStokenfromthetopencoderlayerfor
+oflength2stridedmeanpoolingwhereinsteadof taskssuchasclassificationandranking. Anatural
+taking the unweighted average of each pair, they questionis: doweneedtopropagateallthetoken
+providelearnableweightsviaadifferentiablelinear embeddingsthroughtheentirepipelineofencoders
+function. In our experiment we did not compare whenonlythetoplayerCLSembeddingisusedfor
+our methods with (Wu et al., 2021b; Pietruszka prediction? Ingeneral,yes,sincetheself-attention
+etal.,2020)sincebothworkedonalimited(non- transformsalltheembeddingstogether,updating
+standard)collectionofdatasetsandatthetimeof each one by capturing information from all the
+writingthispaper,didnotprovidecodeallowingus others. However,iftwoormoretokensareexact
+toreproducetheirresult. Sinceourpaperisfocused duplicates of each other, ignoring the positional
+ontechniquestoselectasubsetoftokensandthese embedding,thenonecaneasilyremovethedupli-
+papersuseeitherrandomsamplingorpooling,we catesfromtheinputandmodifytheself-attention
+donotbelieveathoroughcomparisonisrequired. appropriately to get the same CLS embedding at
+Yeetal.(2021)proposedareinforcement-learning thetoplayer,andhencethesameprediction. This
+basedtechniquetorankthetokens,therebyallow- wouldreducethenumberofFLOPscarriedoutin
+ingittoremovetheleastimportantones. ThisRL eachself-attentionlayer.
+policymustbetrainedinanexpensiveprocessthat
+requiresthefullnetworkstructure. Sincewefocus
+onmethodstoimprovebothtrainingandinference,
+we do not include it in our experiments. Vision
+Transformers (Pan et al., 2021; Heo et al., 2021),
+which apply various types of pooling techniques
+toreduceinputlength, arespeciallydesignedfor
+image data and thus non-trivial to compare with
+ourmethod. Earlyexitingapproaches(Xinetal.,
+2020;Zhouetal.,2020),whichallowsamplesto
+exitearlybasedonredundancy,areorthogonalto
+Figure 1: SST-2 dev set: Histogram of (a) similarity
+our technique. Goyal et al. (2020) developed an betweenCLSandalltheothertokens(toprow)(b)the
+attentionbasedmechanismtoprogressivelyelim- numberofclustersreturnedbyDBSCAN(bottomrow),
+inate tokens in the intermediate encoders in the overalltheinputsatencoder1,6,and12.
+fine-tuning, while maintaining the classification
+accuracy. In general, input sentences do not contain du-
+plicate tokens. However, a preliminary study of
+3 PyramidBERT
+token embeddings show that as the embeddings
+Background. A Transformer model, e.g. BERT, propagate through the pipeline of encoders, they
+takesasequenceoftokensasinputforeachinput become more similar to the CLS token, Figure 1
+sentence. The sequence of tokens consists of a (toprow). Adeeperinvestigationshowsthatthey
+CLStokenfollowedbythetokensgeneratedbyto- alsobecomemoresimilarwitheachotherandform
+kenizingtheinputsentence. Forbatchprocessing, clustersamongthemselves,Figure1(bottomrow).
+an appropriate sequence length N is chosen, and Inthiswork,weexploittheseobservations,and
+shorter input sentences are padded to achieve an presentpyramidBERT,anovelBERTarchitecture,
+uniform length N. The embedding layer E em- thatreducescomputationalandspacecomplexity
+bedseachtokenintoavectorofrealnumbersofa offine-tuningandinferenceofBERTwhileincur-
+fixeddimension. Foreachinputsentence,thetoken ringminimalperformancedegradation. Thepyra-
+(e.g. BERT), and a set of training data points
+sampled i.i.d. over the space Z = X × Y as
+{x ,y } ∼ p where[n] = {1,2,··· ,n}.
+i i i∈[n] Z
+LetT denoteatokenselectionalgorithm. Foran
+example input x, let the input and output embed-
+dingsofthetokenselectionalgorithmT atencoder
+jbeS(cid:101)j andS
+j
+respectively. Thesizeofthetwosets
+are |S(cid:101)j| = (cid:96) j−1, and |S j| = (cid:96) j. In particular, at
+eachencoderj,thealgorithmT selects(cid:96) embed-
+j
+dingsoftheinputsetS(cid:101)j astheoutputsetS j,and
+eliminatestheremaining(cid:96) -(cid:96) embeddingsin
+j−1 j
+S(cid:101)j. LetS(cid:101)= {S(cid:101)j} j∈[L],andS = {S j} j∈[L]. Given
+Figure2: IllustrationofPyramid-BERT. theunderlyingBERTparametersw,thesequence
+length configuration(cid:96), and theclassification loss
+L ,pyramidBERTsolvesthetokenselectionprob-
+w
+midBERTworksforallthedownstreamtasksthat
+lembyminimizingthepopulationriskasfollows:
+only use the top layer CLS token for prediction,
+suchasclassificationandranking. min E x,y∼pZ(cid:2) L w(x,y,S(cid:101),S)(cid:3) .
+Architecture. ThepyramidBERTsuccessively
+{S:Sj⊆S(cid:101)j,|Sj|≤(cid:96)j}
+j∈[L]
+(1)
+selectssubsetsoftokensineachencoderlayerto
+propagatethemtothenextencoder. Anillustration Method. Inordertodesignanoptimaltokenselec-
+ofpyramidBERTisshowninFigure2. Itinvolves tionalgorithmT,weconsiderthefollowingupper
+twomaincomponentsoverBERT:(a)Asequence- boundofthetokenselectionlossdefinedin(1):
+lengthconfiguration: amonotonicallydecreasing
+n
+sequence (cid:96) = ((cid:96) 1,(cid:96) 2,··· ,(cid:96) L) that specifies the E x,y∼pZ[L(x,y,S(cid:101),S)] ≤ n1 (cid:88) L(x i,y i)+
+number of tokens to retain in each of the L en- (cid:124) (cid:123)(cid:122) (cid:125)
+i=1
+coders, foralltheinputexamples. (b)Acore-set pyramidBERTpopulationrisk (cid:124) (cid:123)(cid:122) (cid:125)
+BERTtrainingerror
+basedtokenselectionmethodologywhichineach
+(cid:12) n (cid:12)
+j th- eth (jen −co 1d )e -tr h, g ei nv ce on d(cid:96) ej r− s1 elt eo ck tsen ase um bb see td od fin ig ts offr so izm
+e
+(cid:12) (cid:12) (cid:12)E x,y∼pZ[L(x,y,S(cid:101),S)]− n1 (cid:88) L(x i,y i,S(cid:101)i,S i)(cid:12) (cid:12)
+(cid:12)
+i=1
+(cid:96) topropagatethemtothenextencoder. Notethat (cid:124) (cid:123)(cid:122) (cid:125)
+j pyramidBERTgeneralizationerror
+therestofpyramidBERTarchitectureissameas
+n (cid:12) (cid:12)
+1 (cid:88)(cid:12) (cid:12)
+theBERT,andithasexactlythesamenumberof + (cid:12)L(x i,y i)−L(x i,y i,S(cid:101)i,S i)(cid:12) . (2)
+n (cid:12) (cid:12)
+parametersastheBERT.
+i=1
+(cid:124) (cid:123)(cid:122) (cid:125)
+InSection4,weprovideatheoreticalderivation
+pyramidBERTtokenselectionloss
+ofthecore-setbasedtokenselectionmethodology
+Foreaseofnotation,wewriteL asL. Theabove
+byminimizinganupperboundofsuccessivetoken w
+bound follows immediately from the triangle in-
+selection loss. To computationally perform the
+equality. Forthefirsttwotermsintheabovebound:
+core-setbasedtokenselection,weprovideagreedy
+theBERTtrainingerrorisaconstantforfixedpa-
+k-centeralgorithminSection5.1. InSection5.2,
+rameters w, and the generalization error of mod-
+wepresentasimpleyeteffectiveapproachtoselect
+els like BERT is known to be small (Hao et al.,
+thesequence-lengthconfiguration(cid:96)foradesired
+2019; Jakubovitz et al., 2019). Therefore, we re-
+time/spacecomplexityreduction.
+definethetokenselectionproblem,Equation1,to
+minimizethethirdterm,thepyramidBERTtoken
+4 CoresetBasedTokenSelection
+selectionloss
+Problem Definition. We are interested in a C 1 (cid:88)n (cid:12) (cid:12) (cid:12) (cid:12)
+class classification problem defined over a com-
+min (cid:12)L(x i,y i)−L(x i,y i,S(cid:101)i,S i)(cid:12).
+pactspaceX andalabelspaceY = {1,2,··· ,C}.
+n i=1{Si:|(Sij)|≤(cid:96)j}(cid:12) (cid:12)
+(3)
+WeconsideralossfunctionL (·,·) : X ×Y → R
+w
+which is parametrized over the hypothesis class To solve Equation 3, we first optimize a slightly
+(w), the parameters of the transformer network differenttokenselectionalgorithmT∗ foramodel
+pyramid∗ BERT. In pyramid∗ the embedding se-
+quence length is not reduced across the encoder
+layers. LetS(cid:101)∗ andS∗ denotethesetofinputand
+j j
+output embeddings of T∗, where the size of the
+two sets is equal to the input sequence length N,
+|S(cid:101)∗| = |S∗| = N. GivenaninputsetS(cid:101)∗inencoder
+j j j
+j, the algorithm T∗ first selects a subset of it of
+size(cid:96) ,whichisexactlysameasS selectedbyT Figure3: Illustrationofδcovercore-set.
+j j
+inpyramidBERT.Next,insteadofeliminatingthe
+remainingN −(cid:96)
+j
+embeddingsinS(cid:101) j∗ asisdoneby
+goestozeroasthecoveringradiusδ goestozero.
+T,theT∗ replacesthemwiththeirnearestembed-
+AproofofthetheoremisgiveninAppendixA.2.
+ding in S to form the output set S∗. The unique
+j j From Remark 1, the optimal choice of token
+embeddingsoftheoutputsetS∗ofpyramid∗BERT
+j selection for pyramid BERT is same as the opti-
+areexactlysameastheembeddingsofoutputset malchoiceofuniquetokensselectedinpyramid∗
+S ofpyramidBERT,thatisunique(S∗) = S . We
+j j j BERT, up to weighing of self-attention. How-
+makethefollowingobservation.
+ever,innumericalexperimentswefoundthatfine-
+Remark1 Apyramid∗ BERTcanbereducedtoa tuningpyramidBERTwiththecore-setbasedto-
+pyramidBERTwithaweightedselfattentionnet- ken selection performs better than weighing the
+work. Theweightedselfattentionnetworkweighs self-attention. Theδ-covercore-settokenselection
+attention scores according to the duplicity of the problemisequivalenttothek-Centerproblem(also
+tokensintheembeddingsofpyramid∗ BERT. called min-max facility location problem) (Wolf,
+2011). Weexplainhowwesolvethek-Centerprob-
+Given the above remark, we optimize the token
+selectionproblemforpyramid∗ BERT.Inthethe- lem using a greedy approximation algorithm in
+§5.1.
+orem below, we give an upper bound for the to-
+kenselectionlossstatedin(3)forpyramid∗ BERT.
+5 PyramidBERT:Algorithm
+The proof relies on λ-Lipschitz continuity of the
+encoder and classification layers. A function f
+Givenapre-trainedBERT,wecreateafine-tuned
+is λ-Lipschitz continuity if, (cid:107)f(x) − f(x(cid:48))(cid:107) ≤
+pyramidBERTasfollows. Forthecore-setselec-
+λ(cid:107)x−x(cid:48)(cid:107),forallx,x(cid:48) ∈ domain(f).
+tion module shown in Figure 2, we implement a
+Theorem1 If the classification layer is λ - k-Center-greedy-batch-m algorithm, Section 5.1,
+C
+Lipschitz, and for all j ∈ [L], the encoder E toapproximatelyselectthecore-setofembeddings.
+j
+is λ -Lipschitz continuous for all its parameters, We fine-tune all the trainable parameters of the
+j
+and T∗ is a token selection algorithm such that pyramidBERTfordifferentchoicesofsequence-
+the unique elements of the output embedding set length configurations (cid:96), according to approach
+unique(S∗)isaδ-coveroftheinputembeddingset giveninSection5.2. Weselecttheoptimalconfigu-
+j
+S(cid:101) j∗,andtheN −(cid:96)
+j
+remainingelementsinS(cid:101) j∗\S j∗ ration(cid:96)satisfyingtherequiredinferencespeed-up
+are replaced in S∗ by their nearest elements in orthespacecomplexityreduction. Theselectedop-
+j
+unique(S∗),thenforallisuchthatx isbounded, timalchoiceof(cid:96)iskeptfixedduringinference. We
+j i
+notethatourpracticalimplementationofpyramid
+thefollowingholds:
+BERT,proposedhere,isnotexactlythesameasthe
+(cid:12) (cid:12)
+(cid:12) (cid:12)L(x i,y i)−L(x i,y i,S(cid:101) i∗,S i∗)(cid:12)
+(cid:12)
+theoretical token selection algorithm analyzed in
+theprevioussection. InAppendixA.1,wejustify
+L (cid:18) L (cid:19)
+(cid:88) (cid:89) thedifferencesbetweenthetwo.
+≤ δλ (N −(cid:96) ) λ . (4)
+C j a
+j=1 a=j 5.1 TokenSelectionAlgorithm
+We visualize the concept of δ-cover in Figure 3. The δ-cover core-set problem is equivalent to k-
+Thesetofredpoints(i.e.,tokenembeddingsinour CenterproblemwhichisNP-Hard. However,itis
+case)withradiusδ coverstheentiresetofpoints. possibletoobtaina2×OPTsolutionofk-Center
+Theorem 1 suggests that we can bound the token usingagreedyapproach(Cooketal.,2009). The
+selectionlossofalgorithmT∗ forpyramid∗ BERT greedyapproachselectsthecore-setofsizek one-
+withtheδ-covercore-settokenselection. Theloss by-one,makingitun-parallelizable,andhenceruns
+Algorithm1:k-Center-greedy-batch-m backboneTransformer,wechooseBERT Base (De-
+vlin et al., 2018) for the GLUE benchmarks, and
+Data:InputsetS(cid:101),thenumberofcenterstoaddper
+iterationm. two state-of-the-art long-text Transformers Big
+Result:OutputsetS,with|S|=k. Bird (Zaheeretal.,2020)andPerformers(Choro-
+InitializeS ={CLSembedding}
+manskietal.,2020)fortheLRA.Fordatasetstatis-
+while|S|<kdo
+M ={} tics such as the number of classes and input se-
+while|M|≤mdo quence length, and the details of the backbone
+s=argmax min distance(u,v)
+u∈S(cid:101)\S v∈S Transformers,seeAppendixC.
+M =M ∪{s}
+end Forsequence-lengthconfigurations,wegenerate
+S =S∪M asetF of30sequence-lengthconfigurationsusing
+end
+Equation 5, the details of which are listed in Ta-
+returnS
+ble9AppendixC.Thehighlevelideaistocover
+multipletradeoffsbetweenefficiencyandaccuracy.
+slowonGPUs. ForpyramidBERT,wedeveloped For each token selection method, we show the
+a parallelizable version of this greedy approach, predictive performance for 1.5X, 2X, 3X, and
+Algorithm1,whichselectsmcentersatatime. 3.5X speedup. Similarly,weshowthepredictive
+performance for 30% and 70% space complexity
+5.2 Sequence-lengthConfiguration
+reductions of the attention layer. The reason we
+For the sequence-length configuration (cid:96), we re- considerthespacereductionfortheattentionlayer
+strictthesequencestobeexponentiallydecaying. alone is that its quadratic complexity serves the
+Specifically,avalidsequenceisdeterminedbytwo mainbottleneckforlongsequences. Fordetailson
+parameters. The target pruning ratio 0 < p < 1, how to get the performance at different speedup
+andtheindexofthelayerafterwhichwestopre- andmathematicalformulaforcomputingspeedup
+ducing the sequence length 1 ≤ i prune-upto ≤ L. andspacecomplexityreduction,seeAppendixC.
+Thesequencelengthsaredefinedas
+6.1 BaselineMethods
+(cid:24) min(j,iprune-upto)(cid:25)
+l
+j
+= N ·p iprune-upto ,j = 0,1,··· ,L, (5)
+Wecompareourmethodwithfollowingfivemeth-
+ods: (1)Attention-select(Att): Anattentionbased
+where j = 0 corresponds to the input layer. We mechanismfromGoyaletal.(2020). (2)Average-
+foundthatthisstrategyprovidesagoodbalancebe- pool (Pool): A strided mean pooling applied to
+tweentheneedtoreducethelengthquicklywhile each sliding window of the sequence (Dai et al.,
+retaining information. It involves hyperparame- 2020).(3) First-k-select (1st): Selects the first k
+ter tuning with two HPs: p,i prune-upto, and allows tokens,astrategyoftenconsideredwithlongdoc-
+foranefficienttrainingprocedure. InAppendixB uments. (4)Input-first-k-select(1st-I):Selectsthe
+we provide a study comparing this restriction to firstktokens,butratherthangraduallyreducingthe
+possible alternatives showing its advantages. In sequencelengthintheencoderlayers,performsa
+additionwediscusshowitcomparestorecentap- singletruncationdirectlyontheinput. (5)Random-
+proaches(Goyaletal.,2020;Yeetal.,2021). select(Rand): Selectsarandomsubsetoftokens.
+For all of the methods (including ours), the CLS
+6 Experiments
+tokenisalwaysretainedduringthetokenselection.
+We plug-in our core-set based token selection For our core-set based token se-
+method and the other competitive methods into lection, we try 6 values of m ∈
+encoder layers of a backbone Transformer, and {1,(cid:100)0.1k(cid:101),(cid:100)0.2k(cid:101),(cid:100)0.3k(cid:101),(cid:100)0.4k(cid:101),(k − 1)}
+after fine-tuning evaluate their performance on where k = l , for j = 1,2,··· ,L. In particular,
+j
+a wide range of natural language classification m = k−1selectsallk−1tokens(centers)inone
+tasks. Specifically, we conduct the evaluations iterationgiventhefirstselectedtokenisalwaysthe
+ontwopopularbenchmarks: (1)theGeneralLan- CLStoken. Andm = 1selectsonetoken(center)
+guage Understanding Evaluation (GLUE) bench- per iteration which corresponds to the most
+mark(Wangetal.,2018),and(2)theLongRang fine-grained but also the slowest token selection
+Arena (LRA), a collection of challenging long strategy. We denote the strategy of m = k − 1
+range context tasks (Tay et al., 2020). For the as Coreset-select-k-1 (CS-k-1), and the others as
+Coreset-select-x where x ∈ {1,0.1,0.2,0.3,0.4}. Dataset 1st-I 1st Rand Pool Att CS-k-1 CS-opt BERTBase
+We use Coreset-select-opt (CS-opt) to represent STS-B 86.4 86.4 86.8 81.6 87.0 87.0 87.0 87.9
+MRPC 81.4 80.9 83.2 83.9 84.6 86.2 86.9 87.3
+the best value from the Coreset-select-k-1 and SST-2 83.8 84.4 85.6 85.2 86.0 87.3 89.6 92.4
+QNLI 84.8 84.4 86.4 84.1 86.8 87.8 87.8 90.9
+Coreset-select-x. In what follows, in tables COLA 49.7 49.7 49.5 3.0 51.1 51.7 52.8 53.3
+RTE 63.5 63.5 62.1 59.2 63.4 63.7 63.7 65.8
+presentingresultswerefertothemethodsbytheir MNLI_M 77.8 76.7 81.4 75.4 82.5 82.4 82.5 84.0
+MNLI_MM 75.9 75.6 78.7 76.7 82.7 82.6 82.7 84.6
+shortened(bold)names.
+QQP 80.8 80.4 87.0 79.4 87.3 87.3 87.3 87.5
+Mean 76.0 76.1 77.9 69.6 79.0 79.6 80.0 81.5
+6.2 Implementation
+Table1: GLUEdevperformanceat3X speedup. Hereand
+Tofairlyevaluateourmethodagainstthebaselines,
+everywhereelse,F1scoresarereportedforQQPandMRPC,
+weusethesamesetofhyperparametersforallthe Spearman correlations are reported for STS-B, Matthew’s
+methods, foragivendataset. Fordetails, seeAp- correlationsarereportedforCOLA,andaccuracyscoresare
+reportedfortheothertasks. Eachvalueisaveragedover20
+pendix D. The code for Pyramid-BERT is made
+trials.Largervaluesindicatesbetterperformance.
+availableasasupplementarymaterialwiththesub-
+mission. The training and inference jobs are run Dataset 1st-I 1st Rand Pool Att CS-k-1 CS-opt BERTBase
+separatelyonaNVIDIATeslaV100GPUmachine STS-B 87.9 87.9 87.8 87.8 87.9 87.7 87.9 87.9
+MRPC 86.8 86.4 87.2 87.0 87.1 86.9 87.3 87.3
+and a Intel Xeon Platinum 8000 series CPU ma- SST-2 92.1 91.5 91.9 90.3 92.3 92.4 92.4 92.4
+QNLI 90.8 90.8 90.8 90.2 90.7 90.9 90.9 90.9
+chinerespectively. Alltheaccuracyandspeedup COLA 53.0 52.7 53.1 25.6 53.2 53.3 53.3 53.3
+RTE 65.6 65.2 65.7 61.5 65.7 65.4 65.6 65.8
+scoresareaveragedover20trials.
+MNLI_M 84.0 83.8 83.9 80.9 84.0 84.0 84.0 84.0
+MNLI_MM 84.1 84.0 83.9 84.0 84.5 84.6 84.6 84.6
+QQP 87.1 86.9 87.4 85.7 87.4 87.5 87.5 87.5
+6.3 ResultsonGLUEbenchmarks
+Mean 81.3 81.0 81.3 76.8 81.4 81.4 81.5 81.5
+We first examine the trade-off between accuracy
+Table2: GLUEdevperformanceat1.5Xspeedup.
+and speedup. The accuracy results for 3X and
+1.5X speedup are summarized in Table 1 and 2
+respectively. Theresultsfor3.5X and2X speedup For baselines, we include First-k-select and
+are given in the Table 11 and 13 in Appendix E. Random-select methods, but fail to include
+We observe that as the speedup increases the Attention-select. Attention-select requires a full
+gap between our Coreset-select-opt and its com- attentionmatrixforselectingtokenswhichisnot
+petitors becomes large, where for 3X speedup, availableinBigBird (Zaheeretal.,2020)andPer-
+Coreset-select-opt outperforms the second best formers (Choromanski et al., 2020). In addition,
+methodAttention-selectby1%accuracyinaverage theTransformersincludingBigBird andPerform-
+and beats the standard baselines by 2% or more. ersinLRAhaveshallowarchitecturesbecauseof
+The Average-pool performs the worst in average nopre-training: thedefaultnumberofencodersfor
+across the GLUE benchmarks, specially on the textclassification,pathfinder,andimageclassifi-
+COLAdataset. Fordetailedjustification,seeAp- cationdatasetsarefour,four,andone,respectively.
+pendix E. To better understand the performance Thus,forbothbaselinesandourmethod,weonly
+of Coreset-select-opt with different values of m, reduce sequence length in the input layer, which
+anablationstudyisshowninSection7. Formild isbeforethefirstencoder. Forthesequence-length
+speedupof1.5X,wenotethatallmethods(except configurations, see Appendix C.2. For Average-
+Average-pool)sufferonlyasmalllossinaccuracy pool, due to its worst performance on the GLUE
+andourmethodsuffersnoloss. Asimilarsituation benchmarks and the shallow architectures of the
+occurs when viewing the tradeoff between space modelsinLRA,weexcludeitfromthebaselines.
+complexityandaccuracy,whereweprovideresults
+for a memory reduction of 70% and 30% in the
+Dataset 1st-I 1st Rand Pool Att CS-k-1 CS-opt BERTBase
+Tables3and16(in§E).
+STS-B 85.3 85.1 85.6 78.7 85.4 86.5 86.7 87.9
+MRPC 81.3 81.5 83.3 83.1 84.3 86.0 86.6 87.3
+6.4 ResultsonLongRangeArena SST-2 83.3 84.6 84.9 85.1 87.2 87.6 87.7 92.4
+QNLI 84.6 84.3 85.1 84.0 86.4 86.6 86.5 90.9
+COLA 49.0 49.0 48.4 0.0 50.9 51.0 52.3 53.3
+Weshowresultsonthefollowingthreedatasetsof RTE 62.1 62.0 61.8 59.8 62.7 63.6 63.6 65.8
+MNLI_M 76.9 76.3 79.0 75.2 80.5 80.9 81.0 84.0
+LRAbenchmark: (1)byte-leveltextclassification
+MNLI_MM 74.9 74.5 79.3 76.3 80.7 81.6 81.8 84.6
+usingreal-worlddata(IMDB),(2)Pathfindertask QQP 80.6 80.0 86.6 82.9 87.0 87.2 87.3 87.5
+Mean 75.3 75.3 77.1 69.5 78.3 79.0 79.3 81.5
+(longrangespatialdependencyproblem),and(3)
+image classification on sequences of pixels con- Table3: GLUEdevperformanceat70%spacecomplexity
+vertedfromCIFAR-10. reduction.
+BigBird MNLI_M
+Dataset 1st Rand CS-k-1 CS-opt Trans.-no-prune Seq.len.config. CS-1 CS-0.5 CS-k-1
+CIFAR-10 26.9 39.4 38.6 43.3 40.9 iprune-upto p Acc. Speedup Acc. Speedup Acc. Speedup
+PATHFINDER-32 55.6 69.9 69.3 71.7 73.5
+1 1.5 78.3 2.5X 77.9 2.9X 77.9 3.6X
+IMDB(BYTE-LEVEL) 57.9 59.6 59.1 61.4 63.8
+2 0.2 81.0 1.9X 80.7 2.3X 80.6 2.6X
+Mean 46.8 56.3 55.7 58.8 59.4 3 0.3 82.9 1.7X 82.8 1.9X 82.8 2.1X
+4 0.4 83.6 1.7X 83.5 1.7X 83.4 1.8X
+Performers
+CIFAR-10 26.9 41.5 39.8 45.5 42.9
+BERTBase 84.0 – 84.0 – 84.0 –
+PATHFINDER-32 52.4 58.2 61.5 67.7 66.2 MNLI_MM
+IMDB(BYTE-LEVEL) 59.9 59.9 59.7 62.8 64.3
+1 1.5 79.2 2.4X 78.3 2.9X 77.9 2.9X
+Mean 46.4 53.2 53.7 58.7 57.8 2 0.2 81.5 1.7X 81.3 2.2X 81.2 2.2X
+3 0.3 83.5 1.2X 83.4 1.7X 83.1 1.7X
+4 0.4 84.0 1.1X 84.1 1.4X 84.0 1.4X
+Table4:LRAtestsetperformancesat70%spacecomplexity
+reductionforBigBird(top)andPerformers(bottom)asthe BERTBase 84.6 – 84.6 – 84.6 –
+backboneTransformer.Hereandeverywhereelse,accuracy
+scoresarereportedforallthreetasks.Eachvalueisaveraged Table5: devsetperformancecomparisonsforCoreset-
+over20trials.Largervaluesindicatesbetterperformance. selectwithm∈{1,(cid:100)0.5k(cid:101),k−1}. Afixedsetoffour
+sequence-length configurations are specified based on
+i andp.
+prune-upto
+The results of accuracy scores for space com-
+plexity reduction at 70% and 30% are presented
+in Table 4 and Table 18 (in Appendix E), re- Coreset-selectwithdifferentvaluesofm,thenum-
+spectively. The Coreset-select-opt here repre- berofcenterstoaddperiteration. (2)Justification
+sents the Coreset-select with m = 1 because onthetokenimportancemeasuredbytheCoreset-
+of its superior performance over other m ∈ select. (3)ComparisonofapplyingCoreset-select
+{(cid:100)0.1k(cid:101)},(cid:100)0.2k(cid:101),(cid:100)0.3k(cid:101),(cid:100)0.4k(cid:101)}. at both fine-tuning and inference versus at only
+We observe a similar pattern as discussed in inferencetojustifythenecessityoffine-tuningin
+GLUEbenchmarkevaluations: athighspacecom- selectingtokens. (4)Exploringthepositiontoplug-
+plexity reduction 70%, Coreset-select-opt signif- intheCoreset-selectintheencoder.
+icantlyoutperformsitscompetitorsFirst-k-select
+Theresultforthefirstablationstudyispresented
+and Random-select by 12% and 2.5% in average
+inTable5WecanseethatCoreset-selectwithm =
+forBigBird (12.3%and5.5%inaverageforPer-
+1givesthebestperformancebutwiththesmallest
+formers). Moreover, on CIFAR-10, our Coreset-
+speedupforMNLI-M/MMdatasets.
+select-opt is even better than the Big Bird and
+Next,weconductastudytovalidatetheimpor-
+Performers without any sequence reduction with
+tance of tokens measured by our Coreset-select
+accuracygain2.4%and2.6%,respectively(simi-
+strategy. We consider a trained BERT that has
+larlyforPerformersonPATHFINDER-32). Onthe
+beenfine-tunedonadownstreamdatasetwithout
+otherhand,differentfromtheGLUEevaluations,
+anysequencelengthreduction. Duringinference,
+Coreset-select-k-1doesnotshowanysignificantad-
+given a encoder j and input example consist of a
+vantagesoverthebaselinemethods. Ourconjecture
+sequenceoftokens,weeliminatethek-thmostim-
+is that the input in the LRA datasets contain too
+portant token measured by the core-set selection
+manynoisyorlowlevelinformationwhichisnot
+methodwith1 ≤ k ≤ L,andobtainaclassification
+helpful for predicting the target. For an example,
+output (prediction label). The classification out-
+eachpixelofanimage(CIFAR-10)oracharacter
+putsforallinputexamplesarethencomparedwith
+inthebyte-leveltextclassificationrepresentsato-
+those generated by BERT without any sequence
+kenastheinput. OurCoreset-selectbasedstrategy
+lengthreduction. Thecomparisonbetweenthetwo
+withm = 1doesthemostfine-grainedtoken-level
+classification outputs is measured by the mutual
+selection than its baselines and thus filter out the
+information (Shannon, 2001). Larger mutual in-
+noisyinformation. Note,wedonotincludeaccu-
+formation indicates more similarity between the
+racy and speedup tables because of insignificant
+twoclassificationoutputs. Theimportancescoreis
+gainsobservedinspeedupduetotheshallowarchi-
+specificallytheorderoftokens(centers)addedby
+tecturesofTransformersinLRA.
+thecore-setselectionmethod. Forabatchofsize
+mtokensthatareaddedatthesametime,theirim-
+7 AblationStudies
+portanceisdeterminedbythemaximumdistance
+We conduct four ablation studies to better study betweenthetokenanditsnearestcentersthathave
+pyramid-BERT:(1)Performancecomparisonsfor already been added. The expectation is that the
+OnlyInfer Fine-tune&Infer
+QNLI 68.2 85.9
+SST-2 81.5 87.2
+COLA 47.9 50.5
+MRPC 83.5 85.8
+STS-B 84.6 86.5
+MNLI-M 75.0 80.6
+MNLI-MM 74.8 81.4
+Table 6: Comparison of token selection at inference
+Figure 4: Demonstration of token importance mea- onlyversusatbothfine-tuningandinference. Thepar-
+sured by the Coreset-select-1 based token selection ticular sequence-length configuration is generated us-
+methodonSST-2devset. ing Equation 5 with i as 3, p as 0.2, and the
+prune-upto
+inputsequencelengthN is128.
+Middle End
+MRPC 85.8 84.0
+RTE 63.4 60.4
+MNLI-M 80.7 79.9
+MNLI-MM 81.4 80.1
+Table 7: Comparison between placing the Coreset-
+select method in the middle (right after the attention
+layer) and at the end of the encoder layer. The partic-
+ular sequence-length configuration is generated using
+Figure 5: Demonstration of token importance mea- Equation 5 with i as 3, p as 0.2, and the input
+prune-upto
+sured by the Coreset-select-k-1 based token selection sequencelengthN as128.
+methodonSST-2devset.
+Finally, we study the position to insert the
+importanceoftokensisnegativelycorrelatedwith Coreset-selectmethodintheencoder. Twochoices
+the corresponded mutual information. For an ex- ofpositionhavebeenconsidered. Thefirstoption
+ample,reducingtheleastimportanttokenforeach istoplug-inthetokenselectionmethodrightafter
+inputexampleshouldmaketheclassificationout- theattentionlayerandbeforethefeed-forwardnet-
+putshavetheleastdifferencefromthosegenerated work,andthesecondoptionistoplaceitattheend
+withoutreducinganytoken,andthusresultinthe oftheencoder. TheresultsisshowninTable7. The
+largestmutualinformation. experimentshowsthatplacingthetokenselection
+A result on SST-2 dataset is presented in Fig- methodrightaftertheattentionlayergivesbetter
+ure4. TheinputsequencelengthLissetas64,and performancethanplacingitattheendofencoder.
+thusk ∈ [1,64]. Theencoderindexj takesvalue
+{1,3,6,9}. SincethetargetvariableofSST-2isa 8 Conclusion
+relativelybalancedbinaryvalue,thelargestmutual
+Weprovidepyramid-BERT,atheoreticallyjustified
+information, which corresponds to no difference
+technique for sequence length reduction, achiev-
+betweentheclassificationoutputs,isln(2) ≈ 0.69.
+ingspeedupandmemoryreductionforbothtrain-
+Forthetokenselectionmethod,wechooseCoreset-
+ingandinferenceoftransformers,whileincurring
+selectwithm = 1. Thepatternshowninthefigure
+significantly less accuracy drop than competitive
+aligns with our expectation that the importance
+methods. However,thistechniquecanbeapplied
+oftokensisnegativelycorrelatedwiththemutual
+onlyforclassificationandrankingtaskswhichuse
+information. SamepatternisobservedforCoreset-
+singleembeddingfromthetoplayerforprediction.
+select-k-1. SeeFigure5.
+Also, our token selection approach requires fine-
+Next,westudythedifferencebetweenapplying
+tuning the network. An interesting future study
+Coreset-select at both fine-tuning and inference,
+wouldbetoeliminatetheneedoffine-tuning.
+and at only inference. Table 6 justifies the neces-
+saryoffine-tuninginsequencelengthreduction.
+References YaruHao,LiDong,FuruWei,andKeXu.2019. Visu-
+alizing and understanding the effectiveness of bert.
+JoshuaAinslie,SantiagoOntañón,ChrisAlberti,Philip
+arXivpreprintarXiv:1908.05620.
+Pham, Anirudh Ravula, and Sumit Sanghai. 2020.
+Etc: encodinglongandstructureddataintransform-
+Byeongho Heo, Sangdoo Yun, Dongyoon Han,
+ers. arXive-prints,pagesarXiv–2004.
+SanghyukChun, JunsukChoe, andSeongJoonOh.
+2021. Rethinkingspatialdimensionsofvisiontrans-
+Iz Beltagy, Matthew E Peters, and Arman Cohan.
+formers. arXivpreprintarXiv:2103.16302.
+2020. Longformer: Thelong-documenttransformer.
+arXivpreprintarXiv:2004.05150.
+Daniel Jakubovitz, Raja Giryes, and Miguel RD Ro-
+Aishwarya Bhandare, Vamsi Sripathi, Deepthi drigues.2019. Generalizationerrorindeeplearning.
+Karkada, Vivek Menon, Sun Choi, Kushal Datta, In Compressed Sensing and Its Applications, pages
+andVikramSaletore.2019. Efficient8-bitquantiza- 153–193.Springer.
+tion of transformer neural machine language trans-
+lationmodel. arXivpreprintarXiv:1906.00532. Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang,
+Xiao Chen, Linlin Li, Fang Wang, and Qun Liu.
+Rewon Child, Scott Gray, Alec Radford, and
+2019. Tinybert: Distillingbertfornaturallanguage
+Ilya Sutskever. 2019. Generating long se-
+understanding. arXivpreprintarXiv:1909.10351.
+quences with sparse transformers. arXiv preprint
+arXiv:1904.10509.
+Gyuwan Kim and Kyunghyun Cho. 2020. Length-
+adaptive transformer: Train once with length
+Krzysztof Choromanski, Valerii Likhosherstov, David
+drop, use anytime with search. arXiv preprint
+Dohan, Xingyou Song, Andreea Gane, Tamas Sar-
+arXiv:2010.07003.
+los, Peter Hawkins, Jared Davis, Afroz Mohiuddin,
+Lukasz Kaiser, et al. 2020. Rethinking attention
+Nikita Kitaev, Łukasz Kaiser, and Anselm Levskaya.
+withperformers. arXivpreprintarXiv:2009.14794.
+2020. Reformer: The efficient transformer. arXiv
+William J Cook, William Cunningham, William Pul- preprintarXiv:2001.04451.
+leyblank,andASchrijver.2009. Combinatorialop-
+timization. OberwolfachReports,5(4):2875–2942. Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+Kevin Gimpel, Piyush Sharma, and Radu Soricut.
+ZihangDai,GuokunLai,YimingYang,andQuocVLe. 2019. Albert: A lite bert for self-supervised learn-
+2020. Funnel-transformer: Filtering out sequential ing of language representations. arXiv preprint
+redundancyforefficientlanguageprocessing. arXiv arXiv:1909.11942.
+preprintarXiv:2006.03236.
+YinhanLiu,JiataoGu,NamanGoyal,XianLi,Sergey
+Mostafa Dehghani, Stephan Gouws, Oriol Vinyals,
+Edunov, Marjan Ghazvininejad, Mike Lewis, and
+Jakob Uszkoreit, and Łukasz Kaiser. 2018. Univer-
+Luke Zettlemoyer. 2020. Multilingual denoising
+saltransformers. arXivpreprintarXiv:1807.03819.
+pre-trainingforneuralmachinetranslation. Transac-
+tions of the Association for Computational Linguis-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+KristinaToutanova.2018. Bert:Pre-trainingofdeep
+tics,8:726–742.
+bidirectional transformers for language understand-
+ing. arXivpreprintarXiv:1810.04805. JScottMcCarley.2019. Pruningabert-basedquestion
+answeringmodel. arXivpreprintarXiv:1910.06360,
+MartinEster,Hans-PeterKriegel,JörgSander,Xiaowei 142.
+Xu, et al. 1996. A density-based algorithm for
+discovering clusters in large spatial databases with Paul Michel, Omer Levy, and Graham Neubig. 2019.
+noise. Inkdd,volume96,pages226–231. Are sixteen heads really better than one? arXiv
+preprintarXiv:1905.10650.
+AngelaFan,EdouardGrave,andArmandJoulin.2019.
+Reducing transformer depth on demand with struc-
+Zizheng Pan, Bohan Zhuang, Jing Liu, Haoyu He,
+tureddropout. arXivpreprintarXiv:1909.11556.
+and Jianfei Cai. 2021. Scalable visual trans-
+formers with hierarchical pooling. arXiv preprint
+AngelaFan,PierreStock,BenjaminGraham,Edouard
+arXiv:2103.10619.
+Grave, Rémi Gribonval, Herve Jegou, and Armand
+Joulin. 2020. Training with quantization noise
+Michał Pietruszka, Łukasz Borchmann, and Filip
+for extreme model compression. arXiv preprint
+Gralinski. 2020. Sparsifying transformer models
+arXiv:2004.07320.
+with differentiable representation pooling. arXiv e-
+Saurabh Goyal, Anamitra Roy Choudhury, Saurabh prints,pagesarXiv–2009.
+Raje,VenkatesanChakaravarthy,YogishSabharwal,
+and Ashish Verma. 2020. Power-bert: Accelerat- JiezhongQiu,HaoMa,OmerLevy,ScottWen-tauYih,
+ingbertinferenceviaprogressiveword-vectorelim- Sinong Wang, and Jie Tang. 2019. Blockwise self-
+ination. In International Conference on Machine attention for long document understanding. arXiv
+Learning,pages3690–3699.PMLR. preprintarXiv:1911.02972.
+Victor Sanh, Lysandre Debut, Julien Chaumond, and ZihengWang,JeremyWohlwend,andTaoLei.2019b.
+Thomas Wolf. 2019. Distilbert, a distilled version Structuredpruningoflargelanguagemodels. arXiv
+of bert: smaller, faster, cheaper and lighter. arXiv preprintarXiv:1910.04732.
+preprintarXiv:1910.01108.
+Gert W Wolf. 2011. Facility location: concepts, mod-
+Claude Elwood Shannon. 2001. A mathematical the- els, algorithms and case studies. series: Contribu-
+ory of communication. ACM SIGMOBILE mobile tions to management science: edited by zanjirani
+computingandcommunicationsreview,5(1):3–55. farahani, reza and hekmatfar, masoud, heidelberg,
+germany,physica-verlag,2009,549pp.,isbn978-3-
+ShengShen,ZhenDong,JiayuYe,LinjianMa,Zhewei 7908-2150-5 (hardprint), 978-3-7908-2151-2 (elec-
+Yao,AmirGholami,MichaelWMahoney,andKurt tronic).
+Keutzer. 2020. Q-bert: Hessian based ultra low
+Hongqiu Wu, Hai Zhao, and Min Zhang. 2021a.
+precision quantization of bert. In Proceedings of
+Not all attention is all you need. arXiv preprint
+the AAAI Conference on Artificial Intelligence, vol-
+arXiv:2104.04692.
+ume34,pages8815–8821.
+Lemeng Wu, Xingchao Liu, and Qiang Liu. 2021b.
+Emma Strubell, Patrick Verga, Daniel Andor,
+Centroidtransformers: Learningtoabstractwithat-
+David Weiss, and Andrew McCallum. 2018.
+tention. arXivpreprintarXiv:2102.08606.
+Linguistically-informed self-attention for semantic
+rolelabeling. arXivpreprintarXiv:1804.08199.
+Ji Xin, Raphael Tang, Jaejun Lee, Yaoliang Yu, and
+Jimmy Lin. 2020. Deebert: Dynamic early exit-
+SiqiSun, YuCheng, ZheGan, andJingjingLiu.2019.
+ing for accelerating bert inference. arXiv preprint
+Patient knowledge distillation for bert model com-
+arXiv:2004.12993.
+pression. arXivpreprintarXiv:1908.09355.
+Hu Xu, Bing Liu, Lei Shu, and Philip S Yu. 2019.
+Yi Tay, Mostafa Dehghani, Samira Abnar, Yikang Bertpost-trainingforreviewreadingcomprehension
+Shen, Dara Bahri, Philip Pham, Jinfeng Rao, Liu andaspect-basedsentimentanalysis. arXivpreprint
+Yang, Sebastian Ruder, and Donald Metzler. 2020. arXiv:1904.02232.
+Long range arena: A benchmark for efficient trans-
+formers. arXivpreprintarXiv:2011.04006. WeiYang,YuqingXie,AileenLin,XingyuLi,Luchen
+Tan, Kun Xiong, Ming Li, and Jimmy Lin. 2019.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob End-to-end open-domain question answering with
+Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz bertserini. arXivpreprintarXiv:1902.01718.
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In Advances in neural information pro- Deming Ye, Yankai Lin, Yufei Huang, and Maosong
+cessingsystems,pages5998–6008. Sun. 2021. Tr-bert: Dynamic token reduction
+for accelerating bert inference. arXiv preprint
+Elena Voita, David Talbot, Fedor Moiseev, Rico Sen- arXiv:2105.11618.
+nrich, and Ivan Titov. 2019. Analyzing multi-
+Zihao Ye, Qipeng Guo, Quan Gan, Xipeng Qiu, and
+head self-attention: Specialized heads do the heavy
+Zheng Zhang. 2019. Bp-transformer: Modelling
+lifting, the rest can be pruned. arXiv preprint
+long-range context via binary partitioning. arXiv
+arXiv:1905.09418.
+preprintarXiv:1911.04070.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Ofir Zafrir, Guy Boudoukh, Peter Izsak, and Moshe
+Hill, Omer Levy, and Samuel R Bowman. 2018.
+Wasserblat. 2019. Q8bert: Quantized 8bit bert.
+Glue:Amulti-taskbenchmarkandanalysisplatform
+arXivpreprintarXiv:1910.06188.
+for natural language understanding. arXiv preprint
+arXiv:1804.07461.
+Manzil Zaheer, Guru Guruganesh, Kumar Avinava
+Dubey, Joshua Ainslie, Chris Alberti, Santiago On-
+Qiang Wang, Bei Li, Tong Xiao, Jingbo Zhu, tanon, Philip Pham, Anirudh Ravula, Qifan Wang,
+Changliang Li, Derek F Wong, and Lidia S Chao. Li Yang, et al. 2020. Big bird: Transformers for
+2019a. Learning deep transformer models for ma- longersequences. InNeurIPS.
+chinetranslation. arXivpreprintarXiv:1906.01787.
+Wangchunshu Zhou, Canwen Xu, Tao Ge, Julian
+Sinong Wang, Belinda Z Li, Madian Khabsa, Han McAuley, Ke Xu, and Furu Wei. 2020. Bert loses
+Fang, and Hao Ma. 2020a. Linformer: Self- patience: Fast and robust inference with early exit.
+attention with linear complexity. arXiv preprint arXivpreprintarXiv:2006.04152.
+arXiv:2006.04768.
+Wenhui Wang, Furu Wei, Li Dong, Hangbo Bao, Nan
+Yang, and Ming Zhou. 2020b. Minilm: Deep
+self-attention distillation for task-agnostic compres-
+sion of pre-trained transformers. arXiv preprint
+arXiv:2002.10957.
+A Appendix: Theory tokenselection. Thetheoremestablishesthattheto-
+kenselectionlossofthepyramidBERTisbounded
+A.1 DifferencebetweentheTheoreticaland
+by the δ-cover of the core-set. Informally, if the
+PracticalAlgorithm
+inputsentencecomprisesnear-duplicatetokens,in
+Therearetwomainaspectsinwhichourpractical pyramidBERT,thelossincurredbythetokense-
+implementationofpyramidBERTtokenselection lectionmethodgoestozero.
+differfromitstheoreticalone,forwhichwehave
+A.2 ProofofTheorem1
+providedguaranteesinTheorem1. Belowweex-
+plainthedifferencesandjustifythem. Onahighlevel,theoremfollowsfrom(1)thedef-
+inition of Lipschitz continuity, (2) the definition
+1. Inthetheoreticalimplementationofpyramid of the token selection algorithm T∗ of pyramid∗
+BERT token selection, for which we have BERT, and (3) the fact that the loss function L
+w
+providedguaranteesinTheorem1,theorigi- comprisesasequenceofencoderlayersstackedon
+nalBERTparameters,w,arekeptfixed,and topofeachother.
+theself-attentionisweightedaccordingtothe Weintroducetwonewnotations. LetO denote
+j
+duplicity of the tokens in the corresponding the BERT model up to the output of the j-th en-
+pyramid∗ BERT.Whereasinthepracticalim- coder,andE denotetheBERTnetworkuptothe
+j
+plementationweremovetheweighingofself- inputofthej-thencoder. Weassumethatthetoken
+attentionandoffsetitbyfine-tuningtheorig- selectionalgorithmT∗operatesontheembeddings
+inal BERT parameters w. We make this de- beforetheyareinputtedtotheencoder. Also,for
+viation as we found that fine-tuning BERT easeofnotationweomitthesubscriptidenoting
+not only obviates the need of weighing self- thei-thtrainingexamplefrom(x ,y ).
+i i
+attention but also reduces the performance Basedontheabovenotations,forBERTwehave
+degradation incurred due to token selection. E (x,y) = O (x,y). Forpyramid∗ BERT,due
+j j−1
+We note that it is intractable to analyze this tothetokenselectionalgorithmT∗,foreachj-th
+deviationintheoryasBERTfine-tuningisa encoderlayer,wehave,
+non-convexoptimization.
+(cid:13) (cid:13)
+(cid:13) (cid:13)E j(x,y,S(cid:101)∗,S∗)−O j−1(x,y,S(cid:101)∗,S∗)(cid:13) (cid:13)
+2. Inthetheoreticalimplementationofpyramid (cid:13) (cid:13)
+BERT,aδ-covercore-setoftokensisselected.
+≤ δ(N −(cid:96) ). (6)
+j
+Theδ-covercore-settokenselectionisequiva-
+lenttothek-Centerproblem. Thetheoretical The above equation uses the fact that at most
+guaranteesassumethatwecangettheoptimal (N−(cid:96) )tokensarereplacedwiththeircorrespond-
+j
+solution of the k-Center problem. However, ingcore-setcentertoken,whichisatmostδ away
+the k-Center problem is NP-hard and a best fromthem. TheEquation(7)followsimmediately
+knownalgorithmofitk-Center-greedygives from the definition of Lipschitz continuity of the
+a 2×OPT solution. In our practical imple- classificationlayer.
+mentation, we go a step beyond the greedy
+(cid:12) (cid:12)
+approachandproposeaparallelizableversion (cid:12)L(x,y)−L(x,y,S(cid:101)∗,S∗)(cid:12)
+(cid:12) (cid:12)
+ofthek-Center-greedyalgorithmthattakesin
+(cid:13) (cid:13)
+anadditionalhyper-parameterm. Thehyper- ≤ λ C(cid:13) (cid:13)O L(x,y)−O L(x,y,S(cid:101)∗,S∗)(cid:13) (cid:13). (7)
+parametermsetsthelevelof parallelization
+and the choice of m = 1 reduces it to the TheEquation(8)followsfromtheLipschitzcon-
+original k-Center-greedy. In the numerical tinuityoftheL-thencoder. TheEquation(9)fol-
+experiments, we report the accuracy for the lows from Equation (6). The Equation (10) fol-
+best pyramid BERT by optimizing over the lowsfromtherepeatedapplicationofEquation(9)
+hyper-parameterm. overthenextencoderlayer. TheEquation(11)fol-
+lowsfromtherepeatedapplicationofEquation(9)
+We note that despite the above mentioned differ- over the subsequent encoder layers, and the fact
+encesofourpracticalalgorithmfromthetheoreti- that O 0(x,y) = O 0(x,y,S(cid:101)∗,S∗), as input to the
+calone,thetheoreticalguaranteesachievedinThe- firstencoderlayerissameforBERTandpyramid∗
+orem 1 do justify the approach of core-set based BERT.
+DATASET #CLASSES INPUTSEQUENCELENGTH(N)
+STS-B – 128
+(cid:13) (cid:13) MRPC 2 128
+(cid:13) (cid:13)O L(x,y)−O L(x,y,S(cid:101)∗,S∗)(cid:13)
+(cid:13)
+S QS NT L-2
+I
+2
+2
+16 24
+8
+(cid:13) (cid:13) COLA 2 64
+≤ λ L(cid:13) (cid:13)E L(x,y)−E L(x,y,S(cid:101)∗,S∗)(cid:13)
+(cid:13)
+(8) R MT NE
+LI-M
+2
+3
+2 15 26
+8
+MNLI-MM 3 128
+≤ λ δ(N −(cid:96) ) QQP 2 128
+L L CIFAR10 10 1024
+(cid:13) (cid:13) PATHFINDER32 2 1024
++λ L(cid:13) (cid:13)O L−1(x,y)−O L−1(x,y,S(cid:101)∗,S∗)(cid:13)
+(cid:13)
+(9) IMDB(BYTE-LEVEL) 2 1000
+≤ λ δ(N −(cid:96) )+λ λ δ(N −(cid:96) ) Table 8: Dataset statistics for GLUE and LRA bench-
+L L L L−1 L−1
+marks. STS-B is a regression task and thus does not
+(cid:13) (cid:13)
++λ Lλ L−1(cid:13) (cid:13)O L−2(x,y)−O L−2(x,y,S(cid:101)∗,S∗)(cid:13)
+(cid:13)
+haveclasses.
+(10)
+≤ λ δ(N −(cid:96) )+λ λ δ(N −(cid:96) ) for three times. The number of sequence-length
+L L L L−1 L−1
+configurations is set as 30, and details of those
+L−1
+(cid:16) (cid:89) (cid:17)
++···+ λ δ(N −(cid:96) ) (11) generated by the Equation 5 is presented in Ta-
+L−j 1
+ble 9 in Appendix C.1. The results for SST-2
+j=0
+dataset are shown in Figure 6. We can see that
+L (cid:18) L (cid:19)
+(cid:88) (cid:89)
+= δ (N −(cid:96) ) λ . (12) the sequence-length configurations generated by
+j i
+j=1 i=j our method provide wider searching range of ac-
+curacy and speedups than those generated by the
+ThetheoremfollowsbycombiningEquations(7)
+randommethod.
+and(12).
+B Appendix: Evaluationonthe
+Sequence-lengthGenerationFunction
+Wenotethatmostrecentapproachessuchas(Goyal
+et al., 2020; Ye et al., 2021) try to learn a task-
+dependent sequence-length configuration with a
+cost of fine-tuning more than twice on the down-
+streamdata,wherethefirstfine-tuningtrainsafull
+modelwithoutanysequence-lengthreduction,with
+additionalparametersthatoftenrequiresdelicate
+tuning. This approach does not help the training
+process and in fact increase its cost whereas our
+goalistoimprovethetrainingprocedure. Further- Figure 6: MRPC: Scatter plots of accuracy versus
+more,thereisstillanamountofHPtuninginvolved speedup for 30 sequence-length configurations gener-
+in order to find the right ratio of acceleration (or atedbyourandrandommethod.Eachsolidlineisfrom
+alinearregressionmodelfittedonthescatterpointsof
+memoryreduction)toaccuracy. Ourtechniquein-
+thecorrespondedmethod.
+volves hyperparameter tuning but with two HPs:
+p,i ,andallowsforanefficienttrainingpro-
+prune-upto
+cedure.
+C Appendix: ExperimentsSetup
+We conduct an experiment to validate the
+sequence-length generation function, in compar- Data statistics such as the number of classes and
+isontoarandommethodthatgivesconfigurations inputsequencelengtharespecifiedinTable8.
+for all encoders. Given a dataset we use the re- ThedetailsofthebackboneTransformerusedin
+tentiongenerationfunctioninEquation5andran- GLUE(Wang et al., 2018) and LRA (Tay et al.,
+dommethodtogenerateafixnumberofsequence- 2020) are presented as follows: For BERT ,
+Base
+length configurations, separately. Then we apply it was pre-trained on the BooksCorpus and En-
+thesamecore-setbasedmethodonthedatasetwith glish Wikipedia with L = 12 encoders, A = 12
+eachsequence-lengthconfigurationandcompute self-attention heads per encoder and hidden size
+thestatisticsofaccuracyandspeedupforourand H = 768. ForBigBird (Zaheeretal.,2020)and
+random method. We repeat the random method Performers(Choromanskietal.,2020),wefollow
+the original implementation in LRA (Tay et al., T(BERT )/T(BERT ),whereT(·)is
+Base Token-select
+2020)thatmodelsarefine-tunedfromscratchedon the time duration in inference. Larger value indi-
+eachtaskwithoutanypre-training. cateshigherinferencespeedupforBERT
+Token-select
+over BERT . The space complexity reduc-
+Base
+C.1 GLUEBenchmarks tion for the attention layer is computed as 1 −
+S(BERT )/S(BERT ),whereS(·) =
+For experiments on GLUE benchmarks, the Token-select Base
+(cid:80)L l2 +l d,j = 1,2,··· ,L, and l and d de-
+sequence-length configurations F generated by j=1 j j j
+notesthenumberoftokenstoselectatencoderj
+Equation 5 are presented in Table 9. For each
+and the hidden dimension (dimension of the la-
+dataset and Transformer model with a token se-
+tent representation), respectively. Larger value
+lection method, the same set of sequence-length
+indicates higher space complexity reduction for
+configurationsareused.
+BERT overBERT . Forsimplicity,the
+Token-select Base
+Foreachsequence-lengthconfigurationinF a
+“spacecomplexityreduction"referstothereduction
+Transformer with a token selection method is ap-
+fortheattentionlayerinthefollowingdiscussion.
+pliedatbothfine-tuningandinference. Next, for
+eachtokenselectionmethodweselecttheaccuracy
+C.2 LRA
+scoreswhentherearespeedup1.5X,2X,3X,and
+3.5X overtheTransformerswithoutanysequence
+We run a set of sequence-length configurations
+reduction. To get the accuracy score at the exact
+where the number of tokens to select on the in-
+speedupX,alinearinterpolationisusedwhennec-
+putlayeris{(cid:100)0.1·N(cid:101),(cid:100)0.2·N(cid:101),··· ,(cid:100)0.9·N(cid:101)}
+essary. However, for objective evaluation we do
+andN istheinputsequencelength. TheCoreset-
+not extrapolate the results. For details on how to
+select-opt here represents the core-set token se-
+get accuracy scores at different speedup number,
+lection method with m = 1 because we observe
+see Figure 8 and 9 in Appendix E. Similarly, we
+it gives the best performance than m ∈ {(cid:100)0.1 ·
+selecttheaccuracyscoreswhenthespacecomplex-
+k(cid:101)},(cid:100)0.2·k(cid:101),(cid:100)0.3·k(cid:101),(cid:100)0.4·k(cid:101)}. Theresultsof
+ityreductionsfortheattentionlayerare30%and
+accuracyscoresforspacecomplexityreductionat
+70%. Thereasonwhyweonlyfocusthespacere-
+70%and30%arepresentedinTable4and18,re-
+ductionfortheattentionlayeristhatitsquadratic
+spectively. Weobserveasimilarpatternasshown
+complexity serves the main efficiency bottleneck
+in Section 6.3: at high space complexity reduc-
+forTransformers.
+tion 70% in Table 4, Coreset-select-opt signifi-
+ForInput-first-k-select,sinceitdoesnotrelyon cantly outperforms its competitors First-k-select
+F but different truncated input sequence lengths, and Random-select by 12% and 2.5% in average
+we specify its configuration as following: For forBigBird (12.3%and5.5%inaverageforPer-
+dataestwithN = 256,wetrytruncatedsequence formers). Moreover, on CIFAR-10, our Coreset-
+lengthsof{240,224,··· ,48,32,16}. Fordataset select-optisevenbetterthantheBigBird andPer-
+withN = 120,wetrytruncatedsequencelengths formerswithoutanytokenselectionwithaccuracy
+of{112,96,80,64,48,32,16,8}. Andfordataset gain 2.4% and 2.6%, respectively. Similarly on
+withN = 64,wetrytruncatedsequencelengthsof PATHFINDER-32, the Coreset-select-opt shows
+{48,32,16,8,4}. 1.5% accuracy gain over the Performers without
+Similarly,Average-pooldoesnotrelyonF but any token selection. On the other hand, different
+thewindowsizeandencoderlayer(s)toapplythe fromSection6.3,Coreset-select-k-1doesnotshow
+pooling. To get the accuracy scores at various anysignificantadvantagesoverthebaselinemeth-
+speedups,wetrytheaveragepoolingwithdifferent ods. Our conjecture is that the input in the LRA
+windowsizesof{2,3,4,5,6}onvariousencoder taskscontaintoomanynoisyorlowlevelinforma-
+layer(s). Thewindowsizeissetequaltothestride tionwhichisnothelpfulforpredictingthetarget.
+size. Foranexample,eachpixelofanimage(CIFAR-10)
+The mathematical formulas for speedup and or a character in the byte-level text classification
+space complexity reduction are presented as representsatokenintheinputfortheTransformer.
+below. Consider BERT as the backbone Ourcore-setbasedstrategy,especiallywithm = 1,
+Base
+Transformer for an example, and denote the does the most fine-grained token-level selection
+BERT with a token selection method as thanitsbaselinesandthusfilteroutthenoisyinfor-
+Base
+BERT . The speedup is computed as mation. At low space complexity reduction 30%
+Token-select
+Input Output:Retentionconfigurations–Numberoftokenstoretainateachencoderlayer
+Thelastlayer Theproportionof layer1 layer2 layer3 layer4 layer5 layer6 layer7 layer8 layer9 layer10 layer11 layer12
+indextoapply inputtokensp
+tokenselection toretainatiprune-upto
+iprune-upto
+2 0.15 49 19 19 19 19 19 19 19 19 19 19 19
+3 0.15 68 36 19 19 19 19 19 19 19 19 19 19
+4 0.15 79 49 30 19 19 19 19 19 19 19 19 19
+3 0.10 59 27 12 12 12 12 12 12 12 12 12 12
+4 0.10 71 40 22 12 12 12 12 12 12 12 12 12
+3 0.20 74 43 25 25 25 25 25 25 25 25 25 25
+4 0.20 85 57 38 25 25 25 25 25 25 25 25 25
+3 0.17 70 39 21 21 21 21 21 21 21 21 21 21
+3 0.18 72 40 23 23 23 23 23 23 23 23 23 23
+3 0.19 73 42 24 24 24 24 24 24 24 24 24 24
+3 0.22 77 46 28 28 28 28 28 28 28 28 28 28
+3 0.25 80 50 32 32 32 32 32 32 32 32 32 32
+1 0.25 32 32 32 32 32 32 32 32 32 32 32 32
+2 0.25 64 32 32 32 32 32 32 32 32 32 32 32
+3 0.25 80 50 32 32 32 32 32 32 32 32 32 32
+5 0.25 97 73 55 42 32 32 32 32 32 32 32 32
+9 0.25 109 94 80 69 59 50 43 37 32 32 32 32
+11 0.25 112 99 87 77 68 60 52 46 41 36 32 32
+1 0.50 64 64 64 64 64 64 64 64 64 64 64 64
+2 0.50 90 64 64 64 64 64 64 64 64 64 64 64
+3 0.50 101 80 64 64 64 64 64 64 64 64 64 64
+5 0.50 111 97 84 73 64 64 64 64 64 64 64 64
+9 0.50 118 109 101 94 87 80 74 69 64 64 64 64
+11 0.50 120 112 105 99 93 87 82 77 72 68 64 64
+1 0.75 96 96 96 96 96 96 96 96 96 96 96 96
+2 0.75 110 96 96 96 96 96 96 96 96 96 96 96
+3 0.75 116 105 96 96 96 96 96 96 96 96 96 96
+7 0.75 122 117 113 108 104 100 96 96 96 96 96 96
+9 0.75 123 120 116 112 109 105 102 99 96 96 96 96
+11 0.75 124 121 118 115 112 109 106 103 101 98 96 96
+Table9: Sequence-lengthconfigurationsF forexperimentsonGLUEbenchmarks. Eachsequence-lengthconfig-
+urationisdeterminiedbytheconfigurationgenerationfunction(Equation5)whichrequirestwohyperparameters
+“thelastlayerindextoapplytokenselectioni "and“theproportionofinputtokensptoretainatl ".
+prune-upto prune-upto
+TheinputsequenceN issetas128.
+inTable18,theadvantagesforCoreset-select-opt skietal.,2020)forcertaintaskstoallowmoreeffi-
+overitsbaselinesbecomessmaller,whichmatches cientlearning. Thedetailsofthehyperparameters
+our expectations in the mild sequence-length re- andmodelconfigurationsarepresentedinTable10.
+ductionregime. Note,wedonotincludeaccuracy Note, the learning rate, number of epochs, batch
+andspeeduptablesbecauseofinsignificantgains size are all consistent with the default settings in
+observed in speedup due to the shallow architec- LRAforbothBigBirds(Zaheeretal.,2020)and
+turesofTransformersinLRAandtheusageofthe Performers(Choromanskietal.,2020). Fortherest
+slowestcoresetbasedmethodwithm = 1. ofmodelconfigurations,see(Tayetal.,2020).
+D Appendix: Hyperparameters E Appendix: ExperimentalResults
+To fairly evaluate our method, we do not tune First, the GLUE dev performance at 3.5X,
+any hyperparameters for both GLUE and LRA 3X, 2X, and 1.5X speedup are shown in Ta-
+benchmarks,i.e.,thesamesetofhyperparameters ble 11, 12, 13, and 14. The same conclusion as
+areusedforeach dataset acrossevery competing discussedinSection6.3isreached. Similarly,the
+method. ForGLUEbenchmarks,thelearningrate GLUE dev performance at 70% and 30% space
+and number of epochs are set as 2e−5 and 3, re- complexityreductionarepresentedintheTable15
+spectively. The batch size in training is set as 48 and 16. In particular, the baseline Average-pool
+for all except MNLI-M/mm and RTE, which are performs the worst in average across the GLUE
+set as 32 and 16, respectively. The batch size in benchmarks. Thisalignswiththeproposedmethod
+inference is uniformly set as 128. For LRA (Tay from Dai et al. (2020) that a pre-training step is
+et al., 2020), we follow the exact settings for the necessarytomakethesimplepoolingmethodper-
+task-specifichyperparametersandmodelsconfig- form competitive. Especially for COLA dataset,
+urations provided in its official github repository, Average-pool shows the matthews correlation co-
+exceptreducingthenumberofencodersintheback- efficientsatmost25.6whenthespeedupishigher
+boneTransformer(Zaheeretal.,2020;Choroman- than1.5X. At30%spacereductioninTable16,the
+BigBird Performers
+Hyperparameters Cifar10 PathFinder32 TextClassification Cifar10 PathFinder32 TextClassification
+LearningRate 5e−4 5e−4 2.5e−2 5e−4 3e−4 2.5e−2
+#ofEpoch 200 200 625 200 200 625
+Train&InferBatchSize 256 512 32 256 512 32
+#ofLayers 1 4 1 1 4 1
+#ofHeads 4 2 4 8 8 4
+EmbeddingDimension 128 64 256 128 32 256
+Query/Key/ValueDimension 64 32 256 64 16 256
+FeedforwardNetworkDimension 128 64 1024 128 32 1024
+BlockSize(specifictoBigBirds) 8 8 64 – – –
+Table 10: LRA hyperparameters and model configurations for Big Bird (left) and Performers (right). Note. The
+learningrate,numberofepoch,andthebatchsizeareallconsistentwithdefaultsettingsinLRA(Tayetal.,2020).
+Fortherestofmodelconfigurations,pleasesee(Tayetal.,2020).
+poolingmethodshowsarelativelyhighmatthews
+correlation coefficient of 44.6, which is still the
+worstamongalltheothermethods. Weconjecture
+thatthepoorperformancecomesfromthefollow-
+ingreasons: (1)Thepoolingmethod,whenapplied
+at a encoder, significantly reduces the sequence
+length at least by half (as the least sliding win-
+dow size is 2). Additionally, the COLA dataset
+hastheshortestsequencelengthinaverageinthe
+GLUEbenchmarks,makingthereducedsequence
+lengthfromthepoolingevenshorter. Thisfailsthe
+modeltolearnanyusefulpatternfromthedata. For
+thesequencelengthdistributionsofGLUEbench-
+marks, see Figure 7. (2) The reason the pooling Figure 7: Sequence length distributions of GLUE
+method shows a relatively high matthews corre- benchmarks. For each dataset, the triangle mark and
+lation coefficient at 30% space reduction in Ta- solidlinerepresentthemeanandmedian,respectively.
+ble16isthatthepruningscenariocorrespondsto
+a“mild"onewherethepoolingisappliednearthe
+sequence-length configuration shown in Table 9,
+topencoderlayer(after8thencoder)andthecor-
+wefine-tuneaTransformermodelwithatokense-
+respondedspeedupissignificantlylessthan1.5X.
+lectionmethodonaGLUEtrainset. Thenwecom-
+We also observed that the SST-2, which has the
+pute accuracy score and inference speedup num-
+secondshortestsequencelengthinaverageinthe
+ber on its dev set. A scatter plot of accuracy vs.
+GLUE benchmarks, does not suffer similarly as
+speedup is made where each point corresponds
+theCOLAforthepoolingmethod. Weconjecture
+toasequence-lengthconfiguration. Next,among
+that this is due to the task of sentiment analysis
+the scatter plot we find a pareto curve where ac-
+for SST-2 is much easier than that of judging the
+curacy scores at speedup 1.5X, 2X, 3X, 3.5X
+grammaticalcorrectnessofasentenceforCOLA.
+are obtained. A linear interpolation is applied
+Insummary,theAverage-poolmethodmergesthe
+based on the pareto curve when necessary. How-
+consecutivetokenstogether,accordingtothewin-
+ever, we do not extrapolate the results for objec-
+dowlength. However,inEnglishtextusuallyitis
+tive evaluation purpose. For Coreset-select-opt,
+notthecasethattheconsecutivetokensaresimilar
+givenasequence-lengthconfigurationwechoose
+andcanbemergedintoonewithoutsignificantloss
+the model that has the best accuracy score for
+ininformation.
+m ∈ {(cid:100)0.1·k(cid:101),(cid:100)0.2·k(cid:101),(cid:100)0.3·k(cid:101),(cid:100)0.4·k(cid:101)}.
+Second, we demonstrate how to generate the Third, for LRA, the results of accuracy scores
+accuracy and inference speedup table as shown for space complexity reduction at 70% and 30%
+in Table 1, 2, 11, and 13. A demonstration for are presented in Table 17 and 18. At low
+dataset SST-2 and MRPC are presented in Fig- space complexity reduction 30%, the advantages
+ure 8 and 9, respectively. Specifically, for each forCoreset-select-opt overitsbaselinesbecomes
+smaller,whichmatchesourexpectationsinthemild
+sequence-lengthreductionregime.
+F Appendix: ExperimentalDetailsfor
+Figure1inSection3
+Apreliminarystudyoftokenembeddingsshowthat
+astheembeddingspropagatethroughthepipeline
+ofencoders,theybecomemoreandmoresimilar
+to the CLS token, Figure 1 (top row). A deeper
+investigation shows that they also become more
+andmoresimilarwitheachotherandformclusters
+amongthemselves,Figure1(bottomrow).
+To obtain Figure 1, we examine token embed-
+dings of the SST-2 dev set after fine-tuning a
+BERT onitstrainset. ForFigure1(toprow),
+Base
+wecomputethehistogramofcosinesimilaritybe-
+tween the embedding of CLS and that of all the
+othertokensinencoder1,6,and12,respectively.
+ForFigure1(bottomrow),weapplyDBSCAN(Es-
+teretal.,1996)toclustertheembeddingsoftokens
+inencoder1,6,and12respectively. Forthehyper-
+parametersofDBSCAN,themaximumdistance(cid:15)
+oftwopointsinacluster,theminimumnumberof
+pointsrequiredtoformaclusteraresetas0.2and
+1. Thedistancemetriciscosinedissimilarity.
+METHOD STS-B MRPC SST-2 QNLI COLA RTE MNLI_M MNLI_MM QQP MEAN
+Input-First-K-Select 80.6±0.2 – – 80.5±0.1 47.9±0.5 – 75.9±0.1 74.5±0.1 – 71.9
+First-K-Select 80.3±0.2 – – 80.8±0.1 47.9±0.5 – 75.5±0.1 74.7±0.1 – 71.8
+Random-Select 85.7±0.2 – – 86.2±0.1 48.9±0.5 – 80.2±0.1 78.1±0.1 – 75.8
+Average-Pool 77.6±0.1 – – 84.0±0.1 0.0±0.0 – 73.3±0.1 74.7±0.0 – 61.9
+Attention-Select 85.3±0.1 – – 86.7±0.1 51.0±0.4 – 81.1±0.1 81.4±0.1 – 77.1
+Coreset-Select-CLS(ours) 86.6±0.1 – – 87.5±0.1 51.1±0.3 – 82.2±0.1 82.4±0.1 – 77.9
+Coreset-Select-Opt(ours) 86.6±0.1 – – 87.5±0.1 52.7±0.3 – 82.2±0.1 82.4±0.1 – 78.3
+BERTBase 87.9±0.2 – – 90.9±0.1 53.3±0.5 – 84.0±0.1 84.6±0.1 – 80.2
+Table11: GLUEdevperformanceat3.5X speedup. Eachscorewithstandarddeviationisaveragedover20trials.
+Larger score indicates better performance. The best score among each token selection method is embolden for
+eachcolumn. Note,missingvaluesindicatethatnoaccuracyscoreisobservedfor3.5X speedup.
+METHOD STS-B MRPC SST-2 QNLI COLA RTE MNLI-M MNLI-MM QQP MEAN
+Input-First-K-Select 86.4±0.1 81.4±0.2 83.8±0.2 84.8±0.0 49.7±0.5 63.5±0.5 77.8±0.1 75.9±0.0 80.8±0.1 76.0
+First-K-Select 86.4±0.1 80.9±0.2 84.4±0.2 84.4±0.1 49.7±0.5 63.5±0.5 76.7±0.1 75.6±0.1 80.4±0.0 76.1
+Random-Select 86.8±0.1 83.2±0.3 85.6±0.3 86.4±0.1 49.5±0.5 62.1±0.8 81.4±0.1 78.7±0.1 87.0±0.1 77.9
+Average-Pool 81.6±0.1 83.9±0.3 85.2±0.2 84.1±0.1 3.0±0.6 59.2±0.5 75.4±0.1 76.7±0.1 79.4±0.0 69.6
+Attention-Select 87.0±0.1 84.6±0.3 86.0±0.2 86.8±0.1 51.1±0.4 63.4±0.6 82.5±0.1 82.7±0.1 87.3±0.1 79.0
+Coreset-Select-CLS(ours) 87.0±0.1 86.2±0.1 87.3±0.1 87.8±0.1 51.7±0.3 63.7±0.5 82.4±0.1 82.6±0.1 87.3±0.0 79.6
+Coreset-Select-Opt(ours) 87.0±0.1 86.9±0.2 89.6±0.1 87.8±0.1 52.8±0.3 63.7±0.5 82.5±0.1 82.7±0.1 87.3±0.0 80.0
+BERTBase 87.9±0.2 87.3±0.2 92.4±0.1 90.9±0.1 53.3±0.5 65.8±0.5 84.0±0.1 84.6±0.1 87.5±0.1 81.5
+Table12: GLUEdevperformanceat3X speedup. Eachscorewithstandarddeviationisaveragedover20trials.
+Larger score indicates better performance. The best score among each token selection method is embolden for
+eachcolumn.
+METHOD STS-B MRPC SST-2 QNLI COLA RTE MNLI-M MNLI-MM QQP MEAN
+Input-First-K-Select 87.8±0.2 82.2±0.2 91.8±0.1 90.4±0.1 51.9±0.5 65.2±0.5 81.9±0.1 82.2±0.1 85.4±0.1 79.9
+First-K-Select 87.8±0.2 82.1±0.2 91.2±0.1 90.4±0.1 51.9±0.5 64.9±0.5 81.9±0.1 82.2±0.1 84.9±0.0 79.7
+Random-Select 87.8±0.1 86.6±0.3 90.0±0.2 88.9±0.1 52.6±0.5 64.9±0.5 83.6±0.1 80.3±0.1 87.2±0.1 80.2
+Average-Pool 87.8±0.2 85.8±0.3 88.6±0.1 86.3±0.1 11.2±0.7 60.2±0.6 76.3±0.0 82.9±0.0 82.1±0.0 73.4
+Attention-Select 87.8±0.1 86.8±0.2 91.0±0.1 90.4±0.1 53.2±0.5 65.7±0.6 83.6±0.1 84.1±0.1 87.3±0.1 81.1
+Coreset-Select-CLS(ours) 87.6±0.1 86.6±0.2 90.1±0.1 89.4±0.1 53.2±0.5 64.1±0.5 83.9±0.1 84.3±0.1 87.5±0.1 80.7
+Coreset-Select-Opt(ours) 87.9±0.1 87.2±0.1 92.4±0.1 89.4±0.1 53.2±0.5 64.9±0.5 83.9±0.1 84.3±0.1 87.5±0.0 81.2
+BERTBase 87.9±0.2 87.3±0.2 92.4±0.1 90.9±0.1 53.3±0.5 65.8±0.5 84.0±0.1 84.6±0.1 87.5±0.1 81.5
+Table13: GLUEdevperformanceat2X speedup. Eachscorewithstandarddeviationisaveragedover20trials.
+Larger score indicates better performance. The best score among each token selection method is embolden for
+eachcolumn.
+METHOD STS-B MRPC SST-2 QNLI COLA RTE MNLI-M MNLI-MM QQP MEAN
+Input-First-K-Select 87.9±0.2 86.8±0.2 92.1±0.1 90.8±0.1 53.0±0.5 65.6±0.5 84.0±0.1 84.1±0.1 87.1±0.1 81.3
+First-K-Select 87.9±0.2 86.4±0.2 91.5±0.1 90.8±0.1 52.7±0.4 65.2±0.5 83.8±0.1 84.0±0.1 86.9±0.0 81.0
+Random-Select 87.8±0.1 87.2±0.2 91.9±0.2 90.8±0.1 53.1±0.4 65.7±0.5 83.9±0.1 83.9±0.1 87.4±0.1 81.3
+Average-Pool 87.8±0.1 87.0±0.2 90.3±0.1 90.2±0.1 25.6±0.7 61.5±0.6 80.9±0.1 84.0±0.0 85.7±0.0 76.8
+Attention-Select 87.9±0.1 87.1±0.1 92.3±0.1 90.7±0.1 53.2±0.5 65.7±0.5 84.0±0.1 84.5±0.1 87.4±0.1 81.4
+Coreset-Select-CLS(ours) 87.7±0.1 86.9±0.2 92.4±0.1 90.9±0.1 53.3±0.5 65.4±0.3 84.0±0.0 84.6±0.1 87.5±0.1 81.4
+Coreset-Select-Opt(ours) 87.9±0.1 87.3±0.2 92.4±0.1 90.9±0.1 53.3±0.5 65.6±0.5 84.0±0.0 84.6±0.1 87.5±0.0 81.5
+BERTBase 87.9±0.2 87.3±0.2 92.4±0.1 90.9±0.1 53.3±0.5 65.8±0.5 84.0±0.1 84.6±0.1 87.5±0.1 81.5
+Table14: GLUEdevperformanceat1.5X speedup. Eachscorewithstandarddeviationisaveragedover20trials.
+Larger score indicates better performance. The best score among each token selection method is embolden for
+eachcolumn.
+METHOD STS-B MRPC SST-2 QNLI COLA RTE MNLI-M MNLI-MM QQP MEAN
+Input-first-k-select 85.3±0.1 81.3±0.2 83.3±0.2 84.6±0.0 49.0±0.4 62.1±0.5 76.9±0.1 74.9±0.1 80.6±0.1 75.3
+First-k-select 85.1±0.1 81.5±0.2 84.6±0.2 84.3±0.1 49.0±0.4 62.0±0.5 76.3±0.1 74.5±0.1 80.0±0.0 75.3
+Random-select 85.6±0.2 83.3±0.3 84.9±0.2 85.1±0.1 48.4±0.4 61.8±0.5 79.0±0.1 79.3±0.1 86.6±0.1 77.1
+Average-Pool 78.7±0.1 83.1±0.2 85.1±0.2 84.0±0.1 0.0±0.0 59.8±0.6 75.2±0.1 76.3±0.1 82.9±0.1 69.5
+Attention-select 85.4±0.1 84.3±0.2 87.2±0.1 86.4±0.1 50.9±0.4 62.7±0.4 80.5±0.1 80.7±0.1 87.0±0.1 78.3
+Coreset-Select-CLS(ours) 86.5±0.1 86.0±0.1 87.6±0.1 86.6±0.1 51.0±0.4 63.6±0.4 80.9±0.1 81.6±0.1 87.2±0.1 79.0
+Coreset-Select-Opt(ours) 86.7±0.1 86.6±0.2 87.7±0.1 86.5±0.1 52.3±0.4 63.6±0.4 81.0±0.1 81.8±0.1 87.3±0.0 79.3
+BERTBase 87.9±0.2 87.3±0.2 92.4±0.1 90.9±0.1 53.3±0.5 65.8±0.5 84.0±0.1 84.6±0.1 87.5±0.1 81.5
+Table 15: GLUE dev performance at at 70% space complexity reduction. Each score with standard deviation is
+averaged over 20 trials. Larger score indicates better performance. The best score among each token selection
+methodisemboldenforeachcolumn.
+METHOD STS-B MRPC SST-2 QNLI COLA RTE MNLI-M MNLI-MM QQP MEAN
+Input-first-k-select 87.9±0.2 87.2±0.2 91.8±0.1 90.8±0.1 53.0±0.5 65.2±0.5 84.0±0.1 84.3±0.1 87.1±0.2 81.3
+First-k-select 87.9±0.2 87.2±0.1 91.3±0.1 90.9±0.1 53.0±0.5 65.2±0.5 84.0±0.1 84.3±0.1 87.4±0.1 81.2
+Random-select 87.8±0.1 87.1±0.2 92.1±0.1 90.9±0.2 53.1±0.4 65.7±0.5 83.9±0.1 84.4±0.1 87.4±0.2 81.4
+Average-Pool 87.8±0.1 87.2±0.1 91.7±0.1 89.2±0.1 44.6±0.5 64.1±0.5 82.7±0.1 83.7±0.1 86.2±0.1 79.7
+Attention-select 87.9±0.1 87.1±0.1 92.3±0.1 90.7±0.1 53.2±0.4 65.7±0.5 83.9±0.1 84.4±0.1 87.5±0.2 81.4
+Coreset-Select-CLS(ours) 87.7±0.1 87.3±0.2 92.4±0.1 90.9±0.1 53.2±0.4 65.5±0.3 84.0±0.1 84.3±0.1 87.5±0.1 81.4
+Coreset-Select-Opt(ours) 87.9±0.1 87.3±0.2 92.4±0.1 90.9±0.1 53.2±0.4 65.6±0.5 84.0±0.1 84.3±0.1 87.5±0.1 81.5
+BERTBase 87.9±0.2 87.3±0.2 92.4±0.1 90.9±0.1 53.3±0.5 65.8±0.5 84.0±0.1 84.6±0.1 87.5±0.1 81.5
+Table 16: GLUE dev performance at at 30% space complexity reduction. Each score with standard deviation is
+averaged over 20 trials. Larger score indicates better performance. The best score among each token selection
+methodisemboldenforeachcolumn.
+BIGBIRD PERFORMERS
+METHOD CIFAR-10 PATHFINDER-32 IMDB(BYTE-LEVEL) MEAN CIFAR-10 PATHFINDER-32 IMDB(BYTE-LEVEL) MEAN
+First-k-select 26.9±0.2 55.6±0.2 57.9±0.1 46.8 26.9±0.1 52.4±0.2 59.9±0.1 46.4
+Random-select 39.4±0.1 69.9±0.2 59.6±0.1 56.3 41.5±0.2 58.2±0.1 59.9±0.1 53.2
+Coreset-Select-CLS(ours) 38.6±0.1 69.3±0.2 59.1±0.1 55.7 39.8±0.1 61.5±0.2 59.7±0.1 53.7
+Coreset-Select-Opt(ours) 43.3±0.2 71.7±0.1 61.4±0.2 58.8 45.5±0.1 67.7±0.1 62.8±0.1 58.7
+Trans-No-Prune 40.9±0.1 73.5±0.2 63.8±0.1 59.4 42.9±0.1 66.2±0.2 64.3±0.1 57.8
+Table17: LRAtestsetperformancesat70%spacecomplexityreductionforBigBird(left)andPerformers(right)
+asthebackboneTransformer. Eachscorewithstandarddeviationisaveragedover20trials. Largerscoreindicates
+betterperformance. Thebestscoreamongeachtokenselectionmethodisemboldenforeachcolumn.
+BIGBIRD PERFORMERS
+METHOD CIFAR-10 PATHFINDER-32 IMDB(BYTE-LEVEL) MEAN CIFAR-10 PATHFINDER-32 IMDB(BYTE-LEVEL) MEAN
+First-k-select 37.2±0.1 69.7±0.2 62.8±0.1 56.6 37.6±0.1 64.6±0.2 63.0±0.1 55.1
+Random-select 41.1±0.2 70.0±0.2 62.5±0.1 57.9 43.2±0.1 65.6±0.2 63.3±0.1 57.4
+Coreset-Select-CLS(ours) 40.4±0.2 72.3±0.2 62.2±0.1 58.3 41.9±0.2 66.6±0.1 63.1±0.1 57.2
+Coreset-Select-Opt(ours) 43.7±0.1 72.3±0.2 62.7±0.1 59.6 46.1±0.1 68.5±0.2 63.9±0.1 59.5
+Trans-No-Prune 40.9±0.1 73.5±0.2 63.8±0.1 59.4 42.9±0.1 66.2±0.2 64.3±0.1 57.8
+Table18: LRAtestsetperformancesat30%spacecomplexityreductionforBigBird(left)andPerformers(right)
+asthebackboneTransformer. Eachscorewithstandarddeviationisaveragedover20trials. Largerscoreindicates
+betterperformance. Thebestscoreamongeachtokenselectionmethodisemboldenforeachcolumn.
+Figure 8: SST-2: Pareto curves and scatter plots for accuracy vs. inference speedup trade-off. Each point corre-
+spondstoasequence-lengthconfigurationinTable9. Theparetocurvesareusedtogenerateaccuracyvs. speedup
+Table1,2,11,13.
+Figure9: MRPC:Paretocurvesandscatterplotsforaccuracyvs. inferencespeeduptrade-off. Eachpointcorre-
+spondstoasequence-lengthconfigurationinTable9. Theparetocurvesareusedtogenerateaccuracyvs. speedup
+Table1,2,11,13.

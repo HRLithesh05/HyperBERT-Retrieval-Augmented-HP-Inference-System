@@ -1,0 +1,845 @@
+Flooding-X: Improving BERT’s Resistance to Adversarial Attacks
+via Loss-Restricted Fine-Tuning
+QinLiu⋆∗,RuiZheng⋆∗,RongBao⋆,JingyiLiu⋆,ZhiHuaLiu⋆,
+ZhanzhanCheng♠,LiangQiao♠,TaoGui♦,QiZhang⋆,♣,XuanjingHuang⋆
+⋆SchoolofComputerScience,FudanUniversity
+♦InstituteofModernLanguagesandLinguistics,FudanUniversity
+♣ShanghaiKeyLaboratoryofIntelligentInformationProcessing
+♠HikvisionResearchInstitute,Hangzhou,China
+{liuq19,rzheng20,rbao18,tgui,qz,xjhuang}@fudan.edu.cn
+Abstract and adversarial training rely on additional adver-
+sarialexamplesgeneratedeitherbyhand-crafting
+Adversarialrobustnesshasattractedmuchat- orconductinggradientascentonthecleandatafor
+tentionrecently,andthemainstreamsolution virtualadversarialsamples.
+isadversarialtraining. However,thetradition
+However,generatingadversarialexamplesscales
+ofgeneratingadversarialperturbationsforeach
+up the cost of training computationally, which
+inputembedding(inthesettingsofNLP)scales
+up the training computational complexity by makesvanillaadversarialtrainingalmostimpracti-
+the number of gradient steps it takes to ob- calonlarge-scaleNLPtaskslikeQNLI(Question-
+tain the adversarial samples. To address this answeringNLI,Rajpurkaretal.,2016). Anincreas-
+problem,weleverageFloodingmethodwhich ing amount of researchers express their concern
+primarilyaimsatbettergeneralizationandwe
+about the time-consuming property of standard
+findpromisingindefendingadversarialattacks.
+adversarialtrainingandoffercheaperbutcompet-
+We further propose an effective criterion to
+itivealternativesby(i)replacingtheperturbation
+bringhyper-parameter-dependentfloodinginto
+generation with an additional generator network
+effectwithanarrowed-downsearchspaceby
+measuringhowthegradientstepstakenwithin (BalujaandFischer,2017;Xiaoetal.,2018),orby
+one epoch affect the loss of each batch. Our (ii) combining the gradient computation of clean
+approachrequireszeroadversarialsamplefor data and perturbations into one backward pass
+training, and its time consumption is equiva-
+(Shafahietal.,2019). Theseapproachesstillrely
+lent to fine-tuning, which can be 2-15 times
+onadditionaladversarialexamplesgeneratedeither
+faster than standard adversarial training. We
+bythemodelitselforbyanextramodule.
+experimentallyshowthatourmethodimproves
+BERT’sresistancetotextualadversarialattacks In this work, we propose a novel method,
+byalargemargin,andachievesstate-of-the-art Flooding-X,tolargelyimproveadversarialrobust-
+robust accuracy on various text classification nesswithout any adversarialexamples, maintain-
+andGLUEtasks.
+ing the same computational cost as conventional
+BERT fine-tuning. The vanilla Flooding (Ishida
+1 Introduction
+et al., 2020) method is a practical regularization
+technique to boost model generalization by pre-
+Despitetheirimpressiveperformancesonvarious
+ventingfurtherreductionofthetraininglosswhen
+NLP tasks, deep neural networks such as BERT
+it reaches a reasonably small value. It results
+(Devlin et al., 2019) suffer a sharp performance
+in a model performing normal gradient descent
+degradation against deliberately constructed ad-
+whentraininglossisabovethedecidedvaluebut
+versarial attacks (Zeng et al., 2021; Wang et al.,
+gradient ascent when below. By continuing to
+2021b;Nieetal.,2020;Zangetal.,2020;Renetal.,
+“random walk” with the same non-zero value as
+2019;Zhangetal.,2019). Alineofworkattempts
+a“virtualloss”,themodeldriftsintoanareawitha
+toalleviatethisproblembycreatingadversarially
+flatlosslandscapethatisclaimedtoleadtobetter
+robustmodelsviadefensemethods,includingad-
+generalization (Ishida et al., 2020). Interestingly,
+versarialdataaugmentation(Chenetal.,2021;Si
+wefindthatFloodingmethodisalsopromisingin
+et al., 2021), regularization (Wang et al., 2021a),
+increasingmodels’resistancetoadversarialattacks.
+and adversarial training (Wang et al., 2020; Zhu
+Despitethesignificantriseinrobustaccuracy,the
+etal.,2020;Madryetal.,2018). Dataaugmentation
+so-calledreasonablysmallvalue,whichisahyper-
+∗∗EqualContribution. parameter, takesefforttobefoundandvariesfor
+5634
+Proceedingsofthe60thAnnualMeetingoftheAssociationforComputationalLinguistics
+Volume1:LongPapers,pages5634-5644
+May22-27,2022(cid:13)c2022AssociationforComputationalLinguistics
+each dataset, which requires an overly extensive
+searchamongthenumerouscandidates.
+Inanattempttonarrowdownthecandidatesof
+hyper-parameter,weproposegradientaccordance
+asaninformativecriterionforoptimalvaluesthat
+bring Flooding into effect, which is used as a
+building-block in Flooding-X. We measure how
+accordant the gradients of the batches are by
+analyzinghowthegradientdescentstepsbasedon
+partofanepochaffectthelossofeachbatch. Gra-
+dientaccordanceiscomputationallyfriendlyand Figure 1: Input loss landscape of vanilla BERT and
+differentadversarialtrainingalgorithmsunderGaussian
+is tractable during training process. Experiments
+randomnoiseofstandarddeviationαonSST-2dataset.
+on various tasks show a close relation between
+gradientaccordanceandoverfitting. Asaresult,we
+proposegradientaccordanceasareliableflooding reasonably small value, which is called the flood
+criteriontomakethetraininglossfloodaroundthe level. Intuitively,thisapproachmakesthetraining
+levelwhenthemodelhasnearlyoverfitted. Thatis loss float around the pre-defined flood level and
+tosay,weleveragethetraininglossofthemodel alter from normal mini-batch gradient descent to
+rightbeforeoverfittingasthevalueoffloodlevel. gradientascentifthelossisbelowthefloodlevel.
+Flooding-Xisespeciallyusefulandshowsgreat With the constraint of flood level, the model will
+advantage over adversarial training in terms of continue to “random walk” around the non-zero
+computational cost when the training dataset is trainingloss,whichisexpectedtoreachaflatloss
+relativelylarge. Experimentalresultsdemonstrate landscape.
+that our method achieves stated-of-the-art robust ThealgorithmofFloodingisdefinedasfollow:
+accuracywithBERTonvarioustasksandimproves
+itsrobustaccuracyby100to400%withoutusing
+J(cid:101)(θ) = |J(θ)−b|+b, (1)
+any adversarial example, consuming any extra
+where J denotes the original learning objective,
+trainingtime,orconductingoverlyextensivesearch
+and J(cid:101)represents the modified learning objective
+forhyper-parameter. Ourmaincontributionsareas
+withflooding. Thepositivevaluebisthefloodlevel
+follows.
+specified by user, and θ is the model parameter.
+1)Weanalyzeanddemonstratetheeffectiveness
+Accordingly, the flooded empirical risk is then
+ofFlooding,whichisdesignedforgeneralization,
+definedas
+inimprovingadversarialrobustnessespeciallyin
+NLPdomain. R(cid:101)(f) = |R(cid:98)(f)−b|+b, (2)
+2)Weproposeapromisingindicator,i.e. gradi-
+entaccordance,toalleviateFloodingmethodfrom within which R(cid:98)(f) / R(cid:101)(f) denotes the original /
+tedioussearchofthehyper-parameter. flooded empirical risk respectively, and f refers
+3) We conduct comprehensive experiments on to the score function to be learned by the model.
+NLPtaskstoillustratethepotentialofFloodingfor Duringthebackpropagationprocess,thegradient
+improvingBERT’sadversarialrobustness. of R(cid:98)(f) w.r.t. model parameters and R(cid:101)(f) point
+to the same direction when R(cid:101)(f) is above b but
+2 WhyDoesFloodingBoostAdversarial to the opposite direction when it is below b. As
+Robustness? aresult,modelperformsnormalgradientdescent
+whenthelearningobjectiveisabovethefloodlevel,
+2.1 VanillaFlooding
+andgradientascentwhenbelow.
+We first describe the vanilla Flooding regulariza-
+2.2 SmoothParameterLandscapeLeadsto
+tion method (Ishida et al., 2020) for alleviating
+BetterRobustness
+overfittingviakeepingtraininglossfromreducing
+tozero. Underthemainassumptionthatlearning Flooding is designed for overfitting, but why is
+until zero loss is harmful, Ishida et al. (2020) it valid for adversarial robustness? According to
+proposeFloodingtointentionallypreventfurther the definition described in the previous section,
+reduction of the training loss when it reaches a Flooding does not make any difference to the
+5635
+trainingprocesswhenthelossisbeyondtheflood
+level. Whenthetraininglossapproachestheflood
+level, on closer inspection, gradient descent and
+gradient ascent begin to alternate. Assume that
+the model with learning rate ε performs gradient
+descentforthen-thbatchandthengradientascent
+forbatchn+1,whichresultsin:
+θ = θ −εg(θ ),
+n n−1 n−1
+(3)
+θ = θ +εg(θ ).
+n+1 n n
+Figure 2: Influence of different flood levels on per-
+formance of the trained BERT on SST-2 against the
+In the equations above, g(θ) = ∇ J(θ) is the
+θ attackofTextFooler(Jinetal.,2020).Therangemarked
+gradientofJ(θ)w.r.t. modelparameters. Wecan
+in yellow is lined out by our proposed criterion , i.e.,
+thenget
+gradientaccordance. Theoptimalvalueoffloodlevelis
+guaranteedwithinthenarrowed-downspace.
+(cid:0)
+θ =θ −εg(θ )+εg θ
+n+1 n−1 n−1 n−1
+(4)
+(cid:1)
+−εg(θ ) ,
+n−1 aslightchangeonthevalueoffloodlevelcanmake
+ahugedifferenceontheadversarialrobustnessof
+which is, by Taylor expansion, approximately
+the so-trained model. In an attempt to ease the
+equivalentto
+effortofsearchingandmakethebestofFlooding,
+ε2 we propose a promising and reliable criterion to
+= θ − ∇ ∥g(θ )∥2. (5)
+n−1 2 θ n−1 narrowdownthesearchspace,whichisdescribed
+indetailinthenextsection.
+Thus,theoretically,whenthetraininglossisrela-
+tively low, the model alters into a new learning 3 GradientAccordanceasaCriterionfor
+mode where the learning rate is ε2/2 and the Flooding
+objective is to minimize ∥g(θ)∥2. Generally, the
+SinceFloodingisproposedasanattempttoavoid
+floodedmodelisguidedintoanareawithasmooth
+overfitting,weintuitivelysupposethattheoptimal
+parameterlandscapethatleadstobetteradversarial
+flood level would be found at the stage when the
+robustness(Stutzetal.,2021;Prabhuetal.,2019;
+model is about to overfit. That is, we leverage
+Yuetal.,2018;Lietal.,2018a). Asisdemonstrated
+the training loss before overfitting as the flood
+in Figure 1, adversarial training brings about a
+level. Inspired by influence function (Koh and
+smootherlosschangetothemodelwhentheinput
+Liang, 2017), we propose gradient accordance
+embeddingisperturbedbyGaussianrandomnoise,
+as a criterion for flooding, which is empirically
+whichiscloselyrelatedthestrongeradversarialro-
+provedtobereliableandindicative. Weconsider
+bustness. Amongallthetrainingmethodsinvolved
+the effect of the model updated w.r.t. one epoch
+inFigure1,Flooding-Xleadstothemostsmooth
+oneachofitsbatchesasasignalofoverfitting. As
+loss landscape, indicating an overall more robust
+is indicated by its name, this criterion measures
+modelagainstattacks.
+therelationamongthegradientsofeachbatchon
+2.3 Achilles’HeelofFlooding epochlevel,evaluatingwhetherthemodelupdated
+on an epoch has the same positive effect on the
+Despiteitspotentialinboostingmodel’sresistance
+batches on average. Now we provide the formal
+toadversarialattacks, theoptimalfloodlevelhas
+definitionofgradientaccordance.
+to be searched by performing exhaustive search
+withinawiderangeattinysteps,whichisnoteasily 3.1 Preliminaries
+at hand. A relatively large value of flood level
+Wedenoteamodelasafunctionalapproximation
+lengthensthegradientstepsandkeepsthemodel
+f whichisparameterizedbyθ. Consideratraining
+fromconvergence,whileatinyvaluecauseshardly
+data point x with the ground truth label y, which
+anydifferencetothetrainingprocess. Theeffectof
+resultsinalossL(f(θ,x),y). Thegradientofthe
+Floodingdeeplyreliesonthefloodlevel,which,at
+lossw.r.t. theparametersisthus
+thesametime,isalsosensitivetothesubtlechange
+ofthishyper-parameter. Figure2revealsthateven g = ∇ L(f(θ,x),y), (6)
+θ
+5636
+whose negation denotes the direction in which Consider a training batch B with n
+0
+theparametersθ areupdatedtobettercorrespond samples X = {x ,x ,...,x } and labels
+1 2 n
+to the desired outputs on the training data (Fort y = {y ,y ,...,y }ofk classes{c ,c ,...,c }.
+1 2 n 1 2 k
+et al., 2019). Now let’s consider two data points These samples can be divided into k groups
+x and x with their corresponding labels y and accordingtotheirlabelsX = X ∪X ∪···∪X ,
+1 2 1 1 2 k
+y . Accordingtothedefinitionabove,thegradient and so are the labels y =
+(cid:83)k
+y , where all the
+2 i=1 i
+ofsample1isg = ∇ L(f(θ,x ),y ). Wetryto samplesinX belongtoclassc . Thus,wehave
+1 θ 1 1 m m
+inspecthowthesmallchangeofθ inthedirection the sub-batch B1 = {X ,y }. We then define
+0 1 1
+−g influencesthelossonsamplex orx : classaccordancescoreoftwosub-batchesB1 and
+1 1 2 0
+B2 ofclassesc andc as:
+∆L =L(f(θ−εg ,x ),y ) 0 1 2
+1 1 1 1
+(7)
+−L(f(θ,x ),y ), C(B1,B2) = E[cos(g ,g )], (11)
+1 1 0 0 1 2
+wheref(θ,x 1)canbeexpandedbyTaylorexpan- where g
+1
+is the gradient of the training loss of
+siontobe: sub-batch B1 w.r.t. the model parameters, and
+0
+f(θ,x ) = f(θ−εg ,x )+εg
+∂f
++O(ε2).
+cos(g 1,g 2) = (g 1/|g 1|) · (g 2/|g 2|). Class ac-
+1 1 1 1 ∂θ cordancemeasureswhetherthegradienttakenwith
+(8) respect to a sub-batch B1 of class c will also
+Here,wereferto(εg 1∂∂ θf +O(ε2))asT(x 1);and decreasethelossforsampl0 esinanothe1
+rsub-batch
+byrepeatingthesimilarexpansionwecanget B2 ofclassc (Fortetal.,2019;Fuetal.,2020).
+0 2
+Further consider that there are N batches in
+L(f(θ,x ),y )
+1 1
+one training epoch and the training samples are
+= L(f(θ−εg ,x )+T(x ),y )
+1 1 1 1 ofk classes. Thebatchaccordancescorebetween
+= L(f(θ−εg ,x ),y ) (9)
+1 1 1 batchesB andB isdefinedas
+s t
+∂L
++ ∂fT(x 1)+O(T2(x 1)). S batchaccd(B s,B t)
+k k
+Equation(7)isthusequalto = 1 (cid:88)(cid:88) C(Bi,Bj). (12)
+k(k−1) s t
+∂L j=1 i=1
+∆L 1 = − T(x 1)−O(T2(x 1)) i̸=j
+∂f
+∂L ∂f (10) Batch accordance quantifies the learning consis-
+= − (εg +O(ε2))
+∂f 1 ∂θ tencyoftwobatchesbyevaluatinghowthemodel
+= −εg ·g −O(ε2). updated on one batch affects the other. To be
+1 1
+morespecific,apositivebatchaccordancedenotes
+Similarly,thechangeofthelossonx causedby
+2 thatthemeasuredtwobatchesareunderthesame
+thegradientupdatebyx is∆L = −εg ·g −
+1 2 1 2 learning pace since the model updated according
+O(ε2). Notably, ∆L is negative by definition
+1 to each batch benefits them both. The gradient
+sincethemodelisupdatedwithrespecttox and
+1 accordanceofcertainepoch(orapartofanepoch,
+naturallyleadstoadecreaseonitsloss. Themodel
+namelythesub-epoch,whichcanbeseveralbatch
+updatedonx isconsideredtohaveapositiveeffect
+1 iterations)isfinallydefinedas
+on x if ∆L is also negative while an opposite
+2 2
+effectifpositive. Theequationsabovedemonstrate S epochaccd =
+that this co-relation is equivalent to the overlap 1 (cid:88)N N (cid:88)−1 (13)
+betweenthegradientsofthetwodatapointsg ·g , S (B ,B ).
+1 2 N(N −1) batchaccd s t
+whichwehereafterrefertoasgradientaccordance. t=s+1 s=1
+Gradientaccordance scalesthebatch accordance
+3.2 Coarse-GrainedGradientAccordance
+scoreupfromameasureoftwobatchestothatofa
+Data-point-level gradient accordance is too fine-
+sub-epoch.
+grained to be tractable in practice. Thus, we
+attempt to scale it up and result in coarse-grain Criterion for Flooding A positive gradient ac-
+gradientaccordanceatbatchlevel,whichiscompu- cordancemeansthatthemodelperformedgradient
+tationallytractableandstillreliableasacriterion descentw.r.t. thecertainepochdecreasesthelossof
+foroverfitting. itsbatchesonaverage,indicatingthatthelearning
+5637
+paceofmostbatchesareinlinewitheachother. A By adding adversarial perturbations to word em-
+negative one means that the model has overfitted beddings, FreeLB generates virtual adversarial
+to some of the training batches since the update samplesinsidetheregionaroundinputsamples.
+of one epoch increases the loss of its batches on
+TAVAT Token-AwareVirtualAdversarialTrain-
+average,whichisrightthestagewewouldliketo
+ing(TAVAT,LiandQiu,2021)aimsatfine-grained
+identifyforthemodelbygradientaccordance. We
+perturbations, leveraging a token-level accumu-
+assumethattheoptimalfloodlevelliesintherange
+latedperturbationvocabularytoinitializetheper-
+ofthetraininglossofamodelwhenitisaboutto
+turbations better and constraining them within a
+overfit. In the following section, we empirically
+token-levelnormalizationball.
+prove that gradient accordance is a reliable and
+promisingcriterionforflooding.
+InfoBERT InfoBERT(Wangetal.,2021a)lever-
+agestwomutual-information-basedregularizersfor
+4 Experiments
+robust model training, suppressing noisy mutual
+Inthissection,weprovidecomprehensiveanalysis informationwhileincreasingmutualinformation
+onFlooding-Xthroughextensiveexperimentson betweenlocalstablefeaturesandglobalfeatures.
+five text classification datasets of various tasks
+Flooding Flooding(Ishidaetal.,2020)hasbeen
+and scales: SST (Socher et al., 2013), MRPC
+introducedindetailinsection2.1. Weimplemented
+(DolanandBrockett,2005),QNLI(Rajpurkaretal.,
+Flooding and search for the flooding level at the
+2016), IMDB (Maas et al., 2011) and AG News
+step of 0.01 according to the tradition. The best
+(Zhangetal.,2015). Thestatisticsoftheseinvolved
+resultforeachdatasetisreported.
+datasets are illustrated in Table 1, including the
+volumeoftraining/testsetandtheaverageword
+4.2 AttackMethodsandEvaluationMetrics
+countofthetrainingsamples. Weconductexper-
+Threewell-receivedattackmethodsareleveraged
+iments on BERT-base (Devlin et al., 2019) and
+viaTextAttack(Morrisetal.,2020)foranextensive
+comparerobustaccuracyofFlooding-Xwithother
+comparison between our proposed method and
+adversarialtrainingalgorithmstodemonstrateits
+baselinealgorithms.
+strength. WeimplementallmodelsinMindSpore.
+TextFooler(Jinetal.,2020)identifiestheimpor-
+tantwordsfortargetmodelandrepeatsreplacing
+Dataset TrainingSet TestSet #Words
+them with synonyms until the prediction of the
+SST-2 67k 1.8k 19 modelisaltered. Similarly,TextBugger(Lietal.,
+MRPC 3.7k 1.7k 44 2018b) also searches for important words and
+modifiesthembychoosinganoptimalperturbation
+QNLI 105k 5.4k 37
+fromthegeneratedseveralkindsofperturbations.
+IMDB 25k 25k 268
+BERTAttack (Li et al., 2020) applies BERT in a
+AGNews 120k 7.6k 40
+semantic-preservingwaytogeneratesubstitutesfor
+thevulnerablewordsdetectedinthegiveninput.
+Table1: Statisticsofdatasets.
+Weconsiderfourevaluationmetricstomeasure
+BERT’s resistance to the mentioned adversarial
+attacksunderdifferentdefencealgorithms.
+4.1 BaselineMethods
+We compare Flooding-X with three adversarial Clean% Thecleanaccuracyreferstothemodel’s
+trainingalgorithms,oneregularizationmethodas testaccuracyontheoriginalcleandataset.
+wellasthevanillaFlooding.
+Aua% Accuracy under attack measures the
+PGD Projected gradient descent (PGD, Madry model’spredictionaccuracyontheadversarialdata
+et al., 2018) formulates adversarial training algo- deliberatelygeneratedbycertainattackmethod. A
+rithmsintosolvingaminimaxproblemthatmini- higher Aua% means a more robust model and a
+mizestheempiricallossonadversarialexamples betterdefender.
+thatcanleadtomaximizedadversarialrisk.
+Suc% Attack success rate is evaluated by the
+FreeLB Zhu et al. (2020) propose FreeLB to ratioofthenumberoftextssuccessfullyperturbed
+improve the generalization of language models. by a specific attack method to the number of all
+5638
+theinvolvedtexts. Robustmodelsareexpectedto theperformance,werefusetotakeonthepattern
+scorelowonSuc%. of extensive hyper-parameter searching which is
+againsttheoriginalpurposeofFlooding-X.
+#Query Numberofqueriesdenotestheaverage
+Notably, our method performs better than the
+attemptstheattackerqueriesthetargetmodel. The
+baseline adversarial training methods by 5 to 20
+largerthenumberis,theharderthemodelistobe
+points on average even without using any adver-
+attacked.
+sarialexamplesastrainingsource,nottomention
+thevanillaBERT.Undermostcases, ourmethod
+4.3 ImplementationDetails
+remains the best performing algorithm against
+Allthebaselinemethodsarere-implementedbased
+BERTAttack (Li et al., 2020) and TextBugger
+on their open-released codes and the results are
+(Li et al., 2018b). This proves that our method
+competingtothosereported. Wetrainourmodels
+maintains effectiveness under different kinds of
+on NVIDIA RTX 3090 and RTX 2080Ti GPUs,
+adversarial attacks. As a byproduct, the clean
+depending on the volume of the dataset involved.
+accuracyofourmethodisalsocompetingamong
+Most of the parameters such as learning rate and
+the baseline methods, which is inherent to the
+warm-upstepareinlinewithvanillaBERT(Devlin
+vanillaFloodingthataimsatbettergeneralization.
+et al., 2019) and the baseline methods. For all of
+the adversarial methods we set the training step
+tobe5forafaircomparison,whichisatrade-off
+betweentrainingcostandmodelperformance. The
+cleanaccuracy(Clean%)istestedonthewholetest
+dataset. Theotherthreemetrics(e.g.,Aua%,Suc%
+and#Query)areevaluatedonthewholetestdataset
+for SST-2 and MRPC, and 800 randomly chosen
+samples for IMDB, AG NEWS, and QNLI. We
+train 10 epochs for each model on each dataset,
+among which the last epochs are selected for the
+Figure 3: Gradient accordance and training/test loss
+comparisonofadversarialrobustness.
+of each BERT epoch finetuned on SST-2 and MRPC
+datasets. Thegreydashedlinerepresentszerogradient
+4.4 ExperimentalResults
+accordance, above which is the model considered to
+The extensive results of all the above mentioned beoverfitted. Theregionmarkedinyellowandgreen
+methodsaresummarizedinTable2. Generally,our aretherangesoftrainingiterationswherethegradient
+Flooding-X method improves BERT by a large accordancechangesfrompositivetonegativeforMRPC
+andSST-2respectively.
+margin in terms of its resistance to adversarial
+attacks,surpassingthebaselineadversarialtraining
+algorithmsonmostdatasetsunderdifferentattack
+5 AnalysisandDiscussion
+methods.
+Under TextFooler attack (Jin et al., 2020), our In this section, we construct supplementary ex-
+algorithmreachesthebestrobustperformanceon periments to further analyze the effectiveness of
+fourdatasets: IMDB,AGNews,SST-2,andMRPC. Flooding-X and its building block, i.e., gradient
+We observe that Flooding is more effective on accordance.
+smallerdatasetsthanlargerones,sincethesmaller
+5.1 DoesGradientAccordanceCapture
+datasetswithshortertrainingsentencesareeasierto
+Overfitting?
+bememorizedbytheneuralnetworkandaremore
+likelytocauseoverfitting. OnQNLIdatasetwhere Influencefunction(KohandLiang,2017)inspects
+Flooding-Xfailstowin,theaccuracyunderattack the influence of one single training data on the
+isonly0.2pointslowerthanthe5-stepPGD.This model prediction and stiffness (Fort et al., 2019)
+mightbeexplainedbythemildchangeingradient measureshowthemodelupdatedaccordingtoone
+accordance during training on QNLI dataset, in sample affects the model prediction on another.
+whichcasetheprecisestageofoverfittingishard Based on these two works, gradient accordance
+to be identified. Though we believe that a better is proposed as a means for identifying model
+value of flood level exists and can further boost overfittingatsub-epochlevel.
+5639
+TextFooler BERT-Attack TextBugger
+Datasets Methods Clean%
+Aua% Suc% #Query Aua% Suc% #Query Aua% Suc% #Query
+BERT 95.0 24.5 74.2 1533.15 20.3 76.1 2237.38 48.7 47.7 1160.35
+PGD 95.0 26.3 72.1 1194.08 21.3 77.2 1465.83 52.3 46.7 982.02
+FreeLB 97.0 29.5 69.9 1816.26 27.6 69.7 1975.21 51.6 45.9 921.35
+IMDB TAVAT 95.5 27.6 71.9 1205.80 23.1 75.1 2244.77 54.1 44.1 1022.56
+InfoBERT 96.3 27.4 72.3 1094.55 20.8 78.3 1428.67 49.8 49.3 1215.39
+Flooding 95.0 39.5 58.4 1783.17 28.1 68.4 2239.45 57.2 40.8 2438.17
+Flooding-X 97.5 40.5 58.5 2315.35 32.3 65.8 2248.71 62.3 35.8 2987.95
+BERT 94.9 20.5 78.9 372.14 6.5 93.1 477.34 42.7 54.6 192.75
+PGD 94.8 37.2 60.8 428.13 32.8 65.7 704.78 58.2 39.1 252.87
+FreeLB 94.7 32.3 65.9 405.66 12.7 86.7 573.38 48.8 49.1 210.17
+AGNEWS TAVAT 95.2 39.7 58.3 441.11 23.7 75.2 672.52 55.9 41.5 234.01
+InfoBERT 94.6 29.2 69.1 406.32 15.6 83.3 598.25 50.7 46.7 201.66
+Flooding 94.8 38.8 59.1 440.31 25.9 73.0 679.31 60.6 36.3 207.51
+Flooding-X 94.9 42.4 54.9 451.35 27.4 71.0 690.27 62.2 34.0 222.49
+BERT 92.7 10.8 88.4 111.81 8.8 90.6 149.84 41.3 55.8 54.37
+PGD 92.8 16.6 82.1 129.33 11.7 87.7 158.80 43.7 53.8 52.49
+FreeLB 92.2 15.4 83.3 128.19 12.1 87.1 160.81 45.1 51.9 53.32
+SST-2 TAVAT 93.0 19.6 79.0 132.85 14.4 85.4 122.95 43.4 54.6 48.46
+InfoBERT 92.9 18.6 79.5 114.67 16.6 82.8 138.74 43.2 53.6 50.97
+Flooding 93.4 26.4 71.7 147.83 24.6 73.7 189.43 48.3 45.3 58.29
+Flooding-X 93.1 34.9 62.4 149.61 27.7 70.7 199.37 51.7 45.3 60.55
+BERT 90.6 5.3 94.2 161.88 3.5 96.1 216.46 10.9 88.0 98.39
+PGD 90.6 28.1 68.9 269.38 24.0 73.6 399.91 33.8 62.8 154.55
+FreeLB 90.7 23.3 74.3 243.24 14.6 83.9 294.14 17.1 81.3 136.85
+QNLI InfoBERT 90.4 23.1 76.5 250.87 11.05 88.8 268.91 12.8 86.9 127.93
+Flooding 91.4 24.8 72.9 248.76 24.9 72.4 349.71 27.1 69.8 126.37
+Flooding-X 91.8 27.9 69.27 251.17 26.2 71.2 364.06 29.5 67.5 137.12
+BERT 83.8 6.4 92.8 167.59 7.4 91.5 186.97 12.0 86.2 96.82
+PGD 84.3 6.9 92.2 169.01 11.5 86.3 207.90 14.5 82.9 99.90
+FreeLB 83.8 8.2 91.0 150.23 10.3 87.7 193.67 12.5 85.1 96.61
+MRPC InfoBERT 87.7 9.1 86.6 178.16 15.0 77.9 201.26 15.9 76.5 98.87
+Flooding 87.0 15.9 81.7 245.85 16.7 80.4 243.65 19.2 77.2 101.98
+Flooding-X 88.9 19.9 77.1 263.05 19.4 77.7 251.44 22.3 74.3 114.23
+Table2: Experimentalresultsofdifferentmodels’defenseperformancesonfivedatasets. Thebestperformanceis
+markedinbold. Clean%standsfortheaccuracytestedontheoriginalcleandataset. Aua%isshortforaccuracy
+underattack,andSus%istheattacksuccessrateofthetextualattackmethods. Notably,alowerSus%isexpected
+foramorerobustmodel.
+AsseeninFigure3,duringtrainingprocess,the robustness at late training stage. Starting from
+turningpointofgradientaccordancefromnegative epoch7ourmethodenablesasteepincrementon
+topositivecloselymatchesthepointwhenthetest theaccuracyunderattack,whichisduetotheeffect
+lossisabouttoincrease,whichiswellreceivedas ofFloodingthatforcesthemodeltoperformamore
+asignalofoverfitting. Sinceitiscomputationally fierce“randomwalk”sincethetraininglossofmost
+intractable to calculate gradient accordance after batchesaregoingbelowthefloodinglevel. Itisalso
+trained on every single batch, we can only figure demonstratedthatthetraininglossstopsapproach-
+outtherangewherethemodelisabouttooverfitby ingzeroundertheconstraintofFlooding-X,while
+computinggradientaccordanceatsub-epochlevel. the standard fine-tuning and adversarial training
+continuestodecreasethetraininglosstowardszero
+5.2 HowdoesFlooding-XHelpwith
+whichbringsabouttheriskofoverfitting.
+Robustness?
+5.3 TimeConsumption
+Despite its outstanding performance of the last
+trainingepoch,wefindthatFlooding-Xbooststhe TofurtherrevealthestrengthofFloodingbesides
+robustness of model at an earlier stage than stan- itsrobustnessperformance, wecompareitsGPU
+dardfine-tuningandadversarialtrainingmethods trainingtimeconsumptionwithbaselinemethods
+likeFreeLB.AsisshowninFigure4,Flooding-X on several datasets of different sizes. For a fair
+improvesBERT’sadversarialrobustnesstoarela- comparison,everymodelofeachdatasetistrained
+tivelyhighlevelatepoch5,whichiscompetitive on single NVIDIA RTX 2080Ti GPU with the
+withthatofstandardfine-tuningatthelastepoch. same batch size, among which models on SST-
+Besides, Flooding-X accelerates the increase of 2 are trained with a batch size of 32 while QNLI
+5640
+computationallyexpensiveandhasarousedmany
+attempts to cut down on the cost. Shafahi et al.
+(2019)andZhuetal.(2020)focusonfindingbetter
+adversarial sample while maintaining a low cost.
+Despitegradient-basedmethodswhichgenerates
+adversarialperturbationsonthecontinuousinput
+embedding,someworkstailorATforNLPfields.
+Theadversarialexamplesaregeneratedbyreplac-
+ing the original texts based on certain rules such
+as semantic similarity (Alzantot et al., 2018; Jin
+etal.,2020;Lietal.,2020). Ebrahimietal.(2018)
+Figure4: LossandAua%(accuracyunderattack)of
+proposeaperturbationstrategythatconductschar-
+BERTtrainedonSST-2underdifferentmethods. Flood-
+acter insertion, deletion, and replacement. The
+ingpreventsthetraininglossfromapproachingzeroand
+resultsin greatimprovementof BERT’s resistanceto mentionedalgorithmsofATgeneratesadditional
+adversarialattacks. adversarial examples either by calculating gradi-
+entsorbyhumanforce,whichiscomputationally
+expensiveandefforttaking.
+Method SST-2 QNLI IMDB
+Finetune 260 1,193 1,059 OverfittingandCriterion Deepneuralnetworks
+are shown to suffer from overfitting to training
+Flooding 272 1,222 1,087
+configurations and memorise training scenarios
+TAVAT 967 4,105 4,609
+(Takeoka et al., 2021; Rodriguez et al., 2021;
+FreeLB 1,041 4,340 4,457 Roelofs et al., 2019; Werpachowski et al., 2019),
+PGD 1,305 5,571 5,664 whichleadstopoorgeneralizationandvulnerabil-
+ity towards adversarial perturbations. One way
+InfoBERT 2,174 12,077 19,279
+of identifying overfitting is to see whether the
+Table3: GPUtimeconsumption(seconds)oftraining generalizationgap,i.e.,thetestminusthetraining
+oneepochonthewholedataset. Floodingcostsnearly loss, is increasing or not (Salakhutdinov, 2014).
+the same as fine-tuning and 2-15 times less than the Ishidaetal.(2020)furtherdecomposethesituation
+baselineadversarialtrainingalgorithms. ofthegeneralizationgapincreasingintotwostages
+withregardtothechangeofbothtrainingandtest
+losses (Zhang et al., 2021; Belkin et al., 2018;
+and IMDB are trained with 8 and 4 respectively Arpitetal.,2017). Derivedfrominfluencefunction
+since the training sentences are way longer than (KohandLiang,2017),Fortetal.(2019)propose
+SST-2. As is demonstrated in Table 3, the time the concept of Stiffness as a new perspective of
+consumption(seconds)ofFloodingiscompetitive generalization. Theymeasurehowstiffanetwork
+with standard fine-tuning, which is far less than is by looking at how a small gradient step in the
+thatofadversarialtrainingalgorithms. networkparametersononeexampleaffectstheloss
+onanotherexample. However,fromthepractical
+6 RelatedWork
+perspective, it is computationally intractable to
+compute the stiffness between every single sam-
+AdversarialTraining Adversarialtraining(AT)
+pleduringtheprocessofstandardtrainingwhere
+isawell-receivedmethodfordefendingadversarial
+thousandsofsamplesareinvolvedinonebatch.
+attacks. Asanattemptagainstadversarialattacks,
+AT generates gradient-based adversarial samples
+7 Conclusion
+andleveragethemforfurthertraining(Goodfellow
+etal.,2015). Alineofworktriesdifferentmeans In this work, we propose Flooding-X as an ef-
+for the generation of adversarial examples. The ficient and computational-friendly algorithm for
+PGD algorithm (Madry et al., 2018), compared improvingBERT’sresistancetoadversarialattacks.
+asabaselinemethodinourexperiments,involves WefirsttheoreticallyprovethatthevanillaFlood-
+multipleprojectedgradientascentstepstofindthe ing method is able to boost model’s adversarial
+adversarialperturbationswhicharethenusedfor robustness by leading it into a smooth parameter
+updating the model parameters. However, it is landscape. We further propose a promising and
+5641
+computationally tractable criterion, Gradient Ac- GuandanChen,KaiFan,KaiboZhang,BoxingChen,
+cordance, to detect when the model is about to and Zhongqiang Huang. 2021. Manifold adver-
+sarialaugmentationforneuralmachinetranslation.
+overfit and accordingly narrow down the hyper-
+In Findings of the Association for Computational
+parameterspaceforFloodingwithanoptimalflood
+Linguistics: ACL-IJCNLP2021,pages3184–3189,
+levelguaranteed. Experimentalresultsprovethat Online.AssociationforComputationalLinguistics.
+gradient accordance is closely related with the
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+phenomenonofoverfitting, equippedwithwhich
+Kristina Toutanova. 2019. BERT: Pre-training of
+Flooding-X beats the well-received adversarial
+deepbidirectionaltransformersforlanguageunder-
+trainingmethodsandachievesstate-of-the-artper- standing. InProceedingsofthe2019Conferenceof
+formancesonvariousNLPtasksagainstdifferent theNorthAmericanChapteroftheAssociationfor
+ComputationalLinguistics: HumanLanguageTech-
+textualattackmethods. Thisimpliesthatadversar-
+nologies,Volume1(LongandShortPapers),pages
+ial examples, either generated by gradient-based
+4171–4186,Minneapolis,Minnesota.Associationfor
+algorithmsorhumanefforts,arenotamustforthe ComputationalLinguistics.
+improvementofadversarialrobustness. Wecallfor
+WilliamB.DolanandChrisBrockett.2005. Automati-
+furtherexplorationanddeeperunderstandinginthe
+callyconstructingacorpusofsententialparaphrases.
+natureofadversarialrobustnessandattacks. InProceedingsoftheThirdInternationalWorkshop
+onParaphrasing(IWP2005).
+Acknowledgements
+Javid Ebrahimi, Anyi Rao, Daniel Lowd, and Dejing
+Theauthorswishtothanktheanonymousreviewers Dou. 2018. HotFlip: White-box adversarial exam-
+fortheirhelpfulcomments. Thisworkwaspartially plesfortextclassification. InProceedingsofthe56th
+AnnualMeetingoftheAssociationforComputational
+fundedbyNationalNaturalScienceFoundationof
+Linguistics(Volume2: ShortPapers),pages31–36,
+China(No. 62076069,61976056). Thisresearch
+Melbourne,Australia.AssociationforComputational
+was sponsored by Hikvision Cooperation Fund, Linguistics.
+BeijingAcademyofArtificialIntelligence(BAAI),
+StanislavFort,PawełKrzysztofNowak,StanislawJas-
+andCAAI-HuaweiMindSporeOpenFund.
+trzebski, and Srini Narayanan. 2019. Stiffness: A
+newperspectiveongeneralizationinneuralnetworks.
+ArXivpreprint,abs/1901.09491.
+References
+JinlanFu,PengfeiLiu,andQiZhang.2020. Rethinking
+Moustafa Alzantot, Yash Sharma, Ahmed Elgohary,
+generalization of neural models: A named entity
+Bo-JhangHo,ManiSrivastava,andKai-WeiChang.
+recognitioncasestudy. InTheThirty-FourthAAAI
+2018. Generating natural language adversarial ex-
+ConferenceonArtificialIntelligence,AAAI2020,The
+amples. InProceedingsofthe2018Conferenceon
+Thirty-Second Innovative Applications of Artificial
+EmpiricalMethodsinNaturalLanguageProcessing,
+IntelligenceConference,IAAI2020,TheTenthAAAI
+pages 2890–2896, Brussels, Belgium. Association
+SymposiumonEducationalAdvancesinArtificialIn-
+forComputationalLinguistics.
+telligence,EAAI2020,NewYork,NY,USA,February
+DevanshArpit, StanislawJastrzebski, NicolasBallas, 7-12,2020,pages7732–7739.AAAIPress.
+David Krueger, Emmanuel Bengio, Maxinder S.
+Ian J. Goodfellow, Jonathon Shlens, and Christian
+Kanwal, Tegan Maharaj, Asja Fischer, Aaron C.
+Szegedy. 2015. Explaining and harnessing adver-
+Courville,YoshuaBengio,andSimonLacoste-Julien.
+sarialexamples. In3rdInternationalConferenceon
+2017. A closer look at memorization in deep net-
+Learning Representations, ICLR 2015, San Diego,
+works. InProceedingsofthe34thInternationalCon-
+CA,USA,May7-9,2015,ConferenceTrackProceed-
+ferenceonMachineLearning,ICML2017,Sydney,
+ings.
+NSW, Australia, 6-11 August 2017, volume 70 of
+ProceedingsofMachineLearningResearch,pages
+TakashiIshida,IkkoYamane,TomoyaSakai,GangNiu,
+233–242.PMLR.
+and Masashi Sugiyama. 2020. Do we need zero
+Shumeet Baluja and Ian Fischer. 2017. Adversarial traininglossafterachievingzerotrainingerror? In
+transformationnetworks: Learningtogenerateadver- Proceedings of the 37th International Conference
+sarialexamples. ArXivpreprint,abs/1703.09387. onMachineLearning,ICML2020,13-18July2020,
+VirtualEvent,volume119ofProceedingsofMachine
+MikhailBelkin,DanielJ.Hsu,andParthaMitra.2018. LearningResearch,pages4604–4614.PMLR.
+Overfitting or perfect fitting? risk bounds for clas-
+sification and regression rules that interpolate. In Di Jin, Zhijing Jin, Joey Tianyi Zhou, and Peter
+AdvancesinNeuralInformationProcessingSystems Szolovits. 2020. Is BERT really robust? A strong
+31: AnnualConferenceonNeuralInformationPro- baselinefornaturallanguageattackontextclassifi-
+cessingSystems2018,NeurIPS2018,December3-8, cation and entailment. In The Thirty-Fourth AAAI
+2018,Montréal,Canada,pages2306–2317. ConferenceonArtificialIntelligence,AAAI2020,The
+5642
+Thirty-Second Innovative Applications of Artificial YixinNie,AdinaWilliams,EmilyDinan,MohitBansal,
+IntelligenceConference,IAAI2020,TheTenthAAAI JasonWeston,andDouweKiela.2020. Adversarial
+SymposiumonEducationalAdvancesinArtificialIn- NLI:Anewbenchmarkfornaturallanguageunder-
+telligence,EAAI2020,NewYork,NY,USA,February standing. InProceedingsofthe58thAnnualMeeting
+7-12,2020,pages8018–8025.AAAIPress. of the Association for Computational Linguistics,
+pages4885–4901,Online.AssociationforComputa-
+PangWeiKohandPercyLiang.2017. Understanding tionalLinguistics.
+black-box predictions via influence functions. In
+Proceedingsofthe34thInternationalConferenceon VinayUdayPrabhu,DianAngYap,JoyceXu,andJohn
+MachineLearning,ICML2017,Sydney,NSW,Aus- Whaley.2019. Understandingadversarialrobustness
+tralia,6-11August2017,volume70ofProceedings throughlosslandscapegeometries. ArXivpreprint,
+of Machine Learning Research, pages 1885–1894. abs/1907.09061.
+PMLR.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+HaoLi,ZhengXu,GavinTaylor,ChristophStuder,and PercyLiang.2016. SQuAD:100,000+questionsfor
+TomGoldstein.2018a. Visualizingthelosslandscape machinecomprehensionoftext. InProceedingsof
+ofneuralnets. InAdvancesinNeuralInformation the2016ConferenceonEmpiricalMethodsinNatu-
+ProcessingSystems31: AnnualConferenceonNeu- ralLanguageProcessing,pages2383–2392,Austin,
+ralInformationProcessingSystems2018,NeurIPS Texas.AssociationforComputationalLinguistics.
+2018,December3-8,2018,Montréal,Canada,pages
+6391–6401. ShuhuaiRen,YiheDeng,KunHe,andWanxiangChe.
+2019. Generatingnaturallanguageadversarialexam-
+Jinfeng Li, Shouling Ji, Tianyu Du, Bo Li, and Ting plesthroughprobabilityweightedwordsaliency. In
+Wang. 2018b. Textbugger: Generating adversarial Proceedingsofthe57thAnnualMeetingoftheAsso-
+textagainstreal-worldapplications. ArXivpreprint, ciationforComputationalLinguistics,pages1085–
+abs/1812.05271. 1097,Florence,Italy.AssociationforComputational
+Linguistics.
+LinyangLi,RuotianMa,QipengGuo,XiangyangXue,
+andXipengQiu.2020. BERT-ATTACK:Adversarial Pedro Rodriguez, Joe Barrow, Alexander Miserlis
+attackagainst BERTusing BERT. In Proceedings Hoyle, John P. Lalor, Robin Jia, and Jordan Boyd-
+of the 2020 Conference on Empirical Methods in Graber.2021. Evaluationexamplesarenotequally
+NaturalLanguageProcessing(EMNLP),pages6193– informative: How should that change NLP leader-
+6202, Online. Association for Computational Lin- boards? InProceedingsofthe59thAnnualMeeting
+guistics. oftheAssociationforComputationalLinguisticsand
+the11thInternationalJointConferenceonNatural
+LinyangLiandXipengQiu.2021. Token-awarevirtual Language Processing (Volume 1: Long Papers),
+adversarialtraininginnaturallanguageunderstand- pages4486–4503,Online.AssociationforComputa-
+ing. In Proceedings of the AAAI Conference on tionalLinguistics.
+ArtificialIntelligence,volume35,pages8410–8418.
+Rebecca Roelofs, Vaishaal Shankar, Benjamin Recht,
+Andrew L. Maas, Raymond E. Daly, Peter T. Pham, SaraFridovich-Keil,MoritzHardt,JohnMiller,and
+DanHuang, AndrewY.Ng, andChristopherPotts. Ludwig Schmidt. 2019. A meta-analysis of over-
+2011. Learningwordvectorsforsentimentanalysis. fittinginmachinelearning. InAdvancesinNeural
+In Proceedings of the 49th Annual Meeting of the InformationProcessingSystems32: AnnualConfer-
+AssociationforComputationalLinguistics: Human enceonNeuralInformationProcessingSystems2019,
+Language Technologies, pages 142–150, Portland, NeurIPS2019,December8-14,2019,Vancouver,BC,
+Oregon, USA. Association for Computational Lin- Canada,pages9175–9185.
+guistics.
+Ruslan Salakhutdinov. 2014. Deep learning. In The
+Aleksander Madry, Aleksandar Makelov, Ludwig 20th ACM SIGKDD International Conference on
+Schmidt,DimitrisTsipras,andAdrianVladu.2018. KnowledgeDiscoveryandDataMining, KDD’14,
+Towardsdeeplearningmodelsresistanttoadversarial NewYork,NY,USA-August24-27,2014,page1973.
+attacks. In6thInternationalConferenceonLearning ACM.
+Representations,ICLR2018,Vancouver,BC,Canada,
+April30-May3,2018,ConferenceTrackProceed- AliShafahi,MahyarNajibi,AminGhiasi,ZhengXu,
+ings.OpenReview.net. JohnP.Dickerson,ChristophStuder,LarryS.Davis,
+GavinTaylor,andTomGoldstein.2019. Adversarial
+JohnMorris,EliLifland,JinYongYoo,JakeGrigsby, trainingforfree! InAdvancesinNeuralInformation
+DiJin,andYanjunQi.2020. TextAttack: Aframe- ProcessingSystems32: AnnualConferenceonNeu-
+workforadversarialattacks,dataaugmentation,and ralInformationProcessingSystems2019,NeurIPS
+adversarialtraininginNLP. InProceedingsofthe 2019,December8-14,2019,Vancouver,BC,Canada,
+2020 Conference on Empirical Methods in Natu- pages3353–3364.
+ralLanguageProcessing: SystemDemonstrations,
+pages 119–126, Online. Association for Computa- Chenglei Si, Zhengyan Zhang, Fanchao Qi, Zhiyuan
+tionalLinguistics. Liu, Yasheng Wang, Qun Liu, and Maosong Sun.
+5643
+2021. Better robustness by more coverage: Ad- 2019,December8-14,2019,Vancouver,BC,Canada,
+versarial and mixup data augmentation for robust pages7856–7866.
+finetuning. InFindingsoftheAssociationforCom-
+putational Linguistics: ACL-IJCNLP 2021, pages Chaowei Xiao, Bo Li, Jun-Yan Zhu, Warren He,
+1569–1576,Online.AssociationforComputational Mingyan Liu, and Dawn Song. 2018. Generating
+Linguistics. adversarialexampleswithadversarialnetworks. In
+Proceedings of the Twenty-Seventh International
+Richard Socher, Alex Perelygin, Jean Wu, Jason Joint Conference on Artificial Intelligence, IJCAI
+Chuang,ChristopherD.Manning,AndrewNg,and 2018,July13-19,2018,Stockholm,Sweden,pages
+ChristopherPotts.2013. Recursivedeepmodelsfor 3905–3911.ijcai.org.
+semanticcompositionalityoverasentimenttreebank.
+InProceedingsofthe2013ConferenceonEmpirical FuxunYu, ChenchenLiu, YanzhiWang, LiangZhao,
+Methods in Natural Language Processing, pages and Xiang Chen. 2018. Interpreting adversarial
+1631–1642,Seattle,Washington,USA.Association robustness: A view from decision surface in input
+forComputationalLinguistics. space. arXive-prints,pagesarXiv–1810.
+David Stutz, Matthias Hein, and Bernt Schiele. 2021. YuanZang,FanchaoQi,ChenghaoYang,ZhiyuanLiu,
+Relating adversarially robust generalization to flat Meng Zhang, Qun Liu, and Maosong Sun. 2020.
+minima. InProceedingsoftheIEEE/CVFInterna- Word-level textual adversarial attacking as combi-
+tionalConferenceonComputerVision,pages7807– natorial optimization. In Proceedings of the 58th
+7817. AnnualMeetingoftheAssociationforComputational
+Linguistics,pages6066–6080,Online.Association
+Kunihiro Takeoka, Kosuke Akimoto, and Masafumi forComputationalLinguistics.
+Oyamada. 2021. Low-resource taxonomy enrich-
+mentwithpretrainedlanguagemodels. InProceed- Guoyang Zeng, Fanchao Qi, Qianrui Zhou, Tingji
+ingsofthe2021ConferenceonEmpiricalMethods Zhang,ZixianMa,BairuHou,YuanZang,Zhiyuan
+inNaturalLanguageProcessing,pages2747–2758, Liu, and Maosong Sun. 2021. OpenAttack: An
+OnlineandPuntaCana,DominicanRepublic.Asso- open-source textual adversarial attack toolkit. In
+ciationforComputationalLinguistics. Proceedingsofthe59thAnnualMeetingoftheAsso-
+ciationforComputationalLinguisticsandthe11th
+Boxin Wang, Shuohang Wang, Yu Cheng, Zhe Gan, InternationalJointConferenceonNaturalLanguage
+RuoxiJia,BoLi,andJingjingLiu.2021a. Infobert: Processing: SystemDemonstrations,pages363–371,
+Improving robustness of language models from an Online.AssociationforComputationalLinguistics.
+information theoretic perspective. In 9th Inter-
+national Conference on Learning Representations, ChiyuanZhang,SamyBengio,MoritzHardt,Benjamin
+ICLR2021, VirtualEvent, Austria, May3-7, 2021. Recht,andOriolVinyals.2021. Understandingdeep
+learning (still) requires rethinking generalization.
+OpenReview.net.
+CommunicationsoftheACM,64(3):107–115.
+Xiao Wang, Qin Liu, Tao Gui, Qi Zhang, Yicheng
+XiangZhang,JunboJakeZhao,andYannLeCun.2015.
+Zou, Xin Zhou, Jiacheng Ye, Yongxin Zhang, Rui
+Character-levelconvolutionalnetworksfortextclas-
+Zheng, Zexiong Pang, Qinzhuo Wu, Zhengyan Li,
+sification. InAdvancesinNeuralInformationPro-
+ChongZhang,RuotianMa,ZichuFei,RuijianCai,
+cessingSystems28: AnnualConferenceonNeural
+Jun Zhao, Xingwu Hu, Zhiheng Yan, Yiding Tan,
+InformationProcessingSystems2015,December7-
+YuanHu,QiyuanBian,ZhihuaLiu,ShanQin,Bolin
+12, 2015, Montreal, Quebec, Canada, pages 649–
+Zhu,XiaoyuXing,JinlanFu,YueZhang,Minlong
+657.
+Peng,XiaoqingZheng,YaqianZhou,ZhongyuWei,
+XipengQiu,andXuanjingHuang.2021b. TextFlint:
+Yuan Zhang, Jason Baldridge, and Luheng He. 2019.
+Unifiedmultilingualrobustnessevaluationtoolkitfor
+PAWS:Paraphraseadversariesfromwordscrambling.
+naturallanguageprocessing. InProceedingsofthe
+InProceedingsofthe2019ConferenceoftheNorth
+59thAnnualMeetingoftheAssociationforCompu-
+AmericanChapteroftheAssociationforComputa-
+tationalLinguisticsandthe11thInternationalJoint
+tionalLinguistics: HumanLanguageTechnologies,
+ConferenceonNaturalLanguageProcessing:System
+Volume1(LongandShortPapers),pages1298–1308,
+Demonstrations,pages347–355,Online.Association
+Minneapolis,Minnesota.AssociationforComputa-
+forComputationalLinguistics.
+tionalLinguistics.
+XiaosenWang,YichenYang,YiheDeng,andKunHe.
+ChenZhu, YuCheng, ZheGan, SiqiSun, TomGold-
+2020. Adversarialtrainingwithfastgradientprojec-
+stein, and Jingjing Liu. 2020. Freelb: Enhanced
+tionmethodagainstsynonymsubstitutionbasedtext
+adversarialtrainingfornaturallanguageunderstand-
+attacks. arXive-prints,pagesarXiv–2008.
+ing. In 8th International Conference on Learning
+Representations,ICLR2020,AddisAbaba,Ethiopia,
+Roman Werpachowski, András György, and Csaba
+April26-30,2020.OpenReview.net.
+Szepesvári. 2019. Detecting overfitting via adver-
+sarialexamples. InAdvancesinNeuralInformation
+ProcessingSystems32: AnnualConferenceonNeu-
+ralInformationProcessingSystems2019,NeurIPS
+5644

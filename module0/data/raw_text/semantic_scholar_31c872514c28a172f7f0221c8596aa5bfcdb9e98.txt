@@ -1,0 +1,1161 @@
+75 Languages, 1 Model: Parsing Universal Dependencies Universally
+DanKondratyuk1,2 and MilanStraka1
+1CharlesUniversity,InstituteofFormalandAppliedLinguistics
+2SaarlandUniversity,DepartmentofComputationalLinguistics
+dankondratyuk@gmail.com, straka@ufal.mff.cuni.cz
+Abstract
+nsubj Dependency Tag
+We present UDify, a multilingual multi-task
+model capable of accurately predicting uni- 4 (is) Dependency Head
+versalpart-of-speech,morphologicalfeatures,
+lemmas,anddependencytreessimultaneously
+x→x (optimizer) Lemma
+for all 124 Universal Dependencies treebanks
+across 75 languages. By leveraging a multi-
+Number=Sing UFeats
+lingual BERT self-attention model pretrained
+on 104 languages, we found that fine-tuning
+NOUN UPOS
+it on all datasets concatenated together with
+simple softmax classifiers for each UD task
+Layer Attention
+can meet or exceed state-of-the-art UPOS,
+UFeats, Lemmas, (and especially) UAS, and
+LAS scores, without requiring any recurrent
+...
+orlanguage-specificcomponents. Weevaluate
+UDifyformultilinguallearning, showingthat
+low-resourcelanguagesbenefitthemostfrom BERT
+cross-linguistic annotations. We also evalu-
+ateforzero-shotlearning,withresultssuggest-
+ing that multilingual training provides strong
+UD predictions even for languages that nei-
+The best op##timi##zer is gradstudentdescent
+ther UDify nor BERT have ever been trained
+on. CodeforUDifyisavailableathttps://
+“The best optimizeris grad student descent”
+github.com/hyperparticle/udify.
+Figure 1: An illustration of the UDify network ar-
+1 Introduction chitecture with task-specific layer attention, inputting
+word tokens and outputting UD annotations for each
+In the absence of annotated data for a given lan-
+token.
+guage, it can be considerably difficult to create
+models that can parse the language’s text accu-
+rately. Multilingual modeling presents an attrac- training data of similar languages can boost eval-
+tive way to circumvent this low-resource limita- uationscoresofmodelspredictingsyntacticinfor-
+tion. In a similar way learning a new language mation like part-of-speech and dependency trees.
+can enhance the proficiency of a speaker’s previ- Multilinguality not only can improve a model’s
+ous languages (Abu-Rabia and Sanitsky, 2010), a evaluation performance, but can also reduce the
+model which has access to multilingual informa- cost of training multiple models for a collection
+tion can begin to learn generalizations across lan- of languages (Johnson et al., 2017; Smith et al.,
+guagesthatwouldnothavebeenpossiblethrough 2018).
+monolingualdataalone. WorkssuchasMcDonald However, scaling to a higher number of lan-
+et al. (2011); Naseem et al. (2012); Duong et al. guages can often be problematic. Without an
+(2015); Ammar et al. (2016); de Lhoneux et al. ample supply of training data for the considered
+(2018); Kitaev and Klein (2018); Mulcaire et al. languages, it can be difficult to form appropri-
+(2019) consistently demonstrate how pairing the ategeneralizationsandespeciallydifficultifthose
+languages are distant from each other. But re- tirety of UD by concatenating all available
+cent techniques in language model pretraining trainingsetstogether.
+can profit from a drastically larger supply of un-
+supervised text, demonstrating the capability of We evaluate our model with respect to UDPipe
+transferring contextual sentence-level knowledge Future, one of the winners of the CoNLL 2018
+to boost the parsing accuracy of existing NLP Shared Task on Multilingual Parsing from Raw
+models (Howard and Ruder, 2018; Peters et al., TexttoUniversalDependencies(Straka,2018;Ze-
+2018;Devlinetal.,2018). man et al., 2018). In addition, we analyze lan-
+One such model, BERT (Devlin et al., 2018), guages that multilingual training benefits predic-
+introduces a self-attention (Transformer) network tion the most, and evaluate the model for zero-
+thatresultsinstate-of-the-artparsingperformance shot learning, i.e., treebanks which do not have
+when fine-tuning its contextual embeddings. And a training set. Finally, we provide evidence from
+with the release of a multilingual version pre- ourexperimentsandotherrelatedworktohelpex-
+trained on the entirety of the top 104 resourced plainwhypretrainedself-attentionnetworksexcel
+languages of Wikipedia, BERT is remarkably ca- inmultilingualdependencyparsing.
+pable of capturing an enormous collection of Our work uses the AllenNLP library built
+cross-lingualsyntacticinformation. Conveniently, for the PyTorch framework. Code for UD-
+these languages nearly completely overlap with ify and a release of the fine-tuned BERT
+languages supported by the Universal Dependen- weights are available at https://github.
+cies treebanks, which we will use to demonstrate com/hyperparticle/udify.
+the ability to scale syntactic parsing up to 75 lan-
+2 MultilingualMulti-TaskLearning
+guagesandbeyond.
+The Universal Dependencies (UD) framework
+In this section, we detail the multilingual training
+provides syntactic annotations consistent across a
+setupandtheUDifymulti-taskmodelarchitecture.
+large collection of languages (Nivre et al., 2018;
+SeeFigure1foranarchitecturediagram.
+Zeman et al., 2018). This makes it an excel-
+lent candidate for analyzing syntactic knowledge 2.1 MultilingualPretrainingwithBERT
+transfer across multiple languages. UD offers
+WeleveragetheprovidedBERTbasemultilingual
+tokenized sentences with annotations ideal for
+casedpretrainedmodel1,withaself-attentionnet-
+multi-tasklearning,includinglemmas(LEMMAS),
+workof12layers,12attentionheadsperlayer,and
+treebank-specific part-of-speech tags (XPOS),
+hidden dimensions of 768 (Devlin et al., 2018).
+universal part-of-speech tags (UPOS), morpho-
+The model was trained by predicting randomly
+logicalfeatures(UFEATS),anddependencyedges
+maskedinputwordsontheentiretyofthetop104
+andlabels(DEPS)foreachsentence.
+languageswiththelargestWikipedias. BERTuses
+We propose UDify, a semi-supervised multi-
+a wordpiece tokenizer (Wu et al., 2016), which
+task self-attention model automatically producing
+segments all text into (unnormalized) sub-word
+UD annotations in any of the supported UD lan-
+units.
+guages. To accomplish this, we perform the fol-
+lowing:
+2.2 Cross-LinguisticTrainingIssues
+1. We input all sentences into a pretrained Table1displaysalistofvocabularysizes,indicat-
+multilingual BERT network to produce con- ingthatUDtreebankspossessnearly1.6Munique
+textual embeddings, introduce task-specific tokens combined. To sidestep the problem of a
+layer-wise attention similar to ELMo (Peters ballooningvocabulary,weuseBERT’swordpiece
+etal.,2018),anddecodeeachUDtasksimul- tokenizer directly for all inputs. UD expects pre-
+taneouslyusingsoftmaxclassifiers. dictions to be along word boundaries, so we take
+the simple approach of applying the tokenizer to
+2. We apply a heavy amount of regularization
+eachwordusingUD’sprovidedsegmentation. For
+toBERT,includinginputmasking,increased
+prediction, we use the outputs of BERT corre-
+dropout,weightfreezing,discriminativefine-
+spondingtothefirstwordpieceperword,ignoring
+tuning,andlayerdropout.
+1https://github.com/google-research/
+3. We train and fine-tune the model on the en- bert/blob/master/multilingual.md
+TOKEN VOCABSIZE the longest common substring between the form
+and the lemma, and then compute the shortest
+WordForm 1,588,655
+BERTWordpieces 119,547 edit script converting the prefix and suffix of the
+UPOS 17
+formintotheprefixandsuffixofthelemmausing
+XPOS 19,126
+UFeats 23,974 the Wagner–Fischer algorithm (Wagner and Fis-
+Lemmas(tags) 109,639 cher, 1974). Upon predicting a lemma edit script,
+Deps 251
+we apply the edit operations to the word form to
+produce the final lemma. See also Straka (2018)
+Table1: Vocabularysizesofwordsandtagsoverallof
+UD v2.3, with a total of 12,032,309 word tokens and for more details. We chose this approach over a
+668,939sentences. sequence-to-sequencearchitecturelikeBergmanis
+andGoldwater(2018)orKondratyuketal.(2018),
+asthissignificantlyreducestrainingefficiency.
+therest2.
+Deps Weusethegraph-basedbiaffineattention
+In addition, the XPOS annotations are not uni-
+parser developed by Dozat and Manning (2016);
+versalacrosslanguages, orevenacrosstreebanks.
+Dozat et al. (2017), replacing the bidirectional
+Becauseeachtreebankcanpossessadifferentan-
+LSTM layers with BERT. The final embeddings
+notation scheme for XPOS which can slow down
+are projected through arc-head and arc-dep feed-
+inference, we omit training and evaluation of
+forwardlayers,whicharecombinedusingbiaffine
+XPOSfromourexperiments.
+attention to produce a probability distribution of
+archeadsforeachword. Wethendecodeeachtree
+2.3 Multi-TaskLearningwithUD
+withtheChu-Liu/Edmondsalgorithm(Chu,1965;
+For predicting UD annotations, we employ a
+Edmonds,1967).
+multi-task network based on UDPipe Future
+(Straka, 2018), but with all embedding, encoder, 3 Fine-TuningBERTonUDAnnotations
+andprojectionlayersreplacedwithBERT.There-
+We employ several strategies for fine-tuning
+mainingcomponentsincludethepredictionlayers
+BERT for UD prediction, finding that regulariza-
+for each task detailed below, and layer attention
+tion is absolutely crucial for producing a high-
+(seeSection3.1). Thenwecomputesoftmaxcross
+scoringnetwork.
+entropy loss on the output logits to train the net-
+work. For more details on reasons behind archi-
+3.1 LayerAttention
+tecturechoices,seeAppendixA.
+Empirical results suggest that when fine-tuning
+UPOS Asisstandardforneuralsequencetag-
+BERT, combining the output of the last several
+ging, we apply a softmax layer along each word
+layersismorebeneficialforthedownstreamtasks
+input, computing a probability distribution over
+than just using the last layer (Devlin et al., 2018).
+thetagvocabularytopredicttheannotationstring.
+Instead of restricting the model to any subset of
+UFeats Identical to UPOS prediction, we
+layers, we devise a simple layer-wise dot-product
+treat each UFeats string as a separate token in
+attentionwherethenetworkcomputesaweighted
+the vocabulary. We found this to produce higher
+sum of all intermediate outputs of the 12 BERT
+evaluationaccuracythanpredictingeachmorpho-
+layersusingthesameweightsforeachtoken. This
+logical feature separately. Only a small subset
+is similar to how ELMo mixes the output of mul-
+of the full Cartesian product of morphological
+tiplerecurrentlayers(Petersetal.,2018).
+featuresisvalid,eliminatinginvalidcombinations.
+More formally, let w be a trainable scalar for
+i
+BERT embeddings BERT at layer i with a to-
+Lemmas Similar to Chrupała (2006); Mu¨ller ij
+kenatpositionj,andletcbeatrainablescalar. We
+etal.(2015),wereducetheproblemoflemmatiza-
+computecontextualembeddingse(task) suchthat
+tiontoasequencetaggingproblembypredictinga
+classrepresentinganeditscript,i.e.,thesequence
+ofcharacteroperationstotransformthewordform (task) (cid:88)
+e = c BERT ·softmax(w) (1)
+tothelemma. Toprecomputethetags,wefirstfind j ij i
+i
+2We found last, max, or average pooling of the word-
+To prevent the UD classifiers from overfitting
+pieces were not any better or worse for evaluation. Kitaev
+andKlein(2018)reportsimilarresults. to the information in any single layer, we devise
+layerdropout,whereateachtrainingstep,weset models in the CoNLL 2018 Shared Task, as the
+each parameter w to −∞ with probability 0.1. tablesofresultsdonotassumegoldwordsegmen-
+i
+This effectively redistributes probability mass to tation and may not provide a fair comparison. In-
+allotherlayers,forcingthenetworktoincorporate stead, we retrained the open source UDPipe Fu-
+the information content of all BERT layers. We turemodelusinggoldsegmentationandreportre-
+compute layer attention per task, using one set of sultshereduetoitsarchitecturalsimilaritytoUD-
+c,w parameters for each of UPOS, UFeats, Lem- ifyanditsstrongperformance.
+mas,andDeps. Note that the UDPipe Future baseline does not
+itself use BERT. Evaluation of BERT utilization
+3.2 TransferLearningwithULMFiT
+in UDPipe Future can be found in Straka et al.
+TheULMFiTstrategydefinesseveralusefulmeth- (2019).
+ods for fine-tuning a network on a pretrained lan-
+4.1 Datasets
+guage model (Howard and Ruder, 2018). We ap-
+plythesamemethods,withafewminormodifica- For all experiments, we use the full Universal
+tions. Dependencies v2.3 corpus available on LINDAT
+Wesplitthenetworkintotwoparametergroups, (Nivre et al., 2018). We omit the evaluation of
+i.e., the parameters of BERT and all other param- datasetsthatdonothavetheirtrainingannotations
+eters. Weapplydiscriminativefine-tuning,setting freely available, i.e., Arabic NYUAD (ar nyuad),
+the base learning rate of BERT to be 5e−5 and English ESL (en esl), French FTB (fr ftb), Hindi
+1e−3 everywhere else. We also freeze the BERT English HEINCS (qhe heincs), and Japanese BC-
+parameters for the first epoch to increase training CWJ(ja bccwj).
+stability. Totrainthemultilingualmodel,weconcatenate
+While ULMFiT recommends decaying the all available training sets together, similar to Mc-
+learning rate linearly after a linear warmup, we Donaldetal.(2011). Beforeeachepoch,weshuf-
+found that this is prone to training divergence fle all sentences and feed mixed batches of sen-
+in self-attention networks, introducing vanishing tencestothenetwork,whereeachbatchmaycon-
+gradients and underfitting. Instead, we apply an tain sentences from any language or treebank, for
+inverse square root learning rate decay with lin- atotalof80epochs3.
+ear warmup (Noam) seen in training Transformer
+networks for machine translation (Vaswani et al., 4.2 Hyperparameters
+2017). A summary of hyperparameters can be found in
+Table6inAppendixA.1.
+3.3 InputMasking
+The authors of BERT recommend not to mask 4.3 ProbingforSyntax
+words randomly with [MASK] when fine-tuning
+HewittandManning(2019)introduceastructural
+the network. However, we discovered that mask-
+probe for identifying dependency structures in
+ing often reduces the tendency of the classifiers
+contextualizedwordembeddings. Thisprobeeval-
+to overfit to BERT by forcing the network to rely
+uates whether syntax trees (i.e., unlabeled undi-
+on the context of surrounding words. This word
+recteddependencytrees)canbeeasilyextractedas
+dropoutstrategyhasbeenobservedinotherworks
+a global property of the embedding space using a
+showing improved test performance on a variety
+linear transformation of the network’s contextual
+of NLP tasks (Iyyer et al., 2015; Bowman et al.,
+word embeddings. The probe trains a weighted
+2016;Clarketal.,2018;Straka,2018).
+adjacency matrix on the layers of contextual em-
+beddings produced by BERT, identifying a lin-
+4 Experiments
+ear transformation where squared L2 distance be-
+tweenembeddingvectorsencodesthedistancebe-
+We evaluate UDify with respect to every test set
+tween words in the parse tree. Edges are decoded
+in each treebank. As there are too many results
+by computing the minimum spanning tree on the
+to fit within one page, we display a salient subset
+weightmatrix(thelowestsumofedgedistances).
+of scores and compare them with UDPipe Future.
+ThefullresultsarelistedinAppendixA.
+3WetrainonaGTX1080Tiforapproximately25days.
+Wedonotdirectlyreferencemetricsfromother SeeAppendixA.1formoredetails
+TREEBANK MODEL UPOS FEATS LEM UAS LAS MODEL CONFIGURATION UPOS FEATS LEM UAS LAS
+CzechPDT UDPipe 99.18 97.23 99.02 93.33 91.31 UDPipe w/oBERT 93.76 91.04 94.63 84.37 79.76
+(cspdt)
+Lang 99.18 96.87 98.72 94.35 92.41 UDify TaskLayerAttn 93.40 88.72 90.41 85.69 80.43
+UDify 99.18 96.85 98.56 94.73 92.88 UDify GlobalLayerAttn 93.12 87.53 89.03 85.07 79.49
+UDify+Lang 99.24 97.44 98.93 95.07 93.38 UDify SumLayers 93.02 87.20 88.70 84.97 79.33
+GermanGSD UDPipe 94.48 90.68 96.80 85.53 81.07
+(degsd) Lang 94.77 91.73 96.34 87.54 83.39 Table 3: Ablation comparing the average of scores
+UDify 94.55 90.65 94.82 87.81 83.59 overall treebanks: task-specific layerattention(4 sets
+UDify+Lang 95.29 91.94 96.74 88.11 84.13 ofc,w computedforthe4UDtasks), globallayerat-
+EnglishEWT UDPipe 96.29 97.10 98.25 89.63 86.97 tention (one set of c,w for all tasks), and simple sum
+(enewt) Lang 96.82 97.27 97.97 91.70 89.38 oflayers(c=1andw =).
+UDify 96.21 96.17 97.35 90.96 88.50
+UDify+Lang 96.57 96.96 97.90 91.55 89.06
+TREEBANK UPOS FEATS LEM UAS LAS
+SpanishAnCora UDPipe 98.91 98.49 99.17 92.34 90.26
+(esancora) Lang 98.60 98.14 98.52 92.82 90.52 BretonKEB brkeb 63.67 46.75 53.15 63.97 40.19
+TagalogTRG tltrg 61.64 35.27 75.00 64.73 39.38
+UDify 98.53 97.84 98.09 92.99 90.50
+FaroeseOFT fooft 77.86 35.71 53.82 69.28 61.03
+UDify+Lang 98.68 98.25 98.68 93.35 91.28
+NaijaNSC pcmnsc 56.59 52.75 97.52 47.13 33.43
+FrenchGSD UDPipe 97.63 97.13 98.35 90.65 88.06 SanskritUFAL saufal 40.21 18.45 37.60 41.73 19.80
+(frgsd)
+Lang 98.05 96.26 97.96 92.77 90.61
+UDify 97.83 96.59 97.48 93.60 91.45 Table4: Testsetresultsforzero-shotlearning,i.e.,no
+UDify+Lang 97.96 96.73 98.17 93.56 91.45 UDtrainingannotationsavailable. Languagesthatare
+Russian UDPipe 99.12 97.57 98.53 93.80 92.32 pretrainedwithBERTarebolded.
+SynTagRus
+Lang 98.90 96.58 95.16 94.40 92.72
+(rusyntagrus)
+UDify 98.97 96.35 94.43 94.83 93.13
+UDify+Lang 99.08 97.22 96.58 95.13 93.70
+TREEBANK MODEL UUAS
+EnglishEWT(enewt) BERT 65.48
+BelarusianHSE UDPipe 93.63 73.30 87.34 78.58 72.72
+(behse) BERT+finetuneenewt 79.67
+Lang 95.88 76.12 84.52 83.94 79.02
+UDify 97.54 89.36 85.46 91.82 87.19
+Table 5: UUAS test scores calculated on the predic-
+UDify+Lang 97.25 85.02 88.71 90.67 86.98
+tionsproducedbythesyntacticstructuralprobe(Hewitt
+BuryatBDT UDPipe 40.34 32.40 58.17 32.60 18.83
+andManning,2019)usingtheEnglishEWTtreebank,
+(bxrbdt) Lang 52.54 37.03 54.64 29.63 15.82
+ontheunmodifiedmultilingualcasedBERTmodeland
+UDify 61.73 47.86 61.06 48.43 26.28
+UDify+Lang 61.73 42.79 58.20 33.06 18.65 thesameBERTmodelfine-tunedonthetreebank.
+UpperSorbian UDPipe 62.93 41.10 68.68 45.58 34.54
+UFAL Lang 73.70 46.28 58.02 39.02 28.70
+(hsbufal) ate whether the representations affected by fine-
+UDify 84.87 48.63 72.73 71.55 62.82
+UDify+Lang 87.58 53.19 71.88 71.40 60.65 tuning BERT on dependency trees would more
+KazakhKTB UDPipe 55.84 40.40 63.96 53.30 33.38 closelymatchthestructureofthesetrees.
+(kkktb)
+Lang 73.52 46.60 57.84 50.38 32.61
+UDify 85.59 65.14 77.40 74.77 63.66 5 Results
+UDify+Lang 81.32 60.50 67.30 69.16 53.14
+LithuanianHSE UDPipe 81.70 60.47 76.89 51.98 42.17 We show scores of UPOS, UFeats (FEATS), and
+(lthse) Lang 83.40 54.34 58.77 51.23 38.96 Lemma (LEM) accuracies, along with unlabeled
+UDify 90.47 68.96 67.83 79.06 69.34 and labeled attachment scores (UAS, LAS) eval-
+UDify+Lang 84.53 56.98 58.21 58.40 39.91
+uated using the offical CoNLL 2018 Shared Task
+Table 2: Test set scores for a subset of high- evaluation script.4 Results for a salient subset
+resource (top) and low-resource (bottom) languages of high-resource and low-resource languages are
+in comparison to UDPipe Future without BERT, with shown in Table 2, with a comparison between
+3 UDify configurations: Lang, fine-tune on the tree-
+UDPipe Future and UDify fine-tuning on all lan-
+bank. UDify,fine-tuneonallUDtreebankscombined.
+guages. In addition, the table compares UDify
+UDify+Lang, fine-tune on the treebank using BERT
+with fine-tuning on either a single language or
+weights saved from fine-tuning on all UD treebanks
+both languages (fine-tuning multilingually, then
+combined.
+fine-tuning on the language with the saved multi-
+lingual weights) to provide a reference point for
+multilingual influences on UDify. We provide
+We train the structural probe on unmodified
+and fine-tuned BERT using the default hyperpa-
+4https://universaldependencies.org/
+rameters of Hewitt and Manning (2019) to evalu- conll18/evaluation.html
+1
+0
+#1
+#2
+#3
+#4
+1 2 3 4 5 6 7 8 9 10 11 12
+BERT Layer #
+thgieW
+does not. Additionally, UDify severely under-
+performs the baseline on a few low-resource lan-
+guages,e.g.,cop scriptorum. Wesurmisethatthis
+is due to using mixed batches on an unbalanced
+training set, which skews the model towards pre-
+dicting larger treebanks more accurately. How-
+UPOS
+ever, we find that fine-tuning on the treebank in-
+UFeat
+Lemma dividually with BERT weights saved from UDify
+Dep
+eliminatesmostofthesegapsinperformance.
+Echoing results seen in Smith et al. (2018),
+UDify also shows strong improvement leveraging
+Figure 2: The unnormalized BERT layer attention
+multilingual data from other UD treebanks. In
+weights w contributing to layer i for each task after
+i
+low-resource cases, fine-tuning BERT on all tree-
+training. AlinearchangeinweightscaleseachBERT
+banks can be far superior to fine-tuning mono-
+layerexponentiallyduetothesoftmaxinEquation1
+lingually. A second round of fine-tuning on an
+individual treebank using UDify’s BERT weights
+a full table of scores for all treebanks in Ap- can improve this further, especially for treebanks
+pendixA.4. that underperform the baseline. However, for
+A more comprehensive overview is shown in languages that are already display strong results,
+Table 3, comparing different attention strategies wetypicallynoticeworseevaluationperformance
+appliedtoUDify. Wedisplayanaverageofscores across all the evaluation metrics. This indi-
+over all (89) treebanks with a training set. For cates that multilingual fine-tuning really is supe-
+zero-shot learning evaluation, Table 4 displays a rior to single language fine-tuning with respect
+subset of test set evaluations of treebanks that to these high-performing languages, showing im-
+do not have a training set, i.e., Breton, Tagalog, provementsofupto20%reductioninerror.
+Faroese,Naija,andSanskrit. Weplotthelayerat-
+Interestingly, Slavic languages tend to perform
+tention weights w after fine-tuning BERT in Fig-
+the best with multilingual training. While lan-
+ure 2, showing a set of weights per task. And Ta-
+guageslikeCzechandRussianpossessthelargest
+ble 5 compares the unlabeled undirected attach-
+UDtreebanksanddonotdifferasmuchinperfor-
+ment scores (UUAS) of dependency trees pro-
+mance from monolingual fine-tuning, evidenced
+duced using a structural probe on both the un-
+by the improvements over single-language fine-
+modified multilingual cased BERT model and the
+tuning, we can see a large degree of morpho-
+extracted BERT model fine-tuned on the English
+logical and syntactic structure has transferred to
+EWTtreebank.
+low-resourceSlaviclanguageslikeUpperSorbian,
+whose treebank contains only 646 sentences. But
+6 Discussion
+thisisnotonlytrueofSlaviclanguages,astheTur-
+In this section, we discuss the most notable fea- kiclanguageKazakh(withlessthan1,000training
+turesoftheresults. sentences)hasalsoimprovedsignificantly.
+The zero-shot results indicate that fine-tuning
+6.1 ModelPerformance
+on BERT can result in reasonably high scores on
+On average, UDify reveals a strong set of re- languages that do not have a training set. It can
+sults that are comparable in performance with the be seen that a combination of BERT pretraining
+state-of-the-art in parsing UD annotations. UD- andmultilinguallearningcanimprovepredictions
+ify excels in dependency parsing, exceeding UD- for Breton and Tagalog, which implies that the
+Pipe Future by a large margin especially for low- networkhaslearnedrepresentationsofsyntaxthat
+resourcelanguages. UDifyslightlyunderperforms crosslingualboundaries. Furthermore,despitethe
+with respect to Lemmas and Universal Features, fact that neither BERT nor UDify have directly
+likely due to UDPipe Future additionally using observed Faroese, Naija, or Sanskrit, we see un-
+character-levelembeddings(SantosandZadrozny, usuallyhighperformanceintheselanguages. This
+2014; Ling et al., 2015; Ballesteros et al., 2015; canbepartiallyattributedtoeachlanguageclosely
+Kim et al., 2016), while (for simplicity) UDify resembling another: Faroese is very close to Ice-
+. . . . . . . . . . . . . .
+Moving fields to the category and series areas Moving fields to the category and series areas
+. . . . . . . . .. ..
+. .
+. .
+. .
+. . . . . . . . . . . . . . . .
+We land and spill out and go our separate ways . We land and spill out and go our separate ways .
+. . .. . . . . . . . . . . . .
+. .
+. .
+BERT UDify
+Figure3: Examplesofminimumspanningtreesproducedbythesyntacticprobeareshownbeloweachsentence,
+evaluatedonBERT(left)andonUDify(right). Golddependencytreesareshownaboveeachsentenceinblack.
+Matchedandunmatchedspanningtreeedgesareshowninblueandredrespectively.
+landic, Naija (Nigerian Pidgin) is a variant of En- This indicates that the self-attention weights have
+glish, and Sanskrit is an ancient Indian language learned a linearly-transformable representation of
+relatedtoGreek,Latin,andHindi. its vectors more closely resembling annotated de-
+Table3showsthatlayerattentiononBERTfor pendencytreesdefinedbylinguists. Evenwithjust
+each task isbeneficial for test performance, much unsupervisedpretraining,aglobalstructuralprop-
+more than using a global weighted average. In erty of the vector space of the BERT weights al-
+fact,Figure2showsthateachtaskprefersthelay- ready produces a decent representation of the de-
+ers of BERT differently, uniquely extracting the pendency tree in the squared L2 distance. Fol-
+optimal information for a task. All tasks favor lowing this, it should be no surprise that train-
+the information content in the last 3 layers, with ingwithanon-lineargraph-baseddependencyde-
+a tendency to disprefer layers closer to the in- coder would produce even higher quality depen-
+put. However,aninterestingobservationisthatfor dencytrees.
+Lemmas and UFeats, the classifier prefers to also
+incorporate the information of the first 3 layers. 6.3 AttentionVisualization
+This meshes well with the linguistic intuition that
+We performed a high-level visual analysis of
+morphologicalfeaturesaremorecloselyrelatedto
+the BERT attention weights to see if they have
+the surface form of a word and rely less on con-
+changed on any discernible level. Our obser-
+text than other syntactic tasks. Curiously enough,
+vations reveal something notable: the attention
+the middle layers are highly dispreferred, mean-
+weights tend to be more sparse, and are more of-
+ing that the most useful processing for multilin-
+tensensitivetoconstituentboundarieslikeclauses
+gual syntax (tagging, dependency parsing) occurs
+and prepositions. Figure 4 illustrates this point,
+inthelast3-4layers. TheresultsreleasedbyTen-
+showingtheattentionweightsofaparticularatten-
+ney et al. (2019) also agree with the intuition be-
+tionheadonanexamplesentence. Wefindsimilar
+hind the weight distribution above, showing how
+behavior in 13 additional attention heads for the
+thedifferentlayersofBERTgeneratehierarchical
+providedexamplesentence.
+information like a traditional NLP pipeline, start-
+We see that some of the attention structure re-
+ing with low-level syntax (e.g., POS tagging) and
+mains after fine-tuning. Previously, the atten-
+building up to high-level syntactic and semantic
+tion head was mostly sensitive to previous words
+dependencyparsing.
+and punctuation. But after fine-tuning, it demon-
+stratesmorefine-grainedattentiontowardsimme-
+6.2 EffectofSyntacticFine-TuningonBERT
+diatewordpieces,prepositions,articles,andadjec-
+Even without any supervised training, BERT en- tives. We found similar evidence in other atten-
+codesitssyntaxintheembedding’sdistanceclose tion heads, which implies that fine-tuning on UD
+to human-annotated dependencies. But more no- producesattentionthatmorecloselyresembleslo-
+tably, the results in Table 5 show that fine-tuning calizeddependencieswithinconstituents. Wealso
+BERT on Universal Dependencies significantly findthatBERTbaseheavilypreferredtoattendto
+boosts UUAS scores when compared to the gold punctuation, while UDify BERT does to a much
+dependency trees, an error reduction of 41%. lesserdegree.
+Figure4: VisualizationofBERTattentionhead4atlayer11,comparingtheattendedwordsonanEnglishsentence
+betweenBERTbaseandUDifyBERTafterfine-tuning.Therightcolumnindicatestheattendedwords(keys)with
+respecttothewordsintheleftcolumn(queries). Darkerlinesindicatestrongerattentionweights.
+6.4 FactorsthatEnableBERTtoExcelat parsing. WuandDredze(2019)alsoanalyzemul-
+DependencyParsingandMultilinguality tilingual BERT and report that the model retains
+both language-independent as well as language-
+Goldberg (2019) assesses the syntactic capabili-
+specificinformationrelatedtoeachinputsentence,
+tiesofBERTandconcludesthatBERTisremark-
+and that the shared embedding space with the
+ably capable of processing syntactic tasks despite
+input wordpieces correlates strongly with cross-
+not being trained on any supervised data. Con-
+lingualgeneralization.
+ductingsimilarexperiments,Vig(2019)andSileo
+(2019) visualize the attention heads within each From the evidence above, we can see that the
+BERT layer, showing a number of distinct atten- combination of strong regularization paired with
+tionpatterns, includingattendingtoprevious/next the ability to capture long-range dependencies
+words, related words, punctuation, verbs/nouns, with self-attention and contextual pretraining on
+andcoreferencedependencies. an enormous corpus of raw text are large con-
+This neat delegation of certain low-level in- tributors that enable robust multilingual modeling
+formation processing tasks to the attention heads with respect to dependency parsing. Pretraining
+hintsatwhyBERTmightexcelatprocessingsyn- self-attentionnetworksintroducesastrongsyntac-
+tax. We see that from the analysis on BERT fine- tic bias that is capable of generalizing across lan-
+tunedwithsyntaxusingthesyntacticprobeandat- guages. The dependencies seen in the output de-
+tention visualization, BERT produces a represen- pendency trees are highly correlated with the im-
+tation that keeps constituents close in its vector plicit dependencies learned by the self-attention,
+space, and improves this representation to more showing that self-attention is remarkably capable
+closely resemble human annotated dependency ofmodelingsyntaxbypickinguponcommonsyn-
+trees when fine-tuned on UD as seen in Figure 3. tactic patterns in text. The introduction of multi-
+Furthermore, Ahmad et al. (2018) provide results lingual data also shows that these attention heads
+consistent with their claim that self-attention net- provide a surprising amount of capacity that do
+workscanbemorerobustthanrecurrentnetworks not degrade the performance considerably when
+to the change of word order, observing that self- compared to monolingual training. E.g., Devlin
+attention networks capture less word order infor- etal.(2018)reportthatthefine-tuningonthemul-
+mation in their architecture, which is what allows tilingual BERT model results in a small degrada-
+them to generally perform better at cross-lingual tion in English fine-tune performance with 104
+pretrained languages compared to an equivalent the number of required models to train down to
+model pretrained only on English. This also hints one. Multilingual learning is most beneficial for
+that the BERT model can be compressed signif- low-resourcelanguages,evenonesthatdonotpos-
+icantly without compromising heavily on evalua- sess a training set, and can be further improved
+tionperformance. byfine-tuningmonolinguallyusingBERTweights
+saved from UDify’s multilingual training. All
+7 RelatedWork
+these results indicate that self-attention networks
+areremarkablycapableofcapturingsyntacticpat-
+This work’s main contribution in combining tree-
+terns, and coupled with unsupervised pretraining
+banks for multilingual UD parsing is most simi-
+are able to scale to a large number of languages
+lar to the Uppsala system for the CoNLL 2018
+withoutdegradingperformance.
+Shared Task (Smith et al., 2018). Uppsala com-
+binestreebanksofonelanguageorcloselyrelated
+Acknowledgments
+languages together over 82 treebanks and parses
+all UD annotations in a multi-task pipeline archi- The work described herein has been sup-
+tecture for a total of 34 models. This approach ported by OP VVV VI LINDAT/CLARIN
+reduces the number of models required to parse project of the Ministry of Education, Youth
+each language while also showing results that are and Sports of the Czech Republic (project
+noworsethantrainingoneachtreebankindividu- CZ.02.1.01/0.0/0.0/16 013/0001781) and it has
+ally, and in especially low-resource cases, signif- been supported and has been using language
+icantly improved. Combining UD treebanks in a resources developed by the LINDAT/CLARIN
+language-agnosticway wasfirst introducedin Vi- project of the Ministry of Education, Youth
+laresetal.(2016),whichtrainbilingualparserson and Sports of the Czech Republic (project
+pairs of UD treebanks, showing similar improve- LM2015071).
+ments. Dan Kondratyuk has been supported by the
+Othereffortsintrainingmultilingualmodelsin- Erasmus Mundus program in Language & Com-
+clude Johnson et al. (2017), which demonstrate a munication Technologies (LCT), and by the Ger-
+machine translation model capable of supporting man Federal Ministry of Education and Re-
+translationbetween12languages. Recurrentmod- search (BMBF) through the project DEEPLEE
+els have also shown to be capable of scaling to (01IW17001).
+a larger number of languages as seen in Artetxe
+and Schwenk (2018), which define a scalable ap-
+References
+proachtotrainmassivelymultilingualembeddings
+usingrecurrentnetworksonanauxiliarytask,e.g., Salim Abu-Rabia and Ekaterina Sanitsky. 2010. Ad-
+vantages of bilinguals over monolinguals in learn-
+natural language inference. Schuster et al. (2019)
+ing a third language. Bilingual Research Journal,
+producecontext-independentmultilingualembed-
+33(2):173–199.
+dings using a novel embedding alignment strat-
+Wasi Uddin Ahmad, Zhisong Zhang, Xuezhe Ma,
+egy to allow models to improve the use of cross-
+Eduard Hovy, Kai-Wei Chang, and Nanyun Peng.
+lingual information, showing improved results in
+2018. On difficulties of cross-lingual transfer with
+dependencyparsing. orderdifferences:Acasestudyondependencypars-
+ing. arXivpreprintarXiv:1811.00570.
+8 Conclusion
+WaleedAmmar,GeorgeMulcaire,MiguelBallesteros,
+Chris Dyer, and Noah A Smith. 2016. Many lan-
+We have proposed and evaluated UDify, a mul-
+guages,oneparser. TransactionsoftheAssociation
+tilingual multi-task self-attention network fine-
+forComputationalLinguistics,4:431–444.
+tunedonBERTpretrainedembeddings,capableof
+Mikel Artetxe and Holger Schwenk. 2018. Mas-
+producing annotations for any UD treebank, and
+sively multilingual sentence embeddings for zero-
+exceeding the state-of-the-art in UD dependency
+shot cross-lingual transfer and beyond. arXiv
+parsinginalargesubsetoflanguageswhilebeing preprintarXiv:1812.10464.
+comparable in tagging and lemmatization accu-
+Miguel Ballesteros, Chris Dyer, and Noah A Smith.
+racy. Strongregularizationandtask-specificlayer
+2015. Improvedtransition-basedparsingbymodel-
+attentionarehighlybeneficialforfine-tuning,and
+ingcharactersinsteadofwordswithlstms. InPro-
+coupled with training multilingually, also reduce ceedingsofthe2015ConferenceonEmpiricalMeth-
+ods in Natural Language Processing, pages 349– JeremyHowardandSebastianRuder.2018. Universal
+359. languagemodelfine-tuningfortextclassification. In
+Proceedings of the 56th Annual Meeting of the As-
+Toms Bergmanis and Sharon Goldwater. 2018. Con- sociationforComputationalLinguistics(Volume1:
+textsensitiveneurallemmatizationwithlematus. In LongPapers),volume1,pages328–339.
+Proceedings of the 2018 Conference of the North
+American Chapter of the Association for Computa- Mohit Iyyer, Varun Manjunatha, Jordan Boyd-Graber,
+tional Linguistics: Human Language Technologies, and Hal Daume´ III. 2015. Deep unordered com-
+Volume 1 (Long Papers), volume 1, pages 1391– position rivals syntactic methods for text classifica-
+1400. tion. InProceedingsofthe53rdAnnualMeetingof
+the Association for Computational Linguistics and
+Samuel R Bowman, Luke Vilnis, Oriol Vinyals, An- the 7th International Joint Conference on Natural
+drew M Dai, Rafal Jozefowicz, and Samy Ben- LanguageProcessing(Volume1:LongPapers),vol-
+gio.2016. Generatingsentencesfromacontinuous ume1,pages1681–1691.
+space. CoNLL2016,page10.
+Melvin Johnson, Mike Schuster, Quoc V Le, Maxim
+Grzegorz Chrupała. 2006. Simple data-driven Krikun,YonghuiWu,ZhifengChen,NikhilThorat,
+context-sensitivelemmatization. Procesamientodel FernandaVie´gas,MartinWattenberg,GregCorrado,
+LenguajeNatural,37.
+et al. 2017. Googles multilingual neural machine
+translation system: Enabling zero-shot translation.
+Yoeng-JinChu.1965. Ontheshortestarborescenceof
+Transactions of the Association for Computational
+adirectedgraph. ScientiaSinica,14:1396–1400.
+Linguistics,5:339–351.
+KevinClark,Minh-ThangLuong,ChristopherDMan-
+YoonKim,YacineJernite,DavidSontag,andAlexan-
+ning, and Quoc V Le. 2018. Semi-supervised se-
+derMRush.2016. Character-awareneurallanguage
+quence modeling with cross-view training. arXiv
+models. In Thirtieth AAAI Conference on Artificial
+preprintarXiv:1809.08370.
+Intelligence.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Nikita Kitaev and Dan Klein. 2018. Multilingual
+KristinaToutanova.2018. Bert:Pre-trainingofdeep
+constituency parsing with self-attention and pre-
+bidirectional transformers for language understand-
+training. arXivpreprintarXiv:1812.11760.
+ing. arXivpreprintarXiv:1810.04805.
+Daniel Kondratyuk, Toma´sˇ Gavencˇiak, Milan Straka,
+Timothy Dozat and Christopher D Manning. 2016.
+and Jan Hajicˇ. 2018. Lemmatag: Jointly tagging
+Deepbiaffineattentionforneuraldependencypars-
+andlemmatizingformorphologicallyrichlanguages
+ing. arXivpreprintarXiv:1611.01734.
+withbrnns. InProceedingsofthe2018Conference
+on Empirical Methods in Natural Language Pro-
+TimothyDozat,PengQi,andChristopherDManning.
+cessing,pages4921–4928.
+2017. Stanford’s graph-based neural dependency
+parser at the conll 2017 shared task. Proceedings
+MiryamdeLhoneux,JohannesBjerva,IsabelleAugen-
+oftheCoNLL2017SharedTask: MultilingualPars-
+stein,andAndersSøgaard.2018. Parametersharing
+ingfromRawTexttoUniversalDependencies,pages
+between dependency parsers for related languages.
+20–30.
+In Proceedings of the 2018 Conference on Empiri-
+Long Duong, Trevor Cohn, Steven Bird, and Paul calMethodsinNaturalLanguageProcessing,pages
+Cook. 2015. Low resource dependency parsing: 4992–4997.
+Cross-lingualparametersharinginaneuralnetwork
+parser. In Proceedings of the 53rd Annual Meet- Wang Ling, Chris Dyer, Alan W Black, Isabel Tran-
+ingoftheAssociationforComputationalLinguistics coso,RamonFermandez,SilvioAmir,LuisMarujo,
+andthe7thInternationalJointConferenceonNatu- and Tiago Luis. 2015. Finding function in form:
+ralLanguageProcessing(Volume2: ShortPapers), Compositional character models for open vocabu-
+volume2,pages845–850. larywordrepresentation. InProceedingsofthe2015
+Conference on Empirical Methods in Natural Lan-
+Jack Edmonds. 1967. Optimum branchings. Journal guageProcessing,pages1520–1530.
+of Research of the national Bureau of Standards B,
+71(4):233–240. Ryan McDonald, Slav Petrov, and Keith Hall. 2011.
+Multi-source transfer of delexicalized dependency
+YoavGoldberg.2019. Assessingbert’ssyntacticabili- parsers. InProceedingsoftheconferenceonempir-
+ties. arXivpreprintarXiv:1901.05287. icalmethodsinnaturallanguageprocessing,pages
+62–72.AssociationforComputationalLinguistics.
+John Hewitt and Christopher D Manning. 2019. A
+structuralprobeforfindingsyntaxinwordrepresen- Phoebe Mulcaire, Jungo Kasai, and Noah Smith.
+tations. In Proceedings of the 2019 Conference of 2019. Polyglot contextual representations im-
+the North American Chapter of the Association for prove crosslingual transfer. arXiv preprint
+ComputationalLinguistics. arXiv:1902.09697.
+ThomasMu¨ller,RyanCotterell,AlexanderFraser,and Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Hinrich Schu¨tze. 2015. Joint lemmatization and Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+morphological tagging with lemming. In Proceed- Kaiser, and Illia Polosukhin. 2017. Attention is all
+ings of the 2015 Conference on Empirical Methods you need. In Advances in Neural Information Pro-
+inNaturalLanguageProcessing,pages2268–2274. cessingSystems,pages5998–6008.
+TahiraNaseem,ReginaBarzilay,andAmirGloberson. Jesse Vig. 2019. Visualizing attention in transformer-
+2012. Selectivesharingformultilingualdependency based language models. arXiv preprint
+parsing. In Proceedings of the 50th Annual Meet- arXiv:1904.02679.
+ing of the Association for Computational Linguis-
+David Vilares, Carlos Go´mez-Rodr´ıguez, and
+tics: LongPapers-Volume1, pages629–637.Asso-
+Miguel A Alonso. 2016. One model, two lan-
+ciationforComputationalLinguistics.
+guages: training bilingual parsers with harmonized
+treebanks. In Proceedings of the 54th Annual
+Joakim Nivre, Mitchell Abrams, Zˇeljko Agic´, and
+Meeting of the Association for Computational
+Ahrenberg.2018. Universaldependencies2.3. LIN-
+Linguistics (Volume 2: Short Papers), volume 2,
+DAT/CLARINdigitallibraryattheInstituteofFor-
+pages425–431.
+mal and Applied Linguistics (U´FAL), Faculty of
+MathematicsandPhysics,CharlesUniversity. Robert A Wagner and Michael J Fischer. 1974. The
+string-to-string correction problem. Journal of the
+MatthewE.Peters,MarkNeumann,MohitIyyer,Matt ACM(JACM),21(1):168–173.
+Gardner, Christopher Clark, Kenton Lee, and Luke
+Zettlemoyer. 2018. Deep contextualized word rep- Shijie Wu and Mark Dredze. 2019. Beto, bentz, be-
+resentations. InProc.ofNAACL. cas: The surprising cross-lingual effectiveness of
+bert. arXivpreprintarXiv:1904.09077.
+CiceroDSantosandBiancaZadrozny.2014. Learning
+character-level representations for part-of-speech Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V
+tagging. In Proceedings of the 31st International Le, Mohammad Norouzi, Wolfgang Macherey,
+ConferenceonMachineLearning(ICML-14),pages Maxim Krikun, Yuan Cao, Qin Gao, Klaus
+1818–1826. Macherey, et al. 2016. Google’s neural ma-
+chinetranslationsystem: Bridgingthegapbetween
+Tal Schuster, Ori Ram, Regina Barzilay, and Amir human and machine translation. arXiv preprint
+Globerson. 2019. Cross-lingual alignment of con- arXiv:1609.08144.
+textual word embeddings, with applications to
+Daniel Zeman, Jan Hajicˇ, Martin Popel, Martin Pot-
+zero-shot dependency parsing. arXiv preprint
+thast,MilanStraka,FilipGinter,JoakimNivre,and
+arXiv:1902.09492.
+SlavPetrov.2018. CoNLL2018sharedtask: Mul-
+tilingual parsing from raw text to universal depen-
+Damien Sileo. 2019. Understanding bert transformer:
+dencies. InProceedingsoftheCoNLL2018Shared
+Attentionisntallyouneed. TowardsDataScience.
+Task:MultilingualParsingfromRawTexttoUniver-
+sal Dependencies, pages 1–21, Brussels, Belgium.
+Aaron Smith, Bernd Bohnet, Miryam de Lhoneux,
+AssociationforComputationalLinguistics.
+JoakimNivre,YanShao,andSaraStymne.2018. 82
+treebanks, 34 models: Universal dependency pars-
+A Appendix
+ing with multi-treebank models. In Proceedings of
+the CoNLL 2018 Shared Task: Multilingual Pars-
+Inthissection,wedetailandexplainhyperparam-
+ingfromRawTexttoUniversalDependencies,pages
+113–123, Brussels, Belgium. Association for Com- eter choices and miscellaneous details related to
+putationalLinguistics. model training and display the full tables of eval-
+uationresultsofUDifyacrossallUDlanguages.
+MilanStraka.2018. UDPipe2.0prototypeatCoNLL
+2018UDsharedtask. InProceedingsoftheCoNLL
+A.1 Hyperparameters
+2018 Shared Task: Multilingual Parsing from Raw
+Text to Universal Dependencies, pages 197–207, Upon concatenating all training sets, we shuffle
+Brussels, Belgium. Association for Computational all the sentences, bundle them into batches of 32
+Linguistics.
+sentences each, and train UDify for a total of 80
+epochsbeforestopping. Weholdthelearningrate
+Milan Straka, Jana Strakova´, and Jan Hajicˇ. 2019.
+Evaluating Contextualized Embeddings on 54 Lan- constant until we unfreeze BERT in the second
+guagesinPOSTagging,LemmatizationandDepen- epoch, where we and linearly warm up the learn-
+dencyParsing. arXivpreprintarXiv:1908.07448.
+ing rate for the next 8,000 batches and then apply
+inverse square root learning rate decay for the re-
+Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019.
+maining epochs. For the dependency parser, we
+Bert rediscovers the classical nlp pipeline. arXiv
+preprintarXiv:1905.05950. use feedforward tag and arc dimensions of 300
+HYPERPARAMETER VALUE
+0.3
+Dependencytagdimension 256
+Dependencyarcdimension 768 0.2
+Optimizer Adam
+β ,β 0.9,0.99 0.1
+1 2
+Weightdecay 0.01
+0.0
+LabelSmoothing 0.03
+Dropout 0.5 0.1
+BERTdropout 0.2
+Maskprobability 0.2 0.2
+Layerdropout 0.1
+0.3
+Batchsize 32
+Epochs 80 102 103 104 105
+Train Sentences
+Baselearningrate 1e−3
+BERTlearningrate 5e−5
+Learningratewarmupsteps 8000
+Gradientclipping 5.0
+Table6: Asummaryofmodelhyperparameters.
+and800respectively. Weapplyasmallweightde-
+cay penalty of 0.01 to ensure that the weights re-
+mainsmallaftereachupdate. Foroptimizationwe
+usetheAdamoptimizerandwecomputesoftmax
+cross entropy loss to train the network. We use
+a default β value of 0.9 and lower the β value
+1 2
+from the typical 0.999 to 0.99. The reasoning is
+to increase the decay rate of the second moment
+intheAdamoptimizertoreducethechanceofthe
+optimizer being too optimistic with respect to the
+gradient history. We clip the gradient updates to
+a maximum L2 magnitude of 5.0. A summary of
+hyperparameterscanbefoundinTable6.
+To speed up training, we employ bucketed
+batching, sorting allsentences bytheir length and
+groupingsimilarlengthsentencesintoeachbatch.
+However, to ensure that most sentences do not
+get grouped within the same batch, we fuzz the
+lengthsofeachsentencebyamaximumof10%of
+itstruelengthwhengroupingsentencestogether.
+Despite using all the regularization strategies
+shown previously, we still observe overfitting and
+must apply more aggressive techniques. To fur-
+ther regularize the network, we also increase the
+attention and hidden dropout rates of BERT from
+0.1 to 0.2, and we also apply a dropout rate of
+0.5 to all BERT layers before computing layer at-
+tention for each of the four tasks and applying a
+layer dropout with probability 0.1. We increase
+the masking probability of each wordpiece from
+0.15to0.2.
+With all these regularization strategies and hy-
+perparameter choices combined, we are able to
+fine-tuneBERTforfarmoreepochsbeforethenet-
+workstartstooverfit,i.e.,80asopposedtoaround
+ecnereffiD
+SAL
+Figure 5: A plot of the difference in LAS between
+UDifyand UDPipeFuture withrespect tothe number
+oftrainingsentencesineachtreebank.
+10. Even so, we believe even more regularization
+canimprovetestperformance.
+ThefinalmultilingualUDifymodelwastrained
+over approximately 25 days on an NVIDIA GTX
+1080 Ti taking an average of 8 hours per epoch.
+Weusehalf-precision(fp16)trainingtobeableto
+keep the BERT model in memory. One notable
+aspect of training is that while we observed the
+model start to level out in validation performance
+at around epoch 30, the model continually made
+small, incremental improvements over each sub-
+sequent epoch, resulting in far higher scores than
+if the model training was terminated early. This
+can be partially attributed to the decaying inverse
+squarerootlearningrate.
+Due to the high training times, we are only
+able to report on a small number of training ex-
+perimentsforthemostrelevantandusefulresults.
+Priortodevelopingthefinalmodel,weconducted
+fine-tuning experiments on pairs of languages to
+findasetofhyperparametersthatworkedbestfor
+multilingual learning. After this, we gradually
+scaleduptrainingto3languages,5languages,15
+languages, and then finally the model presented
+above. We had high doubts, and wanted to see
+where the limit was in multilingual training. We
+were pleasantly surprised to find that this simple
+trainingschemewasabletoscaleupsowelltoall
+UDtreebanks.
+A.2 TrainingSizeEffectonPerformance
+Togainabetterunderstandingofwherethelargest
+score improvements in UDify occur, we plot the
+LAS improvement UDify provides over UDPipe
+Future for each treebank, ordered by the size
+(numberofsentences)ofthetrainingset,seeFig-
+1.0
+0.8
+0.6
+0.4
+0.2
+0.0 102 103 104 105
+Train Sentences
+SAL
+tualembeddingsofeachwordintheoriginalsen-
+tence.
+A.4 FullResultsofUDScores
+We show in Tables 7, 8, 9, and 10 UDify scores
+evaluated on all 124 treebanks with the official
+CoNLL 2018 Shared Task evaluation script. For
+comparison, we also include the full test evalua- UDPipe Future
+UDify tion of UDPipe Future on the subset of 89 tree-
+banks with a training set. We also add a column
+indicatingthesizeofeachtreebank,i.e.,thenum-
+Figure 6: A plot of LAS between with respect to the berofsentencesinthetrainingset.
+numberoftrainingsentencesineachtreebank.
+ure 5. The results show that the largest improve-
+ments tend to occur on small treebanks with less
+than 3,000 training examples. For absolute LAS
+values, see Figure 6, which indicates that more
+trainingresourcestendtoimproveevaluationper-
+formanceoverall.
+A.3 MiscellaneousDetails
+Our results show that modeling language-specific
+propertiesisnotstrictlynecessarytoachievehigh-
+performing cross-lingual representations for de-
+pendency parsing, though we caution that the
+model can also likely be improved by these tech-
+niques.
+Fine-tuning BERT on UD introduces a syntac-
+tic bias in the network, and we are interested in
+observing any differences in transfer learning by
+fine-tuning this new “UD-BERT” on other tasks.
+We leave a comprehensive evaluation of injecting
+syntactic bias into language models with respect
+toknowledgetransferforfuturework.
+We note that saving the weights of BERT and
+fine-tuning a second round can improve perfor-
+manceasdemonstratedinSticklandetal. (2019).
+The improvements of UDify+Lang over just UD-
+ify can be partially attributed to this, but we can
+see that even these improvements can be inferior
+tofine-tuningonallUDtreebanks.
+BERT limits its positional encoding to 512
+wordpieces, causing some sentences in UD to be
+too long to fit into the model. We use a slid-
+ing window approach to break up long sentences
+intowindowsof512wordpieces,overlappingeach
+window by 256 wordpieces. After feeding the
+windowsintoBERT,weselectthefirst256word-
+pieces of each window and any remaining word-
+pieces in the last window to represent the contex-
+TREEBANK MODEL UPOS UFEATS LEMMAS UAS LAS CLAS MLAS BLEX SIZE
+AfrikaansAfriBooms UDPipe 98.25 97.66 97.46 89.38 86.58 81.44 77.66 77.82 1.3k
+UDify 97.48 96.63 95.23 86.97 83.48 77.42 70.57 70.93 1.3k
+AkkadianPISANDUB UDify 19.92 99.51 2.32 27.65 4.54 3.27 1.04 0.30 0
+AmharicATT UDify 15.25 43.95 58.04 17.38 3.49 4.88 0.23 2.53 0
+AncientGreekPROIEL UDPipe 97.86 92.44 93.51 85.93 82.11 77.70 67.16 71.22 15.0k
+UDify 91.20 82.29 76.16 78.91 72.66 66.07 50.79 47.27 15.0k
+AncientGreekPerseus UDPipe 93.27 91.39 85.02 78.85 73.54 67.60 53.87 53.19 11.5k
+UDify 85.67 81.67 70.51 70.51 62.64 55.60 39.15 35.05 11.5k
+ArabicPADT UDPipe 96.83 94.11 95.28 87.54 82.94 79.77 73.92 75.87 6.1k
+UDify 96.58 91.77 73.55 87.72 82.88 79.47 70.52 50.26 6.1k
+ArabicPUD UDify 79.98 40.32 0.00 76.17 67.07 65.10 10.67 0.00 0
+ArmenianArmTDP UDPipe 93.49 82.85 92.86 78.62 71.27 65.77 48.11 60.11 561
+UDify 94.42 76.90 85.63 85.63 78.61 73.72 46.80 59.14 561
+BambaraCRB UDify 30.86 57.96 20.42 30.28 8.60 6.56 1.04 0.76 0
+BasqueBDT UDPipe 96.11 92.48 96.29 86.11 82.86 81.79 72.33 78.54 5.4k
+UDify 95.45 86.80 90.53 84.94 80.97 79.52 63.60 71.56 5.4k
+BelarusianHSE UDPipe 93.63 73.30 87.34 78.58 72.72 69.14 46.20 58.28 261
+UDify 97.54 89.36 85.46 91.82 87.19 85.05 71.54 68.66 261
+BretonKEB UDify 62.78 47.12 51.31 63.52 39.84 35.14 4.64 16.34 0
+BulgarianBTB UDPipe 98.98 97.82 97.94 93.38 90.35 87.01 83.63 84.42 8.9k
+UDify 98.89 96.18 93.49 95.54 92.40 89.59 83.43 80.44 8.9k
+BuryatBDT UDPipe 40.34 32.40 58.17 32.60 18.83 12.36 1.26 6.49 20
+UDify 61.73 47.45 61.03 48.43 26.28 20.61 5.51 11.68 20
+CantoneseHK UDify 67.11 91.01 96.01 46.82 32.01 33.35 14.29 31.26 0
+CatalanAnCora UDPipe 98.88 98.37 99.07 93.22 91.06 87.18 84.48 86.18 13.1k
+UDify 98.89 98.34 98.14 94.25 92.33 89.27 86.21 86.61 13.1k
+ChineseCFL UDify 83.75 82.72 98.75 62.46 42.48 43.46 21.07 42.22 0
+ChineseGSD UDPipe 94.88 99.22 99.99 84.64 80.50 76.79 71.04 76.78 4.0k
+UDify 95.35 99.35 99.97 87.93 83.75 80.33 74.36 80.28 4.0k
+ChineseHK UDify 82.86 86.47 100.00 65.53 49.32 47.84 22.85 47.84 0
+ChinesePUD UDify 92.68 98.40 100.00 79.08 56.51 55.22 40.92 55.22 0
+CopticScriptorium UDPipe 94.70 96.35 95.49 85.58 80.97 72.24 64.45 68.48 371
+UDify 27.17 52.85 55.71 27.58 10.82 6.50 0.19 1.44 371
+CroatianSET UDPipe 98.13 92.25 97.27 91.10 86.78 84.11 73.61 81.19 7.0k
+UDify 98.02 89.67 95.34 94.08 89.79 87.70 72.72 82.00 7.0k
+CzechCAC UDPipe 99.37 96.34 98.57 92.99 90.71 88.84 84.30 87.18 23.5k
+UDify 99.14 95.42 98.32 94.33 92.41 91.03 84.68 89.21 23.5k
+CzechCLTT UDPipe 98.88 91.59 98.25 86.90 84.03 80.55 71.63 79.20 861
+UDify 99.17 93.66 98.86 91.69 89.96 87.59 79.50 86.79 861
+CzechFicTree UDPipe 98.55 95.87 98.63 92.91 89.75 86.97 81.04 85.49 10.2k
+UDify 98.34 91.82 98.13 95.19 92.77 90.99 77.77 88.39 10.2k
+CzechPDT UDPipe 99.18 97.23 99.02 93.33 91.31 89.64 86.15 88.60 68.5k
+UDify 99.18 96.69 98.52 94.73 92.88 91.64 87.13 89.95 68.5k
+CzechPUD UDify 97.93 93.98 96.94 92.59 87.95 84.85 77.39 82.81 0
+DanishDDT UDPipe 97.78 97.33 97.52 86.88 84.31 81.20 76.29 78.51 4.4k
+UDify 97.50 95.41 94.60 87.76 84.50 81.60 73.76 75.15 4.4k
+DutchAlpino UDPipe 96.83 96.33 97.09 91.37 88.38 83.51 77.28 79.82 12.3k
+UDify 97.67 97.66 95.44 94.23 91.21 87.32 82.81 80.76 12.3k
+DutchLassySmall UDPipe 96.50 96.42 97.41 90.20 86.39 81.88 77.19 78.83 5.8k
+UDify 96.70 96.57 95.10 94.34 91.22 88.03 82.06 81.40 5.8k
+Table7: ThefulltestresultsofUDifyon124treebanks(part1of4). The SIZE columnindicatesthenumberof
+trainingsentences.
+TREEBANK MODEL UPOS UFEATS LEMMAS UAS LAS CLAS MLAS BLEX SIZE
+EnglishEWT UDPipe 96.29 97.10 98.25 89.63 86.97 84.02 79.00 82.36 12.5k
+UDify 96.21 96.02 97.28 90.96 88.50 86.25 79.80 83.39 12.5k
+EnglishGUM UDPipe 96.02 96.82 96.85 87.27 84.12 78.55 73.51 74.68 2.9k
+UDify 95.44 94.12 93.15 89.14 85.73 83.03 72.55 74.30 2.9k
+EnglishLinES UDPipe 96.91 96.31 96.45 84.15 79.71 77.44 71.38 73.22 2.7k
+UDify 95.31 91.34 94.50 87.33 83.71 82.95 68.62 76.23 2.7k
+EnglishPUD UDify 96.18 93.50 94.20 91.52 88.66 87.83 75.61 80.57 0
+EnglishParTUT UDPipe 96.10 95.51 97.74 90.29 87.27 82.58 76.44 80.33 1.8k
+UDify 96.16 92.61 96.45 92.84 90.14 86.28 74.59 82.01 1.8k
+ErzyaJR UDify 46.66 31.82 45.73 31.90 16.38 10.83 0.58 2.83 0
+EstonianEDT UDPipe 97.64 96.23 95.30 88.00 85.18 83.62 78.72 78.51 24.4k
+UDify 97.44 95.13 86.56 89.53 86.67 85.17 79.20 69.31 24.4k
+FaroeseOFT UDify 77.46 35.20 51.09 67.24 59.26 51.17 2.39 21.92 0
+FinnishFTB UDPipe 96.65 96.62 95.49 90.68 87.89 85.11 80.58 81.18 15.0k
+UDify 93.80 90.38 88.80 86.37 81.40 81.01 68.16 70.15 15.0k
+FinnishPUD UDify 96.48 93.84 84.64 89.76 86.58 86.64 77.83 69.12 0
+FinnishTDT UDPipe 97.45 95.43 91.45 89.88 87.46 85.87 80.43 76.64 12.2k
+UDify 94.43 90.48 82.89 86.42 82.03 82.62 70.89 63.66 12.2k
+FrenchGSD UDPipe 97.63 97.13 98.35 90.65 88.06 84.35 79.76 82.39 14.5k
+UDify 97.83 96.17 97.34 93.60 91.45 88.54 81.61 84.51 14.5k
+FrenchPUD UDify 91.67 59.65 100.00 88.36 82.76 81.74 25.24 81.74 0
+FrenchParTUT UDPipe 96.93 94.43 95.70 92.17 89.63 84.62 75.22 78.07 804
+UDify 96.12 88.36 93.97 90.55 88.06 83.19 63.03 74.03 804
+FrenchSequoia UDPipe 98.79 98.09 98.57 92.37 90.73 87.55 84.51 85.93 2.2k
+UDify 97.89 88.97 97.15 92.53 90.05 86.67 67.98 82.52 2.2k
+FrenchSpoken UDPipe 95.91 100.00 96.92 82.90 77.53 71.82 68.24 69.47 1.2k
+UDify 96.23 98.67 96.59 85.24 80.01 75.40 69.74 72.77 1.2k
+GalicianCTG UDPipe 97.84 99.83 98.58 86.44 83.82 78.58 72.46 77.21 2.3k
+UDify 96.51 97.10 97.08 84.75 80.89 74.62 65.86 72.17 2.3k
+GalicianTreeGal UDPipe 95.82 93.96 97.06 82.72 77.69 71.69 63.73 68.89 601
+UDify 94.59 80.67 94.93 84.08 76.77 73.06 49.76 66.99 601
+GermanGSD UDPipe 94.48 90.68 96.80 85.53 81.07 76.26 58.82 72.13 13.8k
+UDify 94.55 90.43 94.42 87.81 83.59 80.03 61.27 72.48 13.8k
+GermanPUD UDify 89.49 30.66 94.77 89.86 84.46 80.50 2.10 72.95 0
+GothicPROIEL UDPipe 96.61 90.73 94.75 85.28 79.60 76.92 66.70 72.93 3.4k
+UDify 95.55 85.97 80.57 85.61 79.37 76.26 63.09 58.65 3.4k
+GreekGDT UDPipe 97.98 94.96 95.82 92.10 89.79 85.71 78.60 79.72 1.7k
+UDify 97.72 93.29 89.43 94.33 92.15 88.67 77.89 71.83 1.7k
+HebrewHTB UDPipe 97.02 95.87 97.12 89.70 86.86 81.45 75.52 78.14 5.2k
+UDify 96.94 93.41 94.15 91.63 88.11 83.04 72.55 74.87 5.2k
+HindiHDTB UDPipe 97.52 94.15 98.67 94.85 91.83 88.21 78.49 86.83 13.3k
+UDify 97.12 92.59 98.23 95.13 91.46 87.80 75.54 86.10 13.3k
+HindiPUD UDify 87.54 22.81 100.00 71.64 58.42 53.03 3.32 53.03 0
+HungarianSzeged UDPipe 95.76 91.75 95.05 84.04 79.73 78.65 67.63 73.63 911
+UDify 96.36 86.16 90.19 89.68 84.88 83.93 64.27 72.21 911
+IndonesianGSD UDPipe 93.69 95.58 99.64 85.31 78.99 76.76 67.74 76.38 4.5k
+UDify 93.36 93.32 98.37 86.45 80.10 78.05 66.93 76.31 4.5k
+IndonesianPUD UDify 76.10 44.23 100.00 77.47 56.90 54.88 7.41 54.88 0
+IrishIDT UDPipe 92.72 82.43 90.48 80.39 72.34 63.48 46.49 55.32 567
+UDify 90.49 71.84 81.27 80.05 69.28 60.02 34.39 43.07 567
+ItalianISDT UDPipe 98.39 98.11 98.66 93.49 91.54 87.34 84.28 85.49 13.1k
+UDify 98.51 98.01 97.72 95.54 93.69 90.40 86.54 86.70 13.1k
+ItalianPUD UDify 94.73 58.16 96.08 94.18 91.76 90.05 25.55 83.74 0
+ItalianParTUT UDPipe 98.38 97.77 98.16 92.64 90.47 85.05 81.87 82.99 1.8k
+UDify 98.21 98.38 97.55 95.96 93.68 89.83 86.83 86.44 1.8k
+Table8: ThefulltestresultsofUDifyon124treebanks(part2of4).
+TREEBANK MODEL UPOS UFEATS LEMMAS UAS LAS CLAS MLAS BLEX SIZE
+JapaneseGSD UDPipe 98.13 99.98 99.52 95.06 93.73 88.35 86.37 88.04 7.1k
+UDify 97.08 99.97 98.80 94.37 92.08 86.19 82.99 85.12 7.1k
+JapaneseModern UDify 74.94 96.14 79.70 74.99 55.62 42.67 30.89 35.47 0
+JapanesePUD UDify 97.89 99.98 99.31 94.89 93.62 87.92 84.86 87.15 0
+KazakhKTB UDPipe 55.84 40.40 63.96 53.30 33.38 27.06 4.82 15.10 32
+UDify 85.59 65.49 77.18 74.77 63.66 61.84 34.23 45.51 32
+KomiZyrianIKDP UDify 59.92 39.32 57.56 36.01 22.12 17.45 1.54 6.80 0
+KomiZyrianLattice UDify 38.57 29.45 55.33 28.85 12.99 10.79 0.72 3.28 0
+KoreanGSD UDPipe 96.29 99.77 93.40 87.70 84.24 82.05 79.74 76.35 4.4k
+UDify 90.56 99.63 82.84 82.74 74.26 71.72 65.94 57.58 4.4k
+KoreanKaist UDPipe 95.59 100.00 94.30 88.42 86.48 84.12 80.72 79.22 23.0k
+UDify 94.67 99.98 85.89 87.57 84.52 82.05 78.27 68.99 23.0k
+KoreanPUD UDify 64.43 60.47 70.47 63.57 46.89 45.29 16.26 30.94 0
+KurmanjiMG UDPipe 53.36 41.54 69.58 45.23 34.32 29.41 2.74 19.39 21
+UDify 60.23 37.78 58.08 35.86 20.40 14.75 1.42 7.28 21
+LatinITTB UDPipe 98.34 96.97 98.99 91.06 88.80 86.40 82.35 85.71 16.8k
+UDify 98.48 95.81 98.08 92.43 90.12 87.93 82.24 85.97 16.8k
+LatinPROIEL UDPipe 97.01 91.53 96.32 83.34 78.66 76.20 67.40 73.65 15.9k
+UDify 96.79 89.49 91.79 84.85 80.52 77.96 67.18 71.00 15.9k
+LatinPerseus UDPipe 88.40 79.10 81.45 71.20 61.28 56.32 41.58 45.09 1.3k
+UDify 90.96 82.09 81.08 78.33 69.60 65.95 50.26 51.33 1.3k
+LatvianLVTB UDPipe 96.11 93.01 95.46 87.20 83.35 80.90 71.92 76.64 7.2k
+UDify 96.02 89.78 91.00 89.33 85.09 82.34 69.51 72.58 7.2k
+LithuanianHSE UDPipe 81.70 60.47 76.89 51.98 42.17 38.93 18.17 28.70 154
+UDify 90.47 70.00 67.17 79.06 69.34 66.00 36.21 36.35 154
+MalteseMUDT UDPipe 95.99 100.00 100.00 84.65 79.71 71.49 66.75 71.49 1.1k
+UDify 91.98 99.89 100.00 83.07 75.56 65.08 58.14 65.08 1.1k
+MarathiUFAL UDPipe 80.10 67.23 81.31 70.63 61.41 57.44 29.34 45.87 374
+UDify 88.59 59.22 72.82 79.37 67.72 60.13 21.71 39.25 374
+NaijaNSC UDify 55.44 51.32 97.03 45.75 32.16 31.62 4.73 29.33 0
+NorthSamiGiella UDPipe 92.54 90.03 88.31 78.30 73.49 70.94 62.40 61.45 2.3k
+UDify 90.21 83.55 71.50 74.30 67.13 64.41 51.20 40.63 2.3k
+NorwegianBokmaal UDPipe 98.31 97.14 98.64 92.39 90.49 88.18 84.06 86.53 15.7k
+UDify 98.18 96.36 97.33 93.97 92.18 90.40 85.02 87.13 15.7k
+NorwegianNynorsk UDPipe 98.14 97.02 98.18 92.09 90.01 87.68 82.97 85.47 14.2k
+UDify 98.14 96.55 97.18 94.34 92.37 90.39 85.01 86.71 14.2k
+NorwegianNynorskLIA UDPipe 89.59 86.13 93.93 68.08 60.07 54.89 44.47 50.98 340
+UDify 95.01 93.36 96.13 75.40 69.60 65.33 56.90 62.27 340
+OldChurchSlavonicPROIEL UDPipe 96.91 90.66 93.11 89.66 85.04 83.41 73.63 77.81 4.1k
+UDify 84.23 71.30 65.70 76.71 66.67 64.10 46.25 43.88 4.1k
+OldFrenchSRCMF UDPipe 96.09 97.81 100.00 91.74 86.83 83.85 79.91 83.85 13.9k
+UDify 95.73 96.98 100.00 91.74 86.65 83.49 78.85 83.49 13.9k
+PersianSeraji UDPipe 97.75 97.78 97.44 90.05 86.66 83.26 81.23 80.93 4.8k
+UDify 96.22 94.73 92.55 89.59 85.84 81.98 76.65 74.74 4.8k
+PolishLFG UDPipe 98.80 95.49 97.54 96.58 94.76 93.01 87.04 90.26 13.8k
+UDify 98.80 87.71 94.04 96.67 94.58 93.03 76.50 85.15 13.8k
+PolishSZ UDPipe 98.34 93.04 97.16 93.39 91.24 89.39 81.06 85.99 6.1k
+UDify 98.36 67.11 93.92 93.67 89.20 87.31 48.47 80.24 6.1k
+PortugueseBosque UDPipe 97.07 96.40 98.46 91.36 89.04 85.19 76.67 83.06 8.3k
+UDify 97.10 89.70 91.60 91.37 87.84 84.13 69.09 78.64 8.3k
+PortugueseGSD UDPipe 98.31 99.92 99.30 93.01 91.63 87.67 85.96 86.94 9.7k
+UDify 98.04 95.75 98.95 94.22 92.54 89.37 82.32 87.90 9.7k
+PortuguesePUD UDify 90.14 51.16 99.79 87.02 80.17 74.10 17.51 74.10 0
+RomanianNonstandard UDPipe 96.68 90.88 94.78 89.12 84.20 78.91 65.93 73.44 8.0k
+UDify 96.83 88.89 89.33 90.36 85.26 80.41 64.68 68.11 8.0k
+Table9: ThefulltestresultsofUDifyon124treebanks(part3of4).
+TREEBANK MODEL UPOS UFEATS LEMMAS UAS LAS CLAS MLAS BLEX SIZE
+RomanianRRT UDPipe 97.96 97.53 98.41 91.31 86.74 82.57 79.02 81.09 8.0k
+UDify 97.73 96.12 95.84 93.16 88.56 84.87 79.20 79.92 8.0k
+RussianGSD UDPipe 97.10 92.66 97.37 88.15 84.37 82.66 74.07 80.03 3.9k
+UDify 96.91 87.45 77.73 90.71 86.03 84.51 67.24 62.08 3.9k
+RussianPUD UDify 93.06 63.60 77.93 93.51 87.14 83.96 37.25 61.86 0
+RussianSynTagRus UDPipe 99.12 97.57 98.53 93.80 92.32 90.85 87.91 89.17 48.8k
+UDify 98.97 96.29 94.47 94.83 93.13 91.87 86.91 85.44 48.8k
+RussianTaiga UDPipe 93.18 82.87 89.99 75.45 69.11 65.31 48.81 57.21 881
+UDify 95.39 88.47 90.19 84.02 77.80 75.12 59.71 65.15 881
+SanskritUFAL UDify 37.33 17.63 37.38 40.21 18.56 15.38 0.85 4.12 0
+SerbianSET UDPipe 98.33 94.35 97.36 92.70 89.27 87.08 79.14 84.18 2.9k
+UDify 98.30 92.22 95.86 95.68 91.95 90.30 78.45 84.93 2.9k
+SlovakSNK UDPipe 96.83 90.82 96.40 89.82 86.90 84.81 74.00 81.37 8.5k
+UDify 97.46 89.30 93.80 95.92 93.87 92.86 77.33 85.12 8.5k
+SlovenianSSJ UDPipe 98.61 95.92 98.25 92.96 91.16 88.76 83.85 86.89 6.5k
+UDify 98.73 93.44 96.50 94.74 93.07 90.94 81.55 86.38 6.5k
+SlovenianSST UDPipe 93.79 86.28 95.17 73.51 67.51 63.46 52.67 60.32 2.1k
+UDify 95.40 89.81 95.15 80.37 75.03 71.19 61.32 67.24 2.1k
+SpanishAnCora UDPipe 98.91 98.49 99.17 92.34 90.26 86.39 83.97 85.51 14.3k
+UDify 98.53 97.89 98.07 92.99 90.50 87.26 83.43 84.85 14.3k
+SpanishGSD UDPipe 96.85 97.09 98.97 90.71 88.03 82.85 75.98 81.47 14.2k
+UDify 95.91 95.08 96.52 90.82 87.23 82.83 72.47 78.08 14.2k
+SpanishPUD UDify 88.98 54.58 100.00 90.45 83.08 77.42 18.06 77.42 0
+SwedishLinES UDPipe 96.78 89.43 97.03 86.07 81.86 80.32 66.48 77.38 2.7k
+UDify 96.85 87.24 92.70 88.77 85.49 85.61 66.99 77.62 2.7k
+SwedishPUD UDify 96.36 80.04 88.81 89.17 86.10 85.25 57.12 72.92 0
+SwedishSignLanguageSSLC UDPipe 68.09 100.00 100.00 50.35 37.94 39.51 30.96 39.51 88
+UDify 63.48 96.10 100.00 40.43 26.95 30.12 23.29 30.12 88
+SwedishTalbanken UDPipe 97.94 96.86 98.01 89.63 86.61 84.45 79.67 82.26 4.3k
+UDify 98.11 95.92 95.50 91.91 89.03 87.26 80.72 81.31 4.3k
+TagalogTRG UDify 60.62 35.62 73.63 64.04 40.07 36.84 0.00 13.16 0
+TamilTTB UDPipe 91.05 87.28 93.92 74.11 66.37 63.71 55.31 59.58 401
+UDify 91.50 83.21 80.84 79.34 71.29 69.10 53.62 54.84 401
+TeluguMTG UDPipe 93.07 99.03 100.00 91.26 85.02 81.76 77.75 81.76 1.1k
+UDify 93.48 99.31 100.00 92.23 83.91 79.92 76.10 79.92 1.1k
+ThaiPUD UDify 56.78 62.48 100.00 49.05 26.06 18.42 3.77 18.42 0
+TurkishIMST UDPipe 96.01 92.55 96.01 74.19 67.56 63.83 56.96 61.37 3.7k
+UDify 94.29 84.49 87.71 74.56 67.44 63.87 49.42 54.10 3.7k
+TurkishPUD UDify 77.34 24.59 84.31 67.68 46.07 39.95 2.61 32.50 0
+UkrainianIU UDPipe 97.59 92.66 97.23 88.29 85.25 81.90 73.81 79.10 5.3k
+UDify 97.71 88.63 94.00 92.83 90.30 88.15 72.93 81.04 5.3k
+UpperSorbianUFAL UDPipe 62.93 41.10 68.68 45.58 34.54 27.18 3.37 16.65 24
+UDify 84.87 48.84 72.68 71.55 62.82 56.04 16.19 37.89 24
+UrduUDTB UDPipe 93.66 81.92 97.40 87.50 81.62 75.20 55.02 73.07 4.0k
+UDify 94.37 82.80 96.68 88.43 82.84 77.00 56.70 73.97 4.0k
+UyghurUDT UDPipe 89.87 88.30 95.31 78.46 67.09 60.85 47.84 57.08 1.7k
+UDify 75.88 70.80 79.70 65.89 48.80 38.95 21.75 31.31 1.7k
+VietnameseVTB UDPipe 89.68 99.72 99.55 70.38 62.56 60.03 55.56 59.54 1.4k
+UDify 91.29 99.58 99.21 74.11 66.00 63.34 58.71 62.61 1.4k
+WarlpiriUFAL UDify 33.44 18.15 39.17 21.66 7.96 7.49 0.00 0.88 0
+YorubaYTB UDify 50.86 78.32 85.56 37.62 19.09 16.56 6.30 12.15 0
+Table10: ThefulltestresultsofUDifyon124treebanks(part4of4).

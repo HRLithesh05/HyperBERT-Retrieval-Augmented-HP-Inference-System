@@ -1,0 +1,246 @@
+9102
+tcO
+71
+]LC.sc[
+2v88160.0191:viXra
+Q8BERT: Quantized 8Bit BERT
+OfirZafrir GuyBoudoukh PeterIzsak MosheWasserblat
+IntelAILab
+{ofir.zafrir, guy.boudoukh, peter.izsak, moshe.wasserblat}@intel.com
+Abstract
+Recently,pre-trainedTransformer[14]basedlanguagemodelssuchasBERT[3]
+andGPT[9],haveshowngreatimprovementinmanyNaturalLanguageProcess-
+ing (NLP) tasks. However, these models contain a large amount of parameters.
+The emergence of even larger and more accurate models such as GPT2 [8] and
+Megatron1, suggest a trend of large pre-trained Transformer models. However,
+usingtheselargemodelsinproductionenvironmentsisacomplextaskrequiring
+alargeamountofcompute,memoryandpowerresources. Inthisworkweshow
+howtoperformquantization-awaretrainingduringthefine-tuningphaseofBERT
+inordertocompressBERTby4×withminimalaccuracyloss. Furthermore,the
+producedquantizedmodelcanaccelerateinferencespeedifitisoptimizedfor8bit
+Integersupportinghardware.
+1 Introduction
+Pre-trainedtransformerlanguagemodels(GPT[9],XLNet[17],XLM[7],BERT[3])havedemon-
+strated State-of-the-Art (SOTA) results for a variety of NLP tasks such as sentence classification,
+sequencetaggingandquestionanswering,byextractingcontextualwordrepresentationsorbyfine-
+tuningthewholemodelonatargettask. Themodelsarepre-trainedonextremelylargecorporaand
+result in a large number of parameters. For example, Devlin et al. [3] introducedtwo pre-trained
+models:BERT-Base,whichhas110Mparametersin32bitFloatingPoint(FP32)representation,and
+BERT-Large,whichhas334MparametersinFP32representation. BothBERTmodelshaveahigh
+memory footprint and require heavy compute and wide bandwidth during inference. In addition,
+realtime NLP applicationsthatintegrateBERT have to meetlow latencyrequirementsto achieve
+a high quality customer experience, therefore, the computational characteristics of BERT pose a
+challengetodeploymentinproductionenvironments.Thesemodelswillhaveamajorimpactonthe
+waybusinessorganizationsconsumecomputingresources,sincecomputingresourceswillhaveto
+handleloadingoflargemodelsandheavyfeed-forwardcalculations,shiftingworkloadfocusfrom
+lowerleveltrainingtomoreapplication-specificfine-tuningandinference.Therefore,itiscrucialto
+developenergy-efficientandminimum-costmethodstorunthesemodelsinproduction[16].
+Modelcompressionalgorithmsareusedtoreducecomputeandmemoryresourcesrequiredforrun-
+ninginference.Forexample,Hanetal.[4]usedapipelineofpruning,quantizationandHuffmanen-
+codinginordertoachieveacompressionratioof49×ofVGG-16[11]. Asaresult,thecompressed
+VGG-16canbefittedintoanon-chipSRAMcachewhichallowsfasteraccesstimeswithlesspower
+incomparisontooff-chipDRAMmemory.Inanotherexample,Jacobetal.[5]introducedamethod
+oftraininglinearquantizedConvolutionalNeuralNetworks(CNN)thatusesIntegerArithmeticin-
+stead of Floating Point Arithmetic which can be up to 4× faster using only 25% of the memory
+footprint[13].
+Inthiswork,wepresentamethodforachievingbest-in-classcompression-accuracyratioforBERT.
+Todothis,weapplyquantization-awaretrainingduringthefine-tuningprocessofBERT.Wequan-
+1https://github.com/NVIDIA/Megatron-LM
+33rdConferenceonNeuralInformationProcessingSystems(NeurIPS2019),Vancouver,Canada.
+tize all GEMM(GeneralMatrix Multiply)operationsin BERT Fully Connected(FC) andEmbed-
+dinglayers. We simulate8bitquantizedinferencewhilemaintaining99%accuracyincomparison
+totheFP32versionofBERTforeightdifferentNLPtasks. Moreover,sincewequantizealltheFC
+and Embedding layers’ weights - which comprise over 99% of the model’s weights - to 8bit, we
+achieve a memory footprint 4× smaller than the original BERT. In addition, it is possible to use
+ourmethodtoimplementefficientinferencewithhardwarethatsupports8bitarithmeticandanopti-
+mizedlibraryfor8bitGEMM.Wehavereleasedourworkaspartofouropensourcemodellibrary
+NLP Architect2.
+ThemethodpresentedinthispaperisnotexclusivetoBERTmodelandcanbeintegratedintoother
+largepre-trainedTransformerbasedmodels.
+2 Method
+In this section, we describe the quantization scheme, linear quantization, and quantization-aware
+trainingmethodweused.Wechosetousethisquantizationschemebecause,inadditiontoreducing
+themodelsizebyapproximately4×,itisalsopossibletoaccelerateinferencetimebyusingInteger
+arithmetictocalculateGEMMusingspecializedhardwareforIntegerandFixedPointcalculations.
+Forexample,Bhandareetal.[2]statedthatusingIntel(cid:13)R Xeon(cid:13)R CascadeLake’sVectorizedNeural
+Network Instructions (VNNI) to perform Int8 matrix multiplication provides a speed-up of 3.7×
+over FP32 matrix multiplication. Moreover, by using symmetric linear quantization we simplify
+the quantizationprocessand zeroouttermsrelated to the offsetpartofthe quantizedvalues. Our
+methodisbasedonthemethodproposedbyJacobetal.[5].
+2.1 QuantizationScheme
+We use symmetriclinearquantizationasourquantizationschemeforquantizingbothweightsand
+activationsto8bitIntegers(Int8):
+Quantize(x|Sx,M):=Clamp(⌊x×Sx⌉,−M,M),
+(1)
+Clamp(x,a,b)=min(max(x,a),b)
+whereSx isthequantizationscaling-factorforinputxandM isthehighestquantizedvaluewhen
+quantizingtobnumberofbits:
+M
+=2b−1
+−1 (2)
+E.g. whenquantizingto8bits,M =127. Thescaling-factorcanbedeterminedeitherdynamically
+duringinference,orcalculatedusingstatisticscollectedduringtraining,orcalculatedusingstatistics
+collected,post-training,duringinferenceonacalibrationset. Inourworktheweights’scaling-factor
+iscalculatedaccordingto:
+M
+SW = (3)
+max(|W|)
+andtheactivations’scaling-factoriscalculatedbasedonvaluesseenduringtrainingusinganExpo-
+nentialMovingAverage(EMA):
+M
+Sx = (4)
+EMA(max(|x|))
+2.2 Quantized-AwareTraining
+Quantization-awaretraining is a methodof training NeuralNetworks(NN) to be quantizedat the
+inference stage, as opposed to post-training quantization where the training is executed without
+anyadaptationtothequantizationprocess. Inourwork,weusefakequantizationto introducethe
+quantizationerrorto the modelduringthe trainingphase in orderforthe modelto learn to bridge
+the quantizationerrorgap. Fake quantizationis an operationthat simulatesthe roundingeffectin
+FloatingPointvaluesaspresentedbyJacobetal.[5]. Sincetheroundingoperationisnotderivable,
+weusetheStraight-ThroughEstimator(STE)[1]toestimatethegradientoffakequantization:
+∂xq −→
+= 1 (5)
+∂x
+2https://github.com/NervanaSystems/nlp-architect
+2
+Table1:GLUEtasksandSQuADresults. Eachscoreisevaluatedonthepubliclyavailabledevelop-
+mentsetforthetaskusingthemetricspecifiedforeachtask. Foreachtaskwepresentthescoreofa
+baseline(FP32)model,ofaQuantization-AwareTraining(QAT)modelquantizedto8bit,andofa
+DynamicallyQuantized(DQ)to8bitmodel.LargemeansthosetasksweretrainedwithBERT-Large
+architecture.
+BERTbaseline QATBERT DQBERT
+Dataset Metric
+accuracy(STD) 8bit(STD) 8bit(STD)
+CoLA Matthew’scorr. 58.48(1.54) 58.48(1.32) 56.74(0.61)
+MRPC F1 90(0.23) 89.56(0.18) 87.88(2.03)
+MRPC-Large F1 90.86(0.55) 90.9(0.29) 88.18(2.19)
+QNLI Accuracy 90.3(0.44) 90.62(0.29) 89.34(0.61)
+QNLI-Large Accuracy 91.66(0.15) 91.74(0.36) 88.38(2.22)
+QQP F1 87.84(0.19) 87.96(0.35) 84.98(0.97)
+RTE Accuracy 69.7(1.5) 68.78(3.52) 63.32(4.58)
+SST-2 Accuracy 92.36(0.59) 92.24(0.27) 91.04(0.43)
+STS-B Pearsoncorr. 89.62(0.31) 89.04(0.17) 87.66(0.41)
+STS-B-Large Pearsoncorr. 90.34(0.21) 90.12(0.13) 83.04(5.71)
+SQuADv1.1 F1 88.46(0.15) 87.74(0.15) 80.02(2.38)
+wherexq denotesthe resultof fakequantizingx. Using thecombinationoffakequantizationand
+STEweareabletoperformquantizedinferenceduringtrainingwhileback-propagatingatfullpre-
+cisionwhichallowstheFP32weightstoovercomethequantizationerror.
+3 Implementation
+OurgoalistoquantizealltheEmbeddingandFClayersinBERTtoInt8usingthemethoddescribed
+in Section 2. For this purpose we implemented quantized versions of Embedding and FC layers.
+Duringtraining,theEmbeddinglayerreturnsfakequantizedembeddingvectors,andthequantized
+FC performs GEMM between the fake quantized input and the fake quantized weight, and then
+accumulates the products to the bias which is untouched since the bias will be later quantized to
+Int32. During inference, the quantized Embeddinglayer returns Int8 embedding vectors, and the
+quantizedFCperformsGEMMbetweenInt8inputsaccumulatedtotheInt32biaswhichisquantized
+usingtheweights’andactivations’scaling-factorsasdescribedin[5]. Althoughthebiasvectorsare
+quantizedtoInt32values,theyonlymakeupforafractionoftheamountofparametersinthemodel.
+Our implementation of Quantized BERT is based on the BERT implementation provided by the
+PyTorch-Transformers3library. ToimplementquantizedBERTwereplacedalltheEmbedding
+andFClayersinBERTtothequantizedEmbeddingandFClayerswehadimplemented.Operations
+thatrequirehigherprecision,suchasSoftmax,LayerNormalizationandGELU,arekeptinFP32.
+4 Evaluation
+TotestourapproachweevaluatedourmodelontheGLUE(GeneralLanguageUnderstandingEval-
+uation) benchmark[15], which is a collection of resources for training, evaluating, and analyzing
+naturallanguageunderstandingsystemsinawidearrayofNLPtasks. TheultimategoalofGLUEis
+todriveresearchinthedevelopmentofgeneralandrobustnaturallanguageunderstandingsystems.
+In addition, we evaluated our model on the question and answering task SQuADv1.1 [10]. The
+StanfordQuestionAnsweringDataset(SQuAD)isa readingcomprehensiondataset, consistingof
+questionsposedbycrowdworkersonasetofWikipediaarticles,wheretheanswertoeveryquestion
+isasegmentoftext,orspan,fromthecorrespondingreadingpassage.
+WesummarizedourresultsforquantizedBERTintheQATcolumninTable1. Weraneachexper-
+imentfivetimesandreportedtheaverageresultandstandarddeviation. Inaddition,wecalculated
+therelativeerrorinducedbythequantizationprocessandsummarizedtheresultsinTable2. Inall
+experimentsweusedBERT-Baseasthebasemodelunlessindicatedotherwise. Inallexperiments
+3https://github.com/huggingface/pytorch-transformers
+3
+Table 2: Reduction in accuracy induced by quantization relative to baseline model. DQ is the
+DynamicallyQuantizedmodelandQATistheQuantization-awareTrainedquantizedmodel.Large
+meansthosetasksweretrainedwithBERT-Largearchitecture.
+Method CoLA MRPC MRPC-Large QNLI QNLI-Large QQP RTE SST-2 STS-B STS-B-Large SQuADv1.1
+DQ 2.98% 2.36% 2.95% 1.69% 3.58% 1.85% 9.13% 1.43% 2.19% 8.08% 9.54%
+QAT 0.00% 0.49% -0.04% -0.35% -0.09% -0.14% 1.32% 0.13% 0.65% 0.24% 0.81%
+wefine-tunedthepre-trainedmodelsofferedbyTensorflow-Hub4. Inourinternaltesting,wefound
+thattherelativeerrorinducedbyquantizationislessthan1%(excludingRTEtask)whilethespace
+capacityofthemodelisreducedby4x.
+4.1 EffectofQuantization-AwareTraining
+In order to measure the necessity of quantization-awaretraining we compared our results to post-
+training quantizedmodels. We quantizedour baseline models using Dynamic Quantization (DQ).
+TheweightsandactivationsarequantizedasdescribedinSection2.1withasmalldifferenceinthe
+waywecalculatethequantizationscaling-factoroftheactivations. InsteadofusingEquation4we
+compute the scale the same way we compute the weights’ scaling-factor using Equation 3. This
+calculationisdoneduringinferenceforeachincomingactivationtensor. Theresultsforthisquan-
+tization method are summarized in the DQ column in Table 1 and the relative error induced by
+quantizationisalsosummarizedinTable2. WeobservethattheDQmethodproducessignificantly
+worseresultsoveralltasks.
+5 Related Work
+CompressingTransformer-basedmodelsforefficientinferenceisanactivefieldofresearch.Junczys-
+Dowmuntet al. [6] applied knowledgedistillation and 8bit post-trainingquantizationto speed up
+Transformermodelsforneuralmachinetranslation(Transformer-LT)[14], however,thequantized
+model suffered a loss of 1 BLEU score in comparison to the baseline model. Bhandare et al. [2]
+also applied 8bit post-training quantization to Transformer-LT models and demonstrated how to
+utilizeIntel(cid:13)R specialized8bithardwaretoacceleratetheinferenceprocess.HabanaLabs5published
+QuantizedBERTperformancemeasurementsonitsin-houseacceleratorforNNinference,however,
+Habana quantized BERT to 16bit Integer which offers a much wider quantization range and only
+2× compression. NVIDIA6 also measured BERT performance on its in-house accelerator using
+16bitFloatingPointarithmetic.Furthermore,NVIDIAimplementedanumberofoptimizedkernels
+forBERT’soperationsinordertosavememorybandwidthduringinference. Sucik[12]fine-tuned
+BERTonacustomdatasetandperformed8bitIntegerpost-trainingquantization.
+6 Conclusions and Future Work
+We have shown a method for quantizing BERT GEMM operations to 8bit for a variety of NLP
+taskswithminimumlossinaccuracy,andhopethatthesoftwaredeveloperscommunitycanuseour
+quantizationmethodtocompressBERTandimplementefficientBERTinferencewith8bitGEMM
+operations. Efficientinferencewill enablelow-latencyNLP applicationson a varietyof hardware
+platforms from edge devices to data centers. In the future we intend to apply other model com-
+pressionmethodsinordertocompressBERT.DecreasingBERT’smemoryfootprintwillaccelerate
+BERTinferencetimeandreducepowerconsumption,bothofwhicharecriticalfordeployingBERT
+in productionenvironmentshaving low memory and power resources. Furthermore, we intend to
+integrateothercompressionmethodswithourquantizedBERTmodel.
+References
+[1] Y.Bengio,N.Léonard,andA.Courville.Estimatingorpropagatinggradientsthroughstochas-
+ticneuronsforconditionalcomputation. arXivpreprintarXiv:1308.3432,2013.
+4https://www.tensorflow.org/hub
+5https://habana.ai/habana-labs-goya-delivers-inferencing-on-bert/
+6https://devblogs.nvidia.com/nlu-with-tensorrt-bert/
+4
+[2] A.Bhandare,V.Sripathi,D.Karkada,V.Menon,S.Choi,K.Datta,andV.Saletore. Efficient
+8-bitquantizationof transformerneuralmachinelanguagetranslationmodel. arXiv preprint
+arXiv:1906.00532,2019.
+[3] J. Devlin, M.-W. Chang, K. Lee, andK. Toutanova. Bert: Pre-trainingof deepbidirectional
+transformersforlanguageunderstanding. ArXiv,abs/1810.04805,2018.
+[4] S.Han,H.Mao,andW.J.Dally. Deepcompression:Compressingdeepneuralnetworkswith
+pruning,trainedquantizationandhuffmancoding. arXivpreprintarXiv:1510.00149,2015.
+[5] B.Jacob,S.Kligys,B.Chen,M.Zhu,M.Tang,A.Howard,H.Adam,andD.Kalenichenko.
+Quantization and training of neural networks for efficient integer-arithmetic-only inference.
+In Proceedingsofthe IEEE Conference on Computer Vision and Pattern Recognition, pages
+2704–2713,2018.
+[6] M.Junczys-Dowmunt,K.Heafield, H.Hoang,R. Grundkiewicz,andA.Aue. Marian: Cost-
+effectivehigh-qualityneuralmachinetranslationinc+. ACL2018,page129,2018.
+[7] G. Lample and A. Conneau. Cross-lingual language model pretraining. arXiv preprint
+arXiv:1901.07291,2019.
+[8] A. Radford, J. Wu, R. Child, D. Luan, D. Amodei, and I. Sutskever. Language models are
+unsupervisedmultitasklearners.
+[9] A. Radford, K. Narasimhan, T. Salimans, and I. Sutskever. Improving language under-
+standing by generative pre-training. URL https://s3-us-west-2. amazonaws. com/openai-
+assets/researchcovers/languageunsupervised/languageunderstandingpaper.pdf,2018.
+[10] P.Rajpurkar,J.Zhang,K.Lopyrev,andP.Liang.Squad:100,000+questionsformachinecom-
+prehensionoftext. InProceedingsofthe2016ConferenceonEmpiricalMethodsinNatural
+LanguageProcessing,pages2383–2392,2016.
+[11] K.SimonyanandA.Zisserman.Verydeepconvolutionalnetworksforlarge-scaleimagerecog-
+nition. arXivpreprintarXiv:1409.1556,2014.
+[12] S.Sucik.Compressingbertforfasterprediction.URLhttps://blog.rasa.com/compressing-bert-
+for-faster-prediction-2/,2019.
+[13] V.Vanhoucke,A.Senior,andM.Z.Mao. Improvingthespeedofneuralnetworksoncpus. In
+DeepLearningandUnsupervisedFeatureLearningWorkshop,NIPS2011,2011.
+[14] A.Vaswani,N.Shazeer,N.Parmar,J.Uszkoreit,L.Jones,A.N.Gomez,Ł.Kaiser,andI.Polo-
+sukhin.Attentionisallyouneed.InAdvancesinneuralinformationprocessingsystems,pages
+5998–6008,2017.
+[15] A.Wang,A.Singh,J.Michael,F. Hill,O.Levy,andS.Bowman. Glue: Amulti-taskbench-
+mark and analysis platformfor natural languageunderstanding. In Proceedingsof the 2018
+EMNLPWorkshopBlackboxNLP:AnalyzingandInterpretingNeuralNetworksforNLP,pages
+353–355,2018.
+[16] M.Wasserblat,O.Pereg,andG.Singer. Futuredirectionsfornlpincommercialenvironments.
+URLhttps://www.intel.ai/future-directions-nlp,2019.
+[17] Z.Yang,Z.Dai,Y.Yang,J.Carbonell,R.Salakhutdinov,andQ.V.Le. Xlnet:Generalizedau-
+toregressivepretrainingforlanguageunderstanding. arXivpreprintarXiv:1906.08237,2019.
+5

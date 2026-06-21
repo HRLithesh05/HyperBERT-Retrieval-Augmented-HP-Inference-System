@@ -1,0 +1,761 @@
+L2D-Clinical: Learning to Defer for Adaptive Model Selection in
+Clinical Text Classification
+Rishik Kondadadi, John E. Ortega
+UniversityofMinnesota,NortheasternUniversity
+Minneapolis,Boston,USA
+konda052@umn.edu,j.ortega@northeastern.edu
+Abstract
+Clinicaltextclassificationrequireschoosingbetweenspecializedfine-tunedmodels(BERTvariants)andgeneral-
+purposelargelanguagemodels(LLMs),yetneitherdominatesacrossallinstances. WeintroduceLearningtoDefer
+forclinicaltext(L2D-Clinical),aframeworkthatlearnswhenaBERTclassifiershoulddefertoanLLMbasedon
+uncertaintysignalsandtextcharacteristics. UnlikepriorL2Dworkthatdeferstohumanexpertsassumeduniversally
+superior, our approach enables adaptive deferral—improving accuracy when the LLM complements BERT. We
+evaluateontwoEnglishclinicaltasks: (1)ADEdetection(ADECorpusV2),whereBioBERT(F1=0.911)outperforms
+theLLM(F1=0.765),and(2)treatmentoutcomeclassification(MIMIC-IVwithmulti-LLMconsensusgroundtruth),
+whereGPT-5-nano(F1=0.967)outperformsClinicalBERT(F1=0.887). OnADE,L2D-ClinicalachievesF1=0.928
+(+1.7pointsoverBERT)byselectivelydeferring7%ofinstanceswheretheLLM’shighrecallcompensatesforBERT’s
+misses. On MIMIC, L2D-Clinical achieves F1=0.980 (+9.3 points over BERT) by deferring only 16.8% of cases
+totheLLM.ThekeyinsightisthatL2D-ClinicallearnstoselectivelyleverageLLMstrengthswhileminimizingAPIcosts.
+Keywords:learning to defer, clinical text classification, model selection, adverse drug events, hybrid AI
+systems
+1. Introduction specificinstanceswheretheweaker-overallmodel
+excels. Thisrequireslearningfine-grainedcomple-
+Clinicaltextclassificationisfundamentaltohealth- mentarityratherthansimplydeferringwhenuncer-
+care NLP applications, from adverse drug event tain.
+(ADE) detection for pharmacovigilance (Henry To validate this approach, we evaluate on two
+et al., 2020; Karimi et al., 2015) to treatment out- clinical NLP tasks: (1) ADE Detection using the
+come extraction for clinical decision support (Xu ADECorpusV2(Gurulingappaetal.,2012),where
+andWang,2022). Thechoicebetweenspecialized BioBERT outperforms the LLM but selective de-
+fine-tunedmodels(e.g.,BioBERT(Leeetal.,2020), ferral still helps, and (2) Treatment Outcome
+ClinicalBERT(Alsentzeretal.,2019))andgeneral- Classification using MIMIC-IV discharge sum-
+purpose large language models (LLMs) is often maries(Johnsonetal.,2023),1 whereGPT-5-nano
+task-dependent,withneitherapproachuniversally outperformsClinicalBERTandL2D-Clinicallearns
+superior. optimaldeferralpatterns.
+Domain-adaptedBERTmodels(Leeetal.,2020; These pairings reflect the distinct strengths of
+Alsentzeretal.,2019)achievestrongperformance eachmodeltype: domain-adaptedBERTmodels
+whenfine-tunedonspecifictasks,benefitingfrom (BioBERT,ClinicalBERT)excelatpatternmatching
+in-domainpretraining. LLMsoffercomplementary throughspecializedpretraining,whileLLMslever-
+capabilities through broad training and few-shot agebroadworldknowledgeforcontextualreason-
+learning, but their cost, latency, and variable per- ing. To illustrate the complementarity we aim to
+formanceacrosstaskscanbelimitingfactors. exploit, consider a clinical sentence: “Patient de-
+WeproposeLearningtoDeferforclinicaltext velopedrashafterstartingamoxicillin.” BioBERT,
+(L2D-Clinical),whichtrainsamodeltopredictwhen trainedonbiomedicaltext,correctlyidentifiesthe
+BERTislikelytomakeerrorsandshoulddeferto ADErelationshipthroughlearnedlexicalpatterns.
+anLLM.Unlikefixedconfidencethresholds,L2D- However, for “The medication was well tolerated
+Clinicallearnsfrommultiplesignalsincludingpre- withnosignificantissuesnotedduringthehospital
+dictionuncertainty,textcharacteristics,anddomain- stay,” BioBERT’suncertaintyishighbecausethe
+specificfeatures. implicitnegationandhedginglanguagefalloutside
+ThissettingdiffersfundamentallyfrompriorL2D its learned patterns. In such cases, deferring to
+work,whichdeferstohumanexpertsassumeduni- anLLMthatbettercapturessemanticnuanceim-
+versallysuperiorwhenconsulted. Inourframework, provesaccuracy. L2D-Clinicallearnstomakethis
+theLLM“expert”maybeworseoverall thanBERT
+(F1=0.765 vs. 0.911 on ADE). Yet L2D-Clinical 1https://physionet.org/content/
+stillimprovesaccuracybylearningtoidentifythe mimiciv/
+6202
+rpA
+41
+]LC.sc[
+1v58231.4062:viXra
+routingdecisionautomatically,combiningBERT’s topsystemsachievingF1scoresaround0.94for
+predictionconfidencewithtextfeaturestoidentify medication extraction but lower scores for ADE
+whendeferraliswarranted. relationextraction. TheADECorpusV2(Gurulin-
+Whiletheindividualcomponents(BERTclassi- gappaetal.,2012)provides23,516sentencesfrom
+fiers,LLMprompting,logisticregression)arewell- PubMedcasereportsannotatedfordrug-ADEre-
+established,ourcontributionliesintheirnovelcom- lationships,enablingsentence-levelclassification
+bination: applying the L2D framework to AI-to-AI research. Karimi et al. (2015) survey text mining
+deferral in clinical NLP, where the “expert” is not techniquesforADEdetection,highlightingthechal-
+universallysuperior—asettingnotstudiedinprior lengesofimplicitrelationshipsanddomain-specific
+work. Ourcontributionsare: vocabulary.
+Treatmentoutcomeextractionfromclinicalnotes
+1. AI-to-AIdeferral: UnlikepriorL2Dworkthat
+is an emerging area with applications in drug re-
+defers to human experts, we study deferral
+purposingandpharmacovigilance(XuandWang,
+between AI systems (BERT → LLM), where
+2022). While structured outcome data exists in
+the “expert” is not universally superior. For
+resources like clinical trial registries, extracting
+example,ourLLMachievesonlyF1=0.765on
+treatment effectiveness from narrative discharge
+ADEdetectionvs. BERT’s0.911,yetselective
+summariesremainschallengingduetoimplicitlan-
+deferralstillimprovesoverallperformance.
+guage,hedging,andcontextdependence.
+Recent systematic reviews (Ullah et al., 2025)
+2. Adaptivedeferralbehavior: Wedemonstrate
+document rapid adoption of LLMs for clinical
+that L2D-Clinical adapts to different model
+text classification, though domain-specific BERT
+dynamics—improvingaccuracywhendeferral
+modelsremaincompetitiveonmanybenchmarks.
+helps(ADE:+1.7F1points, MIMIC:+9.3F1
+Zhangetal.(2025)systematicallycomparedBERT
+points)whileminimizingLLMusage(7%and
+and LLM approaches across six clinical and
+16.8%deferralratesrespectively).
+biomedicaldatasets,findingthat“BERT-likemodels
+3. Consensus ground truth for MIMIC: We excelinpattern-driventasks,whileLLMsdominate
+introduce a multi-LLM consensus labeling those requiring deep semantics.” They propose
+methodology (GPT-5.2 + Claude 4.5 agree- TaMAS, a task-level selection heuristic based on
+ment) that produces higher-quality ground datasetcharacteristics. Ourworkextendsthisin-
+truththansingle-modelannotation,with83.8% sight: ratherthanselectingonemodelpertask,we
+agreementrateyielding2,782reliablelabels. learntoselectper-instance,achievinggainseven
+Humanexpertvalidationona5%subsetcon- when overall model rankings are clear. Agrawal
+firmed100%labelaccuracy. etal.(2022)demonstratethatLLMscanserveas
+effective few-shot clinical information extractors,
+4. Clinicalnotesatscale: Experimentsonreal though with variable performance across entity
+MIMIC-IVdischargesummaries(279testsam- types.
+ples)alongsidetheADEbenchmark(500sam-
+ples), demonstrating applicability to actual
+2.2. Learning to Defer
+EHRdata.
+Theobservationthatdifferentmodelsexcelondif-
+5. Interpretablepatterns: Analysisrevealstask- ferent instances motivates the learning to defer
+specificfeatures(e.g., causallanguage, out- framework, where a model learns when to defer
+comekeywords)thatpredictwheneachmodel decisions to an alternative system. Madras et al.
+excels,supportingclinicalvalidation. (2018) introduced the framework in the context
+of fairness, showing that selective deferral can
+2. Related Work improve both accuracy and demographic parity.
+MozannarandSontag(2020)establishedtheoreti-
+Ourworkdrawsonthreeresearchthreads: clinical calfoundationsforconsistentL2Dtraining,proving
+text classification methods, the learning to defer thatcertainsurrogatelossesyieldBayes-optimal
+framework,andhybridNLPsystemsthatcombine deferral policies. Mozannar and Sontag (2023)
+multiplemodelsforefficientinference. provideacomprehensivesurveyofL2Dmethods,
+categorizing approaches by their deferral mech-
+anisms and theoretical guarantees. Raghu et al.
+2.1. Clinical Text Classification
+(2019)analyzethealgorithmicautomationproblem,
+The extraction of ADEs from clinical text has examininghowtooptimallyallocatetasksbetween
+beenextensivelystudiedthroughsharedtasksand humansandmachines.
+benchmarkdatasets. Then2c22018sharedtask Inthemedicaldomain,Charusaieetal.(2022)
+(Henry et al., 2020) established benchmarks for proposedLearningtoDeferwithUncertainty(LDU)
+medication and ADE extraction from EHRs, with forclinicaldiagnosis,achievingF1=0.96onpleural
+effusiondetectionwhiledeferring36%ofcasesto 3. Method
+radiologists. Their work assumes the human ex-
+pertisalwaysmorereliablewhendeferredto,akey Building on these foundations, we develop a
+differencefromoursetting. Varshneyetal.(2022) lightweight deferral model that routes inputs be-
+investigateselectivepredictionacrossclinicaland tweenBERTandtheLLM.Theworkflowproceeds
+general NLP tasks, finding that calibrated uncer- asfollows: (1)BERTclassifiestheinputtextand
+taintyestimatesarecrucialforeffectiveabstention. produces softmax probabilities; (2) the deferral
+modelexaminestheseprobabilitiesalongwithtext
+OurworkdiffersfrompriorL2Dresearchinthree
+characteristics to predict whether BERT is likely
+keyways. First,westudyAI-to-AIdeferralwhere
+wrong;(3)ifthepredictederrorprobabilityexceeds
+the “expert” (LLM) is not universally superior; on
+athreshold,wequerytheLLMinstead. Thisrout-
+ADEdetection, ourLLMachievesonlyF1=0.765
+ing decision is learned from data, specifically by
+versus BERT’s 0.911. Second, our evaluation
+trainingoncaseswhereBERTmadeerrorsona
+demonstratesthatL2Dimprovesaccuracyregard-
+validation set. The key insight is that BERT’s un-
+lessofwhichindividualmodelisstronger,validat-
+certaintysignals,combinedwithtask-specifictext
+ingtheapproachinbothdirections. Third,wetar-
+features,reliablypredictwhendeferralwillhelp.
+get text classification rather than image-based
+diagnosis,wherethecomplementarystrengthsof
+pattern-matching(BERT)versussemanticreason- 3.1. Problem Formulation
+ing(LLM)createdifferentdeferraldynamicsthan
+Let x be an input text and y ∈ Y be the label (bi-
+human-AIcollaboration.
+naryforADEdetection,3-classfortreatmentout-
+comes). Wehaveaccesstotwoclassifiers: f (x),
+B
+a domain-adapted BERT classifier (BioBERT for
+ADE,ClinicalBERTfortreatmentoutcomes),and
+f (x),anLLMwithfew-shotprompting.
+2.3. Hybrid NLP Systems L
+Our goal is to learn a deferral function d(x) ∈
+[0,1]thatoutputstheprobabilityofdeferringtothe
+Ourapproachisalsorelatedtostackedgeneraliza- LLM.Notethatdtakesfeaturesderivedfromboth
+tion(TingandWitten,1997),whichtrainsameta- the input text x and BERT’s output probabilities
+learnertocombinebasemodeloutputs. However, f B(x);wewrited(x)forbrevity. Giventhresholdτ,
+L2D-Clinical differs in that it routes to one model thefinalpredictionis:
+rather than blending predictions, and its deferral
+(cid:40)
+decisionisinterpretable. Schwartzetal.(2020)pro- f (x) ifd(x)≥τ
+yˆ= L (1)
+poseinstance-levelmodelselectionbasedoncom- f (x) otherwise
+B
+plexity,showingthatmatchingmodelcapacitytoin-
+stancedifficultyimprovesefficiency. Swayamdipta
+Toillustrate,considertwosentencesatinference
+etal.(2020)introducedatasetcartography,map-
+time. For“Symptomsimprovedafterswitchingto
+pingtrainingdynamicstoidentifyeasy,ambiguous,
+lisinopril,” BERTpredicts“noADE”withhighconfi-
+and hard instances—a complementary perspec-
+dence;thedeferralmodeloutputsd(x)=0.12<τ,
+tive to our uncertainty-based deferral. Our work
+soweuseBERT’sprediction. For“Patientreported
+operationalizes similar intuitions in a clinical set-
+feelingdizzy,possiblyrelatedtothenewmedica-
+ting,learningper-instanceroutingbetweenarchi-
+tion,” BERT is uncertain; the deferral model out-
+tecturallydifferentmodels.
+putsd(x)=0.73≥τ,triggeringdeferraltotheLLM,
+Beyond the L2D framework, recent work ad- whichcorrectlyidentifiesthepotentialADE.
+dressesefficientinferencethroughmodelcascad-
+ingandrouting. FrugalGPT(Chenetal.,2023)cas- 3.2. Deferral Feature Engineering
+cadesmultipleLLMs,usingsmallermodelsfirstand
+escalatingtolargeroneswhenconfidenceislow. Thedeferralmodelneedsinformativefeaturesto
+Theyreportupto98%costreductionwithcompa- predict when BERT will fail. We draw on two in-
+rableaccuracyongeneralNLPbenchmarks. Our tuitions: (1)BERT’sownuncertainty(reflectedin
+approach differs: (1) we combine architecturally itssoftmaxdistribution)signalsdifficultcases,and
+different models(BERTvs. LLM)ratherthanLLM (2)certaintextcharacteristicscorrelatewithmodel-
+variants, (2) we use learned deferral rather than specificstrengths. Forinstance,BERThandlesex-
+confidencecascading,and(3)weevaluateonclin- plicitcausallanguagewell(“causedby,”“dueto”),
+ical text where domain adaptation matters. Our whileLLMsbettercaptureimplicitrelationshipsand
+83–93%LLMcostreductionwithF1improvements hedgedlanguage.
+demonstratesL2D-Clinical’seffectivenessforspe- WeengineerfeaturesthatcapturewhenBERT
+cializeddomains. mightbenefitfromLLMassistance:
+UncertaintyFeatures Wederivethreefeatures interpretableoutputs. Forclinicaldeployment,un-
+fromBERT’ssoftmaxprobabilitydistributionp: (1) derstandingwhy thesystemdefersisasimportant
+confidence, defined as max p , representing the aswhenitdefers.
+i i
+model’scertaintyinitstopprediction;(2)entropy,
+(cid:80)
+computedasH(p)=− p logp ,whichcaptures
+i i i WhyTheseFeatures? Ourfeaturesetcombines
+overalluncertaintyacrossallclasses;and(3)mar-
+twocomplementarysignaltypes. Uncertaintyfea-
+gin,thedifferencebetweenthetoptwoclassprob-
+tures(confidence,entropy,margin)captureBERT’s
+abilities,indicatingdecisionboundaryproximity.
+self-assesseddifficulty—highentropyreliablyindi-
+cates cases where BERT may fail. Text features
+TextFeatures Weincludetask-specificlinguistic capturetask-specificlinguisticpatternsthatcorre-
+signalsthatcorrelatewithmodel-specificstrengths. late with model-specific strengths. For ADE, ex-
+Lengthfeaturescapturetextcomplexityvialog(1+ plicitcausallanguage(“causedby,”“induced”)pre-
+len)forbothcharacterandwordcounts. ForADE dicts BERT success because such patterns are
+detection,weincludebinaryindicatorsforcausal well-represented in biomedical pretraining. For
+language (“induced,” “caused by,” “due to,” “af- treatment outcomes, explicit outcome keywords
+ter,” “following”), severity terms (“severe,” “fatal”), (“discontinued,”“improved”)similarlypredictClini-
+andcommonADEterminology(“toxicity,”“reaction,” calBERTsuccess. Thesefeaturesemergedfrom
+“syndrome”). Fortreatmentoutcomes,weinclude erroranalysisonvalidationdata;weincludeonly
+indicators for outcome-related terms (“discontin- features with consistent predictive signal across
+ued,”“improved,”“intolerance”). These18features cross-validationfolds.
+(5uncertainty+13text)formtheinputtothedefer-
+ralmodel.
+4. Experimental Setup
+3.3. Deferral Model Training
+HavingestablishedtheL2D-Clinicalframework,we
+nowdescribetheexperimentaldesignusedtoeval-
+WetrainthedeferralmodeltopredictwhenBERT
+uateitseffectivenessacrossdifferentmodeldynam-
+iswrong. Lete(x)=1[f (x)̸=y]indicatewhether
+B
+ics. The ADE Corpus V2 represents a scenario
+BERT erred on instance x. We minimize binary
+where the domain-adapted BERT model outper-
+cross-entropy:
+formstheLLM,whileMIMIC-IVtreatmentoutcome
+(cid:88) classification represents the opposite, where the
+d∗ =argmin L (e(x),d(x)) (2)
+d BCE LLM outperforms BERT. Evaluating on both sce-
+x
+narios allows us to test whether L2D-Clinical im-
+whereL (e,d)=−elogd−(1−e)log(1−d)is provesaccuracyregardlessofwhichbasemodel
+BCE
+binarycross-entropy. isstronger,andwhetheritcaneffectivelyleverage
+Weuselogisticregressionwithbalancedclass aweaker“expert”model.
+weightstohandlethelowerrorrate(BERTisusually
+correct). Thethresholdτ istunedonvalidationdata
+4.1. Datasets
+tomaximizethecombinedsystem’sF1score. To
+preventoverfitting,weemploycross-validation: 5- ADE Corpus V2 We use the ADE Corpus V2
+foldforADE,train/valsplitforMIMIC-IV. (Gurulingappa et al., 2012), comprising 23,516
+English sentences from PubMed medical case
+reports annotated for ADE presence (binary
+3.4. Design Choice Justification
+classification: 29% positive, 71% negative). We
+Severaldesigndecisionswarrantexplicitjustifica- downloadthecorpusfromtheHuggingFaceHub
+tion: (ade-benchmark-corpus/ade_corpus_v2)
+andsplititintotrain(70%),validation(15%),and
+test (15%) sets using stratified random sampling
+Why Logistic Regression? We prioritize inter-
+withseed42. ForLLMevaluation,weuse500test
+pretability and simplicity over marginal accuracy
+instances due to API cost constraints; BERT is
+gains. Logisticregressionprovides(1)interpretable
+evaluatedonthefulltestset(3,527instances)and
+coefficientsthatrevealwhichfeaturesdrivedefer-
+the500-samplesubsetforfaircomparisonwiththe
+ral,(2)well-calibratedprobabilityestimatessuitable
+LLM.
+forthresholdtuning,and(3)minimaloverfittingrisk
+given our moderate training set sizes. We evalu-
+atedrandomforestandgradientboostingalterna- MIMIC-IV Treatment Outcomes We extract
+tives;randomforestachievedidenticalF1onADE drug-disease-outcometripletsfrom2,000English-
+(0.928),andlogisticregressionmatchedthisper- language MIMIC-IV discharge summaries (John-
+formance with fewer hyperparameters and more sonetal.,2023),yielding3,321candidatetriplets.
+Outcomes are classified as EFFECTIVE, AD- theheld-outtestset.
+VERSE, or NEUTRAL (3-class). To ensure high-
+qualitygroundtruthlabels,weemployconsensus
+Baselines We compare L2D-Clinical against
+labeling: eachtripletisindependentlyclassifiedby
+several baselines: (1) Fixed confidence thresh-
+GPT-5.2 and Claude 4.5, and only triplets where
+old: defer to LLM when BERT’s maximum soft-
+bothmodelsagreeareretained. Thisyields2,782
+max probability falls below θ; we evaluate θ ∈
+consensus-labeledtriplets(83.8%agreementrate),
+{0.6,0.7,0.8,0.9,0.95} and report θ = 0.95 as it
+providing more reliable ground truth than single-
+performed best. (2) Random deferral: randomly
+model annotation. To validate the consensus la-
+deferatthesamerateasL2D-Clinical(7%forADE,
+bels,adomainexpertreviewedarandom5%sub-
+16.8% for MIMIC) to test whether L2D-Clinical’s
+set (139 samples) and confirmed 100% agree-
+improvementscomefromintelligentroutingversus
+ment with the consensus labels, supporting the
+simply using the LLM more often. (3) Oracle: al-
+reliability of this methodology. We use note-level
+wayschoosethecorrectmodelwhentheydisagree,
+train/validation/testsplits(80/10/10)withseed42,
+providing an upper bound on deferral-based ap-
+yielding2,225training,278validation,and279test
+proaches.
+samples. GPT-5-nanoservesasthedeferraltarget,
+distinctfromtheconsensuslabelingmodels.
+4.3. Evaluation Metrics
+4.2. Models
+WereportF1score(harmonicmeanofprecision
+BERTModels ForADEdetection,wefine-tune andrecall)asourprimarymetric,computedonthe
+BioBERT-base-cased-v1.2(Leeetal.,2020)with positiveclassforbinaryADEdetectionandmacro-
+the following hyperparameters: learning rate 5× averagedacrossclassesfor3-classtreatmentout-
+10−5 (HuggingFaceTrainerdefault),batchsize16, comes. Wealsoreportaccuracyandthepercent-
+maximumsequencelength256,warmupratio0.1, ageofinstancesdeferredtotheLLM(LLM%). For
+weightdecay0.01,andearlystoppingwithpatience ADE detection, we use 5-fold cross-validation to
+2basedonvalidationF1. Trainingrunsforupto5 obtain out-of-fold deferral probabilities, reducing
+epochs. Fortreatmentoutcomeclassification,we overfittingrisk. Giventhemoderatetestsetsizes
+fine-tuneBio_ClinicalBERT(Alsentzeretal.,2019) (500and279samples),weacknowledgethatsmall
+with learning rate 2×10−5, batch size 32, maxi- F1differences(<0.01)maynotbestatisticallysig-
+mumsequencelength512,warmupratio0.1,and nificant;ourreportedimprovementsof+1.7points
+dropout0.1forupto10epochs. Allexperiments (ADE) and +9.3 points (MIMIC) represent mean-
+useseed42forreproducibility. ingfulgains. Futureworkshouldincludebootstrap
+confidenceintervalsformorerigoroussignificance
+LLM WeuseAzureOpenAIGPT-5-nanowithfew- testing.
+shot prompting. For ADE detection, the system
+prompt is: “You classify sentences for adverse
+5. Results
+drug events. Reply with only 1 (contains ADE)
+or0(noADE).” Weprovide5few-shotexamples
+Wepresentresultsonbothtasks,beginningwith
+covering both positive cases (e.g., “Intravenous
+ADE detection where BioBERT substantially out-
+azithromycin-inducedototoxicity”→1)andnega-
+performstheLLM(F1: 0.911vs. 0.765),followed
+tivecases(e.g.,“Methotrexateiscommonlyused
+by treatment outcome classification where GPT-
+for rheumatoid arthritis” → 0). For treatment out-
+5-nano outperforms ClinicalBERT (F1: 0.967 vs.
+comes, the system prompt is: “You are a clinical
+0.887). Inbothcases,L2D-Clinicalimprovesover
+NLPassistant. Basedonclinicalevidence,classify
+bothindividualmodelsbylearningwhentodefer.
+thetreatmentoutcomeintooneofthreecategories:
+EFFECTIVE,ADVERSE,orNEUTRAL.Replywith
+just the category name.” We provide 3 few-shot
+5.1. Task 1: ADE Detection (BERT >
+examples,oneperclass. Fullpromptsareincluded
+LLM)
+inourcoderepository.
+Table1presentsresultsonADECorpusV2,where
+DeferralModel Weuselogisticregressionwith BioBERToutperformstheLLM.
+balancedclassweights,L2regularization(default Despite the LLM’s lower overall F1 (0.765), it
+C =1.0),andmaximum1000iterations. Features achieveshighrecall(95%)comparedtoBioBERT’s
+arestandardizedusingz-scorenormalization. For 88%recall. Thiscomplementarityiskey: BioBERT
+ADE, we use 5-fold stratified cross-validation to excelsatprecision(94%)butmissessubtleADEs,
+obtainout-of-folddeferralprobabilities;forMIMIC- whiletheLLMcatchesmoreADEsbutwithmore
+IV,wetrainonthevalidationsetandevaluateon falsepositives(78%precision).
+Method F1 Acc LLM% Method F1 Acc LLM%
+BioBERTonly 0.911 0.948 0% ClinicalBERTonly 0.887 0.946 0%
+LLMonly 0.765 0.834 100% GPT-5-nanoonly 0.967 0.968 100%
+Random(7%) 0.903 0.938 7.0% Fixedθ =0.95 0.971 — 26.2%
+Fixedθ =0.95 0.921 0.954 2.2% L2D-Clinical(Ours) 0.980 0.986 16.8%
+L2D(Ours) 0.928 0.958 7.0%
+Table2: MIMIC-IVTreatmentOutcomeswithcon-
+Oracle(upperbound) 0.945 0.968 2.0%
+sensusgroundtruth: GPT-5-nanooutperformsClin-
+icalBERTonthistask. L2D-Clinicalachievesthe
+Table 1: ADE Corpus V2: BioBERT outperforms
+bestF1(0.980)bydeferringonly16.8%ofcases,
+LLM, but L2D-Clinical improves further by selec-
+outperforming the fixed threshold baseline while
+tivelyusingLLMforuncertaincases. Randomde-
+usingfewerLLMcalls.
+ferralatthesamerate(7%)yieldsF1=0.903,con-
+firmingL2D-Clinical’sgainscomefromintelligent
+routing.
+susgroundtruthlabels(GPT-5.2+Claudeagree-
+ment),validatedbyhumanexpertreviewona5%
+ErrorAnalysis. BioBERT’sfalsenegativesoften subset, provide reliable evaluation. L2D-Clinical
+involvehedgedorimplicitlanguage. Forexample, achievesF1=0.980(+9.3pointsoverBERT)byse-
+BioBERT missed: “Patient noted some stomach lectivelydeferring16.8%ofcasestoGPT-5-nano.
+discomfort which may be related to the medica- Notably,L2D-Clinicaloutperformsthefixedthresh-
+tion.” Thehedging(“maybe”)andindirectphrasing oldbaseline(θ =0.95,F1=0.971)whileusingfewer
+causedlowconfidence. TheLLMcorrectlyidenti- LLMcalls(16.8%vs. 26.2%),demonstratingthat
+fiedthisasapotentialADE.Conversely,theLLM learneddeferralismoreeffectivethanconfidence-
+over-predictedonsentenceslike“Medicationwas basedthresholds.
+discontinued and switched to alternative,” incor-
+rectly inferring an ADE when the switch was for
+non-adversereasons. L2D-Clinicallearnstodefer ErrorAnalysis. ClinicalBERTperformswellon
+hedgedcasestotheLLMwhiletrustingBioBERT explicitoutcomes: “Metforminwaseffectiveincon-
+onexplicitlanguage,improvingF1by1.7points. trollingbloodglucoselevels” iscorrectlyclassified
+asEFFECTIVE.However,itstruggleswithimplicit
+Residual Errors. Of the 36 errors remaining orcontextualoutcomeslike“Patienttoleratedthe
+after L2D-Clinical deferral, 19 (53%) are cases chemotherapyregimenandwasdischargedinsta-
+where both models fail—typically involving com- blecondition”,where“tolerated”implieseffective-
+plex multi-drug interactions or rare ADEs absent nesswithoutexplicitstatement. GPT-5-nanocap-
+fromBioBERT’spretrainingdata(e.g.,“Progressive turesthissemanticnuancemorereliably. Interest-
+multifocalleukoencephalopathydevelopedduring ingly,ClinicalBERTexcelswhenexplicitkeywords
+natalizumabtherapy”). Another11(31%)arefalse appear: sentencescontaining“discontinueddueto”
+deferralcaseswherethedeferralmodelincorrectly or“adversereaction”areclassifiedcorrectly96%of
+routes to the LLM, which then introduces a new thetime. L2D-ClinicallearnstotrustClinicalBERT
+error. Theremaining6(16%)arecaseswherethe on these clear-cut cases, reserving the LLM for
+deferral model fails to flag a BERT error. These ambiguousinstanceswherecontextualreasoning
+patternssuggestthatfurthergainsrequireeithera isneeded.
+strongerbasemodelforrareentitiesoranensem-
+bleapproachratherthanbinaryrouting.
+ResidualErrors. L2D-Clinicalmisclassifies4of
+5.2. Task 2: Treatment Outcomes (LLM > 279 test instances. Two involve ambiguous out-
+comeswherebothmodelsdisagreewiththecon-
+BERT)
+sensuslabel—e.g.,adischargenotestating“medi-
+Wenowexaminetreatmentoutcomeclassification cationadjustedduetosuboptimalresponse” was
+onMIMIC-IV.Withconsensusgroundtruthlabels labeledADVERSEbyconsensusbutcouldplausi-
+(GPT-5.2 + Claude agreement, validated by hu- blybeNEUTRAL.Oneisafalsedeferralwherethe
+manexpertreview),GPT-5-nanooutperformsClin- LLM overrides a correct ClinicalBERT prediction.
+icalBERT,andL2D-Clinicalachievesthebestper- The final error is a missed deferral on an implicit
+formance by learning optimal deferral. Table 2 outcome. Thesmallnumberofresidualerrorslim-
+presentstheseresults. its systematic analysis but suggests that remain-
+Inthisscenario,GPT-5-nanooutperformsClin- ingfailuresconcentrateatgenuinelabelambiguity
+icalBERT (F1: 0.967 vs. 0.887). The consen- boundaries.
+5.3. Summary: Adaptive Deferral Task-specific patterns emerge: explicit causal
+Behavior language(“causedby,”“aftertaking”)predictscor-
+rect BERT classification on ADE, while “discon-
+AkeyquestioniswhetherL2D-Clinicalcanadap-
+tinued”keywordspredictcorrectBERTonMIMIC.
+tively learn when deferral helps versus when it
+Ambiguousoutcomelanguage(“tolerated,”“stable
+wouldhurt. Table3addressesthisdirectlybycom-
+on”)triggersdeferral. Theseinterpretablepatterns
+paringresultsacrossscenarioswithdifferentBERT-
+enableclinicianstounderstandandvalidatedefer-
+LLMdynamics.
+raldecisions.
+Task BERT L2D ∆ LLM%
+6. Discussion
+ADE 0.911 0.928 +1.7 7.0%
+MIMIC 0.887 0.980 +9.3 16.8%
+Theexperimentalresultsraiseanaturalquestion:
+whydoesL2D-Clinicalsucceedinimprovingaccu-
+Table3: L2D-Clinicaladaptstodifferentmodeldy-
+racyevenwhendeferringtoaweakermodel? We
+namics,improvingF1inbothscenarios. OnADE
+nowanalyzetheunderlyingmechanismsanddis-
+(BERT>LLM),L2Dachievesgainswithminimalde-
+cusspracticalimplicationsforclinicaldeployment.
+ferral. OnMIMIC(LLM>BERT),L2Ddefersmore
+frequently.
+6.1. Why L2D-Clinical Works
+TheresultsdemonstrateL2D-Clinical’sadaptive
+Thecentralfinding,thatL2D-Clinicaladaptsitsde-
+behavior. OnADE,eventhoughtheLLMissubstan-
+ferralbehaviortomodeldynamics,warrantsdeeper
+tiallyweakeroverall(F1=0.765vs. BERT’s0.911),
+examination. OnADE,deferringtoasubstantially
+L2D-Clinical achieves +1.7 F1 points by selec-
+weaker model (LLM F1=0.765) still helps BERT
+tivelydeferringonly7%ofcaseswheretheLLM’s
+(F1=0.911). ThekeyinsightisthataggregateF1
+high recall compensates for BERT’s misses. On
+scoresmaskinstance-levelvariation: amodelthat
+MIMIC, where GPT-5-nano outperforms Clinical-
+performsworseonaveragecanstilloutperformon
+BERT(F1: 0.967vs. 0.887),L2D-Clinicalachieves
+specificsubsetsofdatawhereitsstrengthsalign
++9.3 points improvement by deferring 16.8% of
+with the input characteristics. On MIMIC, where
+cases—learningahigherdeferralratethatreflects
+theLLMoutperformsBERT(F1: 0.967vs. 0.887),
+theLLM’ssuperiorperformanceonthistask. This
+L2D-Clinicallearnsahigherdeferralrate(16.8%)
+adaptivebehavior—adjustingdeferralratesbased
+toleveragetheLLM’sstrengths,achievingthebest
+on relative model strengths—demonstrates that
+overallF1(0.980).
+L2D-Clinical learns meaningful task-specific pat-
+Table5contrastsoursettingwithpriorL2Dwork.
+ternsratherthanapplyingaone-size-fits-allstrat-
+egy.
+PriorL2D L2D-Clinical
+Experttype Human AI(LLM)
+5.4. Feature Analysis
+Expertreliability Alwaysbetter Instance-dep.
+Deferralsignal Uncertainty Uncert. +feat.
+To understand what drives effective deferral de-
+cisions, we examine the learned feature weights.
+Table 5: L2D-Clinical vs. prior Learning to Defer
+Table4showsstandardizedlogisticregressionco-
+approaches.
+efficients,wherepositivevaluesindicatefeatures
+thatincreasedeferralprobability. Acrossbothtasks,
+L2D-Clinicalsucceedsbecauseofthreekeyfac-
+BERT’spredictionentropyisthestrongestsignal:
+tors:
+highentropyreliablyindicatescaseswheredeferral
+helps.
+Factor 1: Complementary Errors. On ADE,
+BioBERTachieves94%precisionbutonly88%re-
+Feature ADE MIMIC
+call;theLLMshowstheoppositepatternwith78%
+Entropy +0.82 +0.91
+precisionand95%recall. Thesecomplementaryer-
+Margin(top-2diff) −0.71 −0.68
+rorprofilesmeanthatevenaweaker-overallmodel
+Confidence −0.54 −0.47
+can rescue specific failure cases. BERT misses
+Log(textlength) +0.23 +0.31
+hedged language; the LLM catches it. The LLM
+Has“discontinued” — −0.44
+Hascausallanguage −0.38 — over-predictsonambiguouscases;BERTcorrectly
+abstains.
+Table4: Deferralmodelcoefficients(positive=de-
+fer to LLM). Uncertainty features dominate; task- Factor2: LearnableErrorPrediction. Thede-
+specifickeywordsaddinterpretablesignal. ferralmodelachieves73%precisionatpredicting
+BERT errors on ADE and 68% on MIMIC, mean- 7. Conclusion
+ingthatwhenitpredictsBERTwillfail,itiscorrect
+73%and68%ofthetimerespectively. Giventhat We have presented Learning to Defer for clinical
+BERT’sbaseerrorratesareonly12%(ADE)and text(L2D-Clinical),demonstratingthatlearnedde-
+18%(MIMIC),thisrepresentssubstantialpredictive ferral adapts to different model dynamics. On
+power. Evenimperfectpredictionsimproveoverall ADE detection, where BioBERT outperforms the
+accuracywhenthecomplementarymodeliscon- LLMbutcomplementaryerrorpatternsexist,L2D-
+sultedonflaggedcases. ClinicalachievesF1=0.928(+1.7pointsoverBERT
+alone) by selectively deferring 7% of instances.
+On MIMIC-IV treatment outcomes with consen-
+Factor3: SelectiveDeferral. Bydeferringonly
+susgroundtruth,whereGPT-5-nanooutperforms
+whenconfidentBERTwillfailand theLLMislikely
+ClinicalBERT(F1: 0.967vs. 0.887),L2D-Clinical
+correct,L2D-Clinicalavoidsintroducingnewerrors.
+achievesF1=0.980(+9.3pointsoverBERT)byde-
+OnADE,ofthe7%ofcasesdeferredtotheLLM,
+ferring16.8%ofcases. Thedeferralmodellearns
+theLLMwascorrect89%ofthetime,muchhigher
+interpretable,task-specificpatternsaboutwhende-
+thanits83.4%overallaccuracy. Thisselectiverout-
+ferralhelps,providingtransparencythatsupports
+ingisthekeymechanism.
+clinicalvalidation.
+ThebroaderimplicationofthisworkisthatL2D-
+6.2. Cost Analysis Clinical provides a principled framework for com-
+bining specialized and general-purpose models.
+L2D-Clinical provides substantial computational
+Rather than choosing one architecture or blindly
+savingsbyusingtheLLMforonly7%(ADE)and
+deferringwhenuncertain,L2D-Clinicallearnswhen
+16.8% (MIMIC) of instances, reducing LLM API
+deferralislikelytohelpandadjustsdeferralrates
+costsby81–93%comparedtoLLM-onlyinference
+accordingly. Thisadaptivebehaviorisparticularly
+while maintaining or improving accuracy. A de-
+valuable as the landscape of available models
+tailedcostandlatencyanalysisisprovidedinAp-
+evolves: L2D-Clinical can incorporate new mod-
+pendix8.2.
+elsandlearnappropriatedeferralpatternswithout
+manualtuning. Ourconsensuslabelingmethodol-
+6.3. Practical Implications ogyforMIMIC-IV,combiningmulti-LLMagreement
+withhumanexpertvalidation,demonstratesaprac-
+L2D-Clinicaloffersseveraladvantagesforclinical tical approach to generating high-quality ground
+deployment: truthforclinicalNLPtaskswhereexpertannotation
+isexpensive.
+However, significant challenges remain for de-
+Model-AgnosticDesign. L2D-Clinicalworksre-
+ployingL2D-Clinicalinproductionclinicalsettings.
+gardlessofwhichmodelisindividuallybetter,mak-
+Thedeferralmodelrequiresvalidationdatawhere
+ingitrobusttotask-specificmodeldynamics. Prac-
+bothsystemshavebeenevaluated,creatingaboot-
+titionersdonotneedtoknowaprioriwhetherBERT
+strappingproblemfornewtasks. Theinterpretabil-
+orLLMwillbestronger;L2D-Clinicaladaptsauto-
+ityofdeferraldecisions,whilebetterthanblack-box
+matically.
+ensembles, still requires clinical validation to en-
+surethatthelearnedpatternsalignwithmeaningful
+InterpretableDeferral. Unlikeblack-boxensem- medical distinctions rather than spurious correla-
+blemethods,L2D-Clinical’sdeferraldecisionsare tions. Finally,therapidpaceofLLMdevelopment
+interpretable. Clinicians can understand why a meansthatdeferralpatternslearnedtodaymaybe-
+casewasdeferred: highentropy,presenceofhedg- comesuboptimalasmodelsimprove,necessitating
+inglanguage,orabsenceofexplicitkeywords. This ongoingrecalibration.
+transparencysupportsclinicalvalidationandtrust.
+GracefulDegradation. IftheLLMAPIbecomes Data Availability
+unavailableortooslow,L2D-Clinicalcanfallback
+to BERT-only predictions with known accuracy
+The ADE Corpus V2 is publicly available from
+bounds. Thisiscriticalforclinicalsystemsrequiring the Hugging Face Hub (ade-benchmark-
+highavailability. corpus/ade_corpus_v2). MIMIC-IV access
+requirescredentialingthroughPhysioNet(https:
+//physionet.org/content/mimiciv/).
+PrivacyConsiderations. Thedeferralmodelcan
+beconfiguredtolimitLLMusageforsensitivecases,
+reducingdataexposuretoexternalAPIs.
+and Jaewoo Kang. 2020. Biobert: a pre-
+trained biomedical language representation
+MonicaAgrawal,StefanHegselmann,HunterLang, modelforbiomedicaltextmining. Bioinformatics,
+YoonKim,andDavidSontag.2022. Largelan- 36(4):1234–1240.
+guagemodelsarefew-shotclinicalinformation
+extractors. InProceedingsofthe2022Confer- DavidMadras,ToniannPitassi,andRichardZemel.
+enceonEmpiricalMethodsinNaturalLanguage 2018. Predict responsibly: Improving fairness
+Processing(EMNLP),pages1998–2022. andaccuracybylearningtodefer. InAdvances
+inNeuralInformationProcessingSystems,vol-
+Emily Alsentzer, John R Murphy, Willie Boag,
+ume31.
+Wei-HungWeng,DiJin,TristanNaumann,and
+Matthew BA McDermott. 2019. Publicly avail-
+HusseinMozannarandDavidSontag.2020. Con-
+able clinical bert embeddings. In Proceedings
+sistentestimatorsforlearningtodefertoanex-
+ofthe2ndClinicalNaturalLanguageProcessing
+pert. In International Conference on Machine
+Workshop,pages72–78.
+Learning,pages7076–7087.PMLR.
+Mohammad-AminCharusaie,HusseinMozannar,
+HusseinMozannarandDavidSontag.2023.Teach-
+David Sontag, and Samira Samadi. 2022. In-
+ingmodelstoabstainwhenuncertain: Asurvey
+corporatinguncertaintyinlearningtodeferalgo-
+oflearningtodefermethods. JournalofMachine
+rithmsforsafecomputer-aideddiagnosis. Scien-
+LearningResearch,24:1–55.
+tificReports,12(1):1–12.
+Maithra Raghu, Katy Blumer, Greg Corrado, Jon
+Lingjiao Chen, Matei Zaharia, and James Zou.
+Kleinberg, Ziad Obermeyer, and Sendhil Mul-
+2023. Frugalgpt: How to use large language
+lainathan. 2019. The algorithmic automation
+models while reducing cost and improving per-
+problem: Prediction, triage, and human effort.
+formance. InarXivpreprintarXiv:2305.05176.
+InarXivpreprintarXiv:1903.12220.
+Harsha Gurulingappa, Abdul Mateen Rajput, An-
+gus Roberts, Juliane Fluck, Martin Hofmann- Roy Schwartz, Gabriel Stanovsky, Swabha
+Apitius, and Luca Toldo. 2012. Development Swayamdipta,JesseDodge,andNoahASmith.
+ofabenchmarkcorpustosupporttheautomatic 2020. Therighttoolforthejob: Matchingmodel
+extraction of drug-related adverse effects from and instance complexities. In Proceedings of
+medicalcasereports. JournalofBiomedicalIn- the 58thAnnual MeetingoftheAssociationfor
+formatics,45(5):885–892. ComputationalLinguistics,pages6640–6651.
+SamHenry,KevinBuchan,MicheleFilannino,Am- Swabha Swayamdipta, Roy Schwartz, Nicholas
+berStubbs,andOzlemUzuner.2020.2018n2c2 Lourie, Yizhong Wang, Hannaneh Hajishirzi,
+sharedtaskonadversedrugeventsandmedica- NoahASmith,andYejinChoi.2020.Datasetcar-
+tionextractioninelectronichealthrecords. Jour- tography: Mappinganddiagnosingdatasetswith
+naloftheAmericanMedicalInformaticsAssoci- trainingdynamics. InProceedingsofthe2020
+ation,27(1):3–12. ConferenceonEmpiricalMethodsinNaturalLan-
+guageProcessing(EMNLP),pages9275–9293.
+Alistair EW Johnson, Lucas Bulgarelli, Lu Shen,
+Alvin Gayles, Ayad Shammout, Steven Horng,
+Kai Ming Ting and Ian H Witten. 1997. Stacking
+TomJ Pollard, SichengHao, Benjamin Moody,
+bagged and dagged models. In Proceedings
+BrianGow,etal.2023. Mimic-iv,afreelyacces-
+of the Fourteenth International Conference on
+sibleelectronichealthrecorddataset. Scientific
+MachineLearning(ICML),pages367–375.
+Data,10(1):1.
+Irfan Ullah et al. 2025. Large language models
+Sarvnaz Karimi, Alejandro Metke-Jimenez,
+for healthcare text classification: A systematic
+An Nguyen, et al. 2015. Text and data mining
+review. arXivpreprintarXiv:2503.01159.
+techniques in adverse drug reaction detection.
+ACMComputingSurveys,47(4):1–39.
+Neeraj Varshney, Swaroop Mishra, and Chitta
+Loïc Lannelongue, Jason Grealey, and Michael Baral. 2022. Investigating selective prediction
+Inouye. 2021. Green algorithms: Quantifying approachesacrossseveraltasksiniid,ood,and
+thecarbonfootprintofcomputation. Advanced adversarialsettings. InFindingsofACL.
+Science,8(12):2100707.
+Rui Xu and Qingqing Wang. 2022. A survey on
+Jinhyuk Lee, Wonjin Yoon, Sungdong Kim, adversedrugeventdetectionfromtexts. Expert
+Donghyeon Kim, Sunkyu Kim, Chan Ho So, SystemswithApplications,205:117627.
+Yusheng Zhang et al. 2025. Do bert-like bidirec- WeanalyzecostandlatencyassumingLLMinfer-
+tionalmodelsstillperformbetterontextclassifi- ence costs 50× BERT per call (based on typical
+cationintheeraofllms? InFindingsoftheAs- API pricing) and 850ms latency versus 12ms for
+sociationforComputationalLinguistics: EMNLP BERT.OntheADEtask,L2D-Clinicalusesonly7%
+2025. LLMcalls,resultingin4.4×relativecostcompared
+to 50× for LLM-only inference, with an average
+latencyof71mspersample. OntheMIMICtask,
+8. Appendix L2D-Clinicaluses16.8%LLMcalls,yielding9.4×
+relativecostwith153msaveragelatency.
+Sections inthisappendixprovidemoreinsightinto TheseestimatesreflectonlyLLMAPIinference
+theworkcompleted. Wediscussthelimitationsfor costs. The full computational cost also includes
+ourinfrastructurealongwithitslatencyandhowwe BERTfine-tuning(approximately20GPU-minutes
+planonpresentingmoreideasinthefuture. onasingleA100forBioBERTonADE)andL2D
+classifier training (under 1 CPU-second for logis-
+8.1. Limitations tic regression on 18 features). At inference time,
+theL2Dclassifieradds<1msoverheadpersam-
+Severallimitationsofthisworkshouldbeacknowl- ple. Using the Green Algorithms calculator (Lan-
+edged. First,ourtestsetsizesaremoderate(500 nelongue et al., 2021), we estimate total training
+and279samples)duetoLLMAPIcostconstraints; carbonemissionsatapproximately0.03kgCO e
+2
+larger-scaleevaluationwouldstrengthengeneral- forBERTfine-tuningandnegligibleemissionsfor
+izability claims. Second, we evaluate only a sin- logisticregression,comparedtotheongoingemis-
+gleLLMfamily(GPT-5);deferralpatternsmaydif- sionsfromfullLLMinferenceatscale.
+fer with open-source alternatives such as Llama Forhigh-throughputclinicalpipelinesprocessing
+orMistral,whichhavedifferentcapabilityprofiles. thousandsofnotesdaily,thesesavingsaresignifi-
+Testing whether the learned deferral mechanism cant. Ahospitalprocessing10,000clinicalnotes
+generalizes across LLM families is an important perdaywouldreduceLLMAPIcostsby81–93%
+direction for future work. Third, L2D-Clinical re- comparedtoLLM-onlyinference,whilemaintaining
+quireslabeledvalidationdatatotrainthedeferral orimprovingaccuracy.
+model,andcold-startscenarioswheresuchdata
+is unavailable need further investigation. Fourth,
+8.3. Future Work
+fortheMIMICtask,theconsensusgroundtruthla-
+belsweregeneratedbyLLMs(GPT-5.2andClaude
+While the present work focused on classification
+4.5),whilethedeferraltargetisalsofromtheGPT
+tasks, the L2D-Clinical framework opens several
+family (GPT-5-nano). Although the labeling and
+promisingresearchdirections:
+inferencemodelsaredistinct,thissharedlineage
+could introduce bias favoring LLM-like reasoning
+OtherClinicalNLPTasks. Namedentityrecog-
+patterns. The 5% human expert validation mit-
+nition,relationextraction,andtemporalreasoning
+igates but does not fully eliminate this concern;
+mayexhibitsimilarcomplementaryerrorpatterns
+larger-scale human validation and evaluation on
+betweenspecializedandgeneralmodels. ForNER,
+existinggold-labeledclinicaldatasets(e.g.,n2c2
+BERT-basedtaggersexcelatcommonentitiesbut
+sharedtaskcorpora)wouldfurtherstrengthencon-
+strugglewithrareorcontext-dependentmentions
+fidence. Fifth,wedeferexclusivelytoanLLM,but
+whereLLMsmighthelp.
+deferringtoasmallermodelfine-tunedwithempha-
+sisonhighrecallcouldpotentiallyachievesimilar
+gainsatlowercost—investigatingnon-LLMdeferral Multi-Model Deferral. Extending beyond two
+targetsisapromisingalternative. Sixth,ourevalua- models to a cascade of increasingly capable
+tionisEnglish-only;clinicalNLPinotherlanguages (andexpensive)modelscouldfurtheroptimizethe
+mayexhibitdifferentBERT-LLMdynamics. Finally, accuracy-costtradeoff. Thedeferralmodelwould
+whenusingcloud-basedLLMs,deferralsendspa- learnwhentoescalatethroughthecascade.
+tientdatatoexternalAPIs;deploymentsinvolving
+protectedhealthinformation(PHI)requireeitheron-
+OnlineAdaptation. AsLLMcapabilitiesevolve
+premise LLM deployment or Business Associate
+rapidly,deferralthresholdsmayneedperiodicrecal-
+Agreement(BAA)compliancewiththeAPIprovider.
+ibration. Investigatingonlinelearningapproaches
+thatadapttodistributionshiftwithoutfullretraining
+8.2. Cost and Latency Analysis isimportantforlong-termdeployment.
+Beyondtheaccuracyimprovements,L2D-Clinical
+providessubstantialcomputationalsavings,acriti- Cross-Lingual Transfer. Clinical NLP in lan-
+calconsiderationfordeployingclinicalNLPatscale. guages other than English may show different
+BERT-LLM dynamics. Evaluating whether L2D-
+Clinicalpatternstransferacrosslanguageswould
+broadenapplicability.

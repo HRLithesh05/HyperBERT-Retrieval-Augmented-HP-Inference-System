@@ -1,0 +1,1215 @@
+GOBO: Quantizing Attention-Based NLP Models
+for Low Latency and Energy Efficient Inference
+AliHadiZadeh IsakEdo
+UniversityofToronto UniversityofToronto
+hadizade@ece.utoronto.ca edoisak@ece.utoronto.ca
+OmarMohamedAwad AndreasMoshovos
+UniversityofToronto UniversityofToronto
+awadomar@ece.utoronto.ca moshovos@ece.utoronto.ca
+ABSTRACT models.Memoryfootprint,bandwidthandenergylimitationsare
+Attention-basedmodelshavedemonstratedremarkablesuccessin mostacuteforattention-basedmodelsinlanguageunderstanding
+variousnaturallanguageunderstandingtasks.However,efficient tasks.Amongthem,theBERTfamilyofnaturallanguagemodels[1]
+executionremainsachallengeforthesemodelswhicharememory- aretodaythebenchmarkdeliveringbest-of-classaccuracy.Their
+bound due to their massive number of parameters. We present footprint,accesses,andexecutiontimearedominatedbytheparam-
+GOBO,amodelquantizationtechniquethatcompressesthevast eters(weights)oftheirnumerousattentionlayers.Thelargestand
+majority(typically99.9%)ofthe32-bitfloating-pointparametersof mostaccurateamongthosemodels,BERT-Largehasafootprint
+state-of-the-artBERTmodelsandtheirvariantsto3bitswhilemain- of 1.12GB, while BERT-base sacrifices some accuracy to reduce
+tainingtheiraccuracy.Unlikeotherquantizationmethods,GOBO footprintto326MB.TheseoriginalBERTmodelsareparticularly
+doesnotrequirefine-tuningnorretrainingtocompensateforthe expensivetotrainanduse32bfloating-pointparametersevenfor
+quantizationerror.Wepresenttwopracticalhardwareapplications inference.TrainingBERT-Largeon16CloudTPUs(64TPUchips)
+ofGOBO.InthefirstGOBOreducesmemorystorageandtraffic takes4days[1].Forthisreason,intypicalapplicationswestart
+andasaresultinferencelatencyandenergyconsumption.This withapre-trainedversionwhichwethenrefinetoatargettask.
+GOBOmemorycompressionmechanismisplug-incompatiblewith Refinementtimevariespertaskbutusuallytakeshourstoafew
+manyarchitectures;wedemonstrateitwiththeTPU,Eyeriss,and daysforBERT-LargeonanRTX2080TiGPU.Severalarchitecture
+anarchitectureusingTensorCores-likeunits.Second,wepresenta modificationsandquantizationmethodshavebeenproposedto
+co-designedhardwarearchitecturethatalsoreducescomputation. reducethecostofBERTmodels[2–4].Generally,thesemethods
+Uniquely,theGOBOarchitecturemaintainsmostoftheweights requirefine-tuningandoftensacrificeaccuracy.Quantizationmeth-
+in3bevenduringcomputation,apropertythat:(i)makesthepro- odsprolongtrainingtimebyasmuchas10×.Itisforthisreason
+cessingelementsareaefficient,allowingustopackmorecompute thatitisbesttofindmodelcompactionmethodsthatcanwork
+powerperunitarea,(ii)replacesmostmultiply-accumulationswith directlyoffthefine-tunedmodels.
+additions,and(iii)reducestheoff-chiptrafficbyamplifyingon-chip Wepresentamodelcompactionmethod,GOBOforsuchattention-
+memorycapacity. basedmodels.GOBOacceptsasinputatrainedmodelandreduces
+thenumberofbitsneededtorepresentitsparametersbeitweights
+or embeddings. GOBO maintains accuracy without any further
+modelrefinementsuchasretrainingorfine-tuning.Fine-tuning
+requiresaccesstothedatasetwhichmaynotbeavailableormay
+1 INTRODUCTION
+benotpossibleunderstricttimeconstraints(dailyupdatestothe
+Moderncomputingplatforms,fromserverstomobileandembedded
+model).
+devices,areenergyconstrained.Techniquesforimprovingtheir
+GOBO compactstheoriginalfloating-pointparametersrepre-
+energyefficiencycanyieldseveralbenefits.Theycanreducethe
+sentingthevastmajorityofthemwith3bor4b.GOBOisplug-in
+energyfootprintofdatacentersandasaresultoperatingcostsand
+compatiblewithanyexecutionenginefortransformermodelsasaf-
+environmentalimpact.Theycanincreaseuptimeformobiledevices,
+terdecodingit,GOBOproducesamodelwithidenticalarchitecture
+andtheycanboostthecapabilityofallsystemsbyallowingthem
+(layer dimensions, types, and connectivity) containing floating-
+toperformmorecomputationsperunitoftime.Improvingenergy
+point parameters. GOBO can be used as an off- and potentially
+efficiencyisimperativefordeeplearningworkloadsastheyare
+on-chipcompressionmethodtoreducefootprint,trafficandenergy
+particularlycomputeandmemoryintensive.Moreso,giventhat
+andthusamplifybandwidth,capacity,performanceandenergyeffi-
+thetrendhasbeentowardsneuralnetworkmodelsthatrequire
+ciency.GOBOcanfurtherboostperformanceandenergyefficiency
+morecomputationsandmemory.
+asitcansimplifycomputationconvertingmostmultiplicationsin
+Memoryaccesses,beitoff-oron-chip,accountforasignificant
+additions. Accordingly, as a second use of GOBO, we present a
+fraction of overall energy consumption when executing neural
+specializedfunctionalunitthattakesadvantageofGOBO’srepre-
+sentationtoreducecomputationcostsimprovingenergyefficiency
+Acceptedatthe53rdIEEE/ACMInternationalSymposiumonMicroarchitecture®— andperformance.
+MICRO2020
+1
+0202
+peS
+72
+]GL.sc[
+2v24830.5002:viXra
+AliHadiZadeh,IsakEdo,OmarMohamedAwad,andAndreasMoshovos
+Wefindthatperlayerthevastmajorityofweightscloselyfollow • Underiso-compute-areaconstraints,theGOBOaccelerator
+someGaussiandistribution(whoseparametersvaryacrosslayers), isonaverage7×fasterandconsumes3×lessenergythan
+withveryfew—typicallyless0.1%perlayer—“outlier”weights anacceleratorwithTensorCore-likeunits.
+beingtheexception.GOBOcapitalizesonthisphenomenonusing
+atwofoldapproach:First,itstoresthefewoutlierweightsas-is.
+Second,GOBOusesadictionaryofveryfew—typically8—rep-
+resentativevalues(centroids)forallotherweights.Asaresult,it 2 THEBERTFAMILYOFNLPMODELS
+storesthevastmajorityoftheweights—typically99.9%—as3b Google’sBERT[1](BidirectionalEncoderRepresentationsfrom
+indexes.GOBO usesanovelrepresentativevalueselectionalgo- Transformers) is an attention-based model that is the model of
+rithmthatresultsinhigheraccuracyandismuchfastertoconverge choiceforavarietyofNLPtasks.
+comparedtolinearpartitioningorK-Means. BERT-LargeandBERT-Base:Trainingdeeplearningmodelsca-
+DeepCompression[5]isrepresentativeofaclassofdictionary- pable of state-of-the-art accuracy on NLP tasks is expensive in
+basedcompressionmethodsthathavebeenusedtocompressthe termsoftime,energyandvolumeofdata.nvidiareportsthatto
+parametersoffixed-pointmodels.Itwasoriginallydemonstrated trainBERTfromscratchinlessthan1hour,aclusterwith1,472,
+on16bfixed-pointconvolutionalneuralnetworks.EIEtakesadvan- V100GPUswasrequired[14].EachV100GPUhas32GBofmemory
+tageofDeepCompressiontogreatlyboostenergyefficiencywhen andconsumes450Watatotalpowercostof662KW fortheGPUs
+executingtheresultingsparseneuralnetworks[6].Itstoresweights alone.Toenablepracticaldeploymentforseveraltaskswithout
+asHuffman-encodedindexesintoadictionaryoffewrepresenta- accesstosuchcomputingpowerandbudgetstheBERTframework
+tivevalues.Theweightsareexpandedintotheir16bfixed-point introduceda“pre-trainingandfine-tuning”approach.BERTispre-
+representativevaluesbeforetheMACunits.ComparedtoDeep trainedonceonanunlabeleddataset—billionsofwords—andthen
+CompressionGOBOdoesnotrequirefine-tuning,targetsattention- thepre-trainedmodelcanbefine-tunedforafewepochstoperform
+basedmodelswhichusefloating-pointvaluesandwherepreserving varioustasks.Twopre-trainedBERTmodelshavebeenreleased:
+outliersprovesessentialformaintainingaccuracy,andusesanovel BERT-BaseandBERT-Large.BERT-Largetypicallyachieveshigher
+method for selecting the representative values. In addition, the accuracyleveraging3.5×moreparameters.
+GOBOhardwarearchitectureneverexpandsthequantizedweights Tasks:BERTismostusefulinlanguageunderstandingtasks,such
+totheirrepresentativefloating-pointvalues. assentimentanalysis,paraphrasing,sentencesimilaritydetection,
+Outlier-aware quantization targets fixed-point convolutional andquestionanswering.GLUE[13](GeneralLanguageUnderstand-
+models[7,8].ComparedtoGOBO,itrequiresdetermininginad- ingEvaluation)andSQuAD[15](StanfordQuestionAnswering
+vancewhatfractionofvaluesshouldbeoutliers,usesamuchlarger Dataset)aretwopopularbenchmarksforsuchtasks.Inthisstudy,
+fractionofoutliers,typically,3%–5%,useslinearquantizationtore- wefocusmostlyontheMNLI(TheMulti-GenreNaturalLanguage
+ducedatawidthforthenon-outliers,andrequiresfine-tuningofthe Inference)taskofGLUE,sincea)itisthemostcomprehensivein-
+model.Fangetal.,proposedapost-trainingquantizationforconvo- ferencetaskinthedataset,andb)itisthemostsensitivetaskto
+lutionalneuralnetworks[9].Theyobservedthatthevaluestend quantization[16].MNLIgiventwoprovidedsentences,thepremise
+tofollowabell-shapeddistributionwhichtheytakeadvantageus- andthehypothesis,predictsifthepremiseentailsthehypothesis,
+ingapiece-wiselinearquantization.GOBOtargetsattention-based contradictswithit,orneither.Asarepresentativeofotherlesssen-
+modelswhicharefloating-pointbased,automaticallyadjuststhe sitivetoquantizationtasksinGLUE,weevaluateSTS-B(Semantic
+fractionofoutliersusingaGaussiandistributionfit,utilizesanovel TextualSimilarityBenchmark)whichtriestopredictthesimilarity
+fastconvergingmethodforselectingthenon-uniformquantization scorebetweentwohuman-annotatedsentences.WeuseMNLIfor
+valuesforthenon-outliers,andrequiresnofine-tuning. allmodelssinceweareabletofine-tuneBERTonthehardwarethat
+WeevaluateGOBOonvariousdatasetsandstate-of-the-artattention- isavailabletous.Unfortunately,thisisnotpossibleforSQuAD.Its
+basedNLPmodels:BERT(twovariants),DistilBERT[2],RoBERTa datasetisamongthelargestonesthatareavailableandfine-tuning
+(twovariants)[10],HAT[11],andSpanBERT[12].Wealsocom- BERT for it is not practical on a single GPU. However, we had
+pareGOBO withtwoquantizedBERTmodels,Q8BERT[4]and accesstofine-tunedBERT-LargeandSpanBERTmodelsonSQuAD,
+Q-BERT[3]. andsinceourmethoddoesnotrequirefine-tuning,wedoevaluate
+GOBOonSQuADforthesemodels.WefurtherevaluateGOBOon
+Wehighlightthefollowingexperimentalfindings: anEnglishtoFrenchtranslationtaskusingaTransformermodel
+(HAT).
+BERTArchitecture:BERT-baseconsistsof12BERTLayerswhile
+• ForthemostchallengingtaskintheGLUE[13],MNLI,GOBO BERT-largehas24.Figure1ashowsthateachBERTlayerhas3
+maintainsaccuracywhilequantizing99.9%oftheweights components:Attention,Intermediate,andOutput.Eachcomponent
+to3bits. includesaseriesoffullyconnectedlayers(FC)followedbyasingle
+• Ourcentroidselectionalgorithmconverges9×fasterthan normalizationlayer.Thehiddenstateisa768-to1K-elementvector
+K-Meansselectionandconsistentlyreducesthenumberof (sizevariespermodelandlayer).AfterthelastBERTlayer,there
+requiredcentroidstohalf. isasingleFClayer,thePooler.Table1detailstheconfigurationof
+• ApracticalimplementationofGOBOcompressionforoff- thesemodels.Intotal,BERT-Basehas73(12×6+1)FClayersand
+chipmemoryreducesmodelfootprintby10×.ForTPUthis 110Mparameters,whereasBERT-Largehas145(24×6+1)and
+translatesto10×performance. 340Mparameters.Activationsandweightsare32bfloating-point
+2
+GOBO:QuantizingAttention-BasedNLPModels
+forLowLatencyandEnergyEfficientInference
+Table1:BERTArchitecture 3 RELATEDWORK
+CompressionmethodsforNLPmodelsfallunderthreedifferentap-
+BERT-Base BERT-Large proaches,ModelQuantization,Pruning,andKnowledgeDistillation.
+BERTlayers 12 24
+Inmodelquantizationtheobjectiveistoreducethenumberofbits
+Component FC# Dimensions FC# Dimensions
+Attention 4x 768x768 4x 1024x1024 forrepresentingthemodel’sparameterswhilekeepingthemodel
+Intermediate 1x 768x3072 1x 1024x4096 architectureas-is.Pruning’sgoalistoremovesomeoftheweights
+Output 1x 3072x768 1x 4096x1024 byforcingthemtobezero.Combiningpruningwithzero-aware
+BERTPooler 768x768 1024x1024
+memoryencodingoftenreducesthemodel’sfootprint.Knowledge
+Table2:BERTMemoryFootprint
+distillationtrainsasmallermodel,thestudent,tomimicthebe-
+haviourofamuchlargerteachermodel.
+Model BERT-Base BERT-Large ModelQuantization:Quantizationtechniquescanbedirector
+EmbeddingTables 89.42MB 119.22MB
+indirect.Directmethodsmaptheweightstoafixed-pointrepresen-
+Weights 326.26MB 1.12GB
+ModelInputperWord 3KB 4KB tation,whereasindirectmethodsuseadictionaryofrepresentative
+LargestLayerActsperWord 12KB 16KB valuesandencodedweightsasindexes.
+SequenceLength 128 128 Intel’sQ8BERTintroducesafine-tuningmethodtoquantizethe
+Activations 1.5MB 2MB
+weightsandactivationsto8-bitfixed-pointvalues[4].Someopera-
+tionssuchasSoftmaxandLayerNormalizationarenotquantized
+anduseFP32.WecomparetheaccuracyofGOBOwithQ8BERTon
+theMNLItaskinSection4.3showingthatGOBOreducesmodel
+numbersandTable2reportstheresultingmemoryfootprint.Since sizemorethanQ8BERTwhilemaintainingaccuracy.Furthermore,
+BERTconsistsofmostlyFClayers,andsincethehiddenstateis GOBOisfastertodeploysinceitdoesnotrequirefine-tuning.Al-
+arelativelyshortvector,itistheweightsthatdominatememory though,thedecompressedmodelwithGOBOusesFP32values,the
+footprintandhavetobestreamedfromoff-chip.Asetofembedding GOBOhardwareacceleratorperformsmostcomputationswithout
+tablesmaptherawinputintothevectorsthenetworkuses. decompressingtheweights.
+BERTDerivatives: BERTvariantshavebeensincereleasedim- Q-BERTisadictionarybasedfine-tuningapproachthatuses
+provingaccuracyorreducingsize.DistilBERT[2]usesknowledge secondorderHessianinformationtoquantizethemodel’sweights
+distillationoverthepre-trainedBERTmodelstotrainasmaller,yet toafew(4to16)representativevalues.Itstoresweightsasindexes
+similararchitecture.Facebook’sRoBERTa[10]useshyperparame- tothosevalues[3].Q-BERTseparatestheweightsofeachlayer
+tertuning,adifferenttrainingmethodandadifferentembedding intomultiplegroupsandquantizeseachgroupseparatelyusing
+tabletoimproveaccuracywhilemaintainingthesamearchitecture. per group dictionaries each of 4, 8 or 16 entries. Dividing each
+WealsocompareGOBO totwostate-of-the-artquantizedBERT layerin128groupsresultsinacceptableaccuracy.Finally,Q-BERT
+variants,Intel’sQ8BERT[4]whichuses8bfixed-pointvalues,and quantizestheembeddingtablesto8btoavoidasignificantloss
+Q-BERT[3]whichusesdictionarycompression. inaccuracy.GOBOdoesnotrequirefine-tuning,onlykeepsone
+PerLayerWeightDistribution: Figure1bshowsthedistribu- dictionary per layer and quantizes the embedding layers to 3b.
+tionoftheweightsforafewlayersofBERT-Basewhicharerep- Section4.3showsthatGOBOachieveshighercompressionthan
+resentativeoftheshapeofthedistributionsfortheotherlayers. Q-BERTwhilemaintainingaccuracy.
+IneverylayertheweightscloselyfollowaGaussiandistribution ModelPruning:Weightpruningreducesmodelfootprintbyforc-
+whichcanbedescribedbythemeanandstandarddeviationofthe ingaportionoftheweightstobezero.Gordonetal.,studiedprun-
+layer’sweights.TheGaussian-likedistributionofparameterswas ingBERTduringtraining[19].Theyshowedthat30%-40%ofthe
+observedinvariousDNNs[9,17–19].Figure1cshowsacolorcoded weightsbasedonthemagnitudecouldbeprunedwithminimal
+representationofalayer’sweights(oneperxcoordinate)basedon effectontheaccuracyofthefinaltask.TheyfoundthatMNLIwas
+theprobabilityofeachweightbelongingtothelayer’sGaussian thetaskthatwasmostsensitivetopruning.Structuredpruning
+distribution.Thisrevealsthatthereisatinyfractionofweightsthat removesaseriesofweightsthatcorrespondtoacomponentofthe
+areonthefringesoftheGaussiandistributionastheirmagnitude model[16].Attentionheadpruning[20,21]andEncoderunitprun-
+isconsiderablylargerthantherestoftheweights. ing[22]areexamplesofthisapproach.Pruningmethodsrequire
+TheseobservationsmotivateGOBO whichsplitstheweights fine-tuningtocompensatefortheinitialaccuracyloss.Aswewill
+ofeachlayerintotwogroups.The“G”(Gaussian)groupconsists show,GOBOachievesnearly10×compression(99.9%of32bvalues
+of weights whose magnitude fits within 99.9% of the values as arecompressedto3b).Evenifweignoreitsencodingoverhead,
+describedbytheGaussiandistributionformedbythemeanand a pruning method should remove nearly 90% of the weights to
+standarddeviationofallweightsinthelayer.Thesecondgroup, achievesimilarcompression.GOBOcouldcomplementpruningan
+the“Outliers”(“O”)includesvaluesthatfalloutsidetheGaussian investigationleftforfuturework.
+distribution.Wehavefoundexperimentallythat:(1)representing KnowledgeDistillation:Knowledgedistillationtrainsasmaller
+justtheoutlierspreciselyandquantizingtherestofthemodelto model(student)fromalargermodel(teacher).Basedonwhatthe
+afewrepresentativevalues(e.g,8)issufficientformaintaining studentlearnsfromtheteachertherearethreegroupsofKnowl-
+model accuracy. (2) Using representative values for all weights edgedistillationapproachesforBERT[16]currentlyinuse.Inthe
+eitherdrasticallyreducedcompression(toomanyrepresentative firstgroup,thestudentlearnsthebehaviouroftheencoderlayer.
+valueswereneeded)orsacrificedaccuracy.
+3
+AliHadiZadeh,IsakEdo,OmarMohamedAwad,andAndreasMoshovos
+BERT Layer Hidden State
+150000
+Output
+125000
+Intermediate 100000
+75000
+Attention Self-attention
+output 50000
+25000
+Key Query Value
+0
+0.4 0.3 0.2 0.1 0.0 0.1 0.2 0.3
+Input Weight Value
+(a)BERTlayerarchitecture.BoxesareFClayers.
+ycneuqerF
+Layer 5
+Layer 10
+Layer 15
+Layer 20
+Layer 25
+(b)Perlayerweightdistribution (c)WeightsofaBERTlayer
+Figure1:BERTlayerarchitectureandperlayerweightvalues.
+Thestudentcanhavefewerattentionheadsineachlayer[23–25] perweight,itcomputesaprobabilitythattheweightbelongsto
+orfewerencoderlayers[2,26].Anotherapproachtrainsastudent thatdistributionusingthePDF (Eq.1)wherex istheweight,µis
+basedontheoutputlogits(inputofthelastlayer’ssoftmax)[27]. themean,andσ isthestandarddeviation.GOBO usesathresh-
+Furthermore,Thestudentisfreetoadoptadifferenttypeofnetwork old,aconfigurationparameter,toselectoutliers.Aweightwhose
+orcomponentsthereofsuchasaConvolutionalNeuralNetwork probabilityislessthanthethresholdisdeemedasanoutlier.We
+(CNN)orLongShortTermMemory(LSTM).Tangetal.,useda empiricallyfoundthatalog-probabilitythresholdof-4issufficient
+BidirectionalLSTM(BiLSTM)basedarchitecturetoreplacetheat- formaintainingoverallaccuracy.
+tentionlayers[28,29].Chiaetal.,proposedaCNN-basedmodelto
+replacetransformerlayerswherethestudenttriestolearnthecon- pdf(x|µ,σ2)= √
+1 e−(x 2− σµ 2)2
+(1)
+textualdependenceofthetokens(words)fromtheoutputofeach
+2πσ2
+The closest prior work to GOBO’s outlier selection approach is
+attentionlayer[30].DistilBERT[2]isdistilledmodelofBERT-Base
+outlier-awarequantization[7,8].Thismethodtargetsfixed-point
+andisabouthalfinsize.Section4.3showsthatGOBOcompresses
+CNNsandconsidersafixed,predeterminedfractionoftheweights
+DistilBERTby10×andresultsinamodelthatis20×smallerthan
+(atleast3%whichisanorderofmagnitudemorethanGOBO)as
+BERT-Base.
+outliers. The outliers remain in 16b and non-outlier values are
+linearly quantized to 4b. To reduce the quantization error, fine-
+4 GOBOQUANTIZATION
+tuningisrequired.WithGOBO’snonlinearquantizationhaving
+ForBERT,GOBOoperatesatthegranularityofalayerandoverthe about1outlierevery1000weightsprovessufficientforpreserving
+fine-tunedmodel.Thecompactionprocessstartswithseparating accuracywithoutfine-tuning.Inaddition,GOBOusesdictionary-
+theweightsintotwogroups,the“Gausian”(G)andthe“Outliers” basedcompressionofthenon-outliergroup.Section4.3compares
+(O).GOBOstorestheoutliersas-is(FP32)whereasitquantizesthe GOBO with an outlier-aware inspired method that uses Linear
+“G”groupvaluestoafewrepresentativevalues.Onlyatinyfraction Quantizationforthenon-outliers.
+oftheweights,typicallylessthan0.1%,endupinthe“O”group.
+GOBOreducesoverallmodelsizebyquantizingtheGaussiangroup.
+4.2 “G”GroupWeightQuantization
+Sincetheweightdistributionisnotuniform,weproposeanon-
+GOBO’saimstorepresentthe“G”weightswithfewrepresentative
+linearquantizationmethodthatresultsinhigherresolutionwhere
+FP32values.Thisamountstoclusteringtheweightsandassigninga
+theweightsaredenselypopulated.Thismethodprovescapableof
+representativevaluepercluster.Weuseclustersofequalpopulation.
+encodingroughly99.9%oftheweightswithjust8representative
+Intuitively,thisobjectivewillputmoreclusterswhereweightsare
+FP32values,whiletheinferenceerroriskeptbelow1%(orwith16
+denselypopulatedaffordinghigherresolutionwheretherearemore
+representativevaluesfornoaccuracyloss).A“G”groupweightis
+weights.Thisapproachcanbeimplementedbysortingtheweights
+storedasa3bindextothoserepresentativevalues.GOBOusesjust
+anddividingthemtoequallysizedclusters.Thefirstandthelast
+onesetofrepresentativevaluesperlayer.
+weightineachclusterdeterminetheboundariesofthatcluster.
+Insummary,GOBOstoresthefollowinginformationperlayer:
+Thentheaverageoftheweightsinsideeachclustercanbeusedas
+(1)Theoutliersinoriginalform.(FP32)(2)Thebinindexforeach
+thecentroid.WefindthatquantizingBERT-Basewiththisapproach
+“G”groupweight.(3b)(3)Areconstructiontableforweightswhich
+into8clusters(3bindexes)degradesinferenceaccuracyby10%in
+representstherepresentativevalues(centroids)foreachbin.(FP32)
+GLUEtasks.
+WedeferthedescriptionofapracticalencodinguntilSection5and
+ToreducethiserrorGOBOusesaniterativeapproachthatbears
+afterwediscussthe“G”and“O”groupselectionandquantization
+similaritytoK-Means.Theprocessrepeatedlyappliesthefollowing
+process.
+twosteps:1)GOBO movesaweightfromclusterAtoclusterB
+iftheL1distanceoftheweightandthecentroidofclusterAis
+4.1 OutlierDetection greaterthantheL1distanceoftheweightandthecentroidofcluster
+TodetecttheoutlierweightsforanFClayer,GOBOfirstcomputes B. 2) After re-assigning the weights to clusters, GOBO updates
+themeanandthestandarddeviationofthelayer’sweights.Then thecentroidsbycomputingthenewaverageovertheweightsof
+4
+GOBO:QuantizingAttention-BasedNLPModels
+forLowLatencyandEnergyEfficientInference
+eachcluster.ThisisequivalenttominimizingtheL2distance.This Methodology: We use the pre-trained models, the scripts and
+iterative process repeats until the sum ofL1 distances between datasets provided by the Hugging Face repository [31] and the
+centroids and weights is minimized. For a 3b quantization, we SciKit-Learnlibrary.Specifically,tofitaGaussiandistributionwe
+observedthat7iterationsareenoughtoconvergetotheoptimal usesklearn.GaussianMixturewithoneGaussiancomponent.Then
+solution. thelogprobabilityforeachweightiscomputedusingscore-samples.
+TerminatingtheprocessusingtheL1provesfasterandresults Weconsideredtheweightswiththelogprobabilitiesof-4orless
+inamodelwithhigherinferenceaccuracyusingtheL2.Figure2 asoutliers.
+helpsexplainingwhythisisso.ThefigureshowshowtheL1andL2 ToshowtheadvantageofGOBO’sclusteringapproachwecom-
+evolveovertime(iterations)andalsothecumulativedistributionof paretheaccuracyofeachmodelwhenthe“G”weightsarequantized
+weight-to-binreassignments.WeightreassignmentsfollowZipf’s byLinearQuantizationandK-Means.Inlinearquantization,the
+law with more than 80% of them happening in the first 15% of range of non-outlier weights (“G” group) is linearly divided by
+iterations.ThisexplainstheinitialrapiddropinL1whichthefirst thenumberorbins(2Bits).InK-Meansweusethesamecentroid
+stepofeachiterationdirectlyminimizes.SincereducingtheL1also initializationasGOBOanditerateuntiltheclusterassignmentscon-
+reducesL2(butnotviceversa)thisalsoimprovesL2.Thesecond verge.Theoutlierweightsinallofthesemethodsaredetectedand
+stepreassignscentroidstominimizeL2instead.Asthefigureshows, representedinthesamemanner.Allexperimentsweperformed
+thisreassignmentproceedsmuchmoreslowlyandquicklyhurts onadualRTX2080Ti11GBGPUsystemwithanAMDRyzen
+L1asitoveremphasizesweightsthatarefurtherawayfromthe Threadripper1920XCPUwith128GBQuad-channelDDR4-3200
+centroid.GiventheGaussiandistribution,theseweightsdispropor- RAM.
+tionatelyaffectcentroidselectionreducingrepresentationaccuracy Importance of Outliers: Figure3 reportstheabsolutelossin
+forallweights.TerminatingwhenL1isminimizedbetterbalances inferenceaccuracyof3-bitquantizedBERT-BaseonMNLIwhen
+thepervaluerepresentationaccuracy.Empirically,emphasizing thefractionofoutliersissweptfrom0%to100%.GOBOwithout
+allweightsequallyrathertheoveremphasizingafew,resultsin outliersincursan8.3%accuracyloss.Havingjust0.1%ofoutliers
+betteroverallinferenceaccuracy.GOBO’sapproachconverges9× reducesthislosstolessthan1%.Increasingthenumberofoutliers
+fasterthanK-MeansandasSection4.3describesachieveshigher by100×to10%improvesaccuracybyjust0.25%.
+accuracy. BERT-Base: FirstwecompareGOBOtootherBERT-specificquan-
+DeepCompressionusesdictionarycompressionforCNNsuti- tizationmethods.InthissectionwefocusontheMNLItaskwhich
+lizingK-Meanswithlinearinitializationforclustercentroidsand isthemostchallengingamongtheGLUEsetoftasks.Table3shows
+requiringfine-tuningtoregainanyaccuracyloss[5].Itminimizes accuracyontheMNLItaskwithdifferentquantizationmethods:In-
+theL2−Norminsideeachcluster.GOBOmaintainsthemodel’sac- tel’sQ8BERT[4],Q-BERT[3],andGOBOwith3bor4b“G”weights.
+curacywithoutanyhelpfromretraining.Thecentroidinitialization RecallthatQ-BERTandQ8BERTrequirefine-tuning.Usingthe
+inGOBOisnonlinearanddependsontheperlayerweightdistri- HuggingFacePyTorchlibrary,fine-tuningBERT-BasefortheMNLI
+bution.GOBOdetectsafewbuteffectiveoutliersandkeepsthem taskonourdualGPUsystemtookabout3hoursperepoch.We
+intheiroriginalrepresentation.importantly,GOBOobjectiveisto fine-tunedthemodelfor3epochsassuggestedbytheHugging
+minimizeL1-NormwithineachclusterratherthanL2.Algorithm1 Facedocumentation.After3epochs(9hours)weachievedthebase-
+summarizeshowGOBOcompactseachlayer. lineaccuracyof84.45%.Fine-tuningthesametaskonthesame
+machineforQ8BERT,takesabout34hoursperepoch.Basedonthe
+Algorithm1:GOBOQuantization authors’suggestion,wetrainedthemodelfor3epochs(102hours).
+QuantizingthesamemodelwithGOBO takesabout10minutes
+1
+Computethemean(m)andstandarddeviation(sd)oftheweights;
+usingasingleCPUcoreofoursystem.
+2
+DetectoutliersbasedontheGaussiandist.specifiedbymandsd;
+Storeoutlierweightsas-is; TheresultsshowthatGOBOcancompactthemodelby9.8×and
+3
+4
+Sortthe“G”weightsandplacethemintobinswithequalcapacity; withlessthan0.7%lossinaccuracyandby7.92×withnoaccuracy
+5 Computethemin,max,andmean(centroid)ofeachbin; loss.Q-BERTcompactsthemodelby6.5×ata0.56%accuracyloss
+6
+L1
+new
+←L1-Normofthecurrentassignment;
+orby7.81×witha1.04%accuracyloss.Q8BERTreducesthemodel
+7
+8
+do L1
+old
+←L1 new; theleastandby4×ata0.7%accuracyloss.Recall,however,that
+Reassignweightstheclosestcentroid; ituses8bfixed-point.Insummary,GOBOproducesmodelsthat
+9
+10 Updatecentroidsbasedonthenewassignment; aresmallerandwithsimilarornoaccuracyloss,andproducesthe
+11
+L1
+new
+←L1-Normofthecurrentassignment;
+modelwithinminutesvs.days.
+12
+whileL1
+old
+≥L1 new;
+Wenextshowthatourproposedcentroidselectionmethodfor
+the“G”groupisbetterthantwopriormethods:linearquantization
+andK-Means.WestudyGOBO withourproposedquantization,
+4.3 AccuracyandCompressionPotential GOBOwithlinearquantization,andGOBOwithK-Meansquantiza-
+ThissectionevaluatesGOBO’seffectonaccuracyandcompression tion.Westudyhowaccuracyisaffectedaswechangethenumber
+rate.Hereweignoretheadditionalinformationthatanypractical ofcentroids(allexperimentshavethesamesetofoutliers).Tables4
+encodingwillrequire.WeintroduceaspecificencodinginSection5 showsthatGOBOasproposedwhenusing3bweights(8centroids)
+whereweuseGOBOforoff-chipmemorycompression.Asitwill incursanaccuracylossof0.69%whichisconsiderablylessthanthen
+beshown,theoverheadistinywhichisnosurpriseasitincludes 1.36%lossincurredwithK-Means.Linearquantizationperforms
+therepresentativevaluesandthecoordinatesoftheoutliers.
+5
+AliHadiZadeh,IsakEdo,OmarMohamedAwad,andAndreasMoshovos
+10%
+Assignment Updates 8%
+6%
+L1-Norm 4%
+2%
+0%
+L2-Norm
+0.000% 0.001% 0.100% 10.000%
+Outliers % of Total Weights GOBOConverged K-MeansConverged
+Inference Error: 0.69% Inference Error: 1.36%
+Figure2:GOBOandK-Meansconvergence.
+ycaruccA
+ecnerefnI
+ni
+rorrE
+1.005
+1.000
+0.995
+0.990
+0.985
+0.980
+BERT Base BERT DistilBERTRoBERTa RoBERTa
+Large Large
+Figure3:Outlier’simpactoninferenceaccuracyof
+BERT-Base(MNLI)
+ycaruccA
+ecnerefnI
+dezilamroN
+1.005
+1.000
+0.995
+0.990
+0.985
+0.980
+FP32 Model, 3bit Embed FP32 Model, 4bit Embed
+GOBO: 3b Model, 3b Embed GOBO: 3b Model, 4b Embed
+ycaruccA
+ecnerefnI
+dezilamroN
+FP32 Model, 3bit Embed FP32 Model, 4bit Embed
+GOBO 3bit Embed GOBO 4bit Embed
+Figure4:EffectofEmbeddingTableQuantization
+onAccuracy.
+theworstincurringanerrorofnearly52%.Tomaintainthebaseline linear initialization and for a maximum of 300 iterations (simi-
+accuracy,GOBO,K-MeansandLinearQuantizationrequire,4b,5b, lartoDeep-compression[5]).Table7showstheBLEUscoreon
+and6bweightindexesrespectively.Wenotethatusing4bweight theWMT’14En-Fr,EnglishtoFrenchtranslationtaskwhenitis
+indexesamountstoa33%increaseoverusing3b.Moreover,our quantizedbyKMeans(asreportedbytheauthors[11])andGOBO.
+proposedselectionmethodisfasterthanK-Means. GOBOquantizationachieves0.4higherBLEUscoreattheexpense
+SimilarbehaviorisobservedfortheSTS-BtaskasTable4shows. oflessthan1%extrafootprintfortheoutliers.Ifembeddingtables
+AsexpectedSTS-Bislesssensitivetoquantization.GOBOincurs arealsoquantizedwithGOBOthecompressionratiorisesto7.8×.
+noaccuracylosswith3b,whereasK-Meansneeds4bandlinear GOBOproveseffectiveforanattentionmodel(differentthanthe
+quantizationrequires5b. BERTfamily)whereitoutperformsastate-of-the-artdictionary-
+BERT-Large:Toourknowledge,oursisthefirstattempttoquan- basedquantizationmethod.
+tizeBERT-LargeontheSQuADtask.SQuADisacomplextaskthat SpanBERT:Certainarchitecturesintroduced16bfloating-point
+requiresdaysoffine-tuningwhenimplementedoverBERT-Large. arithmetic(FP16orBfloat16)targetingdeeplearningtrainingand
+WeapplyGOBOafterthisfine-tuningphaseatanegligiblecostin inference.Ingeneral,BERTmodelsaretrainedwithFP32.How-
+time.Table4reportsthecompressionandaccuracyofthemodel ever,Facebook’sSpanBERTisaBERT-derivedmodelthathasbeen
+withdifferent“G”groupquantizationpolicies.Ourcentroidselec- successfullytrainedtoworkwithFP16.Table8evaluatesGOBO
+tionpolicyprovesbest.With3bweightindexestheaccuracyloss SpanBERT[12]ontheSQuADv1.1andSQuADv2datasets.GOBO
+islessthan1%andwith4bthereisnone.ForMNLI,GOBOincurs with3bmatchesthebaselineaccuracyonSQuADv2andincursless
+noaccuracylossevenwith3bweightindexes.Intherestofthis than1%errorinSQuADv1.1.GOBOachievesa5.31×compression
+sectionwelimitattentiononlytoGOBOw/K-meansandGOBO ratio.ThisresultshowsthatGOBOremainseffectiveevenwhen
+withourproposedcentroidselectionpolicy. usingFP16ispossible.
+DistilBERT:Table5showsaccuracywhenquantizingDistilBERT EmbeddingTableQuantization:GOBOcanalsobeusedtoquan-
+whichwasdistilledfromBERT-Baseandisabout2×smaller.GOBO tizetheembeddingtables.Table9showsthesizeofembedding
+incursnoorlessthan1%accuracylosswith4band3bweights tablebeforeandafterquantization.Theoutlierthresholdforall
+respectivelyresultinginmodelsthatare16×or21×smallerthan oftheseexperimentsissetto-4.Figure4comparestheinference
+BERT-Base.Ineithercase,K-Meansrequirestwiceasmanybins. accuracyofeachmodelintwoscenarios:inthefirst,wequantize
+RoBERTa:Table6showsaccuracyandcompressionratio.Quan- the embedding layer only and keep the model weights in their
+tizingto3b“G”weightsincursanaccuracylossof8%.TwoFC originalFP32representation.Thisexperimentillustratestheeffect
+layers("Valuelayer"inself-attentionandIntermediatelayer)inthe ofembeddingquantizationontheoriginalmodel’saccuracy.This
+first6BERTEncodersarethemostsensitivetoquantization.We approachnotonlymaintainsthemodel’saccuracybut,incertain
+caneitherquantizethewholemodelto4b“G”weights(accuracy cases,improvesit.Inthesecondscenario,weapplyGOBOquanti-
+lossofjust0.6%),orbetter,wecanuse4b“G”weightsjustforthese zationthroughout.WhiletheFClayers’weightsarequantizedto
+twolayersforthefirst6outofthe12totalEncoderlayersand3b 3b,using4bembeddingmaintainsaccuracy,whereas3bincursa
+fortherest.Thisreducestheaccuracylosstojust1.4%. 0.2%accuracyloss.
+RoBERTa-Large:achievesascoreof90%onMNLIand,asTable6
+shows,islesssensitivetoquantizationcomparedtotheRoBERTa.
+ByquantizingtheValueandIntermediatelayersto4bforthefirst
+5 MEMORYCOMPRESSION
+14Encoders(outof24)andto3bfortherestGOBOachievesless
+ThissectionpresentsthefirstpracticalapplicationofGOBOwhere
+than1%lossinaccuracy.
+itisusedtocompressweightsinoff-chipmemory.AsaresultGOBO
+HAT:WeevaluatedGOBOonHATproducedmodels[11].HATis
+reducesmemorytrafficandenergyandincreaseseffectivememory
+aneuralarchitecturesearch(NAS)methodthatcomposesTrans-
+capacity.Regardless,ofthedataflowused,theweightsofeachlayer
+formermodelsforefficientlanguagetranslationonvarioushard-
+willbeaccessedsequentially,inlargeenoughchunkstomaximize
+wareplatforms.HATdesignsFP32models;however,theauthors
+reuse.Accordingly,aformatthatsupportsstreamingaccessesinto
+reportaccuracywhenthemodelisquantizedusingKMeanswith
+theweightmatrixissufficient.Thereisnoneedtosupportrandom
+6
+GOBO:QuantizingAttention-BasedNLPModels
+forLowLatencyandEnergyEfficientInference
+Table3:ComparisonofGOBOandBERT-SpecificQuantizationMethods.BERT-BaseonMNLI.
+BERT-Base(MNLI) Weights Embedding Accuracy(m) Error NoFine-tuning CompressionRatio
+Baseline FP32 FP32 84.45% - - 1×
+Q8BERT[4] 8-bit 8-bit 83.75% 0.70% ✗ 4×
+Q-BERT[3] 3-bit 8-bit 83.41% 1.04% ✗ 7.81×
+Q-BERT[3] 4-bit 8-bit 83.89% 0.56% ✗ 6.52×
+GOBO 3-bit 4-bit 83.76% 0.69% ✓ 9.83×
+GOBO 4-bit 4-bit 84.45% 0.00% ✓ 7.92×
+Table4:GOBOw/“G”GroupCentroidSelectionPolicies:BERT-Base/-Large.
+Baseline GOBOw/LinearQuant. GOBOw/K-Means GOBO PotentialComp.Ratio
+GLUE/MNLIwithBERT-Base
+Bits Accuracy(m) Error Accuracy(m) Error Accuracy(m) Error PotentialComp.Ratio
+32 84.45% - - - - - - 1×
+2 - 31.81% 52.64% 69.98% 14.47% 71.02% 13.43% 16×
+3 - 32.48% 51.97% 83.09% 1.36% 83.76% 0.69% 10.67×
+4 - 82.75% 1.70% 84.01% 0.44% 84.45% 0.00% 8×
+5 - 84.20% 0.25% 84.45% 0.00% 6.4×
+6 - 84.45% 0.00% 5.3×
+GLUE/STS-BonBERT-Base
+Bits Spearman Error Spearman Error Spearman Error PotentialComp.Ratio
+32 88.33% - - - - - - 1×
+2 - 2.67% 85.66% 81.12% 7.21% 82.66% 5.67% 16×
+3 - 74.00% 14.33% 88.11% 0.22% 88.33% 0.00% 10.67×
+4 - 87.46% 0.87% 88.33% 0.00% 8×
+5 - 88.33% 0.00% 6.4×
+SQuADv1.1withBERT-Large
+Bits F1Score Error F1Score Error F1Score Error PotentialComp.Ratio
+32 91.95% - - - - - - 1×
+2 - 0.01% 91.94% 34.83% 57.12% 56.22% 35.73% 16×
+3 - 5.37% 86.58% 90.56% 1.39% 91.04% 0.91% 10.67×
+4 - 89.11% 2.84% 91.24% 0.71% 91.95% 0.00% 8×
+5 - 90.61% 1.34% 91.92% 0.03% 6.4×
+6 - 91.88% 0.07% 91.95% 0.00% 5.3×
+7 - 91.95% 0.00% 4.57×
+Table5:GOBOw/“G”GroupCentroidSelectionPolicies:GLUE/MNLIonDistilBERT.
+Baseline GOBOw/K-Means GOBO Potential
+Bits
+Accuracy(m) Accuracy(m) Error Accuracy(m) Error Comp.Ratio
+32 81.98% - - - - 1×
+3 - 80.83% 1.15% 81.30% 0.68% 10.67×
+4 - 81.78% 0.20% 81.98% 0.00% 8×
+5 - 81.98% 0.00% 6.4×
+Table6:GOBOw/“G”GroupCentroidSelectionPolicies:GLUE/MNLIonRoBERTa.
+RoBERTa-Base RoBERTa-Large
+Baseline GOBOw/K-Means GOBO Potential Baseline GOBOw/K-Means GOBO Potential
+Bits
+Acc.(m) Acc.(m) Error Acc.(m) Error CR Acc.(m) Acc.(m) Error Acc.(m) Error CR
+32 87.60% - - - - 1× 90.20% - - - - 1×
+3 76.00% 11.60% 79.68% 7.92% 10.67× - 82.18% 8.02% 84.26% 5.94% 10.67×
+-
+3b/4b 86.19% 1.41% 10.13× - 89.33% 0.87% 10.03×
+4 - 86.80% 0.80% 87.30% 0.30% 8× - 89.48% 0.72% 89.88% 0.32% 8×
+5 - 87.32% 0.28% 87.60% 0.00% 6.4× - 90.07% 0.13% 90.20% 0.00% 6.4×
+6 - 87.60% 0.00% 5.3× - 90.20% 0.00% 5.3×
+accesses.Weusetheexampleweightmatrixof768×768ofFig- WithGOBO,themainchallengeishandlingoutliers.Fortunately,
+ure5atoexplainhowGOBOencodesvaluesinmemoryandhowit wecanstillmaintainlongsequentialaccessesoff-chipthusnotsac-
+decompressesthem.Foranarbitrarydataflow,assumetheweight rificingbandwidthutilization.Figure5cshowstheGOBOcontainer
+matrix is divided into 16×16 submatrices (SM) of 256 weights comprisingthreesections:Header,QuantizedWeights,andOut-
+each.EachSMisdividedinto16blockswhereeachblockcontains liers.Theheadercontainsthemetadatadescribingthedimensions
+theweightsthataregoingtobeprocessedtogetherbysomedata- ofthelayer,thenumberofbitsusedperweightindex,followed
+parallelfunctionalunit,e.g.,aGPUsharedmultiprocessor,andthus by the centroid table. The figure shows only the centroid table
+needtobestoredtogetherinon-chipmemory. andassumes8centroids.PaddingisusedtokeeptheQuantized
+Weightssectionthatfollowsproperlyalignedtoamemoryrow.
+7
+AliHadiZadeh,IsakEdo,OmarMohamedAwad,andAndreasMoshovos
+Table 7: HAT model size (M), embedding (E) and compres- andforweightquantizationsof2bto6b.Theerrorbarsshowwhat
+sionratio(CR). thecompressionratewouldhavebeeniftherewerenooutliersat
+all.Inthiscase,everyweightwouldberepresentedbyloд2(#bins)
+HAT:WMT’14En-Fr BLEU Error M(MB) E(MB) MCR CR bits.Thisrepresentationservesasausefulmeasureforjudging
+BaselineFP32[11] 41.8 - 227 217 1.0× 1.0× howwellthemethodworks.Themeasurementsshowthatusing
+KMeans4-bit(M)[11] 41.1 0.7 28 217 8.0× 1.8× SMsof256weightsormore,achievesnearlythemaximumpossible
+GOBO4bit(M) 41.5 0.3 29 217 7.8× 1.8×
+compressionratioforallweightquantizationwidths.
+GOBO4-bit(E+M) 41.4 0.4 29 28 7.8× 7.8×
+The described memory layout is suitable when the dataflow
+Table8:SpanBERTFP16modelquantization. ispre-determinedmakingsequentialaccessestoallcomponents
+possible.Toallowthedataflowtochangewithoutchangingthe
+SQuADv1.1 SQuADv2 layout,minorchangestotheOutliermemorylayoutaresufficient.
+SpanBERT CR
+F1Score Error F1Score Error Theoutliercountsandtheoutlierscanbestoredseparatelyinto
+BaselineFP16 93.96% - 88.68% - 1.00× twolineararraysC andO respectively.C containsthecountsin
+G GO OB BO O3 4- -b bi it
+t
+9 93 3. .1 95 4%
+%
+0 0. .8 01 2%
+%
+8 88 8. .6 78 6%
+%
+-00 .0%
+8%
+35 .. 93 91×
+×
+cumulativeform(entryCi reportsthenumberofoutliersbefore
+theithSM)sothattheycanserveasindexesintoO.Toaccessthe
+Table9:Embeddingsize(MB)andcompressionratio(CR). outliersoftheithSM,anextramemoryreferencewillfirstread
+Ci anduseitasanindextostartfetchingtheoutliersfromO.The
+Baseline GOBO numberofoutlierscontainedintheSMisgivenbyCi+1−Ci.
+Model/Task FP32 3-bit CR 4-bit CR
+BERT-Base/MNLI 89.42MB 8.63 10.36× 11.42 7.83× 6 COMPUTEACCELERATION
+BERT-Large/SQuADv1.1 119.22MB 11.26 10.59× 14.98 7.96×
+DistilBERT/MNLI 89.42MB 8.85 10.10× 11.63 7.69× MostofthecomputationoccursintheFClayers,eachofwhichisa
+RoBERTa/MNLI 147.26MB 14.18 10.38× 18.77 7.84× weightmatrixandactivationvectormultiplication.Theuseofavery
+RoBERTa-Large/MNLI 196.34MB 18.41 10.66× 24.55 8.00×
+smalldictionaryallowsustotransformthecomputationfrommany
+“lookuptotranslateweightindextoitsFP32centroidfollowedby
+amultiply-accumulatewithanFP32activation”(oneperweight)
+Thissectioncontainstheweightindexeswhicharestoredinex-
+toanFP32activationaccumulationperweightindexfollowedby
+actlythesameorderastheoriginalFP32weightswouldhavebeen.
+afewFP32multiply-accumulateoperations(onepercentroidper
+However,GOBOstoresjusta3bperweightincludingtheoutliers.
+outputactivation).Thatis,ratherthanfirstdecodingeachweightto
+However,fortheoutlierstheindexisignoredandissupersededby
+itscentroidandthenmultiplyingwiththecorrespondingactivation,
+theOutlierssection.Forinstance,thethirdweightinSM0−B0is
+wecaninstead,givenaweightindex,accumulatethecorrespond-
+anoutlier,andadummy”000”indexisstoredforit.Thisformat
+ingactivationintoapercentroidsum,andafterdoingsoforall
+maintainstherelativepositionofweightsandavoidsthehardware
+quantizedweights,wecanmultiplyjustthesefewsumswiththe
+supportandrun-timecostsofdatamovementandre-alignment
+centroids.Considerforexample,alayerwith4inputactivations
+duringdecompression.
+TheOutlierssectionencodestheoutliersinsubmatrixorder.
+Ai andoneoutputactivationOA.Whenweightsarenotquantized
+thisrudimentaryFClayerperformsthecomputationinEq.2.
+EachSMbeginswithanoutliercount(8bsupportingupto256
+outliers)followedbytheoutliersinblockorder.Eachoutlieris OA=A1W1+A2W2+A3W3+A4W4 (2)
+wen itc ho id ne td hw eSit Mh ,a Wtri ip sle tht e(B w,W eig, hV t) ow ffsh ee tre (4B b)( w4b i) this inth the ere bl la ot ci kve ,ab nl doc Vk =A1V(W′1)+A2V(W′2)+A3V(W′3)+A4V(W′4) (3)
+istheFP32value.Inourexample,SM0contains2outlierswiththe
+=A1V1+A2V2+A3V2+A4V1 (4)
+firstreplacingthethirdweightinblock0(dashedarrow). =(A1+A4)V1+(A2+A3)V2 (5)
+(cid:32)(cid:32)(cid:32)(cid:32)(cid:32) (cid:32)(cid:32)(cid:32)(cid:32)(cid:32) (cid:32)(cid:32)(cid:32)(cid:32)(cid:32) (cid:32)(cid:32)(cid:32)(cid:32)(cid:32)
+Tomakequantizationtransparenttotheprocessingelements, (cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125)
+the decompression engine generates a stream of FP32 weights. a b
+Thedecompressionenginerequirestwoconcurrentsequentialac- AssumethattheweightsarequantizedtotwocentroidsV1andV2,
+cessstreams.ThefirstreadstheHeaderandthentheQuantized withW1andW4mappingtoV1,andW2andW3mappingtoV2.IfW′
+i
+weights.TheHeaderisusedtosetthelookuptables(LUT)inthe the1bweightindexestotheV dictionaryvalues,andV(W′i)refers
+decompressionengine.ThereisoneLUTperweightthatwewant tomappingaweightindexW′ontoitscorrespondingcentroid,the
+i
+todecompressconcurrently,aconfigurationparameter.Oncethe computationcanbetransformedasshowninEqs.3-5.InEq.5,ais
+headerisread,thefirststreamprocessestheweightindexesplac- thesumofallactivationswhoseweightmapstocentroidV1andb
+ingtheminaFIFOwhichfeedstheLUTsthatreplacethemwith thesumofallactivationswhoseweightmapstocentroidV2.When
+theappropriatecentroids.Concurrently,thesecondstreamreads thenumberofcentroidsismuchsmallerthanthenumberofacti-
+intheOutlierssectionplacingvaluesinanotherFIFO.Usingthe vations,accumulatingtheactivationvaluespercentroid,andthen
+informationperoutlier,theoutliersselectivelyoverwritetheLUT performingonedictionarylookupandamultiplicationpercentroid
+providedvalues.Sinceoutliersarerare,processingatmostoneper hasthepotentialtoreduceenergysinceFP32multiplicationsare
+cycleprovessufficient. moreexpensivethanadditions.Forexample,fora768×768FC
+Figure5bjustifiesourchoiceof16×16submatrices.Itshowsthe layerwith3bweightquantization,thefirstapproachwouldrequire
+compressionratiofortheBERT-BasemodelforvariousSMsizes peroutputactivation768weightindextocentroidlookups,and768
+8
+GOBO:QuantizingAttention-BasedNLPModels
+forLowLatencyandEnergyEfficientInference
+Centroid 0 Centroid 1
+Centroid 7 SM0–B0
+SM0–B15
+SM2303–B15
+#Outlier-SM0“2” Outlier Weight0
+Outlier Weight1 #Outlier-SM1“0”
+#Outlier-SM2
+#Outlier-SM2303“1” Outlier Weight0
+redaeH
+sthgieW
+dezitnauQ
+sreiltuO
+8b 4b 4b 32b
+#Out “li 2e ”r-SM0 Blo “0c ”k # W
+“2
+”# Weight Value0
+Block # W # Weight Value1 #Out “li 0e ”r-SM1
+#Outlier-SM2
+sthgieW dezitnauQ sthgieW
+23PF
+LUT rellortnoC
+yromeM sreiltuO
+16
+16 SM 1 SM 47 SM 0 768 x 768
+Weight Matrix
+SM 2303
+DRAM Layout
+Decompression Engine
+3b 32b 32b LUT W0W1000 W15 48b DRAM
+LUT 32b 40b
+8b Controller
+0 # B 51 # B
+(a)WeightMatrix
+16 14 12 10
+8 6
+4
+4 16 64 256 1024 4096
+oitaR noisserpmoC 2-bit 1.0% 3-bit 0.8% 0.6% 4-bit 0.4%
+5-bit
+0.2% 6-bit “G” weights 0.0%
+representation 1 71319253137434955616773
+Weights per SM
+reyaL reP %
+reiltuO
+Centroid 0 Centroid 1 Centroid 7 SM0–B0
+SM0–B15
+SM2303–B15 #Outlier-SM0“2” Outlier Weight0 Outlier Weight1 #Outlier-SM1“0”
+#Outlier-SM2
+Layer
+#Outlier-SM2303“1” Outlier Weight0
+(b)EffectofSMsizeonCompressionRatio
+redaeH
+sthgieW
+dezitnauQ
+sreiltuO
+8b 4b 4b #Out “li 2e ”r-SM0 Blo “0c ”k # W “2 ”# Weight Value0
+Block # W # Weight Value1 #Out “li 0e ”r-SM1
+#Outlier-SM2
+sthgieW
+dezitnauQ
+sthgieW
+23PF
+LUT rellortnoC
+yromeM
+sreiltuO
+16
+16 SM SM 1 47
+SM
+0
+768 x 768
+Weight Matrix
+SM
+2303
+DRAM Layout
+Decompression Engine 3b 32b 32b LUT W0W1000 W15 48b
+DRAM
+LUT
+48b 32b
+8b Controller
+0 # B 51 # B
+32b
+(c)DRAMLayoutandDecompressionEngine
+Figure5:GOBOMemoryCompression.
+MACoperations.GOBOcaninsteaduse8accumulatorsandper- processesthesumsfromeachPE,onePEatatime,multipliesthem
+form768activationaccumulationsintotal,followedby8centroid withthecentroids,andproducesthefinaloutputactivations.
+lookupsand8MACoperations(96×fewer),oneperaccumulator. Phase 1: Per index Activation Accumulation: At the unit’s
+Re-arrangingorchangingfloating-pointarithmeticoperationsis front there are two circular 16-entry activation buffers. At any
+aconcernforhardwareandsoftwareoptimizationsasitcanaffect point,onebuffer,thestagingbuffer,loadsoneactivationatatime
+theoutcome.Fortunately,inpracticeGOBO’sapproacheffectively fromtheglobalbuffer,whilethePEsusetheother,thecurrentbuffer.
+improvescalculationfidelityasituses8separateaccumulators. Ittakes16cyclesforthestagingbuffertofill,duringwhichthe
+Importantly,eachaccumulatorcorrespondstoasingleweightin- currentbufferrotatesitsentriessothateachactivationisseenby
+dex.Theabovearrangementdefersmultiplyingwiththatweight eachPE.Letusignoreoutlierprocessingforthetimebeing.Every
+untiltheveryend,andafterallrelevantactivationshavebeenac- cycle,thequantizedweightbufferprovides16weightindexes,one
+cumulated.InconventionalFP32hardware,thesemultiplications perPE.ThePEsusetheseweightstoaddthecurrentactivationto
+occurforallactivationsandweightindexesbeforeaccumulation, thecorrespondingregisterfileentry.Figure6bshowshowprocess-
+increasingthechancesthatfidelityislostduetoweightmagni- ingproceeds.Forexample,inCycle0,PE0usesW0,0toaccumulate
+tudedifferences.TheexperimentsdemonstratethattheGOBO’s activationIA 0,whilePE2usesW2,2toaccumulateactivationsIA 2.
+approachpreservesaccuracy. Incycle1,theactivationsarerotatedbyoneposition,andnowPE0
+TileArchitecture: AsFig.6ashows,eachGOBO Tilecontains usesW0,15 toappropriatelyaccumulateactivationIA 15.After16
+acolumnof16ProcessingElements(PEs).EachPEcontainsan cycles,thefirstblockofinputactivationscompletesprocessing,
+FP32adderandan8-entryregisterfile,oneperpossibleweight andstagingandinputbuffersswitchroles,sothatprocessingcan
+index.ThePEisdesignedtoprocess3bweightindexes(GOBO proceedwithIA 16throughIA31.The16weightsalongthediago-
+cancombinetilestoprocesswiderweightindexes).The16PEs nalsintheSMofFigure6bformablockinmemoryandarestored
+areallconnectedtoasingleSharedProcessingUnit(SPU)which nexttooneanotherasinFigure5c.Onceallactivationshavebeen
+hasa16-entryoutputactivationregisterfile,withoneentryper seen,weproceedtophasetwo.
+PE.TheSPUperformsthefinalpercentroidMACoperationsand Phase 2: Centroid Processing: This phase proceeds in cen-
+alsohandlestheoutliers.Forthisdiscussion,forclarity,weinitially troid/PEorder.AsshowninFigure6a,thecentroidvaluesareread
+assumeanoutputstationarydataflowwhereeachoutputactivation fromtheglobalbufferonebyone.Oncecentroid0isread,theSPU
+isproducedbyoneonlyPE.Wehaveexperimentedwithseveral uses16cyclestomultiplyitwiththecorrespondingPEregister
+dataflowsandwedescribetheonethatweuseinourexperiments fileentryfromeachPEwritingtheresultintotheSPUregisterfile
+lateron.Processingproceedsintotwophases.Inthefirstphasethe entryforthePE.Then,theSPUproceedswithcentroid1andso
+PEsaccumulateactivationsintheirregisterfilesaccordingtoin- on.Intotalittakes8×16=128cyclestofinishphase2.During
+coming“G”groupweightindexes.Inaddition,theSPUisactivated thistimethePEsareidle.RecallthattheFClayersarelargesoat
+anytimeanoutlierisencountered.Inthesecondphase,theSPU theendthisisasmalloverhead.GOBOwillmorethanmakeupfor
+thisoverheadbykeepingmoreweightson-chipandbybeingable
+9
+AliHadiZadeh,IsakEdo,OmarMohamedAwad,andAndreasMoshovos
+256 Quantized
+Weight Buffer
++
+PE
+RF
+1x61
+1x2
+SPU
+RF
+W
+A W
++
+A
++ W
+PE RF
+x
+A
++ W
+PE RF
+…
+C
+A,E
+R
+R
+C E
+R C
+C E
+R
+C E
+…
+SPU
+PE 0 3b 3b 3b
+…
+32b C
+32b
+32b
+Control
+32b
+PE 15 32b 8b
+32b Outlier 0 Index
+Outlier 1 Index ...
+Centroid 0 ...
+Centroid 7
+32b C Outlier Weights &
+Centroids FIFO
+reffuB
+noitavitcA
+tupnI
+61
+Global Act Buffer
+32b
+(a)Tile
+Quantized Weights’ Bank
+16, 3-bit Quantized Weight
+Block#2
+Block#1
+W 0 W 1 000 Block#0
+3b
+Outliers’ Bank
+Index Outlier Weight
+3 3
+Block#: 0
+Weight#: 2 Index 2 Outlier Weight 2
+#Outlier Index 1 Outlier Weight
+“3” “0,2” 1
+8b 8b 32b
+Centroids’ Bank
+32b
+Centroid 1
+Centroid
+0
+snoitavitcA
+tupnI
+61
+cyclesasneededtoprocessthemonebyone.Duringthoseextra
+cycles,thePEsaredisabled.
+Finally,thisorganizationcansupport4bweightindexessothat
+wecanexecutemodelssuchasRoBERTawhichrequire4bdictio-
+nariesforsomeoftheirlayers.Todoso,wepairadjacenttilesso
+thatthe8-entryregisterfilesinthefirsttilestoretheaccumulation
+ofinputactivationscorrespondingtothefirst8weightindexes,
+andthesecondtilestorestherest.Theoutputregisterfileentries
+havetobeaddedinpairstogetthefinaloutput.Thisisdoneover
+16cyclesreusetheadderfromoneofthetiles.
+MemoryOrganization: AGOBOacceleratorwilltypicallyhave
+severaltiles.AbankedGlobalBuffersuppliesthetileswiththe
+datatheyneed.Themostdemandingdataneedsarefortheweight
+indexes.Eachtileprocessesatpeakoneblockof16weightindexes
+percyclewhichrequires16×3b = 48b percycle.Eachtilealso
+readsasingleFP32activationpercycleatpeak.However,thesame
+activationcanbesharedamongalltiles.Finally,eachtilealsoneeds
+toreadinoutlierswhichrequireatmost40beachplusan8bcount
+persubmatrixof256weights.However,theoutliersareinfrequent
+andthebandwidthneedsarelow.Accordingly,wepartitionthe
+Global Buffer across the tiles with at least three banks per tile.
+Oneforactivations,onewiderforweights,andfinallyoneforthe
+CL0 CL1 16 x 16 Sub Matrix (SM 0) outlierspluscentroids.Notethatthereisonesetofcentroidsper
+IA 0 IA 15 w 0,0 w 0,1 w 0,2 w 0,15 l Day ae tar flth oa wt :w We ere hp ali vc eat ee xa pc er ro imss et nil te es d. withseveraldataflowsandas
+IA IA w w w w previousworkhavefoundthattheoutputstationarydataflowis
+1 0 1,0 1,1 1,2 1,15
+notbest[32].InsteadofdedicatingeachPEtoprocessoneoutput
+IA 2 IA 1 w 2,0 w 2,1 w 2,2 w 2,15 activationatatime,wetimemultiplexovermultiplesubsetsof
+IA 2 activations(frommultipleinputwords)producingpartialsums.
+Forthispurpose,weblockweightsingroupsofcolumns,andif
+beneficialrows,andprocessthecorrespondingactivationcolumns
+producingpartialsums.Weperformphase1andphase2processing
+toproducethesepartialsums.Thisallowsustotakeadvantage
+IA 15 IA 14 w 15,0 w 15,1 w 15,2 w 15,14 w 15,15 ofweightreuseacrosswords;weusethesameweightswiththe Cycle 0 Cycle 1 corresponding activations for many words. Once done with all
+(b)Dataflow wordsforonegroup,weproceedwiththenextgroupofcolumns
+(androws)ofweights.
+Figure6:GOBOHardwareAccelerator.
+7 EVALUATION
+tousemorePEsperunitarea.Ifdesired,addingmoreSPUspertile Thissectiondemonstratestheperformanceandenergy-efficiency
+wouldreducethisidletime. benefits when 1) GOBO is used to compress data off-chip, and
+OutlierProcessing: Outliersareprocessedduringphase1bythe 2)foranacceleratorthatusesGOBOcompressionandtheGOBO
+SPU.TheSPUreadstheoutliersfromtheglobalbufferintoaFIFO. processingarchitecture.
+RecallthattheoutliersarestoredusingtheformatofFigure5c. WeusethemodelsdiscussedinSection2.Themodelsarequan-
+Accordingly,theSPUdeterminestheoriginalpositionsoftheout- tizedwithGOBO to3bexceptfor12layersofRoBERTaand28
+liers,asitencountersthemintheordertheyshouldbeprocessed layersofRoBERTa-Largethatarequantizedto4basdiscussedin
+accordingtothedescribeddataflow.Forthenextoutlierinorder, Section4.3.Cycletimesaremeasuredusingacustomcycle-accurate
+theSPUdisablesaccumulationinthecorrespondingPEwhenthe simulatorwhichusesDRAMsim2[33]tomodeloff-chiptransfers
+dummyweightindexappear.Itthenwaitsuntilthecorresponding foraDDR4-3200dual-channelDRAMmainmemory.Thesimulator
+activationisrotatedtoappearatPE15.AtthattimetheSPUcan hasbeentestedextensivelywithmicrobenchmarks.Thesimulator
+bypassitdirectlyandmultiplyitwiththeoutlierweightaccumulat- computesvaluesfaithfullyintimewhichitcomparesagainstthe
+ingtheresultintotheappropriateoutputregisterfileentry(recall expectedoutputsforcorrectness.Areaandpowerfortheon-chip
+thatoutliersaretobeusedas-is,theyarenotmappedtocentroids). memoriesaremodeledbyCACTI[34].Memoriesaredividedinto
+AtthesametimePE15canprocesstheactivationasrequired.If bankstomeetthetargetaccesstimeandbandwidth.Weusepost-
+therearemultipleoutliersforanactivation(theweightmatrixhas layoutenergyandareaestimates:Alldesignsareimplementedin
+multipleoutliersinthesamecolumn),theSPUwilltakeasmany VerilogandsynthesizedusingSynopsys’DesignCompiler[35]with
+10
+GOBO:QuantizingAttention-BasedNLPModels
+forLowLatencyandEnergyEfficientInference
+a65nmTSMCtechnologylibraryanda1GHztargetfrequency. computegridaccountfor90%ofoverallenergcomsumption(Fig-
+LayoutsaregeneratedusingCadenceInnovus[36].Forpoweresti- ure7d),seestheleastbenefitof7%.EnergyconsumptionforEyeriss
+mation,weuseIntelModelSimtogeneratesignalactivityasinput improvesonaverageby3.7×sincecomputationonlyaccountsfor
+toInnovus. 10%oftotalenergy.InTensorCores,off-chipmemoryaccountsfor
+47%oftotalenergy,whichGOBOreducesto20%improvingoverall
+energyconsumptionby1.6×onaverage.
+FP16:Recentarchitecturesaddsupportfor16bfloating-pointas
+7.1 MemoryCompression ithasprovensufficientfortrainingandinferenceofmanyneural
+WeincorporateGOBOmemorycompression(Section5)overthree networks.Figure7a(⋄markers)reportsspeedupswithGOBOcom-
+populardeeplearninghardwarearchitectures.TPU[37]andEye- pressionassumingthemodelscanuseFP16(presentlyonlydemon-
+riss[32]areconfiguredasoriginallypresented.Toexecutethese stratedwithSpanBERT).Allhardwarearchitecturesareconfigured
+models,however,weimplementthemwithFP32andFP16MAC touseFP16foroff-chiptrafficandon-chipprocessing.GOBOcom-
+unitsfromavendorprovidedlibrary.TheMACunitsareoptimized pressionproveseffectivethroughout.SpeedupscomparedtoFP32
+forenergyefficiency.WeconfigurethemodeledTensorCoresac- arehalvedfortheTPUandEyerisswhereweightsdominateoff-
+celeratorwith128TensorCore-likeunits[38,39]andwitha2MB chiptraffic.FP16islesseffectiveforTCasabout16%oftheoff-chip
+on-chipbuffer.EachTensorCoreunitperformsaA4×4×B4×4matrix trafficisforpartialsums.Figure7c(⋄markers)showsthattherela-
+multiplyproducingamatrixC4×4percycle[40].Itisconfiguredto tiveenergybenefitswithGOBOcompressionfortheTPUandTC
+perform64MACoperationspercycle.Weadjustthedataflowof wheremostenergyisconsumedinthecomputeunits.Therelative
+eacharchitecturetoimproveperformanceandenergyefficiency. benefitsscalelessforEyerissduetoitssmallglobalbuffer(off-chip
+Figure7areportsspeedupswhenweintroduceGOBOmemory trafficismorepronouncedandusingFP16leaveslesspotentialfor
+compression.Speedupsaremeasuredoverthecorrespondingar- compression).Still,evenwithFP16,GOBOcompressionreduces
+chitecturewithoutGOBO.Notethatthesemodelsarenotsparse energyby2.5×.
+anduseFP32whichmakeszerocompressionorothercompression
+methodstargetingfixed-pointneuralnetworksinapplicable.
+TPU:PerformancefortheTPUimprovesnearlyby10×.TheTPU 7.2 GOBOHardwareAccelerator
+keepsallactivationson-chipandreadsweightsfromoff-chipmem- Weperformaniso-compute-areacomparisonoftheGOBOacceler-
+ory.ForthesenetworkstheTPUisseverelymemoryboundonthe atorwithTensorCoresandIBMDLP[41]likearchitectures.For
+weightsidethusbenefitingfullyfromthetrafficreductionpossible TensorCoreswestudybothFP32andFP16variants,andforthe
+withGOBO.SpeedupsareslightlylowerforDistilBERTandthe IBMDLPwemodelFP16hardwareasoriginallyproposed.Wefirst
+RoBERTamodels.ThesizeoftheFClayersinDistilBERTleadsto focusontheFP32comparisonwithTensorCores.TensorCoresand
+differentutilizationoftheTPU’ssystolicarray,andasaresultthe GOBOFP32designsaregiventhesame2MBon-chipmemory.Ta-
+potentialforimprovementfrommemorycompressionisdifferent ble10summarizestheconfigurations.TheFP32TensorCores’tile
+thanitisfortheBERTmodels.TheRoBERTamodelshavelayers is6.2×largerthantheGOBOtilewhileithas4×moremultipliers
+thatarequantizedto4binsteadof3b. andaccumulators.RecallthatGOBOreplaceseachmultiplierwith
+Eyeriss:SpeeduponEyerissisatnearly7×onaverage.Eyeriss anaccumulatorandan8-entryregisterfile,andthatthereisonlya
+optimizesthedataflowtokeepMACsbusy,andhasmuchfewer singleMACunitthatissharedacrossmultiplePEs.Table11shows
+MACsthanserver-classacceleratorssuchastheTPU.Accordingly, theGOBOtileareabreakdown.AnFP32multiplieris4.1×larger
+thepotentialforspeedupislower. thanan8-entryregisterfile.Asaresult,forthesamecomputearea
+TensorCores:Thisarchitectureisalsomemoryboundwith16% neededby128TensorCores,wecanfit768GOBOtiles.
+ofallmemorytransactionsbeingforactivationsandpartialsums, Performance:Figure7ereportstheperformanceofGOBOrelative
+whileweightsaccountfortheremaining84%.GiventhatGOBO tothebaselineTensorCores(TC)andtheTensorCoreswithGOBO
+reducesweightfootprintbynearly10×,performanceimprovesby off-chipcompression(TC+).Inthisconfiguration,TC+isabout
+nearly4×. 4×fasterthanTCacrossallmodels.GOBOis7×fasterthanTC
+ExecutionTimeBreakdown:Figure7bshowsanexecutiontime forBERT-baseandDistilBERT.SpeedupswithGOBOareslightly
+breakdownforeacharchitecture.TheconfigurationswithGOBO lowerforRoBERTaaspeakthroughputishalvedforthoselayers
+memorycompressionarelabeledasTPU+,EY+(Eyeriss),andTC+ thatarequantizedto4bits.Therearetwoprimaryreasonswhy
+(TensorCores)andthegraphsreportaveragesoverallnetworks. GOBOimprovesperformance.First,ithasahigherpeakcompute
+Themeasurementsconfirmthatoff-chipaccessesaccountformost throughputthanTCasitcanaffordtopackmorecomputeunitsfor
+oftheexecutiontimeinthebaselinearchitectures.UsingGOBO thesamearea.Second,itbetterutilizestheon-chipmemorybuffers
+memorycompression,thefractionoftimetakenbyoff-chipaccesses asitkeepsweightsencodedthroughout.GOBO’sspeedupoverTC
+is reduced to 32% and 15% for TPU+ and Eyeriss+ respectively. onthelargemodelscapsat5.5×duetosizeoftheon-chipbuffer.
+Off-chip accesses remain a major bottleneck for TC+ since the Toshowhowperformancewouldscalewithalargeronchipbuffer
+activationsandthepartialsumsstillrequiremanyoff-chipaccesses. weevaluatedBERT-Large(B-L*)andRoBERTa-Large(R-L*)with
+Regardless,TC+is4×fasterthanTC. TC,TC+andGOBOconfigurationsusinga4MBon-chipbuffer.As
+Energy:DRAMtransactionsareexpensiveintermsoftimeand expected,thisresultsinhigherspeedups.
+energy.Figure7creportstheenergyreductionforeacharchitecture Energy:RelativeenergytrendsinFigure7ffollowthoseofperfor-
+withGOBOmemorycompressionoverthebaseline.TPU,whose manceclosely.Forexample,GOBOconsumes3×lessenergythan
+11
+10 8 6 4 2 0 B-B B-L DB R-B R-L GEO
+AliHadiZadeh,IsakEdo,OmarMohamedAwad,andAndreasMoshovos
+enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% TPU TPU+ EY EY+ TC TC+ nwodkaerB emiT Compute Memory 100% 80% 60% 40% 20% 0% TPUTPU+ EY EY+ TC TC+ nwodkaerB rewoP 8 6 4 2 0 B-B DB R-B B-L R-L B-L* R-L* Compute On-chip Off-chip CT revO pudeepS TC TC+ GOBO 100% 80% 60% 40% 20% 0% B-B DB R-B B-L R-L B-L*R-L* ygrenE evitaleR 12 10 8 6 4 2 TC TC+ GOBO 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS 10 8 6 TPU+ Eyeriss+ Tensor Cores+ 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+
+100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 10 8 6 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 8 6 4 2 0 B-B BD B-R L-B L-R *L-B *L-R OEG B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG B-B BD B-R L-B L-R L-S OEG FP32 FP16 FP16 Mini CT revO pudeepS TC+ GOBO 8 6 4 2
+0
+CT revO pudeepS
+B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG
+TC+ GOBO 100% 80% 60% 40% 20%
+0%
+CT revO ygrenE evitaleR
+B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG
+10 8 6 4 2 (a)GOBOMem.Comp.:Speedup 0 B-B B-L DB R-B R-L GEO TC+ GOBO enilesaB revO pudeepS TPU Eyeriss Tensor cores 4 3 2 1 0 B-B B-L DB R-B R-L GEO ycneiciffe ygrenE TPU Eyeriss Tensor cores 100% 80% 60% 40% 20%
+0% TPU TPU+ EY EY+ TC TC+
+nwodkaerB emiT Compute Memory 100% 80% 60% 40% 20%
+0% TPUTPU+ EY EY+ TC TC+
+nwodkaerB rewoP 8 6 4 2 0 B-B DB R-B B-L R-L B-L* R-L* Compute On-chip Off-chip CT revO pudeepS TC TC+ GOBO 4 3 2 1
+0 B-B DB R-B B-L R-L B-L*R-L*
+ycneiciffE ygrenE
+10 8 6 4 2 0 B-B B-L DB R-B R-L GEO
+TC TC+ GOBO
+(b)GOBOMem.Comp.:TimeBreakdown
+enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% TPU TPU+ EY EY+ TC TC+ nwodkaerB emiT Compute Memory 100% 80% 60% 40% 20% 0% TPUTPU+ EY EY+ TC TC+ nwodkaerB rewoP 8 6 4 2 0 B-B DB R-B B-L R-L B-L*R-L* Compute On-chip Off-chip CT revO pudeepS TC TC+ GOBO 100% 80% 60% 40% 20% 0% B-B DB R-B B-L R-L B-L*R-L* ygrenE evitaleR 12 10 8 6 4 2 TC TC+ GOBO 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS 10 8 6 TPU+ Eyeriss+ Tensor Cores+ 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+
+100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 10 8 6 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 8 6 4 2 0 B-B BD B-R L-B L-R *L-B *L-R OEG B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG B-B BD B-R L-B L-R L-S OEG FP32 FP16 FP16 Mini CT revO pudeepS TC+ GOBO 8 6 4 2 0 CT revO pudeepS B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG TC+ GOBO 100% 80% 60% 40% 20% 0% CT revO ygrenE evitaleR
+B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG
+10 8 6 4 2 (c)GOBOMem.Comp.:RelativeEnergy 0 B-B B-L DB R-B R-L GEO TC+ GOBO enilesaB revO pudeepS TPU Eyeriss Tensor cores 4 3 2 1 0 B-B B-L DB R-B R-L GEO ycneiciffe ygrenE TPU Eyeriss Tensor cores 100% 80% 60% 40% 20%
+0% TPU TPU+ EY EY+ TC TC+
+nwodkaerB emiT Compute Memory 100% 80% 60% 40% 20%
+0% TPUTPU+ EY EY+ TC TC+
+nwodkaerB rewoP 8 6 4 2 0 B-B DB R-B B-L R-L B-L* R-L* Compute On-chip Off-chip CT revO pudeepS TC TC+ GOBO 4 3 2 1
+0 B-B DB R-B B-L R-L B-L*R-L*
+ycneiciffE ygrenE
+10
+8
+6
+4
+2
+0
+B-B B-L DB R-B R-L GEO
+TC TC+ GOBO
+(d) GOBO Mem. Comp.: Energy Break-
+down
+enilesaB
+revO
+pudeepS
+TPU+ Eyeriss+ Tensor Cores+ 100%
+80%
+60%
+40%
+20%
+0%
+B-B B-L DB R-B R-L GEO
+ygrenE
+evitaleR
+TPU+ Eyeriss+ Tensor Cores+
+100%
+80% 60% 40% 20% 0% TPU TPU+ EY EY+ TC TC+ nwodkaerB emiT
+Compute Memory 100%
+80% 60% 40% 20% 0% TPUTPU+ EY EY+ TC TC+ nwodkaerB rewoP
+8
+6
+4
+2
+0
+B-B DB R-B B-L R-L B-L*R-L* Compute On-chip Off-chip
+CT
+revO
+pudeepS
+TC TC+ GOBO
+100%
+80% 60% 40% 20% 0% B-B DB R-B B-L R-L B-L*R-L* ygrenE evitaleR
+12
+10
+8
+6
+4
+2 TC TC+ GOBO
+0 B-B B-L DB R-B R-L GEO
+enilesaB
+revO
+pudeepS 10
+8 6 TPU+ Eyeriss+ Tensor Cores+ 4 2 0 B-B B-L DB R-B R-L GEO
+enilesaB
+revO pudeepS
+TPU+ Eyeriss+ Tensor Cores+
+100% 80% 60% 40%
+20%
+0% B-B B-L DB R-B R-L GEO
+ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 10 8 6 4
+2
+0 B-B B-L DB R-B R-L GEO
+enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+
+8 6 4 2 0 B-B BD B-R L-B L-R *L-B *L-R OEG B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG B-B BD B-R L-B L-R L-S OEG FP32 FP16 FP16 Mini CT revO pudeepS TC+ GOBO 8 6 4 2 0 CT revO pudeepS B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG TC+ GOBO 100% 80% 60% 40% 20% 0% CT revO ygrenE evitaleR B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG
+10 8 6 4 2 0 B-B B-L DB R-B R-L GEO
+TC+ GOBO (e)GOBOAccelerator:SpeedupoverTC.
+enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% TPU TPU+ EY EY+ TC TC+ nwodkaerB emiT Compute Memory 100% 80% 60% 40% 20% 0% TPUTPU+ EY EY+ TC TC+ nwodkaerB rewoP 8 6 4 2 0 B-B DB R-B B-L R-L B-L*R-L* Compute On-chip Off-chip CT revO pudeepS TC TC+ GOBO 100% 80% 60% 40% 20% 0% B-B DB R-B B-L R-L B-L*R-L* ygrenE evitaleR 12 10 8 6 4 2 TC TC+ GOBO 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS 10 8 6 TPU+ Eyeriss+ Tensor Cores+ 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+
+100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 10 8 6 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 8 6 4 2 0 B-B BD B-R L-B L-R *L-B *L-R OEG B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG B-B BD B-R L-B L-R L-S OEG FP32 FP16 FP16 Mini CT revO pudeepS TC+ GOBO 8 6 4 2 0 CT revO pudeepS B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG TC+ GOBO 100% 80% 60% 40% 20%
+0%
+CT revO ygrenE evitaleR
+B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG
+3.5 3 2.5 2 1.5 1 0.5 0 B-B DB R-B B-L S-L GEO TC+ GOBO PLDMBIrevO pudeepS
+10 8 6 4 2 0 B-B B-L DB R-B R-L GEO
+IBM DLP+ (FP16) GOBO (FP16)
+(f)GOBOAcc.:RelativeEnergyoverTC.
+enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% TPU TPU+ EY EY+ TC TC+ nwodkaerB emiT Compute Memory 100% 80% 60% 40% 20% 0% TPUTPU+ EY EY+ TC TC+ nwodkaerB rewoP 8 6 4 2 0 B-B DB R-B B-L R-L B-L*R-L* Compute On-chip Off-chip CT revO pudeepS TC TC+ GOBO 100% 80% 60% 40% 20% 0% B-B DB R-B B-L R-L B-L*R-L* ygrenE evitaleR 12 10 8 6 4 2 TC TC+ GOBO 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS 10 8 6 TPU+ Eyeriss+ Tensor Cores+ 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+
+100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 10 8 6 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 8 6 4 2 0 CT revO pudeepS B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG TC+ GOBO 100% 80% 60% 40% 20% 0% CT revO ygrenE evitaleR B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG 100% 80% 60% 40% 20% 0% TC+ GOBO PLD MBI revO ygrenE evitaleR B-B BD B-R L-B L-S OEG IBM DLP + (FP16) GOBO (FP16) 4 3 2 1 0 PLD MBI revO pudeepS B-B BD B-R L-B L-S OEG
+10 8 6 4 2
+0
+B-B B-L DB R-B R-L GEO IBM DLP+ (FP16) GOBO (FP16) (g)Speedup:GOBOVs.DLP
+enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20%
+0%
+B-B B-L DB R-B R-L GEO
+ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+
+100% 80% 60% 40% 20% 0% TPU TPU+ EY EY+ TC TC+ nwodkaerB emiT Compute Memory 100% 80% 60% 40% 20% 0% TPUTPU+ EY EY+ TC TC+ nwodkaerB rewoP
+8 6 4 2
+0
+B-B DB R-B B-L R-L B-L*R-L* Compute On-chip Off-chip
+CT revO pudeepS TC TC+ GOBO
+100% 80% 60% 40% 20% 0% B-B DB R-B B-L R-L B-L*R-L* ygrenE evitaleR
+12 10 8 6
+4
+2 TC TC+ GOBO 0 B-B B-L DB R-B R-L GEO
+enilesaB revO
+pudeepS 10 8 6 TPU+ Eyeriss+ Tensor Cores+ 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+ 100% 80% 60% 40% 20% 0% B-B B-L DB R-B R-L GEO ygrenE evitaleR TPU+ Eyeriss+ Tensor Cores+ 10 8 6 4 2 0 B-B B-L DB R-B R-L GEO enilesaB revO pudeepS TPU+ Eyeriss+ Tensor Cores+
+8
+6
+4
+2
+0
+CT
+revO
+pudeepS
+B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG
+TC+ GOBO 100%
+80%
+60%
+40%
+20%
+0%
+CT
+revO
+ygrenE
+evitaleR
+B-B BD B-R L-B L-R L-S *L-B *L-R *L-S OEG
+100% 80% 60% 40% 20%
+0% TC+ GOBO
+PLD MBI revO ygrenE evitaleR
+B-B BD B-R L-B L-S OEG
+IBM DLP+ (FP16) GOBO (FP16) 4 3 2 1
+0
+PLD MBI revO pudeepS
+B-B BD B-R L-B L-S OEG
+IBM DLP+ (FP16) GOBO (FP16)
+(h)Rel.E.:GOBOVs.DLP
+Figure7:EvaluationofGOBOMemoryCompressionandHardwareAccelerator.Infigures(a)to(f)barsshoworiginalFP32models,and⋄markersshowscaled
+FP16models.B-B,B-L,DB,R-B,R-L,andS-LareshortforBERT-Base,BERT-Large,DistilBERT,RoBERTa-Base,RoBERTa-Large,andSpanBERT-Largerespectively.
+B-L*,R-L*,andS-L*refertoBERT-Large,RoBERTa-Large,andSpanBERT-LargemodelsonconfigurationsofTC,TC+andGOBOwitha4MBon-chipbufferfor
+FP32,anda2MBforFP16architectures.EYandTC,standforEyerissandTensorCores.TPU+,EY+,TC+,IBMDLP+useGOBOoff-chipmemorycompression.
+Fine-tunedFP32versionofSpanBERTwasnotavailable.
+Table10:TensorCores&GOBO:Area. unitsanda1MBon-chipbuffer.Giventhenon-linearscalingofFP
+multipliers,theratioofTCtoGOBOtilesdecreasesfrom6.2×to
+TileArea(mm2) Tiles/Chip MAC/Tile MAC/Chip 5×.WekeepthesamenumberofGOBOtilesandincreasetheTC
+TensorCoresFP32 0.84 1× 128 64 1× tilessothatbothusethesamecomputearea.Figure7e(⋄markers)
+GOBOFP32 0.13 0.16× 768 16 1.5× showstherelativeperformanceofFP16TC+(usesGOBOcompres-
+TensorCoresFP16 0.27 1× 160 64 1× sion)and GOBO overFP16TC.GOBO compressionmakesTC+
+GOBOFP16 0.05 0.20× 768 16 1.2× 2.8×fasterthanTCandtheGOBOacceleratorisevenfasterat3.3×.
+Table11:GOBOFP32TileAreaBreakdown Moreover,GOBOremainsthemostenergyefficientarchitectureof
+thethree.Figure7freportsthatGOBOconsumes2.4×lessenergy
+ComponentArea(µm2
+)
+ModuleArea(µm2
+) Area/Tile
+comparedtoTC.UsingjustGOBOcompressionimprovesTC+’s
+FP32Adder 4,149 1× PE 6,780 80.02%
+energyoverTCby1.6×.Table12reportsabsoluteperformanceand
+FP32Multiplier 9,379 2.26× SPU 17,883 13.19% energyfortheseFP16configurations.
+PERegFile(8x32) 2,628 0.63× Buffers 8,046 5.94% IBMDLP:IBM’sDeeplearningProcessor[41]isanFP16systolic
+SPURegFile(16x32) 4,630 1.12×
+array with a 2MB on-chip buffer. We demonstrate that a) IBM
+Table12:TensorCores&GOBO:AbsolutePerf.&Energy. DLPbenefitsfromGOBOmemorycompression(IBMDLP+),and
+b)underiso-compute-areaconstraintsGOBOacceleratorishigher
+performingandmoreenergyefficient.WeconfigureDLP’ssystolic
+BERT-Base(MNLI)
+PeakTFLOPS Cycles(M) Energy(J) arraywith512MACstomatchthe1KFLOPS/cycleoriginallyre-
+Architecture FP32 FP16 FP32 FP16 FP32 FP16 ported.GOBO’stilesare1.2×smallerthanDLP’sallowingustofit
+TC 16 20 70.2 35.3 0.24 0.11 20%moretiles.GOBOisconfiguredwiththesame2MBon-chip
+TC+ 16 20 17.8 11.8 0.15 0.07 capacity.Figures7gand7hreportGOBOAccelerator’sandIBM
+GOBO 24 24 9.9 9.7 0.08 0.04
+DLP+’sperformanceandrelativeenergyovertheIBMDLPbaseline.
+GOBOmemorycompressionincreasesPEutilizationfrom34%to
+75%inDLP+,makingit2.2×faster,whereasGOBOisevenfasterat
+TConBERT-baseandDistilBERT.Computeaccountsforalarge
+2.85×asitsPEutilizationis83%.GOBOisthemostenergyefficient:
+portionofTC,soavoidingFP32multiplicationsgreatlyimproves
+2.4×vs.DLP+and6.8×vstheoriginalDLP.
+energyconsumption.Table12reportsabsoluteperformanceand
+energyforBERT-BaseonTC,TC+andGOBO.Overall,GOBOis
+21×moreenergyefficientthanTC. 8 CONCLUSION
+FP16:WescaletheFP32configurationstouseFP16instead.Ta- Wepresentedapost-trainingquantizationmethodforattention-
+ble10reportstheconfigurationswhenbothTCandGOBOuseFP16 basedNLPmodels.Wedemonstratedthatitcansignificantlyreduce
+12
+GOBO:QuantizingAttention-BasedNLPModels
+forLowLatencyandEnergyEfficientInference
+modelsize(parametersandembeddingtables)withlittleornoeffect [19] M.A.Gordon,K.Duh,andN.Andrews,“Compressingbert:Studyingtheeffects
+onaccuracy.Wepresentedtwopracticalapplications.Inthefirst, ofweightpruningontransferlearning,”arXivpreprintarXiv:2002.08307,2020.
+[20] O.Kovaleva,A.Romanov,A.Rogers,andA.Rumshisky,“Revealingthedark
+whichisplug-incompatiblewithotheraccelerators,GOBOisused
+secretsofbert,”arXivpreprintarXiv:1908.08593,2019.
+tocompressdatafromoff-chipboostingenergyefficiencyandoff- [21] A.Raganato,Y.Scherrer,andJ.Tiedemann,“Fixedencoderself-attentionpatterns
+chipcapacity.Inthesecond,wepresentedanacceleratorthatuses intransformer-basedmachinetranslation,”arXivpreprintarXiv:2002.10260,2020.
+[22] A. Fan, E. Grave, and A. Joulin, “Reducing transformer depth on demand
+GOBOquantizationthroughout.Itisuniqueinthatitneverexpands withstructureddropout,”CoRR,vol.abs/1909.11556,2019.[Online].Available:
+theweightsintotheiroriginalvaluesdirectly. http://arxiv.org/abs/1909.11556
+[23] S.Zhao,R.Gupta,Y.Song,andD.Zhou,“Extremelanguagemodelcompression
+withoptimalsubwordsandsharedprojections,”arXivpreprintarXiv:1909.11687,
+ACKNOWLEDGEMENT 2019.
+[24] Z.Sun,H.Yu,X.Song,R.Liu,Y.Yang,andD.Zhou,“Mobilebert:acompact
+ThisworkwassupportedbytheNSERCCOHESAStrategicRe- task-agnosticBERTforresource-limiteddevices,”CoRR,vol.abs/2004.02984,
+searchNetworkandanNSERCDiscoveryGrant.TheUniversityof 2020.[Online].Available:https://arxiv.org/abs/2004.02984
+[25] X.Jiao,Y.Yin,L.Shang,X.Jiang,X.Chen,L.Li,F.Wang,andQ.Liu,“Tinybert:
+Torontomaintainsallrightsonthetechnologiesdescribed.
+DistillingBERTfornaturallanguageunderstanding,”CoRR,vol.abs/1909.10351,
+2019.[Online].Available:http://arxiv.org/abs/1909.10351
+REFERENCES [26] S.Sun,Y.Cheng,Z.Gan,andJ.Liu,“Patientknowledgedistillationforbertmodel
+compression,”arXivpreprintarXiv:1908.09355,2019.
+[1] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,“Bert:Pre-trainingofdeep [27] Y.Cheng,D.Wang,P.Zhou,andT.Zhang,“Asurveyofmodelcompressionand
+bidirectionaltransformersforlanguageunderstanding,”inNAACL-HLT,2019. accelerationfordeepneuralnetworks,”2017.
+[2] V.Sanh,L.Debut,J.Chaumond,andT.Wolf,“Distilbert,adistilledversionofbert: [28] R.Tang,Y.Lu,L.Liu,L.Mou,O.Vechtomova,andJ.Lin,“Distillingtask-
+smaller,faster,cheaperandlighter,”5thWorkshoponEnergyEfficientMachine specific knowledge from bert into simple neural networks,” arXiv preprint
+LearningandCognitiveComputing-NeurIPS,2019. arXiv:1903.12136,2019.
+[3] S.Shen,Z.Dong,J.Ye,L.Ma,Z.Yao,A.Gholami,M.W.Mahoney,andK.Keutzer, [29] R.Tang,Y.Lu,andJ.Lin,“Naturallanguagegenerationforeffectiveknowledge
+“Q-bert:Hessianbasedultralowprecisionquantizationofbert.”inAAAI,2020, distillation,”inProceedingsofthe2ndWorkshoponDeepLearningApproachesfor
+pp.8815–8821. Low-ResourceNLP(DeepLo2019),2019,pp.202–208.
+[4] O.Zafrir,G.Boudoukh,P.Izsak,andM.Wasserblat,“Q8bert:Quantized8bitbert,” [30] Y.K.Chia,S.Witteveen,andM.Andrews,“Transformertocnn:Label-scarce
+5thWorkshoponEnergyEfficientMachineLearningandCognitiveComputing- distillationforefficienttextclassification,”arXivpreprintarXiv:1909.03508,2019.
+NeurIPS,2019. [31] T.Wolf,L.Debut,V.Sanh,J.Chaumond,C.Delangue,A.Moi,P.Cistac,T.Rault,
+[5] S. Han, H. Mao, and W. J. Dally, “Deep compression: Compressing deep R.Louf,M.Funtowicz,andJ.Brew,“Huggingface’stransformers:State-of-the-art
+neuralnetworkwithpruning,trainedquantizationandhuffmancoding,”in4th naturallanguageprocessing,”ArXiv,vol.abs/1910.03771,2019.
+InternationalConferenceonLearningRepresentations,ICLR2016,SanJuan,Puerto [32] Y.-H.Chen,J.Emer,andV.Sze,“Eyeriss:Aspatialarchitectureforenergy-efficient
+Rico,May2-4,2016,ConferenceTrackProceedings,Y.BengioandY.LeCun,Eds., dataflowforconvolutionalneuralnetworks,”inIntl’Symp.onComputerArchi-
+2016.[Online].Available:http://arxiv.org/abs/1510.00149 tecture,2016.
+[6] S.Han,X.Liu,H.Mao,J.Pu,A.Pedram,M.A.Horowitz,andW.J.Dally, [33] P.Rosenfeld,E.Cooper-Balis,andB.Jacob,“Dramsim2:Acycleaccuratememory
+“Eie: Efficient inference engine on compressed deep neural network,” in systemsimulator,”IEEEComputerArchitectureLetters,vol.10,no.1,pp.16–19,
+Proceedings of the 43rd International Symposium on Computer Architecture, Jan2011.
+ser. ISCA âĂŹ16. IEEE Press, 2016, p. 243âĂŞ254. [Online]. Available: [34] N.Muralimanohar,R.Balasubramonian,andN.Jouppi,“Cacti6.0:Atooltomodel
+https://doi.org/10.1109/ISCA.2016.30 largecaches,”HPLaboratories,012009.
+[7] E.Park,S.Yoo,andP.Vajda,“Value-awarequantizationfortrainingandinference [35] Synopsys, “Design compiler graphical,” https://www.synopsys.com/
+ofneuralnetworks,”inProceedingsoftheEuropeanConferenceonComputerVision implementation-and-signoff/rtl-synthesis-test/design-compiler-graphical.
+(ECCV),2018,pp.580–595. html.
+[8] E.Park,D.Kim,andS.Yoo,Energy-EfficientNeuralNetworkAcceleratorBased [36] Cadence, “Innovus implementation system,” https://www.cadence.com/
+onOutlier-AwareLow-PrecisionComputation. IEEEPress,2018,p.688âĂŞ698. content/cadence-www/global/en_US/home/tools/digital-design-and-signoff/
+[Online].Available:https://doi.org/10.1109/ISCA.2018.00063 hierarchical-design-and-floorplanning/innovus-implementation-system.html.
+[9] J.Fang,A.Shafiee,H.Abdel-Aziz,D.Thorsley,G.Georgiadis,andJ.Hassoun, [37] N.P.Jouppi,C.Young,N.Patil,D.Patterson,G.Agrawal,R.Bajwa,S.Bates,
+“Post-trainingpiecewiselinearquantizationfordeepneuralnetworks,”2020. S.Bhatia,N.Boden,A.Borchers,R.Boyle,P.-l.Cantin,C.Chao,C.Clark,J.Coriell,
+[10] Y.Liu,M.Ott,N.Goyal,J.Du,M.Joshi,D.Chen,O.Levy,M.Lewis,L.Zettlemoyer, M.Daley,M.Dau,J.Dean,B.Gelb,T.V.Ghaemmaghami,R.Gottipati,W.Gulland,
+andV.Stoyanov,“Roberta:Arobustlyoptimizedbertpretrainingapproach,”arXiv R.Hagmann,C.R.Ho,D.Hogberg,J.Hu,R.Hundt,D.Hurt,J.Ibarz,A.Jaffey,
+preprintarXiv:1907.11692,2019. A.Jaworski,A.Kaplan,H.Khaitan,D.Killebrew,A.Koch,N.Kumar,S.Lacy,
+[11] H.Wang,Z.Wu,Z.Liu,H.Cai,L.Zhu,C.Gan,andS.Han,“HAT:Hardware- J.Laudon,J.Law,D.Le,C.Leary,Z.Liu,K.Lucke,A.Lundin,G.MacKean,
+awaretransformersforefficientnaturallanguageprocessing,”inProceedings A.Maggiore,M.Mahony,K.Miller,R.Nagarajan,R.Narayanaswami,R.Ni,
+ofthe58thAnnualMeetingoftheAssociationforComputationalLinguistics. K.Nix,T.Norrie,M.Omernick,N.Penukonda,A.Phelps,J.Ross,M.Ross,A.Salek,
+Online:AssociationforComputationalLinguistics,Jul.2020,pp.7675–7688. E.Samadiani,C.Severn,G.Sizikov,M.Snelham,J.Souter,D.Steinberg,A.Swing,
+[Online].Available:https://www.aclweb.org/anthology/2020.acl-main.686 M.Tan,G.Thorson,B.Tian,H.Toma,E.Tuttle,V.Vasudevan,R.Walter,W.Wang,
+[12] M.Joshi,D.Chen,Y.Liu,D.S.Weld,L.Zettlemoyer,andO.Levy,“Spanbert: E.Wilcox,andD.H.Yoon,“In-datacenterperformanceanalysisofatensor
+Improvingpre-trainingbyrepresentingandpredictingspans,”Transactionsof processingunit,”inInternationalSymposiumonComputerArchitecture,2017.
+theAssociationforComputationalLinguistics,vol.8,pp.64–77,2020. [38] Z.Jia,M.Maggioni,B.Staiger,andD.P.Scarpazza,“DissectingtheNVIDIA
+[13] A.Wang,A.Singh,J.Michael,F.Hill,O.Levy,andS.R.Bowman,“GLUE:A voltaGPUarchitectureviamicrobenchmarking,”CoRR,vol.abs/1804.06826,2018.
+multi-taskbenchmarkandanalysisplatformfornaturallanguageunderstanding,” [Online].Available:http://arxiv.org/abs/1804.06826
+in7thInternationalConferenceonLearningRepresentations,ICLR2019,New [39] L.Durant,O.Giroux,M.Harris,andN.Stam,“Nvidiadeveloperblog,”May2017.
+Orleans,LA,USA,May6-9,2019. OpenReview.net,2019.[Online].Available: [Online].Available:https://devblogs.nvidia.com/inside-volta/
+https://openreview.net/forum?id=rJ4km2R5t7 [40] M.A.Raihan,N.Goli,andT.M.Aamodt,“Modelingdeeplearningaccelerator
+[14] S. Narasimhan, “Nvidia developer blog,” Aug 2019. [Online]. Available: enabledgpus,”in2019IEEEInternationalSymposiumonPerformanceAnalysisof
+https://devblogs.nvidia.com/training-bert-with-gpus]/ SystemsandSoftware(ISPASS),2019,pp.79–92.
+[15] P.Rajpurkar,J.Zhang,K.Lopyrev,andP.Liang,“Squad:100,000+questionsfor [41] B.Fleischer,S.Shukla,M.Ziegler,J.Silberman,J.Oh,V.Srinivasan,J.Choi,
+machinecomprehensionoftext,”arXivpreprintarXiv:1606.05250,2016. S.Mueller,A.Agrawal,T.Babinsky,N.Cao,C.Chen,P.Chuang,T.Fox,G.Grist-
+[16] P.Ganesh,Y.Chen,X.Lou,M.A.Khan,Y.Yang,D.Chen,M.Winslett,H.Sajjad, ede,M.Guillorn,H.Haynie,M.Klaiber,D.Lee,S.Lo,G.Maier,M.Scheuermann,
+andP.Nakov,“Compressinglarge-scaletransformer-basedmodels:Acasestudy S.Venkataramani,C.Vezyrtzis,N.Wang,F.Yee,C.Zhou,P.Lu,B.Curran,
+onbert,”arXivpreprintarXiv:2002.11985,2020. L.Chang,andK.Gopalakrishnan,“Ascalablemulti-teraopsdeeplearningpro-
+[17] E.Wang,J.J.Davis,R.Zhao,H.-C.Ng,X.Niu,W.Luk,P.Y.K.Cheung,andG.A. cessorcoreforaitrainingandinference,”in2018IEEESymposiumonVLSICircuits,
+Constantinides,“Deepneuralnetworkapproximationforcustomhardware,” 2018,pp.35–36.
+ACMComputingSurveys,vol.52,no.2,p.1âĂŞ39,May2019.[Online].Available:
+http://dx.doi.org/10.1145/3309551
+[18] S.Shi,X.Chu,K.C.Cheung,andS.See,“Understandingtop-ksparsificationin
+distributeddeeplearning,”arXivpreprintarXiv:1911.08772,2019.
+13

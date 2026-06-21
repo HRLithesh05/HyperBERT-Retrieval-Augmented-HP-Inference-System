@@ -1,0 +1,941 @@
+Cold-start Active Learning through Self-supervised Language Modeling
+MichelleYuan∗ Hsuan-TienLin JordanBoyd-Graber
+UniversityofMaryland NationalTaiwanUniversity UniversityofMaryland
+myuan@cs.umd.edu htlin@csie.ntu.edu.tw jbg@umiacs.umd.edu
+Abstract transformer-based models is to use more data. If
+thesemodelsarenotfine-tunedonenoughexam-
+Active learning strives to reduce annotation
+ples,theiraccuracydrasticallyvariesacrossdiffer-
+costs by choosing the most critical examples
+ent hyperparameter configurations (Dodge et al.,
+to label. Typically, the active learning strat-
+2020). Moreover, computational resources are a
+egy is contingent on the classification model.
+major drawback as training one model can cost
+For instance, uncertainty sampling depends
+on poorly calibrated model confidence scores. thousandsofdollarsincloudcomputingandhun-
+In the cold-start setting, active learning is dredsofpoundsincarbonemissions(Strubelletal.,
+impractical because of model instability and 2019). These problems motivate further work in
+data scarcity. Fortunately, modern NLP pro- ALtoconserveresources.
+videsanadditionalsourceofinformation: pre-
+Anotherissueisthattraditional AL algorithms,
+trained language models. The pre-training
+likeuncertaintysampling(LewisandGale,1994),
+losscanfindexamplesthatsurprisethemodel
+falterondeepmodels. Thesestrategiesusemodel
+andshouldbelabeledforefficientfine-tuning.
+Therefore,wetreatthelanguagemodelingloss confidencescores,butneuralnetworksarepoorly
+asaproxyforclassificationuncertainty. With calibrated (Guo et al., 2017). High confidence
+BERT, we develop a simple strategy based scores do not imply high correctness likelihood,
+on the masked language modeling loss that sothesampledexamplesarenotthemostuncertain
+minimizeslabelingcostsfortextclassification.
+ones (Zhang et al., 2017). Plus, these strategies
+Compared to other baselines, our approach
+sampleonedocumentoneachiteration. Thesingle-
+reaches higher accuracy within less sampling
+document sampling requires training the model
+iterationsandcomputationtime.
+aftereachqueryandincreasestheoverallexpense.
+1 Introduction These limitations of modern NLP models illus-
+trateatwofoldeffect: theyshowagreaterneedfor
+Labeling data is a fundamental bottleneck in ma-
+AL and make AL moredifficulttodeploy. Ideally,
+chinelearning,especiallyfor NLP,duetoannota-
+ALcouldbemostusefulduringlow-resourcesitua-
+tioncostandtime. Thegoalofactivelearning(AL)
+tions. Inreality,itisimpracticaltousebecausethe
+istorecognizethemostrelevantexamplesandthen
+AL strategy depends on warm-starting the model
+querylabelsfromanoracle. Forinstance,policy-
+withinformationaboutthetask(AshandAdams,
+makers and physicians want to quickly fine-tune
+2019). Thus,afittingsolutionto ALfordeepclas-
+a text classifier to understand emerging medical
+sifiers is a cold-start approach, one that does not
+conditions(Voorheesetal.,2020). Findinglabeled
+relyonclassificationlossorconfidencescores.
+dataformedicaltextischallengingbecauseofpri-
+To develop a cold-start AL strategy, we should
+vacyissuesorshortageinexpertise(Dernoncourt
+extract knowledge from pre-trained models like
+and Lee, 2017). Using AL, they can query labels
+BERT (Devlin et al., 2019). The model encodes
+forasmallsubsetofthemostrelevantdocuments
+syntactic properties (Tenney et al., 2019), acts as
+andimmediatelytrainarobustmodel.
+a database for general world knowledge (Petroni
+Moderntransformermodelsdominatetheleader-
+et al., 2019; Davison et al., 2019), and can de-
+boards for several NLP tasks (Devlin et al., 2019;
+tectout-of-distributionexamples(Hendrycksetal.,
+Yang et al., 2019). Yet the price of adopting
+2020). Given the knowledge already encoded in
+∗(cid:63)WorkdonewhilevisitingNationalTaiwanUniversity. pre-trainedmodels,theannotationforanewtask
+shouldfocusontheinformationmissingfrompre- Algorithm1ALforSentenceClassification
+training. If a sentence contains many words that Require: Inital model f(x;θ ) with pre-trained
+0
+perplexthelanguagemodel,thenitispossiblyun- encoder h(x;W ), unlabeled data pool U,
+0
+usual or not well-represented in the pre-training numberofqueriesperiterationk, numberof
+data. Thus,theself-supervisedobjectiveservesas iterationsT,samplingalgorithmA
+asurrogateforclassificationuncertainty. 1: D = {}
+Wedevelop ALPS (ActiveLearningbyProcess- 2: foriterationst = 1,...,T do
+ingSurprisal),anALstrategyforBERT-basedmod- 3: ifAiscold-startforiterationtthen
+els.1 While many AL methods randomly choose 4: M t(x) = f(x;θ 0)
+an initial sample, ALPS selects the first batch of 5: else
+datausingthemaskedlanguagemodelingloss. As 6: M t(x) = f(x;θ t−1)
+the highest and most extensive peaks in Europe
+7: Q t ←ApplyAonmodelM t(x),dataU
+are found in the Alps, the ALPS algorithm finds
+8: D t ←LabelqueriesQ t
+examples in the data that are both surprising and
+9: D = D∪D t
+substantial. To the best of our knowledge, ALPS
+10: U = U \D t
+isthefirst AL algorithmthatonlyreliesonaself-
+11: θ t ←Fine-tunef(x;θ 0)onD
+supervisedlossfunction. Weevaluateourapproach
+onfourtextclassificationdatasetsspanningacross
+12: returnf(x;θ T)
+three different domains. ALPS outperforms AL
+baselines in accuracy and algorithmic efficiency.
+{1,...,C}. During fine-tuning, we take a base
+ThesuccessofALPShighlightstheimportanceof
+classifier f with weights W from a pre-trained
+self-supervisionforcold-startAL. 0
+encoder h and fine-tune f on D for new parame-
+2 Preliminaries ters θ t. Then, the predicted classification label is
+yˆ= argmax f(x;θ ) .
+y∈Y t y
+Weformallyintroducethesetup,notation,andter-
+minologythatwillbeusedthroughoutthepaper. AL for Sentence Classification Assume that
+there is a large unlabeled dataset U = {(x )}n
+Pre-trained Encoder Pre-training uses the lan- i i=1
+of n sentences. The goal of AL is to sample a
+guagemodelinglosstotrainencoderparametersfor
+subset D ⊂ U efficiently so that fine-tuning the
+generalizedrepresentations. Wecallthemodelin-
+classifier f on subset D improves test accuracy.
+putx = (w )l a“sentence”,whichisasequence
+i i=1 Oneachiterationt,thelearnerusesstrategyAto
+of tokens w from a vocabulary V with sequence
+acquire k sentences from dataset U and queries
+lengthl. GivenweightsW,theencoderhmapsx
+fortheirlabels(Algorithm1). StrategyAusually
+toad-dimensonalhiddenrepresentationh(x;W).
+dependsonanacquisitionmodelM (Lowelland
+t
+Weuse BERT (Devlinetal.,2019)asourdataen-
+Lipton, 2019). If the strategy depends on model
+coder,sohispre-trainedwithtwotasks: masked
+warm-starting,thentheacquisitionmodelM isf
+t
+languagemodeling(MLM)andnextsentencepre-
+with parameters θ from the previous iteration.
+t−1
+diction. The embedding h(x;W) is computed as
+Otherwise, we assume that M is the pre-trained
+t
+thefinalhiddenstateofthe[CLS]tokeninx. We
+modelwithparametersθ . AfterT rounds,weac-
+0
+alsorefertoh(x;W)astheBERTembedding.
+quire labels for Tk sentences. We provide more
+Fine-tuned Model We fine-tune BERT on the concretedetailsaboutALsimulationinSection5.
+downstreamtaskbytrainingthepre-trainedmodel
+3 TheUncertainty–DiversityDichotomy
+andtheattachedsequenceclassificationhead. Sup-
+pose that f represents the model with the classi-
+This section provides background on prior work
+fication head, has parameters θ = (W,V), and
+inAL. First,wediscusstwogeneralALstrategies:
+mapsinputxtoaC-dimensionalvectorwithconfi-
+uncertaintysamplinganddiversitysampling. Then,
+dencescoresforeachlabel. Specifically,f(x;θ) =
+we explain the dichotomy between the two con-
+σ(V ·h(x;W))whereσ isasoftmaxfunction.
+cepts and introduce BADGE (Ash et al., 2020), a
+Let D be the labeled data for our classifica-
+SOTA method that attempts to resolve this issue.
+tion task where the labels belong to set Y =
+Finally,wefocusonthelimitationsofBADGEand
+1https://github.com/forest-snow/alps otherALstrategiestogivemotivationforourwork.
+Dasgupta (2011) describes uncertainty and di- 3.2 Limitations
+versity as the “two faces of AL”. While uncer-
+BADGE combines uncertainty and diversity sam-
+taintysamplingefficientlysearchesthehypothesis
+pling to profit from advantages of both methods
+spacebyfindingdifficultexamplestolabel,diver-
+butalsobringsthedownsidesofboth: relianceon
+sitysamplingexploitsheterogeneityinthefeature
+warm-startingandcomputationalinefficiency.
+space(Xuetal.,2003;Huetal.,2010;Bodóetal.,
+2011). Uncertaintysamplingrequiresmodelwarm- 3.2.1 ModelUncertaintyandInference
+startingbecauseitdependsonmodelpredictions, Dodgeetal.(2020)observethattrainingishighly
+whereasdiversitysamplingcanbeacold-startap- unstable when fine-tuning pre-trained language
+proach. AsuccessfulALstrategyshouldintegrate modelsonsmalldatasets. Accuracysignificantly
+both aspects, but its exact implementation is an variesacrossdifferentrandominitializations. The
+openresearchquestion. Forexample,anaïveidea modelhasnotfine-tunedonenoughexamples,so
+istouseafixedcombinationofstrategiestosample modelconfidenceisanunreliablemeasureforun-
+points. Nevertheless, Hsu and Lin (2015) experi- certainty. WhileBADGEimprovesoveruncertainty-
+mentallyshowthatthisapproachhampersaccuracy. basedmethods,itstillreliesonconfidencescores
+BADGE optimizes for both uncertainty and diver- f(x;θ) i whencomputingthegradientembeddings
+sitybyusingconfidencescoresandclustering. This (Equation 1). Also, it uses labels inferred by the
+strategybeatsuncertainty-basedalgorithms(Wang modeltocompensateforlackofsupervisioninAL,
+andShang,2014),samplingthroughbanditlearn- butthisinferenceisinaccurateforill-trainedmod-
+ing(HsuandLin,2015),andCORESET(Senerand els. Thus, warm-start methods may suffer from
+Savarese,2018),adiversity-basedmethodforcon- problemswithmodeluncertaintyorinference.
+volutionalneuralnetworks.
+3.2.2 AlgorithmicEfficiency
+Many diversity-based methods involve distance
+3.1 BADGE
+comparison between embedding representations,
+The goal of BADGE is to sample a diverse and butthiscomputationcanbeexpensive,especially
+uncertain batch of points for training neural net- inhigh-dimensionalspace. Forinstance, CORESET
+works. The algorithm transforms data into repre- isafarthest-firsttraversalintheembeddingspace
+sentationsthatencodemodelconfidenceandthen whereitchoosesthefarthestpointfromthesetof
+clusters these transformed points. First, an unla- pointsalreadychosenoneachiteration(Senerand
+beled point x passes through the trained model Savarese, 2018). The embeddings may appropri-
+to obtain its predicted label yˆ. Next, a gradient atelyrepresentthedata,butissues,likethe“curse
+embeddingg x is computedfor xsuch thatit em- of dimensionality” (Beyer et al., 1999) and the
+bodies the gradient of the cross-entropy loss on “hubnessproblem”(Tomasevetal.,2013),persist.
+(f(x;θ),yˆ) with respect to the parameters of the As the dimensionality increase, the distance be-
+model’slastlayer. Thegradientembeddingis tweenanytwopointsconvergestothesamevalue.
+Moreover,thegradientembeddingsinBADGEhave
+(g ) = (f(x;θ) −1(yˆ= i))h(x;W). (1) dimensionality of Cd for a C-way classification
+x i i
+task with data dimensionality of d (Equation 1).
+The i-th block of g is the hidden representa- These issues make distance comparison between
+x
+tion h(x;W) scaled by the difference between gradient embeddings less meaningful and raises
+modelconfidencescoref(x;θ) andanindicator coststocomputethosedistances.
+i
+function1thatindicateswhetherthepredictivela-
+4 ASelf-supervisedActiveLearner
+belyˆislabeli. Finally,BADGEchoosesabatchto
+samplebyapplyingk-MEANS++(ArthurandVas- Cold-start AL ischallengingbecauseoftheshort-
+silvitskii,2006)onthegradientembeddings. These age in labeled data. Prior work, like BADGE, of-
+embeddingsconsistofmodelconfidencescoresand tendependonmodeluncertaintyorinference,but
+hiddenrepresentations,sotheyencodeinformation thesemeasurescanbeunreliableifthemodelhas
+aboutbothuncertaintyandthedatadistribution. By not trained on enough data (Section 3.2.1). To
+applyingk-MEANS++onthegradientembeddings, overcome the lack of supervision, what if we ap-
+thechosenexamplesdifferinfeaturerepresentation plyself-supervisiontoAL? ForNLP,thelanguage
+andpredictiveuncertainty. modelingtaskisself-supervisedbecausethelabel
+Surprisal Embeddings Algorithm2SingleiterationofALPS
+Require: Pre-trained encoder h(x;W ), unla-
+<0, 0, 0, 0, 0, 0.32, 0, 0, 0, 0.49, 0, 0, 0, 0, 0, 0, 0.81> 0
+beleddatapoolU,numberofqueriesk
+1: forsentencesx ∈ U do
+^
+Token * * L2 Normalization 2: Computes x withMLMheadofh(x;W 0)
+Labels *
+* * 3: M = {s x | x ∈ U}
+highest
+* 4: C ←k-MEANSclustercentersofM
+* Cross Entropy
+mou* n tain Loss 5: Q = {argmin x∈U (cid:107)c−s x(cid:107)|c ∈ C}
+*
+* * 6: returnQ
+*
+*
+* MLM Head
+europe
+v
+4.2 ALPS
+BERT
+SurprisalEmbeddings InspiredbyhowBADGE
+formsgradientembeddingsfromtheclassification
+loss, we create surprisal embeddings from lan-
+[CLS] the alps are the highest and most extensive guagemodeling. Forsentencex,wecomputesur-
+mountain range system that entirely lies in europe
+prisalembeddings
+x
+byevaluatingxwiththeMLM
+Input objective. Toevaluate MLM loss, BERT randomly
+masks15%ofthetokensinxandcomputescross-
+Figure1: Toformsurprisalembeddings forsentence
+x entropy loss for the masked tokens against their
+x,wepassinunmaskedxthroughtheBERTMLMhead
+true token labels. When computing surprisal em-
+andcomputecross-entropylossforarandom15%sub-
+beddings, we make one crucial change: none of
+sampleoftokensagainstthetargetlabels. Theunsam-
+pled tokens have entries of zero in s x. ALPS clusters the tokens are masked when the input is passed
+thesesurprisalembeddingstosamplesentencesforAL. into BERT. However, we still randomly choose
+15% of the tokens in the input to evaluate with
+cross-entropyagainsttheirtargettokenlabels. The
+for each token is the token itself. If the task has unchosentokensareassignedalossofzeroasthey
+immenselyimprovedtransferlearning,thenitmay arenotevaluated(Figure1).
+reducegeneralizationerrorinALtoo. These decisions for not masking input (Ap-
+pendixA.1)andevaluatingonly15%oftokens(Ap-
+For our approach, we adopt the uncertainty-
+pendixA.2)aremadebecauseofexperimentson
+diversity BADGE frameworkforclusteringembed-
+thevalidationset. Proposition1providesinsighton
+dings that encode information about uncertainty.
+theinformationencodedinsurprisalembeddings.
+However,ratherthanrelyingontheclassification
+Finally,thesurprisalembeddingisl -normalizedas
+lossgradient,weusethe MLMlosstobootstrapun- 2
+normalizationimprovesclustering(Aytekinetal.,
+certaintyestimates. Thus,wecombineuncertainty
+2018). Iftheinputsentenceshaveafixedlengthof
+anddiversitysamplingforcold-startAL.
+l,thenthesurprisalembeddingshavedimensional-
+ityofl. Thelengthlisusuallylessthanthehidden
+4.1 MaskedLanguageModeling
+sizeofBERTembeddings.
+Proposition1. Foranunnormalizedsurprisalem-
+Topre-trainBERTwithMLM,inputtokensareran- bedding s , each nonzero entry (s ) estimates
+x x i
+domlymasked,andthemodelneedstopredictthe I(w ), the surprisal of its corresponding token
+i
+tokenlabelsofthemaskedtokens. BERTisbidirec- withinthecontextofsentencex.
+tional,soitusescontextfromtheleftandrightof
+themaskedtokentomakepredictions. BERTalso Proof. ExtendingnotationfromSection2,assume
+usesnextsentencepredictionforpre-training,but that m is the MLM head, with parameters φ =
+thistaskshowsminimaleffectforfine-tuning(Liu (W,Z), which maps input x to a l × |V| matrix
+et al., 2019). So, we focus on applying MLM to m(x;φ). Theithrowm(x;φ) i containsprediction
+AL. The MLMheadcancapturesyntacticphenom- scoresforw i,theithtokeninx. Supposethatw
+i
+ena (Goldberg, 2019) and performs well on psy- isthejthtokeninvocabularyV. Then,m(x;φ)
+i,j
+cholinguistictests(Ettinger,2020). isthelikelihoodofpredictingw correctly.
+i
+Now, assume that context is the entire input x pool,weusek-MEANStoclusterthesurprisalem-
+anddefinethelanguagemodelprobabilityp as, beddings. Then,foreachclustercenter,weselect
+m
+thesentencethathasthenearestsurprisalembed-
+p m(w i|x) = m(x;φ) i,j. (2) dingtoit. Thefinalsetofsentencesarethequeries
+tobelabeledbyanoracle(Algorithm2). Although
+Salazar et al. (2020) have a similar definition as
+BADGE usesk-MEANS++tocluster, experiments
+Equation2butinsteadhavedefineditintermsof
+showthatk-MEANSworksbetterforsurprisalem-
+the masked input. We argue that their definition
+beddings(AppendixA.3).
+canbeextendedtotheunmaskedinputx. During
+BERTpre-training,the MLM objectiveisevaluated 5 ActiveSentenceClassification
+onthe[MASK]tokenfor80%ofthetime,random
+tokenfor10%ofthetime,andtheoriginaltoken We evaluate ALPS on sentence classification for
+for 10% of the time. This helps maintain consis- threedifferentdomains: sentimentreviews,news
+tencyacrosspre-trainingandfine-tuningbecause articles,andmedicalabstracts(Table1). Tosimu-
+[MASK]neverappearsinfine-tuning(Devlinetal., late AL,wesampleabatchof100sentencesfrom
+2019). Thus, we assume that m estimates occur- the training dataset, query labels for this batch,
+renceoftokenswithinamasklesscontextaswell. andthenmovethebatchfromtheunlabeledpool
+Next,theinformation-theoreticsurprisal(Shan- to the labeled dataset (Algorithm 1). The initial
+non,1948)isdefinedasI(w) = −logp(w|c),the encoderh(x;θ 0),isanalreadypre-trained,BERT-
+negativeloglikelihoodofwordw givencontextc. basedmodel(Section5.2). Inagiveniteration,we
+Ifw
+i
+issampledandevaluated,thentheithentry fine-tunethebaseclassifierf(x;θ 0)onthelabeled
+oftheunnormalizedsurprisalembeddingis, datasetandevaluatethefine-tunedmodelwithclas-
+sificationmicro-F scoreonthetestset. Wedonot
+1
+(s x) i = −logm(x;φ) i,j = −logp m(w i|x) fine-tune the model f(x;θ t−1) from the previous
+= I(w ). iterationtoavoidissueswithwarm-starting(Ash
+i
+and Adams, 2019). We repeat for ten iterations,
+collectingatotalof1,000sentences.
+Proposition 1 shows that the surprisal embed-
+5.1 Baselines
+dingscompriseofestimatesfortoken-contextsur-
+WecompareALPSagainstwarm-startmethods(En-
+prisal. Intuitively,thesevaluescanhelpwithALbe-
+tropy, BADGE, FT-BERT-KM)andcold-startmeth-
+causetheyhighlighttheinformationmissingfrom
+ods (Random, BERT-KM). For FT-BERT-KM, we
+the pre-trained model. For instance, consider the
+use BERT-KM tosampledatainthefirstiteration.
+sentences: “thisismyfavoritetelevisionshow”and
+For other warm-start methods, data is randomly
+“they feel ambivalent about catholic psychedelic
+sampledinthefirstiteration.
+synth folk music”. Tokens from the latter have
+highersurprisalthanthosefromtheformer. Ifthis
+Entropy Sample k sentences with
+is a sentiment classification task, the second sen-
+highest predictive entropy measured by
+tenceismoreconfusingfortheclassifiertolearn. (cid:80)C (f(x;θ) )ln(f(x;θ) )−1 (Lewis and
+i=1 i i
+Thesurprisalembeddingsindicatesentenceschal-
+Gale,1994;WangandShang,2014).
+lengingforthepre-trainedmodeltounderstandand
+difficultforthefine-tunedmodeltolabel. BADGE Sample k sentences based on diversity
+Themostsurprisingsentencescontainmanyrare inlossgradient(Section3.1).
+tokens. Ifweonlytrainourmodelonthemostsur-
+prisingsentences,thenitmaynotgeneralizewell BERT-KM Cluster pre-trained, l 2-normalized
+across different examples. Plus, we may sample BERT embeddingswithk-MEANS andsamplethe
+severalatypicalsentencesthataresimilartoeach nearest neighbors of the k cluster centers. The
+other,whichisoftenanissueforuncertainty-based algorithm is the same as ALPS except that BERT
+methods(Kirschetal.,2019). Therefore,weincor- embeddingsareused.
+porateclusteringinALPStomaintaindiversity.
+FT-BERT-KM This is the same algorithm as
+k-MEANS Clustering Aftercomputingsurprisal BERT-KMexcepttheBERTembeddingsh(x;W t−1)
+embeddings for each sentence in the unlabeled fromthepreviouslyfine-tunedmodelareused.
+Dataset Domain Train Dev Test #Labels
+AG NEWS Newsarticles 110,000 10,000 7,600 4
+IMDB Sentimentreviews 17,500 7,500 25,000 2
+PUBMED20k RCT Medicalabstracts 180,040 30,212 30,135 5
+SST-2 Sentimentreviews 60,615 6,736 873 2
+Table1: Sentenceclassificationdatasetsusedinexperiments.
+0.8
+0.6
+0.4
+0.2
+0
+0 200 400 600 800 1000
+erocS
+1F
+Strategy
+Random BERT-KM BADGE
+Entropy FT-BERT-KM ALPS
+AG News IMDB PubMed SST-2
+0 200 400 600 800 1000 0 200 400 600 800 1000 0 200 400 600 800 1000
+Number of Labeled Sequences
+Figure2: Testaccuracyofsimulated AL overteniterationswith100sentencesqueriedperiteration. Thedashed
+line is the test accuracy when the model is fine-tuned on the entire dataset. Overall, models trained with data
+sampledfromALPShavethehighesttestaccuracy,especiallyfortheearlieriterations.
+5.2 Setup 5.3 Results
+Themodelfine-tunedwithdatasampledbyALPS
+Foreachsamplingalgorithmanddataset, werun
+has higher test accuracy than the baselines (Fig-
+theALsimulationfivetimeswithdifferentrandom
+ure2). ForAG NEWS,IMDB,andSST-2,thisistrue
+seeds. We set the maximum sequence length to
+inearlieriterations. Weoftenseethemostgainsin
+128. Wefine-tuneonabatchsizeofthirty-twofor
+thebeginningforcrowdsourcing(Feltetal.,2015).
+three epochs. We use AdamW (Loshchilov and
+Interestingly, clustering the fine-tuned BERT em-
+Hutter,2019)withlearningrateof2e-5,β = 0.9,
+1
+beddings is not always better than clustering the
+β = 0.999,andalineardecayoflearningrate.
+2
+pre-trained BERT embeddings for AL. The fine-
+For IMDB (Maas et al., 2011), SST-2 (Socher tuned BERT embeddings may require training on
+etal.,2013),andAGNEWS(Zhangetal.,2015),the moredataformoreinformativerepresentations.
+dataencoderistheuncasedBERT-Basemodelwith
+For PUBMED, test accuracy greatly varies be-
+110Mparameters.2 ForPUBMED(Dernoncourtand
+tweenthestrategies. Thedatasetbelongstoaspe-
+Lee,2017),thedataencoderis SCIBERT,a BERT cializeddomainandisclass-imbalanced,sonaïve
+modelpre-trainedonscientifictexts(Beltagyetal.,
+methods show poor accuracy. Entropy sampling
+2019). AllexperimentsarerunonGeForceGTX
+hasthelowestaccuracybecausetheclassification
+1080GPUand2.6GHzAMDOpteron4180CPU
+entropy is uninformative in early iterations. The
+processor;runtimesinTable2.
+models fine-tuned on data sampled by ALPS and
+BADGEhaveaboutthesameaccuracy. Bothmeth-
+odsstrivetooptimizeforuncertaintyanddiversity,
+2https://huggingface.co/transformers/ whichalleviatesproblemswithclassimbalance.
+AG NEWS PUBMED
+Random <1 <1
+Entropy 7 10
+ALPS 14 24
+BADGE 23 70 1.350
+BERT-KM 28 58
+FT-BERT-KM 33 79 1.348
+Table 2: Average runtime (minutes) per sampling iter- 1.346
+ationduring AL simulationforlargedatasets. BADGE,
+FT-BERT-KM,andBERT-KMtakemuchlongertorun. 1.344
+Our experiments cover the first ten iterations
+because we focus on the cold-start setting. As
+samplingiterationsincrease,testaccuracyacross
+the different methods converges. Both ALPS and
+BADGE alreadyapproachthemodeltrainedonthe
+full training dataset across all tasks (Figure 2).
+Once the cold-start issue subsides, uncertainty-
+based methods can be employed to further query
+themostconfusingexamplesforthemodeltolearn.
+6 Analyzing ALPS
+SamplingEfficiency Giventhatthegradientem-
+beddings are computed, BADGE has a time com-
+plexity of O(Cknd) for a C-way classification
+task,k queries,npointsintheunlabeledpool,and
+d-dimensional BERT embeddings. Given that the
+surprisal embeddings are computed, ALPS has a
+time complexity of O(tknl) where t is the fixed
+number of iterations for k-MEANS and l is the
+maximum sequence length. In our experiments,
+k = 100, d = 768, t = 10, andl = 128. Inprac-
+tice,twillnotchangemuch,butnandC couldbe
+muchhigher. ForlargedatasetPUBMED,theaver-
+age runtime per iteration is 24 minutes for ALPS
+and70minutesforBADGE(Table2). So,ALPScan
+matchBADGE’saccuracymorequickly.
+Diversity and Uncertainty We estimate diver-
+sityanduncertaintyfordatasampledacrossdiffer-
+entstrategies. Fordiversity,welookattheoverlap
+between tokens in the sampled sentences and to-
+kensfromtherestofthedatapool. Adiversebatch
+ofsentencesshouldsharemanyofthesametokens
+with the data pool. In other words, the sampled
+sentences can represent the data pool because of
+the substantial overlap between their tokens. In
+oursimulations,theentiredatapoolisthetraining
+dataset (Section 5). So, we compute the Jaccard
+similaritybetweenV ,setoftokensfromthesam-
+D
+ytniatrecnU
+Strategy
+Random BERT-KM BADGE
+Entropy FT-BERT-KM ALPS
+AG News
+PubMed
+1.5800
+1.5775
+1.5750
+1.5725
+0.1 0.2 0.3
+Diversity
+Figure3:Plotofdiversityagainstuncertaintyestimates
+fromALsimulationsforAGNEWSandPUBMED. Each
+pointrepresentsasampledbatchofsentencesfromthe
+AL experiments. Theshapeindicatesthestrategyused
+tosamplethesentences.Thecolorindicatesthesample
+iteration. Thelightestcolorcorrespondstothefirstiter-
+ationandthedarkestcolorrepresentsthetenthiteration.
+Whileuncertaintyestimatesaresimilaracrossdifferent
+batches, ALPS showsaconsistentincreaseindiversity
+withoutdropsinuncertainty.
+pledsentencesD,andV ,setoftokensfromthe
+D(cid:48)
+unsampledsentencesU \D,
+|V ∩V | D D(cid:48)
+G (D) = J(V ,V ) = . (3)
+d D D(cid:48) |V ∪V |
+D D(cid:48)
+IfG ishigh,thisindicateshighdiversitybecause
+d
+thesampledandunsampledsentenceshavemany
+tokensincommon. IfG islow,thisindicatespoor
+d
+diversityandrepresentation.
+To measure uncertainty, we use f(x,θ ), the
+∗
+classifiertrainedonthefulltrainingdataset. Inour
+experiments,classifierf(x,θ )hashighaccuracy
+∗
+(Figure2)andinferenceisstableaftertrainingon
+manyexamples. Thus,wecanusethelogitsfrom
+theclassifiertounderstanditsuncertaintytowarda
+particularsentence. First, wecomputepredictive
+entropy of sentence x when evaluated by model
+f(x,θ ). Then,wetaketheaverageofpredictive
+∗
+(a)BERTembeddingswithk-MEANScenters (b)Surprisalembeddingswithk-MEANScenters
+Figure 4: T-SNE plots of BERT embeddings and surprisal embeddings for each sequence in the IMDB training
+dataset. Theenlargedpointsarethecentersdeterminedbyk-MEANS(left)andk-MEANS++(right). Thepointsare
+coloredaccordingtotheirclassificationlabels. Inbothsetsofembeddings,wecannotclearlyseparatethepoints
+fromtheirlabels,butthedistinctionbetweenclustersinsurprisalembeddingsseemsmoreobvious.
+entropy over all sentences in a sampled batch D. quantitivelymeasureclusterquality,weusetheSil-
+Weusetheaveragepredictiveentropyto esimate houetteCoefficientforwhichlargervaluesindicate
+uncertaintyofthesampledsentences, desirableclustering(Rousseeuw,1987). Thesur-
+prisalclustershaveacoefficientof0.38,whereas
+1 (cid:88)(cid:88)C theBERTclustershaveacoefficientofonly0.04.
+G (D) = (f(x;θ ) )ln(f(x;θ ) )−1.
+u |D| ∗ i ∗ i Theseresults,alongwiththeclassificationexper-
+x∈D i=1
+(4)
+iments,showthatnaïvelyclusteringBERTembed-
+WecomputeG andG forbatchessampledinthe
+dingsisnotsuitedfor AL. Possibly,morecompli-
+d u
+catedclusteringalgorithmscancapturetheintrinsic
+AL experiments of AG NEWS and PUBMED. Di-
+versity is plotted against uncertainty for batches
+structureoftheBERTembeddings. However,this
+wouldincreasethealgorithmiccomplexityandrun-
+sampled across different iterations and AL strate-
+time. Alternatively,onecanmapthefeaturerepre-
+gies (Figure 3). For AG NEWS, G d and G u are
+sentationstoaspacewheresimpleclusteringalgo-
+relatively low for ALPS in the first iteration. As
+rithmsworkwell. Duringthistransformation,im-
+iterations increase, samples from ALPS increase
+indiversityanddecreaseminimallyinuncertainty.
+portantinformationfor ALmustbepreservedand
+Samplesfromothermethodshavealargerdropin
+extracted. OurapproachusestheMLMhead,which
+hasalreadybeentrainedonextensivecorpora, to
+uncertainty as iterations increase. For PUBMED,
+ALPS againincreasesinsamplediversitywithout map the BERT embeddings into the surprisal em-
+dropsinuncertainty. Inthelastiteration, ALPShas
+beddingspace. Asaresult,simplek-MEANS can
+efficientlychooserepresentativesentences.
+thehighestdiversityamongallthealgorithms.
+SurprisalClusters Priorworkusek-MEANSto Single-iterationSampling InSection5,wesam-
+clusterfeaturerepresentationsasacold-startALap- pledataiteratively(Algorithm1)tofairlycompare
+proach(Zhuetal.,2008;Bodóetal.,2011). Rather thedifferentALalgorithms. However,ALPSdoes
+than clustering BERT embeddings, ALPS clusters notrequireupdatingtheclassifierbecauseitonly
+surprisal embeddings. We compare the clusters depends on the pre-trained encoder. Rather than
+between surprisal embeddings and BERT embed- samplingdatainsmallbatchesandre-trainingthe
+dings to understand the structure of the surprisal model,ALPScansampleabatchofk sentencesin
+clusters. First,weuset-SNE (MaatenandHinton, oneiteration(Algorithm2). BetweenusingALPS
+2008)toplottheembeddingsforeachsentencein iterativelyanddeployingthealgorithmforasingle
+the IMDB training set (Figure 4). The labels are iteration, the difference is insignificant (Table 3).
+notwell-separatedforbothembeddingsets,butthe Plus,sampling1,000sentencesonlytakesabout97
+surprisal embeddings seem easier to cluster. To minutesforPUBMEDand7minutesforIMDB.
+Dataset k Iterative Single suresdomaindivergencefromthesourcedomain
+to select the most informative texts in the target
+IMDB 200 0.63±0.04 0.61±0.03
+domain. Wangetal.(2014)useALtoquerypoints
+500 0.74±0.05 0.76±0.04
+foratargettaskthroughmatchingconditionaldis-
+1000 0.82±0.01 0.82±0.01
+tributions. Additionally,combiningword-leveland
+PUBMED 200 0.63±0.03 0.64±0.03 document-level annotations can improve knowl-
+500 0.80±0.02 0.82±0.01 edgetransfer(Settles,2011;Yuanetal.,2020).
+1000 0.84±0.00 0.84±0.00 In addition to uncertainty and diversity sam-
+pling, other areas of deep AL focus on Bayesian
+Table3: Testaccuracyon IMDB andPubMedbetween approaches (Siddhant and Lipton, 2018; Kirsch
+differentusesofALPSforvariousk,thenumberofsen-
+etal.,2019)andreinforcementlearning(Fangetal.,
+tencestoquery. WecompareusingALPSiteratively(It-
+2017). Aninterestingresearchdirectioncaninte-
+erative)asdoneinSection5withusingALPStoquery
+grateoneoftheseapproacheswithALPS.
+all k sentences in one iteration (Single). The test ac-
+curacy does not change much, showing that ALPS is
+8 Conclusion
+flexibletoapplyindifferentsettings.
+Transformersarepowerfulmodelsthathaverevolu-
+With this flexibility in sampling, ALPS can ac- tionizedNLP. Nevertheless,likeotherdeepmodels,
+commodatedifferentbudgetconstraints. Forexam- theiraccuracyandstabilityrequirefine-tuningon
+ple,re-trainingtheclassifiermaybecostly,sousers largeamountsofdata. ALshouldleveltheplaying
+want a sampling algorithm that can query k sen- field by directing limited annotations most effec-
+tencesallatonce. Inothercases,annotatorsarenot tively so that labels complement, rather than du-
+alwaysavailable,sothenumberofobtainableanno- plicate,unsuperviseddata. Luckily,transformers
+tationsisunpredictable. Then,userswouldprefer have generalized knowledge about language that
+an ALstrategythatcanqueryavariablenumberof canhelpacquiredataforfine-tuning. LikeBADGE,
+sentencesforanyiteration. Thesecasesillustrate weprojectdataintoanembeddingspaceandthen
+practicalneedsforacold-startalgorithmlikeALPS. selectthemostrepresentativepoints. Ourmethod
+isuniquebecauseitonlyreliesonself-supervision
+7 RelatedWork to conduct sampling. Using the pre-trained loss
+guidesthe ALprocesstosamplediverseanduncer-
+Active learning has shown success in tasks, such
+tainexamplesinthecold-startsetting. Futurework
+as named entity recognition (Shen et al., 2004),
+mayfocusonfindingrepresentationsthatencode
+wordsensedisambiguation(ZhuandHovy,2007),
+themostimportantinformationforAL.
+andsentimentanalysis(Lietal.,2012). Wangand
+Shang(2014)arethefirsttoadaptpriorALworkto
+Acknowledgments
+deeplearning. However,popularheuristics(Settles,
+2009)forqueryingindividualpointsdonotworkas We thank Kuen-Han Tsai, Chien-Min Yu, Si-An
+wellinabatchsetting. Sincethen,moreresearch Chen,PedroRodriguez,EleftheriaBriakou,andthe
+hasbeenconductedonbatchALfordeeplearning. anonymousreviewersfortheirfeedback. Michelle
+Zhang et al. (2017) propose the first work on AL YuanissupportedbyJHUHumanLanguageTech-
+for neural text classification. They assume that nology Center of Excellence (HLTCOE). Jordan
+theclassifierisaconvolutionalneuralnetworkand Boyd-Graber is supported in part by the Office
+useexpectedgradientlength(Settlesetal.,2008) of the Director of National Intelligence (ODNI),
+to choose sentences that contain words with the Intelligence Advanced Research Projects Activ-
+most label-discriminative embeddings. Besides ity (IARPA), via the BETTER Program contract
+text classification, AL has been applied to neural #2019-19051600005. Theviewsandconclusions
+modelsforsemanticparsing(Duongetal.,2018), containedhereinarethoseoftheauthorsandshould
+namedentityrecognition(Shenetal.,2018),and not be interpreted as necessarily representing the
+machinetranslation(Liuetal.,2018). official policies, either expressed or implied, of
+ALPS makes use of BERT, a model that excels ODNI,IARPA,ortheU.S.Government. TheU.S.
+attransferlearning. Otherworksalsocombine AL Government is authorized to reproduce and dis-
+and transfer learning to select training data that tributereprintsforgovernmentalpurposesnotwith-
+reducegeneralizationerror. Raietal.(2010)mea- standinganycopyrightannotationtherein.
+References Long Duong, Hadi Afshar, Dominique Estival, Glen
+Pink,PhilipRCohen,andMarkJohnson.2018. Ac-
+David Arthur and Sergei Vassilvitskii. 2006. k- tivelearningfordeepsemanticparsing. InProceed-
+means++: Theadvantagesofcarefulseeding. Tech- ings of the Association for Computational Linguis-
+nicalreport,Stanford. tics.
+Jordan T. Ash and Ryan P. Adams. 2019. On warm- Allyson Ettinger. 2020. What BERT is not: Lessons
+starting neural network training. arXiv preprint fromanewsuiteofpsycholinguisticdiagnosticsfor
+arXiv:1910.08475. language models. Transactions of the Association
+forComputationalLinguistics,8:34–48.
+Jordan T. Ash, Chicheng Zhang, Akshay Krishna-
+murthy, John Langford, and Alekh Agarwal. 2020. MengFang,YuanLi,andTrevorCohn.2017. Learning
+Deepbatchactivelearningbydiverse,uncertaingra- howtoactivelearn: Adeepreinforcementlearning
+dient lower bounds. In Proceedings of the Interna- approach. In Proceedings of Empirical Methods in
+tionalConferenceonLearningRepresentations. NaturalLanguageProcessing.
+PaulFelt,EricRingger,KevinSeppi,KevinBlack,and
+Caglar Aytekin, Xingyang Ni, Francesco Cricri, and
+Robbie Haertel. 2015. Early gains matter: A case
+Emre Aksu. 2018. Clustering and unsupervised
+for preferring generative over discriminativecrowd-
+anomaly detection with L2 normalized deep auto-
+sourcingmodels. InProceedingsoftheAssociation
+encoderrepresentations. InInternationalJointCon-
+forComputationalLinguistics.
+ferenceonNeuralNetworks.
+Yoav Goldberg. 2019. Assessing BERT’s syntactic
+Iz Beltagy, Kyle Lo, and Arman Cohan. 2019. SciB-
+abilities. arXivpreprintarXiv:1901.05287.
+ERT:Apretrainedlanguagemodelforscientifictext.
+In Proceedings of Empirical Methods in Natural
+ChuanGuo,GeoffPleiss,YuSun,andKilianQ.Wein-
+LanguageProcessing.
+berger. 2017. On calibration of modern neural net-
+works. Journal of Machine Learning Research,
+Kevin Beyer, Jonathan Goldstein, Raghu Ramakrish- 70:1321–1330.
+nan, and Uri Shaft. 1999. When is “nearest neigh-
+bor” meaningful? In International Conference on Dan Hendrycks, Xiaoyuan Liu, Eric Wallace, Adam
+DatabaseTheory. Dziedzic,RishabhKrishnan,andDawnSong.2020.
+Pretrained transformers improve out-of-distribution
+ZalánBodó,ZsoltMinier,andLehelCsató.2011. Ac- robustness. In Proceedings of the Association for
+tivelearningwithclustering. InActiveLearningand ComputationalLinguistics.
+ExperimentalDesignWorkshopinConjunctionwith
+AISTATS2010. Wei-NingHsuandHsuan-TienLin.2015. Activelearn-
+ingbylearning. InAssociationfortheAdvancement
+Sanjoy Dasgupta. 2011. Two faces of active learning. ofArtificialIntelligence.
+Theoreticalcomputerscience,412(19):1767–1781.
+Rong Hu, Brian Mac Namee, and Sarah Jane Delany.
+2010. Offtoagoodstart: Usingclusteringtoselect
+JoeDavison,JoshuaFeldman,andAlexanderM.Rush.
+theinitialtrainingsetinactivelearning. InFlorida
+2019. Commonsense knowledge mining from pre-
+ArtificialIntelligenceResearchSocietyConference.
+trained models. In Proceedings of Empirical Meth-
+odsinNaturalLanguageProcessing.
+Andreas Kirsch, Joost van Amersfoort, and Yarin Gal.
+2019. BatchBALD: Efficient and diverse batch ac-
+FranckDernoncourtandJiYoungLee.2017. PubMed
+quisitionfordeepBayesianactivelearning. InPro-
+200kRCT:adatasetforsequentialsentenceclassifi-
+ceedings of Advances in Neural Information Pro-
+cationinmedicalabstracts. InternationalJointCon-
+cessingSystems.
+ference on Natural Language Processing, 2:308–
+313.
+DavidD.LewisandWilliamA.Gale.1994. Asequen-
+tial algorithm for training text classifiers. In Pro-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and ceedingsoftheACMSIGIRConferenceonResearch
+Kristina Toutanova. 2019. BERT: Pre-training of andDevelopmentinInformationRetrieval.
+deep bidirectional transformers for language under-
+standing. In Conference of the North American ShoushanLi,ShengfengJu,GuodongZhou,andXiao-
+Chapter of the Association for Computational Lin- jun Li. 2012. Active learning for imbalanced sen-
+guistics. timent classification. In Proceedings of Empirical
+MethodsinNaturalLanguageProcessing.
+Jesse Dodge, Gabriel Ilharco, Roy Schwartz, Ali
+Farhadi, Hannaneh Hajishirzi, and Noah Smith. Ming Liu, Wray Buntine, and Gholamreza Haffari.
+2020. Fine-tuning pretrained language models: 2018. Learning to actively learn neural machine
+Weight initializations, data orders, and early stop- translation. In Conference on Computational Nat-
+ping. arXivpreprintarXiv:2002.06305. uralLanguageLearning.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- Claude Elwood Shannon. 1948. A mathematical the-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, ory of communication. Bell system technical jour-
+Luke Zettlemoyer, and Veselin Stoyanov. 2019. nal,27.
+RoBERTa: Arobustlyoptimizedbertpretrainingap-
+proach. arXivpreprintarXiv:1907.11692. Dan Shen, Jie Zhang, Jian Su, Guodong Zhou, and
+Chew-Lim Tan. 2004. Multi-criteria-based active
+Ilya Loshchilov and Frank Hutter. 2019. Decoupled learning for named entity recognition. In Proceed-
+weight decay regularization. In Proceedings of the ings of the Association for Computational Linguis-
+International Conference on Learning Representa- tics.
+tions.
+Yanyao Shen, Hyokun Yun, Zachary C. Lipton,
+David Lowell and Zachary C. Lipton. 2019. Practical
+Yakov Kronrod, and Animashree Anandkumar.
+obstacles to deploying active learning. In Proceed-
+2018. Deepactivelearningfornamedentityrecogni-
+ingsofEmpiricalMethodsinNaturalLanguagePro-
+tion. InProceedingsoftheInternationalConference
+cessing.
+onLearningRepresentations.
+Andrew L. Maas, Raymond E. Daly, Peter T. Pham,
+Aditya Siddhant and Zachary C. Lipton. 2018. Deep
+Dan Huang, Andrew Y. Ng, and Christopher Potts.
+bayesian active learning for natural language pro-
+2011. Learningwordvectorsforsentimentanalysis.
+cessing: Resultsofalarge-scaleempiricalstudy. In
+InProceedingsoftheAssociationforComputational
+Proceedings of Empirical Methods in Natural Lan-
+Linguistics.
+guageProcessing.
+Laurens van der Maaten and Geoffrey Hinton. 2008.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Visualizing data using t-SNE. Journal of Machine
+Chuang, Christopher D. Manning, Andrew Y. Ng,
+LearningResearch,9:2579–2605.
+and Christopher Potts. 2013. Recursive deep mod-
+Fabio Petroni, Tim Rocktäschel, Sebastian Riedel, els for semantic compositionality over a sentiment
+Patrick Lewis, Anton Bakhtin, Yuxiang Wu, and treebank. In Proceedings of Empirical Methods in
+AlexanderMiller.2019. Languagemodelsasknowl- NaturalLanguageProcessing.
+edge bases? In Proceedings of Empirical Methods
+inNaturalLanguageProcessing. Emma Strubell, Ananya Ganesh, and Andrew McCal-
+lum. 2019. Energy and policy considerations for
+PiyushRai,AvishekSaha,HalDauméIII,andSuresh deep learning in NLP. In Proceedings of the Asso-
+Venkatasubramanian. 2010. Domain adaptation ciationforComputationalLinguistics.
+meets active learning. In Conference of the North
+American Chapter of the Association for Computa- Ian Tenney, Patrick Xia, Berlin Chen, Alex Wang,
+tionalLinguistics. Adam Poliak, R. Thomas McCoy, Najoung Kim,
+Benjamin Van Durme, Samuel R. Bowman, Dipan-
+PeterJ.Rousseeuw.1987. Silhouettes: Agraphicalaid jan Das, et al. 2019. What do you learn from con-
+to the interpretation and validation of cluster analy- text? Probing for sentence structure in contextual-
+sis. Journal of Computational and Applied Mathe- ized word representations. In Proceedings of the
+matics,20:53–65. International Conference on Learning Representa-
+tions.
+JulianSalazar,DavisLiang,ToanQ.Nguyen,andKa-
+trinKirchhoff.2020. Maskedlanguagemodelscor-
+NenadTomasev,MilosRadovanovic,DunjaMladenic,
+ing. InProceedingsoftheAssociationforComputa-
+and Mirjana Ivanovic. 2013. The role of hub-
+tionalLinguistics.
+ness in clustering high-dimensional data. IEEE
+Transactions on Knowledge and Data Engineering,
+Ozan Sener and Silvio Savarese. 2018. Active learn-
+26(3):739–751.
+ing for convolutional neural networks: A core-set
+approach. InProceedingsoftheInternationalCon-
+Ellen Voorhees, Tasmeer Alam, Steven Bedrick, Dina
+ferenceonLearningRepresentations.
+Demner-Fushman, William R. Hersh, Kyle Lo,
+Kirk Roberts, Ian Soboroff, and Lucy Lu Wang.
+Burr Settles. 2009. Active learning literature survey.
+2020. TREC-COVID: Constructing a pandemic in-
+Technical report, University of Wisconsin-Madison
+formation retrieval test collection. arXiv preprint
+DepartmentofComputerSciences.
+arXiv:2005.04474.
+BurrSettles.2011. Closingtheloop: Fast, interactive
+semi-supervisedannotationwithqueriesonfeatures Dan Wang and Yi Shang. 2014. A new active label-
+andinstances. InProceedingsofEmpiricalMethods ingmethodfordeeplearning. InInternationalJoint
+inNaturalLanguageProcessing. ConferenceonNeuralNetworks.
+Burr Settles, Mark Craven, and Soumya Ray. 2008. Xuezhi Wang, Tzu-Kuo Huang, and Jeff Schneider.
+Multiple-instance active learning. In Proceedings 2014. Active transfer learning under model shift.
+of Advances in Neural Information Processing Sys- In Proceedings of the International Conference on
+tems. LearningRepresentations.
+ZhaoXu,KaiYu,VolkerTresp,XiaoweiXu,andJizhi
+Wang.2003. Representativesamplingfortextclassi-
+ficationusingsupportvectormachines. InProceed-
+ingsoftheEuropeanConferenceonInformationRe-
+trieval.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+bonell,RuslanSalakhutdinov,andQuocV.Le.2019.
+XLNet: Generalized autoregressive pretraining for
+language understanding. In Proceedings of Ad-
+vancesinNeuralInformationProcessingSystems.
+Michelle Yuan, Mozhi Zhang, Benjamin Van Durme,
+Leah Findlater, and Jordan Boyd-Graber. 2020. In-
+teractive refinement of cross-lingual word embed-
+dings. InProceedingsofEmpiricalMethodsinNat-
+uralLanguageProcessing.
+Xiang Zhang, Junbo Zhao, and Yann LeCun. 2015.
+Character-levelconvolutionalnetworksfortextclas-
+sification. InProceedingsofAdvancesinNeuralIn-
+formationProcessingSystems.
+Ye Zhang, Matthew Lease, and Byron C. Wallace.
+2017. Active discriminative text representation
+learning. InAssociationfortheAdvancementofAr-
+tificialIntelligence.
+Jingbo Zhu and Eduard Hovy. 2007. Active learning
+forwordsensedisambiguationwithmethodsforad-
+dressing the class imbalance problem. In Proceed-
+ingsofEmpiricalMethodsinNaturalLanguagePro-
+cessing.
+Jingbo Zhu, Huizhen Wang, Tianshun Yao, and Ben-
+jaminK.Tsou.2008. Activelearningwithsampling
+by uncertainty and density for word sense disam-
+biguation and text classification. In Proceedings of
+InternationalConferenceonComputationalLinguis-
+tics.
+A Appendices
+0.8
+0.6
+0.4
+0.2
+0
+0 200 400 600 800 1000
+erocS
+1F
+Strategy
+ALPS ALPS-KMPP
+IMDB PubMed
+(a)Surprisalembeddingswithk-MEANS++centers
+0 200 400 600 800 1000
+Number of Labeled Sequences
+Figure 5: Comparing validation accuracy between us-
+ing k-MEANS and k-MEANS++ to select centroids in
+the surprisal embeddings. Using k-MEANS reaches
+higheraccuracy. (b)Surprisalembeddingswithk-MEANScenters
+Figure 6: T-SNE plots of surprisal embeddings for
+A.1 TokenMasking IMDB training data. The centers are either picked by
+k-MEANS++ (right) or k-MEANS (left). There is less
+In our preliminary experiments on the validation
+overlap between the centers with k-MEANS compared
+set,wenoticeimprovementinaccuracyafterpass- to k-MEANS++. So, using k-MEANS is better for ex-
+ing in the original input with no masks (Table 4). ploitingdiversityinthesurprisalembeddingspace.
+The purpose of the [MASK] token during pre-
+training is to train the token embeddings to learn
+contextsothatitcanpredictthetokenlabels. Since the difference in accuracy between various mask
+wearenottrainingthetokenembeddingstolearn strategies is minimal for fine-tuning BERT. We
+context,maskingthetokensdoesnothelpmuchfor believe this can also be applied to what we have
+AL. WeuseALforfine-tuning,sotheinputshould observedforALPS.
+beinthesameformatfor ALandfine-tuning. Oth-
+erwise,thereisamismatchbetweenthetwostages.
+A.3 k-MEANSvs. k-MEANS++
+A.2 TokenSamplingforEvaluation
+The state-of-the-art baseline BADGE applies k-
+WhenBERTevaluatesMLMloss,itonlyfocuseson MEANS++ongradientembeddingstoselectpoints
+themaskedtokens,whicharefroma15%random to query. Initially, we also use k-MEANS++ on
+subsample of tokens in the sentence. We experi- thesurprisalembeddingsbutvalidationaccuracyis
+ment with varying this subsample percentage on onlyslightlyhigherthanrandomsampling. Since
+thevalidationset(Table4). Wetrysampling10%, k-MEANS++isoriginallyanalgorithmforrobust
+15%,20%,and100%. Overall,wenoticethatmean initialization of k-MEANS, we instead apply k-
+accuracyareroughlythesame,butvarianceinac- MEANS onthesurprisalembeddings. Asaresult,
+curacy across different runs is slightly higher for weseemoresignificantincreaseinaccuracyover
+percentagesotherthan15%. baselines,especiallyforPubMed(Figure5). Addi-
+Afterthesecond ALiteration,wenoticethatac- tionally,thet-SNEplotsshowthatk-MEANSselects
+curacymeanandvariancebetweenthedifferentto- centersthatarefurtherapartcomparedtotheones
+kensamplingpercentagesconverge. So,thetoken chosenbyk-MEANS++(Figure6). Thisshowsthat
+samplingpercentagemakesmoreofadifferencein k-MEANScanhelpsampleamorediversebatchof
+earlystagesof AL. Devlinetal.(2019)showthat data.
+IMDB SST-2
+k = 100 k = 200 k = 100 k = 200
+ALPS 0.60±0.03 0.69±0.04 0.57±0.06 0.64±0.04
+ALPS-tokens-0.1 0.61±0.05 0.63±0.11 0.56±0.07 0.63±0.04
+ALPS-tokens-0.2 0.55±0.07 0.65±0.05 0.57±0.05 0.63±0.05
+ALPS-tokens-1.0 0.59±0.05 0.65±0.07 0.56±0.05 0.62±0.05
+ALPS-masked 0.59±0.03 0.63±0.09 0.56±0.03 0.60±0.02
+Table4: Comparisonofvalidationaccuracybetweenthevariantsof ALPS tosampledatafor IMDB andSST-2in
+thefirsttwoiterations. ALPS-tokens-pvariesthepercentagepoftokensevaluatedwithMLMlosswhencomputing
+surprisalembeddings. ALPS-maskedpassesintheinputwithmasksasoriginallydoneinpre-training. Overall,we
+observethatALPShashighermeanandsmallervarianceinaccuracy.
+AG NEWS PUBMED
+JasonThomasmatchesacareer-highwith26 Theresultsshowedthatphysicalactivityand
+ALPS
+points and American wins its fifth straight exercise capacity in the intervention group
+bybeatingvisitingOhio,64-55,Saturdayat was significantly higher than the control
+BenderArena(Sports) groupaftertheintervention. (results)
+Sainsbury says it will take a 550 million Flumazenil was administered after the
+poundhittoprofitsthisyearasitinveststo completionofendoscopyundersedationto
+boostsalesandreversefallingmarketshare reduce recovery time and increase patient
+(Business) safety. (objective)
+Random
+Bernhard Langer and Hal Sutton stressed Thestudypopulationconsistedof20interns
+theimportanceofplayingthisyear’s135th andmedicalstudents(methods)
+RyderCup...(Sports)
+BLOOMFIELD TOWNSHIP, Mich. – The subject , health care provider , and re-
+Whenyesterday’sRyderCuppairingswere search staff were blinded to the treatment .
+announced,BernhardLangerknewhisteam (methods)
+hadbeengivenanopportunity. (Sports)
+Table5: SamplesentencesfromAGNewsandPubMedwhileusing ALPS andRandominthefirstiteration. For
+ALPS,highlightedtokensaretheonesthathaveanonzeroentryinthesurprisalembedding. Comparedtorandom
+sampling,ALPSsamplessentenceswithmorediversecontent.
+A.4 SampleSentences toavoidthisproblem. Sincethesurprisalembed-
+ding encodes the fluctuation in information con-
+Section6quantitativelyanalyzesdiversityofALPS.
+tentacrossthesentence, ALPS islesslikelytore-
+Here, we take a closer look at the kind of sen-
+peatedlychoosesentenceswithsimilarpatternsin
+tencesthataresampledbyALPS. Table5compares
+surprisal. This may possibly diversify syntactic
+sentences that are chosen by ALPS and random structureinasampledbatch.
+samplinginthefirst ALiteration. Thetokenshigh-
+lighted are the ones evaluated with surprisal loss.
+Randomsamplingcanfallpreytodataidiosyncra-
+cies. Forexample,AGNewshassixty-twoarticles
+abouttheGermangolferBernhardLanger,andran-
+dom sampling picks multiple articles about him
+ononeoffiveruns. ForPubMed,manysentences
+labeledas“methods”aresimplesentenceswitha
+short,independentclause. Whilerandomsampling
+choosesmanysentencesofthisform, ALPSseems

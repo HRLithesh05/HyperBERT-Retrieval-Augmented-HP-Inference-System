@@ -1,0 +1,933 @@
+ConSERT: A Contrastive Framework for Self-Supervised Sentence
+Representation Transfer
+YuanmengYan1∗,RumeiLi2∗,SiruiWang2,FuzhengZhang2,WeiWu2,WeiranXu1
+1BeijingUniversityofPostsandTelecommunications,Beijing,China
+2MeituanInc.,Beijing,China
+{yanyuanmeng,xuweiran}@bupt.edu.cn
+{lirumei,wangsirui,zhangfuzheng,wuwei30}@meituan.com
+Abstract
+1.0
+Learning high-quality sentence representa- 0.8
+tionsbenefitsawiderangeofnaturallanguage 0.6
+processing tasks. Though BERT-based pre- 0.4
+trained language models achieve high perfor- 0.2
+mance on many downstream tasks, the native 0.0
+derivedsentencerepresentationsareprovedto 0.2
+be collapsed and thus produce a poor perfor- 0 1 2 3 4 5
+the gold similarity score
+manceonthesemantictextualsimilarity(STS)
+tasks. In this paper, we present ConSERT,
+a Contrastive Framework for Self-Supervised
+SEntenceRepresentationTransfer,thatadopts
+contrastive learning to fine-tune BERT in an
+unsupervised and effective way. By making
+use of unlabeled texts, ConSERT solves the
+collapse issue of BERT-derived sentence rep-
+resentations and make them more applicable
+for downstream tasks. Experiments on STS
+datasets demonstrate that ConSERT achieves
+an8%relativeimprovementovertheprevious
+state-of-the-art, evencomparabletothesuper-
+visedSBERT-NLI.Andwhenfurtherincorpo-
+ratingNLIsupervision, weachievenewstate-
+of-the-art performance on STS tasks. More-
+over, ConSERT obtains comparable results
+withonly1000samplesavailable,showingits
+robustnessindatascarcityscenarios.
+1 Introduction
+Sentencerepresentationlearningplaysavitalrole
+innaturallanguageprocessingtasks(Kirosetal.,
+2015;Hilletal.,2016;Conneauetal.,2017;Cer
+etal.,2018). Goodsentencerepresentationsbenefit
+a wide range of downstream tasks, especially for
+computationally expensive ones, including large-
+scalesemanticsimilaritycomparisonandinforma-
+tionretrieval.
+Recently, BERT-based pre-trained language
+modelshaveachievedhighperformanceonmany
+∗WorkdoneduringinternshipatMeituanInc.Thefirst
+twoauthorscontributeequally.WeiranXuisthecorrespond-
+ingauthor.
+ytiralimis
+enisoc
+detciderp
+eht
+a) BERT derived sentence representation
+1.0
+0.8
+0.6
+0.4
+0.2
+0.0
+0.2
+0 1 2 3 4 5
+the gold similarity score
+ytiralimis
+enisoc
+detciderp
+eht
+b) After applying our approach
+Figure 1: The correlation diagram between the gold
+similarityscore(x-axis)andthemodelpredictedcosine
+similarityscore(y-axis)ontheSTSbenchmarkdataset.
+downstream tasks with additional supervision.
+However, the native sentence representations de-
+rivedfromBERT1 areprovedtobeoflow-quality
+(ReimersandGurevych,2019;Lietal.,2020). As
+shown in Figure 1a, when directly adopt BERT-
+basedsentencerepresentationstosemantictextual
+similarity(STS)tasks,almostallpairsofsentences
+achieved a similarity score between 0.6 to 1.0 ,
+evenifsomepairsareregardedascompletelyunre-
+latedbythehumanannotators. Inotherwords,the
+BERT-derivednativesentencerepresentationsare
+somehow collapsed (Chen and He, 2020), which
+meansalmostallsentencesaremappedintoasmall
+areaandthereforeproducehighsimilarity.
+Such phenomenon is also observed in several
+previousworks(Gaoetal.,2019;Wangetal.,2019;
+Lietal.,2020). Theyfindthewordrepresentation
+spaceofBERTisanisotropic,thehigh-frequency
+wordsareclusteredandclosetotheorigin,while
+low-frequencywordsdispersesparsely. Whenav-
+eraging token embeddings, those high-frequency
+words dominate the sentence representations, in-
+ducingbiasesagainsttheirrealsemantics2. Asa
+1Typically,wetaketheoutputofthe[CLS]tokenorav-
+eragetokenembeddingsatthelastfewlayersasthesentence
+representations.
+2Wealsoempiricallyprovethishypothesis,pleaserefer
+toSection5.1formoredetails.
+result,itisinappropriatetodirectlyapplyBERT’s proachachievesnewstate-of-the-artperformance.
+nativesentencerepresentationsforsemanticmatch- We also show the robustness of our approach in
+ing or text retrieval. Traditional methods usually datascarcityscenariosandintuitiveanalysisofthe
+fine-tuneBERTwithadditionalsupervision. How- transferredrepresentations.3
+ever,humanannotationiscostlyandoftenunavail-
+ableinreal-worldscenarios. 2 RelatedWork
+ToalleviatethecollapseissueofBERTaswell
+2.1 SentenceRepresentationLearning
+asreducetherequirementforlabeleddata,wepro-
+poseanovelsentence-leveltrainingobjectivebased SupervisedApproachesSeveralworksusesuper-
+oncontrastivelearning(Heetal.,2020;Chenetal., viseddatasetsforsentencerepresentationlearning.
+2020a,b). By encouraging two augmented views Conneau et al. (2017) finds the supervised Nat-
+from the same sentence to be closer while keep- ural Language Inference (NLI) task is useful to
+ingviewsfromothersentencesaway,wereshape train good sentence representations. They use a
+the BERT-derived sentence representation space BiLSTM-based encoder and train it on two NLI
+and successfully solve the collapse issue (shown datasets, Stanford NLI (SNLI) (Bowman et al.,
+inFigure1b). Moreover,weproposemultipledata 2015) and Multi-Genre NLI (MNLI) (Williams
+augmentationstrategiesforcontrastivelearning,in- et al., 2018). Universal Sentence Encoder (Cer
+cludingadversarialattack(Goodfellowetal.,2014; etal.,2018)adoptsaTransformer-basedarchitec-
+Kurakinetal.,2016),tokenshuffling,cutoff(Shen tureandusestheSNLIdatasettoaugmenttheunsu-
+et al., 2020) and dropout (Hinton et al., 2012), pervisedtraining. SBERT(ReimersandGurevych,
+that effectively transfer the sentence representa- 2019)proposesasiamesearchitecturewithashared
+tionstodownstreamtasks. Wenameourapproach BERT encoder and is also trained on SNLI and
+ConSERT,aContrastiveFrameworkforSEntence MNLIdatasets.
+RepresentationTransfer. Self-supervised Objectives for Pre-training
+BERT (Devlin et al., 2019) proposes a bi-
+ConSERThasseveraladvantagesoverprevious
+directional Transformer encoder for language
+approaches. Firstly, it introduces no extra struc-
+model pre-training. It includes a sentence-level
+ture or specialized implementation during infer-
+training objective, namely next sentence predic-
+ence. The parameter size of ConSERT keeps the
+tion(NSP),whichpredictswhethertwosentences
+same as BERT, making it easy to use. Secondly,
+are adjacent or not. However, NSP is proved to
+comparedwithpre-trainingapproaches,ConSERT
+be weak and has little contribution to the final
+ismoreefficient. Withonly1,000unlabeledtexts
+performance (Liu et al., 2019). After that, var-
+drawn from the target distribution (which is easy
+ious self-supervised objectives are proposed for
+to collect in real-world applications), we achieve
+pre-trainingBERT-likesentenceencoders. Cross-
+35%relativeperformancegainoverBERT,andthe
+Thought (Wang et al., 2020) and CMLM (Yang
+trainingstagetakesonlyafewminutes(1-2ksteps)
+etal.,2020)aretwosimilarobjectivesthatrecover
+onasingleV100GPU.Finally,itincludesseveral
+maskedtokensinonesentenceconditionedonthe
+effectiveandconvenientdataaugmentationmeth-
+representations of its contextual sentences. SLM
+ods with minimal semantic impact. Their effects
+(Lee et al., 2020) proposes an objective that re-
+arevalidatedandanalyzedintheablationstudies.
+constructsthecorrectsentenceorderinggiventhe
+Ourcontributionscanbesummarizedasfollows:
+shuffledsentencesastheinput. However,allthese
+1)Weproposeasimplebuteffectivesentence-level
+objectivesneeddocument-levelcorpusandarethus
+training objective based on contrastive learning.
+notapplicabletodownstreamtaskswithonlyshort
+It mitigates the collapse of BERT-derived repre-
+texts.
+sentationsandtransfersthemtodownstreamtasks.
+Unsupervised Approaches BERT-flow (Li
+2)Weexplorevariouseffectivetextaugmentation
+etal.,2020)proposesaflow-basedapproachthat
+strategiestogenerateviewsforcontrastivelearning
+maps BERT embeddings to a standard Gaussian
+andanalyzetheireffectsonunsupervisedsentence
+latentspace,whereembeddingsaremoresuitable
+representationtransfer. 3)Withonlyfine-tuningon
+forcomparison. However,thisapproachintroduces
+unsupervisedtargetdatasets,ourapproachachieves
+significantimprovementonSTStasks. Whenfur-
+3Our code is available at https://github.com/
+ther incorporating with NLI supervision, our ap- yym6472/ConSERT.
+extramodelstructuresandneedspecializedimple- maximize agreement keep distant
+mentation,whichmaylimititsapplication. Contrastive
+Loss Layer
+Sentence
+Representations
+2.2 ContrastiveLearning Average Pooling
+Contrastive Learning for Visual Representa-
+Shared BERT
+tion Learning Recently, contrastive learning has Encoder BERT Encoder Layer
+Trm Trm Trm Trm
+becomeaverypopulartechniqueinunsupervised
+visual representation learning with solid perfor- Trm Trm Trm Trm
+mance(Chenetal.,2020a;Heetal.,2020;Chen
+etal.,2020b). Theybelievethatgoodrepresenta-
+Data
+tionshouldbeabletoidentifythesameobjectwhile Augmentation
+Module
+distinguishingitselffromotherobjects. Basedon Data Augmentation
+this intuition, they apply image transformations A S eB na tetc nh c eo sf sentence 1 …… sentence N
+(e.g. cropping,rotation,cutout,etc.) torandomly
+generatetwoaugmentedversionsforeachimage Figure 2: The general framework of our proposed ap-
+proach.
+and make them close in the representation space.
+Such approaches can be regarded as the invari- 3 Approach
+ance modeling to the input samples. Chen et al.
+(2020a) proposes SimCLR, a simple framework Inthissection,wepresentConSERTforsentence
+forcontrastivelearning. Theyusethenormalized representation transfer. Given a BERT-like pre-
+temperature-scaled cross-entropy loss (NT-Xent) trained language model M and an unsupervised
+asthetrainingloss,whichisalsocalledInfoNCE dataset D drawn from the target distribution, we
+inthepreviousliterature(Hjelmetal.,2018). aim at fine-tuning M on D to make the sentence
+representation more task-relevant and applicable
+Contrastive Learning for Textual Represen-
+todownstreamtasks. Wefirstpresentthegeneral
+tationLearningRecently,contrastivelearninghas
+frameworkofourapproach,thenweintroducesev-
+been widely applied in NLP tasks. Many works
+eral data augmentation strategies for contrastive
+use it for language model pre-training. IS-BERT
+learning. Finally,wetalkaboutthreewaystofur-
+(Zhang et al., 2020) proposes to add 1-D convo-
+therincorporatesupervisionsignals.
+lutional neural network (CNN) layers on top of
+BERTandtraintheCNNsbymaximizingthemu-
+3.1 GeneralFramework
+tualinformation(MI)betweentheglobalsentence
+OurapproachismainlyinspiredbySimCLR(Chen
+embedding and its corresponding local contexts
+etal.,2020a). AsshowninFigure2,therearethree
+embeddings. CERT(FangandXie,2020)adopts
+majorcomponentsinourframework:
+asimilarstructureasMoCo(Heetal.,2020)and
+usesback-translationfordataaugmentation. How-
+• A data augmentation module that generates
+ever,themomentumencoderneedsextramemory
+differentviewsforinputsamplesatthetoken
+andback-translationmayproducefalsepositives.
+embeddinglayer.
+BERT-CT(Carlssonetal.,2021)usestwoindivid-
+ual encoders for contrastive learning, which also
+• A shared BERT encoder that computes sen-
+needsextramemory. Besides,theyonlysample7
+tencerepresentationsforeachinputtext. Dur-
+negatives,resultinginlowtrainingefficiency. De-
+ingtraining,weusetheaveragepoolingofthe
+CLUTR (Giorgi et al., 2020) adopts the architec-
+token embeddings at the last layer to obtain
+tureofSimCLRandjointlytrainsthemodelwith
+sentencerepresentations.
+contrastiveobjectiveandmaskedlanguagemodel
+objective. However, they only use spans for con- • A contrastive loss layer on top of the BERT
+trastivelearning,whichisfragmentedinsemantics. encoder. Itmaximizestheagreementbetween
+CLEAR(Wuetal.,2020)usesthesamearchitec- onerepresentationanditscorrespondingver-
+tureandobjectivesasDeCLUTR.Bothofthemare sionthatisaugmentedfromthesamesentence
+usedtopre-trainthelanguagemodel,whichneeds while keeping it distant from other sentence
+alargecorpusandtakesalotofresources. representationsinthesamebatch.
+Adversarial Perturbations Shuffled Position Ids
+Position L × d 11 22
+Ids Embedding Matrix 22 55
+33 44
+11 44 11
+55 33
+22
+A) Adversarial Attack B) Token Shuffling
+33 L
+Token Cutoff Feature Cutoff
+44 11 11 11
+22 22 22
+55
+33 33 33
+d
+44 44 44
+55 55 55
+No Augmentation C) Cutoff D) Dropout
+unchanged elements perturbed elements zero-out elements
+Figure3: Thefourdataaugmentationstrategiesusedinourexperiments.
+Foreachinputtextx,wefirstpassittothedata worst-case perturbation to the input sample. We
+augmentation module, in which two transforma- implementthisstrategywithFastGradientValue
+tionsT andT areappliedtogeneratetwoversions (FGV)(Rozsaetal.,2016),whichdirectlyusesthe
+1 2
+of token embeddings: e = T (x),e = T (x), gradient to compute the perturbation and thus is
+i 1 j 2
+where e ,e ∈ RL×d, L is the sequence length fasterthantwo-stepalternativemethods. Notethat
+i j
+anddisthehiddendimension. Afterthat,bothe thisstrategyisonlyapplicablewhenjointlytrain-
+i
+ande willbeencodedbymulti-layertransformer ing with supervision since it relies on supervised
+j
+blocksinBERTandproducethesentencerepresen- losstocomputeadversarialperturbations.
+tationsr andr throughaveragepooling.
+i j
+FollowingChenetal.(2020a),weadoptthenor- TokenShufflingInthisstrategy,weaimtoran-
+malizedtemperature-scaledcross-entropyloss(NT- domlyshuffletheorderofthetokensintheinput
+Xent) as the contrastive objective. During each sequences. Since the bag-of-words nature in the
+training step, we randomly sample N texts from transformerarchitecture,thepositionencodingis
+D toconstructamini-batch,resultingin2N repre- the only factor about the sequential information.
+sentationsafteraugmentation. Eachdatapointis Thus, similar to Lee et al. (2020), we implement
+trainedtofindoutitscounterpartamong2(N −1) thisstrategybypassingtheshuffledpositionidsto
+in-batchnegativesamples: theembeddinglayerwhilekeepingtheorderofthe
+tokenidsunchanged.
+exp(sim(r ,r )/τ)
+i j
+L = −log
+i,j (cid:80)2N 1 exp(sim(r ,r )/τ)
+k=1 [k(cid:54)=i] i k CutoffShenetal.(2020)proposesasimpleand
+(1)
+efficientdataaugmentationstrategycalledcutoff.
+,wheresim(·)indicatesthecosinesimilarityfunc- They randomly erase some tokens (for token cut-
+tion, τ controlsthetemperatureand1istheindi- off),featuredimensions(forfeaturecutoff),orto-
+cator. Finally, we average all 2N in-batch classi- ken spans (for span cutoff) in the L × d feature
+fication losses to obtain the final contrastive loss matrix. Inourexperiments,weonlyusetokencut-
+L . offandfeaturecutoffandapplythemtothetoken
+con
+embeddingsforviewgeneration.
+3.2 DataAugmentationStrategies
+Weexplorefourdifferentdataaugmentationstrate- Dropout Dropout is a widely used regulariza-
+giestogenerateviewsforcontrastivelearning,in- tion method that avoids overfitting. However, in
+cludingadversarialattack(Goodfellowetal.,2014; ourexperiments,wealsoshowitseffectivenessas
+Kurakinetal.,2016),tokenshuffling,cutoff(Shen anaugmentationstrategyforcontrastivelearning.
+etal.,2020)anddropout(Hintonetal.,2012),as Forthissetting,werandomlydropelementsinthe
+illustratedinFigure3. token embedding layer by a specific probability
+AdversarialAttackAdversarialtrainingisgen- and set their values to zero. Note that this strat-
+erally used to improve the model’s robustness. egyisdifferentfromCutoffsinceeachelementis
+They generate adversarial samples by adding a consideredindividually.
+STS12 STS13 STS14 STS15 STS16 STSb SICK-R Total
+Numberoftrainsamples 0 0 0 0 0 5749 4500 -
+Numberofvalidsamples 0 0 0 0 0 1500 500 -
+Numberoftestsamples 3108 1500 3750 3000 1186 1379 4927 -
+NumberofUnlabeledTexts 6216 3000 7500 17000 18366 17256 19854 89192
+Table1: ThestatisticsofSTSdatasets.
+3.3 IncorporatingSupervisionSignals benchmark (STSb) (Cer et al., 2017) and SICK-
+Relatedness(SICK-R)(Marellietal.). Eachsample
+Besides unsupervised transfer, our approach can
+in these datasets contains a pair of sentences as
+alsobeincorporatedwithsupervisedlearning. We
+well as a gold score between 0 and 5 to indicate
+taketheNLIsupervisionasanexample. Itisasen-
+their semantic similarity. For our unsupervised
+tencepairclassificationtask,wherethemodelare
+experiments,wemixtheunlabeledtextsfromthese
+trainedtodistinguishtherelationbetweentwosen-
+datasets to fine-tune our model. We obtain all 7
+tences among contradiction, entailment and neu-
+datasetsthroughtheSentEvaltoolkit(Conneauand
+tral. Theclassificationobjectivecanbeexpressed
+Kiela,2018). ThestatisticsisshowninTable1.
+asfollowing:
+Forsupervisedexperiments,weusethecombina-
+f = Concat(r ,r ,|r −r |)
+1 2 1 2
+(2) tionofSNLI(570ksamples)(Bowmanetal.,2015)
+L = CrossEntropy(Wf +b,y)
+ce andMNLI(430ksamples)(Williamsetal.,2018)
+,wherer 1 andr 2 denotetwosentencerepresenta- totrainourmodel. Inthejointtrainingsetting,the
+tions. NLItextsarealsousedforcontrastiveobjectives.
+We propose three ways for incorporating addi- BaselinesToshowoureffectivenessonunsuper-
+tionalsupervisedsignals: visedsentencerepresentationtransfer,wemainly
+selectBERT-flow(Lietal.,2020)forcomparison,
+• Joint training (joint) We jointly train the
+since it shares the same setting as our approach.
+modelwiththesupervisedandunsupervised
+Forunsupervisedcomparison,weusetheaverage
+objectives L = L + αL on NLI
+joint ce con of GloVe embeddings, the BERT-derived native
+dataset. α is a hyper-parameter to balance
+embeddings,CLEAR(Wuetal.,2020)(trainedon
+twoobjectives.
+BookCorpus and English Wikipedia corpus), IS-
+BERT (Zhang et al., 2020) (trained on unlabeled
+• Supervised training then unsupervised
+textsfromNLIdatasets),BERT-CT(Carlssonetal.,
+transfer(sup-unsup)Wefirsttrainthemodel
+2021)(trainedonEnglishWikipediacorpus). For
+withL onNLIdataset,thenuseL tofine-
+ce con
+comparisonwithsupervisedmethods,weselectIn-
+tuneitonthetargetdataset.
+ferSent(Conneauetal.,2017),UniversalSentence
+Encoder(Ceretal.,2018),SBERT(Reimersand
+• Joint training then unsupervised transfer
+Gurevych, 2019) and BERT-CT (Carlsson et al.,
+(joint-unsup) We first train the model with
+2021)asbaselines. TheyarealltrainedwithNLI
+the L on NLI dataset, then use L to
+joint con
+supervision.
+fine-tuneitonthetargetdataset.
+EvaluationWhenevaluatingthetrainedmodel,
+4 Experiments we first obtain the representation of sentences by
+averaging the token embeddings at the last two
+To verify the effectiveness of our proposed ap- layers4,thenwereportthespearmancorrelationbe-
+proach,weconductexperimentsonSemanticTex-
+tweenthecosinesimilarityscoresofsentencerep-
+tualSimilarity(STS)tasksundertheunsupervised
+resentationsandthehuman-annotatedgoldscores.
+andsupervisedsettings.
+Whencalculatingspearmancorrelation,wemerge
+allsentencestogether(evenifsomeSTSdatasets
+4.1 Setups
+havemultiplesplits)andcalculatespearmancorre-
+Dataset Following previous works(Reimers and lationforonlyonce5.
+Gurevych,2019;Lietal.,2020;Zhangetal.,2020),
+weevaluateourapproachonmultipleSTSdatasets, 4As shown in Li et al. (2020), averaging the last two
+layersofBERTachievesslightlybetterresultsthanaveraging
+includingSTStasks2012-2016(STS12-STS16)
+thelastonelayer.
+(Agirreetal.,2012,2013,2014,2015,2016),STS 5Notethatsuch evaluationprocedureisdifferent from
+Method STS12 STS13 STS14 STS15 STS16 STSb SICK-R Avg.
+Unsupervisedbaselines
+Avg. GloVeembeddings† 55.14 70.66 59.73 68.25 63.66 58.02 53.76 61.32
+BERT ‡ 35.20 59.53 49.37 63.39 62.73 48.18 58.60 53.86
+base
+BERT ‡ 33.06 57.64 47.95 55.83 62.42 49.66 53.87 51.49
+large
+CLEAR † 49.0 48.9 57.4 63.6 65.6 75.6 72.5 61.8
+base
+IS-BERT -NLI† 56.77 69.24 61.21 75.23 70.16 69.21 64.25 66.58
+base
+BERT -CT† 66.86 70.91 72.37 78.55 77.78 - - -
+base
+BERT -CT† 69.50 75.97 74.22 78.83 78.92 - - -
+large
+UsingSTSunlabeledtexts
+BERT -flow† 63.48 72.14 68.42 73.77 75.37 70.72 63.11 69.57
+base
+BERT -flow† 65.20 73.39 69.42 74.92 77.63 72.26 62.50 70.76
+large
+ConSERT ‡ 64.64 78.49 69.07 79.72 75.95 73.97 67.31 72.74
+base
+ConSERT ‡ 70.69 82.96 74.13 82.78 76.66 77.53 70.37 76.45
+large
+Table2: TheperformancecomparisonofConSERTwithothermethodsinanunsupervisedsetting. Wereportthe
+spearmancorrelationρ×100on7STSdatasets. Methodswith† indicatethatwedirectlyreportthescoresfrom
+thecorrespondingpaper,whilemethodswith‡indicateourimplementation.
+Implementation Details Our implementation TheresultsareshowninTable2. Wecanobserve
+is based on the Sentence-BERT6 (Reimers and that both BERT-flow and ConSERT can improve
+Gurevych, 2019). We use both the BERT-base therepresentationspaceandoutperformtheGloVe
+and BERT-large for our experiments. The max and BERT baselines with unlabeled texts from
+sequence length is set to 64 and we remove the target datasets. However, ConSERT achieves
+large
+default dropout layer in BERT architecture con- the best performance among 6 STS datasets, sig-
+sideringthecutoff anddropoutdataaugmentation nificantly outperforming BERT -flow with an
+large
+strategiesusedinourframework. Theratioofto- 8% relative performance gain on average (from
+kencutoffandfeaturecutoffissetto0.15and0.2 70.76 to 76.45). Moreover, it is worth noting
+respectively,assuggestedinShenetal.(2020). The that ConSERT even outperforms several su-
+large
+ratioofdropoutissetto0.2. Thetemperatureτ of pervised baselines (see Figure 3) like InferSent
+NT-Xentlossissetto0.1,andtheαissetto0.15 (65.01) and Universal Sentence Encoder (71.72),
+forthejointtrainingsetting. WeadoptAdamop- and keeps comparable to the strong supervised
+timizerandsetthelearningrateto5e-7. Weusea methodSBERT -NLI(76.55). FortheBERT
+large base
+linearlearningratewarm-upover10%ofthetrain- architecture,ourapproachConSERT alsoout-
+base
+ingsteps. Thebatchsizeissetto96inmostofour performsBERT -flowwithanimprovementof
+base
+experiments. We use the dev set of STSb to tune 3.17(from69.57to72.74).
+thehyperparameters(includingtheaugmentation
+4.3 SupervisedResults
+strategies)andevaluatethemodelevery200steps
+duringtraining. Thebestcheckpointonthedevset For supervised evaluation, we consider the three
+of STSb is saved for test. We further discuss the settingsdescribedinSection3.3. Notethatinthe
+influenceofthebatchsizeandthetemperaturein jointsetting,onlyNLItextsareusedforcontrastive
+thesubsequentsection. learning,makingitcomparabletoSBERT-NLI.We
+usethemodeltrainedunderthejointsettingasthe
+4.2 UnsupervisedResults initial checkpoint in the joint-unsup setting. We
+alsore-implementtheSBERT-NLIbaselinesand
+For unsupervised evaluation, we load the pre-
+usethemastheinitialcheckpointinthesup-unsup
+trained BERT to initialize the BERT encoder in
+setting.
+ourframework. Thenwerandomlymixtheunla-
+The results are illustrated in Table 3. For the
+beled texts from 7 STS datasets and use them to
+modelstrainedwithNLIsupervision,wefindthat
+fine-tuneourmodel.
+ConSERTjoint consistentlyperformsbetterthan
+SentEvaltoolkit,whichcalculatesspearmancorrelationfor SBERT,revealingtheeffectivenessofourproposed
+eachsplitandreportsthemeanorweightedmeanscores.
+contrastive objective as well as the data augmen-
+6https://github.com/UKPLab/
+sentence-transformers tation strategies. On average, ConSERT joint
+base
+Method STS12 STS13 STS14 STS15 STS16 STSb SICK-R Avg.
+UsingNLIsupervision
+InferSent-GloVe† 52.86 66.75 62.15 72.77 66.87 68.03 65.65 65.01
+UniversalSentenceEncoder† 64.49 67.80 64.61 76.83 73.18 74.92 76.69 71.22
+SBERT -NLI† 70.97 76.53 73.19 79.09 74.30 77.03 72.91 74.89
+base
+SBERT -NLI† 72.27 78.46 74.90 80.99 76.25 79.23 73.75 76.55
+large
+SBERT -NLI(re-impl.)‡ 69.89 75.77 72.36 78.51 73.67 76.75 72.76 74.24
+base
+SBERT -NLI(re-impl.)‡ 72.69 78.77 75.13 80.95 76.89 79.53 73.25 76.74
+large
+BERT -CT† 68.80 74.58 76.62 79.72 77.14 - - -
+base
+BERT -CT† 69.80 75.45 76.47 81.34 78.11 - - -
+large
+ConSERT joint‡ 70.53 79.96 74.85 81.45 76.72 78.82 77.53 77.12
+base
+ConSERT joint‡ 73.26 82.36 77.73 83.84 78.75 81.54 78.64 79.44
+large
+UsingNLIsupervisionandSTSunlabeledtexts
+BERT -flow† 68.95 78.48 77.62 81.95 78.94 81.03 74.97 77.42
+base
+BERT -flow† 70.19 80.27 78.85 82.97 80.57 81.18 74.52 78.36
+large
+ConSERT sup-unsup‡ 73.51 84.86 77.44 83.11 77.98 81.80 74.29 79.00
+base
+ConSERT sup-unsup‡ 75.26 86.01 79.00 83.88 79.45 82.95 76.54 80.44
+large
+ConSERT joint-unsup‡ 74.07 83.93 77.05 83.66 78.76 81.36 76.77 79.37
+base
+ConSERT joint-unsup‡ 77.47 85.45 79.41 85.59 80.39 83.42 77.26 81.28
+large
+Table 3: The performance comparison of ConSERT with other methods in a supervised setting. We report the
+spearmancorrelationρ×100on7STSdatasets. Methodswith† indicatethatwedirectlyreportthescoresfrom
+thecorrespondingpaper,whilemethodswith‡indicateourimplementation.
+achieves a performance gain of 2.88 over the re-
+72.5
+implemented SBERT base-NLI, and ConSERT large 70.0
+jointachievesaperformancegainof2.70. 67.5
+65.0
+When further performing representation trans-
+62.5
+fer with STS unlabeled texts, our approach 60.0
+achieves even better performance. On average, 57.5
+55.0 ConSERT joint-unsup outperforms the initial
+large
+checkpoint ConSERT joint with 1.84 perfor- 0 25 50 75 100 125 150 175 200
+large Number of removed top-k frequent tokens
+mancegain,andoutperformsthepreviousstate-of-
+the-artBERT -flowwith2.92performancegain.
+large
+The results demonstrate that even for the models
+trainedundersupervision,thereisstillahugepo-
+tentialofunsupervisedrepresentationtransferfor
+improvement.
+5 QualitativeAnalysis
+5.1 AnalysisofBERTEmbeddingSpace
+To prove the hypothesis that the collapse issue is
+mainlyduetotheanisotropicspacethatissensitive
+to the token frequency, we conduct experiments
+thatmasktheembeddingsofseveralmostfrequent
+tokenswhenapplyingaveragepoolingtocalculate
+thesentencerepresentations. Therelationbetween
+thenumberofremovedtop-kfrequenttokensand
+theaveragespearmancorrelationisshowninFig-
+ure4.
+We can observe that when removing a few top
+frequent tokens, the performance of BERT im-
+proves sharply on STS tasks. When removing
+noitalerroc
+namraeps
+egarevA
+ConSERT w/o removing
+BERT-base
+ConSERT-base
+BERT w/o removing
+Figure 4: The average spearman correlation on STS
+tasks w.r.t. the number of removed top-k frequent to-
+kens. Note that we also considered the [CLS] and
+[SEP] tokens and they are the 2 most frequent tokens.
+The frequency of each token is calculated through the
+testsplitoftheSTSBenchmarkdataset.
+34 most frequent tokens, the best performance is
+achieved(61.66),andthereisanimprovementof
+7.8 from the original performance (53.86). For
+ConSERT, we find that removing a few most fre-
+quenttokensonlyresultsinasmallimprovement
+oflessthan0.3. Theresultsshowthatourapproach
+reshapestheBERT’soriginalembeddingspace,re-
+ducingtheinfluenceofcommontokensonsentence
+representations.
+5.2 EffectofDataAugmentationStrategy
+Inthissection,westudytheeffectofdataaugmen-
+tationstrategiesforcontrastivelearning. Wecon-
+sider5optionsforeachtransformation,including
+None(i.e. doingnothing),Shuffle,TokenCutoff,
+Token Feature
+None Shuffle Cutoff Cutoff Dropout
+None 63.84 72.09 71.11 67.86 67.77 72
+71
+Shuffle 72.09 71.62 72.41 72.67 72.64 70
+69
+Token 71.11 72.41 70.91 70.84 71.30 Cutoff 68
+67 Feature 67.86 72.74 71.20 66.76 66.65
+Cutoff 66
+65
+Dropout 67.77 72.71 71.32 66.67 66.52
+64
+Average
+spearman
+correlation
+80
+75
+70
+65
+60
+55
+50
+1 shot 10 shot 100 shot 1000 shot 10000 shot full dataset Number of unlabeled texts
+Figure5: Theperformancevisualizationwithdifferent
+combinationsofdataaugmentationstrategies. Therow
+indicates the 1st data augmentation strategy while the
+columnindicatesthe2nddataaugmentationstrategy.
+FeatureCutoff,andDropout,resultingin5×5com-
+binations. NotethattheAdversarialAttackstrategy
+isnotconsideredhere,sinceitneedsadditionalsu-
+pervisiontogenerateadversarialsamples. Allthese
+experiments follow the unsupervised setting and
+usetheBERT architecture.
+base
+The results can be found in Figure 5. We can
+make the following observations. First, Shuffle
+andTokenCutoffarethetwomosteffectivestrate-
+gies (where Shuffle is slightly better than Token
+Cutoff),significantlyoutperformingFeatureCutoff
+andDropout. ThisisprobablybecauseShuffleand
+TokenCutoffaremorerelatedtothedownstream
+STS tasks since they are directly operated on the
+tokenlevelandchangethestructureofthesentence
+toproducehardexamples.
+Secondly,FeatureCutoffandDropoutalsoim-
+proveperformancebyroughly4pointswhencom-
+paredwiththeNone-Nonebaseline. Moreover,we
+find they work well as a complementary strategy.
+CombiningwithanotherstrategylikeShufflemay
+furtherimprovetheperformance. Whencombined
+Shuffle with Feature Cutoff, we achieve the best
+result. WearguethatFeatureCutoffandDropout
+areusefulinmodelingtheinvarianceoftheinternal
+noiseforthesentenceencoder, andthusimprove
+themodel’srobustness.
+Finally, we also observe that even without any
+dataaugmentation(theNone-Nonecombination),
+our contrastive framework can improve BERT’s
+performanceonSTStasks(from53.86to63.84).
+ThisNone-Nonecombinationhasnoeffectonmax-
+imizingagreementbetweenviewssincetherepre-
+noitalerroc
+namraeps
+egarevA
+78.10 78.80 79.00
+76.57
+74.13 74.35 72.61 72.82 72.74
+67.66
+59.11
+53.47
+Unsupervised
+Supervised (sup-unsup)
+Figure 6: The few-shot experiments under the unsu-
+pervised and supervised settings. We report the aver-
+age spearman correlation on STS datasets with 1, 10,
+100, 1,000, and 10,000 unlabeled texts available, re-
+spectively. The full dataset indicates all 89192 unla-
+beledtextsfrom7STSdatasets.
+sentationsofaugmentedviewsareexactlythesame.
+Onthecontrary, ittunestherepresentationspace
+bypushingeachrepresentationawayfromothers.
+Webelievethattheimprovementismainlydueto
+thecollapsephenomenonofBERT’snativerepre-
+sentation space. To some extent, it also explains
+whyourmethodworks.
+5.3 PerformanceunderFew-shotSettings
+To validate the reliability and the robustness of
+ConSERT under the data scarcity scenarios, we
+conduct the few-shot experiments. We limit the
+numberofunlabeledtextsto1,10,100,1000,and
+10000respectively,andcomparetheirperformance
+withthefulldataset.
+Figure6presentstheresults. Forboththeunsu-
+pervisedandthesupervisedsettings,ourapproach
+can make a huge improvement over the baseline
+withonly100samplesavailable. Whenthetraining
+samples increase to 1000, our approach can basi-
+callyachievecomparableresultswiththemodels
+trained on the full dataset. The results reveal the
+robustness and effectiveness of our approach un-
+derthedatascarcityscenarios,whichiscommon
+inreality. Withonlyasmallamountofunlabeled
+texts drawn from the target data distribution, our
+approachcanalsotunetherepresentationspaceand
+benefitthedownstreamtasks.
+5.4 InfluenceofTemperature
+Thetemperatureτ inNT-Xentloss(Equation1)is
+usedtocontrolthesmoothnessofthedistribution
+normalized by softmax operation and thus influ-
+encesthegradientswhenbackpropagation. Alarge
+temperaturesmoothsthedistributionwhileasmall
+temperature sharpens the distribution. In our ex-
+periments,weexploretheinfluenceoftemperature
+73
+71
+69
+67
+65
+0.00 1.020.050.080.10.120.15 0.2 0.3 0.4 0.5
+The temperature of NT-Xent
+noitalerroc
+namraeps
+egarevA
+6 Conclusion
+In this paper, we propose ConSERT, a self-
+supervised contrastive learning framework for
+transferring sentence representations to down-
+streamtasks. Theframeworkdoesnotneedextra
+structureandiseasytoimplementforanyencoder.
+Wedemonstratetheeffectivenessofourframework
+onvariousSTSdatasets,bothourunsupervisedand
+Figure7:TheinfluenceofdifferenttemperaturesinNT- supervised methods achieve new state-of-the-art
+Xent. Thebestperformanceisachievedwhenthetem- performance. Furthermore,few-shotexperiments
+peratureissetto0.1. suggest that our framework is robust in the data
+scarcityscenarios. Wealsocomparemultiplecom-
+BatchSize 16 48 96 192 288 binationsofdataaugmentationstrategiesandpro-
+Avg.Spearman 72.63 72.60 72.74 72.86 72.98 videfine-grainedanalysisforinterpretinghowour
+NumberofSteps 6175 2459 1530 930 620
+approachworks. Wehopeourworkwillprovidea
+Table 4: The average spearman correlation as well as newperspectiveforfutureresearchesonsentence
+the training steps of our unsupervised approach with representationtransfer.
+differentbatchsizes.
+Acknowledgements
+andpresenttheresultinFigure7. We thank Keqing He, Hongzhi Zhang and all
+anonymousreviewersfortheirhelpfulcomments
+Asshowninthefigure,wefindtheperformance
+and suggestions. This work was partially sup-
+is extremely sensitive to the temperature. Either
+ported by National Key R&D Program of China
+too small or too large temperature will make our
+No. 2019YFF0303300 and Subject II No.
+modelperformbadly. Andtheoptimaltemperature
+2019YFF0303302,DOCOMOBeijingCommuni-
+isobtainedwithinasmallrange(fromabout0.08
+cationsLaboratoriesCo.,Ltd,MoE-CMCC“Artifi-
+to0.12). Thisphenomenonagaindemonstratesthe
+calIntelligence”ProjectNo. MCM20190701.
+collapseissueofBERTembeddings,asmostsen-
+tencesareclosetoeachother,alargetemperature BroaderImpact
+maymakethistasktoohardtolearn. Weselect0.1
+Sentence representation learning is a basic task
+asthetemperatureinmostofourexperiments.
+innaturallanguageprocessingandbenefitsmany
+downstream tasks. This work proposes a con-
+5.5 InfluenceofBatchSize trastivelearningbasedframeworktosolvethecol-
+lapseissueofBERTandtransferBERTsentence
+Insomepreviousworksofcontrastivelearning,it
+representationstotargetdatadistribution. Ourap-
+is reported that a large batch size benefits the fi-
+proachnotonlyprovidesanewperspectiveabout
+nalperformanceandacceleratestheconvergence
+BERT’srepresentationspace,butisalsousefulin
+ofthemodelsinceitprovidesmorein-batchnega-
+practicalapplications,especiallyfordatascarcity
+tivesamplesforcontrastivelearning(Chenetal.,
+scenarios. Whenapplyingourapproach,theuser
+2020a). Thosein-batchnegativesamplesimprove
+should collect a few unlabeled texts from target
+thetraining efficiency. Wealso analyzetheinflu-
+data distribution and use our framework to fine-
+ence of the batch size for unsupervised sentence
+tune BERT encoder in a self-supervised manner.
+representationtransfer.
+Sinceourapproachisself-supervised,nobiaswill
+TheresultsareillustratedinTable4. Weshow beintroducedfromhumanannotations. Moreover,
+boththespearmancorrelationandthecorrespond- our data augmentation strategies also have little
+ingtrainingsteps. Wefindthatalargerbatchsize probabilitytointroduceextrabiasessincetheyare
+does achieve better performance. However, the allbasedonrandomsampling. However,itisstill
+improvement is not so significant. Meanwhile, a possibletointroducedatabiasesfromtheunlabeled
+largerbatchsizedoesspeedupthetrainingprocess, texts. Therefore,usersshouldpayspecialattention
+butitalsoneedsmoreGPUmemoriesatthesame toensurethatthetrainingdataisethical,unbiased,
+time. andcloselyrelatedtodownstreamtasks.
+References Daniel Cer, Yinfei Yang, Sheng-yi Kong, Nan Hua,
+Nicole Limtiaco, Rhomni St John, Noah Constant,
+Eneko Agirre, Carmen Banea, Claire Cardie, Daniel
+Mario Guajardo-Cespedes, Steve Yuan, Chris Tar,
+Cer, Mona Diab, Aitor Gonzalez-Agirre, Weiwei
+etal.2018. Universalsentenceencoderforenglish.
+Guo,InigoLopez-Gazpio,MontseMaritxalar,Rada
+InProceedingsofthe2018ConferenceonEmpirical
+Mihalcea,etal.2015. Semeval-2015task2: Seman-
+Methods in Natural Language Processing: System
+tic textual similarity, english, spanish and pilot on
+Demonstrations,pages169–174.
+interpretability. In Proceedings of the 9th interna-
+tional workshop on semantic evaluation (SemEval Ting Chen, Simon Kornblith, Mohammad Norouzi,
+2015),pages252–263. and Geoffrey Hinton. 2020a. A simple framework
+for contrastive learning of visual representations.
+Eneko Agirre, Carmen Banea, Claire Cardie, Daniel
+arXivpreprintarXiv:2002.05709.
+Cer, Mona Diab, Aitor Gonzalez-Agirre, Weiwei
+Guo, Rada Mihalcea, German Rigau, and Janyce TingChen,SimonKornblith,KevinSwersky,Moham-
+Wiebe. 2014. Semeval-2014 task 10: Multilingual madNorouzi,andGeoffreyHinton.2020b. Bigself-
+semantic textual similarity. In Proceedings of the supervisedmodelsarestrongsemi-supervisedlearn-
+8th international workshop on semantic evaluation ers.
+(SemEval2014),pages81–91.
+Xinlei Chen and Kaiming He. 2020. Exploring sim-
+Eneko Agirre, Carmen Banea, Daniel Cer, Mona ple siamese representation learning. arXiv preprint
+Diab, Aitor Gonzalez Agirre, Rada Mihalcea, Ger- arXiv:2011.10566.
+man Rigau Claramunt, and Janyce Wiebe. 2016.
+Semeval-2016 task 1: Semantic textual similar- AlexisConneauandDouweKiela.2018. Senteval: An
+ity, monolingual and cross-lingual evaluation. In evaluation toolkit for universal sentence representa-
+SemEval-2016. 10th International Workshop on Se- tions. In Proceedings of the Eleventh International
+manticEvaluation;2016Jun16-17;SanDiego,CA. ConferenceonLanguageResourcesandEvaluation
+Stroudsburg(PA):ACL;2016.p.497-511.ACL(As- (LREC2018).
+sociationforComputationalLinguistics).
+AlexisConneau,DouweKiela,HolgerSchwenk,Lo¨ıc
+Eneko Agirre, Daniel Cer, Mona Diab, and Aitor Barrault, and Antoine Bordes. 2017. Supervised
+Gonzalez-Agirre.2012. Semeval-2012task6: Api- learning of universal sentence representations from
+lot on semantic textual similarity. In * SEM 2012: natural language inference data. In Proceedings of
+The First Joint Conference on Lexical and Compu- the2017ConferenceonEmpiricalMethodsinNatu-
+tational Semantics–Volume 1: Proceedings of the ralLanguageProcessing,pages670–680.
+main conference and the shared task, and Volume
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+2: ProceedingsoftheSixthInternationalWorkshop
+Kristina Toutanova. 2019. Bert: Pre-training of
+onSemanticEvaluation(SemEval2012),pages385–
+deep bidirectional transformers for language under-
+393.
+standing. InProceedingsofthe2019Conferenceof
+the North American Chapter of the Association for
+EnekoAgirre,DanielCer,MonaDiab,AitorGonzalez-
+ComputationalLinguistics: HumanLanguageTech-
+Agirre, andWeiweiGuo.2013. *sem2013shared
+nologies, Volume1(LongandShortPapers), pages
+task: Semantic textual similarity. In Second joint
+4171–4186.
+conference on lexical and computational semantics
+(*SEM),volume1: proceedingsoftheMainconfer-
+Hongchao Fang and Pengtao Xie. 2020. Cert: Con-
+ence and the shared task: semantic textual similar-
+trastiveself-supervisedlearningforlanguageunder-
+ity,pages32–43.
+standing. arXivpreprintarXiv:2005.12766.
+SamuelBowman,GaborAngeli,ChristopherPotts,and
+JunGao,DiHe,XuTan,TaoQin,LiweiWang,andTie-
+Christopher D Manning. 2015. A large annotated
+Yan Liu. 2019. Representation degeneration prob-
+corpus for learning natural language inference. In
+lem in training natural language generation models.
+Proceedings of the 2015 Conference on Empirical
+arXivpreprintarXiv:1907.12009.
+Methods in Natural Language Processing, pages
+632–642. John M Giorgi, Osvald Nitski, Gary D. Bader, and
+Bo Wang. 2020. Declutr: Deep contrastive learn-
+Fredrik Carlsson, Magnus Sahlgren, Evangelia
+ingforunsupervisedtextualrepresentations. ArXiv,
+Gogoulou,AmaruCubaGyllensten,andErikYlipa¨a¨
+abs/2006.03659.
+Hellqvist.2021. Semanticre-tuningwithcontrastive
+tension. In International Conference on Learning Ian J Goodfellow, Jonathon Shlens, and Christian
+Representations. Szegedy.2014. Explainingandharnessingadversar-
+ialexamples. arXivpreprintarXiv:1412.6572.
+Daniel Cer, Mona Diab, Eneko Agirre, In˜igo Lopez-
+Gazpio, and Lucia Specia. 2017. Semeval-2017 Kaiming He, Haoqi Fan, Yuxin Wu, Saining Xie, and
+task1: Semantictextualsimilaritymultilingualand RossGirshick.2020. Momentumcontrastforunsu-
+crosslingual focused evaluation. In Proceedings of pervisedvisualrepresentationlearning. InProceed-
+the11thInternationalWorkshoponSemanticEvalu- ings of the IEEE/CVF Conference on Computer Vi-
+ation(SemEval-2017),pages1–14. sionandPatternRecognition,pages9729–9738.
+FelixHill,KyunghyunCho,andAnnaKorhonen.2016. Andras Rozsa, Ethan M Rudd, and Terrance E Boult.
+Learning distributed representations of sentences 2016. Adversarial diversity and hard positive gen-
+from unlabelled data. In Proceedings of the 2016 eration. In Proceedings of the IEEE Conference
+Conference of the North American Chapter of the on Computer Vision and Pattern Recognition Work-
+Association for Computational Linguistics: Human shops,pages25–32.
+LanguageTechnologies,pages1367–1377.
+Dinghan Shen, Mingzhi Zheng, Yelong Shen, Yanru
+Qu, and Weizhu Chen. 2020. A simple but tough-
+GeoffreyEHinton,NitishSrivastava,AlexKrizhevsky,
+to-beat data augmentation approach for natural lan-
+Ilya Sutskever, and Ruslan R Salakhutdinov. 2012.
+guageunderstandingandgeneration. arXivpreprint
+Improving neural networks by preventing co-
+adaptation of feature detectors. arXiv preprint
+arXiv:2009.13818.
+arXiv:1207.0580.
+Lingxiao Wang, Jing Huang, Kevin Huang, Ziniu Hu,
+GuangtaoWang, andQuanquanGu.2019. Improv-
+R Devon Hjelm, Alex Fedorov, Samuel Lavoie-
+ing neural language generation with spectrum con-
+Marchildon, Karan Grewal, Phil Bachman, Adam
+trol. In International Conference on Learning Rep-
+Trischler, and Yoshua Bengio. 2018. Learn-
+resentations.
+ing deep representations by mutual information
+estimation and maximization. arXiv preprint Shuohang Wang, Yuwei Fang, Siqi Sun, Zhe Gan,
+arXiv:1808.06670.
+Yu Cheng, Jingjing Liu, and Jing Jiang. 2020.
+Cross-thoughtforsentenceencoderpre-training. In
+Ryan Kiros, Yukun Zhu, Russ R Salakhutdinov, Proceedings of the 2020 Conference on Empirical
+Richard Zemel, Raquel Urtasun, Antonio Torralba, MethodsinNaturalLanguageProcessing(EMNLP),
+and Sanja Fidler. 2015. Skip-thought vectors. Ad- pages412–421.
+vances in neural information processing systems,
+28:3294–3302. Adina Williams, Nikita Nangia, and Samuel Bowman.
+2018. A broad-coverage challenge corpus for sen-
+Alexey Kurakin, Ian Goodfellow, and Samy Bengio. tenceunderstandingthroughinference. InProceed-
+2016. Adversarial examples in the physical world. ingsofthe2018ConferenceoftheNorthAmerican
+arXivpreprintarXiv:1607.02533. Chapter of the Association for Computational Lin-
+guistics: Human Language Technologies, Volume 1
+Haejun Lee, Drew A Hudson, Kangwook Lee, and (LongPapers),pages1112–1122.
+Christopher D Manning. 2020. Slm: Learning a
+Zhuofeng Wu, Sinong Wang, Jiatao Gu, Madian
+discourselanguagerepresentationwithsentenceun-
+Khabsa, Fei Sun, and Hao Ma. 2020. Clear: Con-
+shuffling. InProceedingsofthe2020Conferenceon
+trastive learning for sentence representation. arXiv
+EmpiricalMethodsinNaturalLanguageProcessing
+preprintarXiv:2012.15466.
+(EMNLP),pages1551–1562.
+Ziyi Yang, Yinfei Yang, Daniel Cer, Jax Law, and
+Bohan Li, Hao Zhou, Junxian He, Mingxuan Wang,
+EricDarve.2020. Universalsentencerepresentation
+Yiming Yang, and Lei Li. 2020. On the sentence
+learning with conditional masked language model.
+embeddings from pre-trained language models. In
+arXivpreprintarXiv:2012.14388.
+Proceedings of the 2020 Conference on Empirical
+MethodsinNaturalLanguageProcessing(EMNLP), Yan Zhang, Ruidan He, Zuozhu Liu, Kwan Hui Lim,
+pages9119–9130,Online.AssociationforComputa- and Lidong Bing. 2020. An unsupervised sentence
+tionalLinguistics. embedding method by mutual information maxi-
+mization. InProceedingsofthe2020Conferenceon
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- EmpiricalMethodsinNaturalLanguageProcessing
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, (EMNLP),pages1601–1610.
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized bert pretraining ap-
+proach. arXivpreprintarXiv:1907.11692.
+Marco Marelli, Stefano Menini, Marco Baroni, Luisa
+Bentivogli, Raffaella Bernardi, Roberto Zamparelli,
+etal. Asickcurefortheevaluationofcompositional
+distributionalsemanticmodels.
+Nils Reimers and Iryna Gurevych. 2019. Sentence-
+bert: Sentence embeddings using siamese bert-
+networks. InProceedingsofthe2019Conferenceon
+EmpiricalMethodsinNaturalLanguageProcessing
+andthe9thInternationalJointConferenceonNatu-
+ralLanguageProcessing(EMNLP-IJCNLP),pages
+3973–3983.

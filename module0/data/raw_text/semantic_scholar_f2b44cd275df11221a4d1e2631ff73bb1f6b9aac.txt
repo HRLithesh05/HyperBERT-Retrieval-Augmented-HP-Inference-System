@@ -1,0 +1,780 @@
+Using Prior Knowledge to Guide BERT’s Attention in Semantic
+Textual Matching Tasks
+TingyuXia YueWang
+SchoolofArtificialIntelligence,JilinUniversity SchoolofInformationandLibraryScience
+KeyLaboratoryofSymbolicComputationandKnowledge UniversityofNorthCarolinaatChapelHill
+Engineering,JilinUniversity wangyue@unc.edu
+xiaty19@mails.jlu.edu.cn
+YuanTian∗ YiChang∗
+SchoolofArtificialIntelligence,JilinUniversity SchoolofArtificialIntelligence,JilinUniversity
+KeyLaboratoryofSymbolicComputationandKnowledge InternationalCenterofFutureScience,JilinUniversity
+Engineering,JilinUniversity KeyLaboratoryofSymbolicComputationandKnowledge
+yuantian@jlu.edu.cn Engineering,JilinUniversity
+yichang@jlu.edu.cn
+ABSTRACT 1 INTRODUCTION
+Westudytheproblemofincorporatingpriorknowledgeintoadeep Measuringsemanticsimilaritybetweentwopiecesoftextisafun-
+Transformer-basedmodel,i.e.,BidirectionalEncoderRepresenta- damentalandimportanttaskinnaturallanguageunderstanding.
+tionsfromTransformers(BERT),toenhanceitsperformanceon Earlyworksonthistaskoftenleverageknowledgeresourcessuch
+semantictextualmatchingtasks.Byprobingandanalyzingwhat asWordNet[28]andUMLS[2]astheseresourcescontainwell-
+BERThasalreadyknownwhensolvingthistask,weobtainbetter definedtypesandrelationsbetweenwordsandconcepts.Recent
+understandingofwhattask-specificknowledgeBERTneedsthe workshaveshownthatdeeplearningmodelsaremoreeffective
+mostandwhereitismostneeded.Theanalysisfurthermotivates onthistaskbylearninglinguisticknowledgefromlarge-scaletext
+ustotakeadifferentapproachthanmostexistingworks.Insteadof dataandrepresentingtext(wordsandsentences)ascontinuous
+usingpriorknowledgetocreateanewtrainingtaskforfine-tuning trainableembeddingvectors[10,17].
+BERT,wedirectlyinjectknowledgeintoBERT’smulti-headatten- Amongtheseworks,deepTransformer-basedmodelssuchasthe
+tionmechanism.Thisleadsustoasimpleyeteffectiveapproach BidirectionalEncoderRepresentationsfromTransformers(BERT)
+thatenjoysfasttrainingstageasitsavesthemodelfromtraining hasshownverypromisingperformance,thankstothecontextual-
+onadditionaldataortasksotherthanthemaintask.Extensive izedwordrepresentationslearnedthroughitsmulti-headattention
+experimentsdemonstratethattheproposedknowledge-enhanced mechanismandunsupervisedpre-trainingonlargecorpus[39].To
+BERTisabletoconsistentlyimprovesemantictextualmatching furtherinstillknowledgeintoBERT,recentworkshaveproposed
+performanceovertheoriginalBERTmodel,andtheperformance differenttrainingtasksbeyondtheoriginalmaskedlanguagemod-
+benefitismostsalientwhentrainingdataisscarce. elingandnext-sentencepredictiontasks[10].Theseincludeother
+unsupervisedpre-trainingtaskssuchasspanprediction[21]and
+KEYWORDS domain-specificpre-training[14],aswellasknowledge-basedtasks
+suchassemanticroleprediction[48],entityrecognition[47],and
+PriorKnowledge,SemanticTextualSimilarity,DeepNeuralNet-
+relationprediction[26].Amongtheseapproaches,someareable
+works,BERT
+toimprovethesemantictextualsimilarity(STS)taskperformance
+[21],whileothersaresometimesdetrimentaltothetask[47,48].
+ACMReferenceFormat:
+TingyuXia,YueWang,YuanTian,andYiChang.2021.UsingPriorKnowl- Inthispaper,weexploreadifferentapproachtoincorporating
+edgetoGuideBERT’sAttentioninSemanticTextualMatchingTasks.In externalknowledgeintodeepTransformersforSTStasks.Instead
+ProceedingsoftheWebConference2021(WWW’21),April19–23,2021,Ljubl- ofcreatingadditionaltrainingtasks,wedirectlyinjectknowledge
+jana,Slovenia.ACM,NewYork,NY,USA,10pages.https://doi.org/10.1145/ intoaTransformer’smulti-headattention.Ontheonehand,deep
+3442381.3449988
+Transformersareusuallyseenascomplex“blackboxes”thatcan
+onlybeimprovedthroughwell-formulatedtraining(orfine-tuning)
+∗JointCorrespondingAuthors tasks.Ontheotherhand,theresearchcommunityhasrecently
+seenasurgeofinterestin“openingtheblackbox”tounderstand
+theinternalmechanismofTransformer-basedmodels.Thesein-
+ThispaperispublishedundertheCreativeCommonsAttribution4.0International
+(CC-BY4.0)license.Authorsreservetheirrightstodisseminatetheworkontheir cludeanalysesoflayer-wiseattentions,syntacticknowledge,se-
+personalandcorporateWebsiteswiththeappropriateattribution. mantic knowledge, and world knowledge learned at each layer
+WWW’21,April19–23,2021,Ljubljana,Slovenia [8,12,16,37].WereferthereadertoRogersetal.[33]foracom-
+©2021IW3C2(InternationalWorldWideWebConferenceCommittee),published
+prehensivesynthesis.Motivatedbytheserecentstudies,weaimto
+underCreativeCommonsCC-BY4.0License.
+ACMISBN978-1-4503-8312-7/21/04. takeonestepfurther–inadditiontoobservingthemechanisms
+https://doi.org/10.1145/3442381.3449988
+1202
+beF
+22
+]LC.sc[
+1v43901.2012:viXra
+WWW’21,April19–23,2021,Ljubljana,Slovenia XiaandWang,etal.
+insideBERT,weexplorethepossibilityofpurposefullysteeringits model also did well in STS task [23]. Among many variants of
+internalmechanismandstudytheeffectsofsuchintervention.In theESIM[6,25],KIMleveragedexternalknowledgetoimprove
+particular,weusepriorknowledgetoguidetheattentionofBERT performanceofESIMonsemanticsimilaritytasks[6].
+towards a better performance on STS tasks. Although previous Inrecentyears,theshiftfromneuralnetworkarchitectureen-
+workhasproposedtousepriorknowledgeinguidingtheattention gineeringtolarge-scalepre-traininghassignificantlyimproved
+ofotherdeeplearningmodels,suchasrecurrentneuralnetworks NLPtasks,demonstratingthepowerofunsupervisedpre-training.
+[7]andlongshort-termmemorynetworks[4],tothebestofour OutstandingexamplesincludeEmbeddingfromLanguageModels
+knowledge,wearethefirsttoexploredirectinterventionofBERT’s (ELMo)[31],GenerativePre-trainedTransformers(GPT)[32],Bidi-
+attentionmechanism. rectionalEncoderRepresentationsfromTransformers(BERT)[10],
+Tomakeinformeddecisionsonwhatkindofknowledgetoadd andGeneralizedAuto-regressivePre-training(XLNet)[45].Pro-
+andwheretoadditinBERT,weconductedin-depthanalysesof vidingfine-grainedcontextualwordembedding,thesepre-trained
+theBERTmodelontheSTStask.Theresultsinformustoinject models can be either easily applied to downstream tasks as en-
+wordsimilarityknowledgeintoBERT’sattentionatthefirstlayer. codersordirectlyfine-tunedfordownstreamtasks.Asthemost
+ExtensiveexperimentsonstandardSTSdatasetsdemonstratethat prominentmodelinrecentyears,BERTandmanyofitsvariants,
+ourapproachconsistentlyimprovesBERTonSTStasks,andthe includingAlBERT[24],RoBERTa[27],SemBERT[48],ERNIE[47],
+improvementeffectismostsalientwhentrainingdatasizeisvery K-BERT[26],andDeBERTa[15],haveachievedsuperiorresults
+limited.Themaincontributionsofthispaperareasfollows: inmanyNLPtasks.Amongthem,SemBERT,ENRIEandK-BERT
+all add knowledge to the orginal BERT model, but in different
+• Weshowthatwhileapre-trainedBERTmodelhasprior
+ways. SemBERT and K-BERT are fine-tuning methods without
+knowledge on STS tasks which a non-Transformer deep
+pre-training and they are capable of loading model parameters
+modeldoesnotpossess,itsknowledgeinwordsimilarityis
+fromapre-trainedBERT.SemBERTincorporatesexplicitcontex-
+stillinadequateandcanbefurtherimproved.
+tualsemanticsfrompre-trainedsemanticrolelabeling.K-BERTisa
+• Weproposeanefficientandeffectivemethodforinjecting
+knowledge-enhancedlanguagemodel,inwhichknowledgetriples
+wordsimilarityknowledgeintoBERT–notthroughadding
+areinjectedintothesentencesasdomainknowledge.K-BERTis
+anothertrainingtask,butbydirectlyguidingthemodel’s
+onlytrainedonChinesetextcorpus.ENRIEisanimprovementon
+attention.Thisapproachnotonlyperformsatleastaswell
+topofBERTthatutilizesbothlarge-scaletextualcorporaandknowl-
+as adding a new training task, but also saves substantial
+edgegraph.Ittakesadvantageoflexical,syntactic,andsemantic
+trainingtime.
+knowledgeinformationsimultaneously.Althoughtheabovethree
+• Weshowthattheproposedmethodisabletoconsistently
+BERTvariantsareshowntoimproveperformanceonavarietyof
+improvetheSTSperformanceofBERTandthebenefitis
+languageunderstandingtasks,theresultslargelydependonthe
+especiallysalientwhentrainingdataisscarce.
+sizeoftask-specifictrainingdata.Forinstance,theperformance
+ofERNIEwasreportedtobeunstableonsemanticsimilaritytasks
+2 RELATEDWORK withsmalldatasets[47].
+Semantictextualsimilarityisawell-studiedtaskinnaturallanguage
+processing(NLP).Inmostpreviousworks,featureengineeringwas
+3 WHATHASBERTALREADYKNOWN
+themainapproach.Earlyresearchonthistaskexploreddifferent
+typesofsparsefeaturesandconfirmedtheirvalue.Thisincludes ABOUTSEMANTICTEXTUALSIMILARITY?
+(1)syntacticalandlexicalfeaturesextractedfromwordandsen- Beforeaddingtask-specificknowledgetoBERT,thefirstandfore-
+tencepairs[9,44],(2)knowledge-basedfeaturesusingWordNet, mostquestionis:whathasBERTalreadyknown(andnotknown)
+whichmakeextensiveuseofwordsimilarityinformation[13],(3) aboutthetask?Answeringthisquestionwillallowustodesignour
+semanticrelationknowledge[19]andlogicalrules[1]derivedfrom approachinaninformed,targetedmanner.
+WordNet,(4)word-alignmentfeatureswhichdiscoverandalign Tooperationalizeouranswertotheabovequestion,weusea
+similarsemanticunitsinapairofsentences[34,35].Beforethe classicalSTSdataset–theMicrosoftResearchParaphraseCorpus
+adventofBERT,othertypesofdeepneuralnetworkshavealready (MPRC) [11], as a pilot data set. Each data instance is a pair of
+beenusedtosolveSTStasks.Theseincludefeedforwordneural sentences.Thegoalistodetectifoneisaparaphraseoftheother
+networks(FNN),convolutionalneuralnetworks(CNN)andlong (binaryclassification).Weconducttwopilotstudiesasfollows.
+short-termmemory-Networks(LSTM).Forexample,Huetal.used (1)DataAugmentationStudy.Inthisstudy,weaugmentthe
+aCNNmodelthatcombineshierarchicalstructureswithlayer-by- pilotdatasetwithvarioustypesofpriorknowledgethatarepoten-
+layercompositionandpooling[18].Yinetal.presentedageneral tialusefulfordeterminingsemantictextualsimilarity,andcompare
+attention-basedCNNformodelingapairofsentences[46].Parikh theperformanceofBERTtrainedontheoriginaldatavs.theaug-
+etal.usedattentiontodecomposetheproblemintosub-problems menteddata.Theintuitionisthatifaparticulardataaugmentation
+thatcanbesolvedseparatelyintheformofnaturallanguagein- strategycanimproveBERT’sSTSperformance,itindicatesthat
+ference (NLI) tasks [29]. Tomar et al. proposed a variant of the BERTstilllacksthecorrespondingknowledge.Otherwiseitimplies
+decomposable attention model which achieved good results on thatBERThasalready“known”thecorrespondingknowledge.As
+paraphraseidentificationtask[38].Besides,Chenetal.utilized acomparison,weapplythesameproceduretoanon-Transformer
+tree-LSTMandsoft-alignmenttoimprovetheperformanceofthe modelfortheSTStask,theEnhancedSequentialInferenceModel
+ESIMmodelonNLItasks[5].Lanetal.showedthatthetree-LSTM (ESIM)[5],andseeifthesamedataaugmentationstrategycan
+UsingPriorKnowledgetoGuideBERT’sAttentioninSemanticTextualMatchingTasks WWW’21,April19–23,2021,Ljubljana,Slovenia
+benefit such a model (which indicates that the model lacks the dataaugmentation.TominimizetheeffectofrandomnessinBERT
+correspondingknowledge).WedeferdetaileddescriptionsofBERT training,performancelevelsareaveragedacross10differentruns.
+andESIMtoSection4. TheresultsshowthatexceptforReplacesynonyms,allother
+(2)Layer-wisePerformanceStudy.Inthisstudy,wefreezea strategiesleadtoaperformancedrop.ThisindicatesthatBERTmay
+BERTmodel(exceptforthesoftmaxclassificationoutputhead)and havealreadyunderstoodtheimportanceofstopwordsandcontent
+usethepretrainedcontextualizedwordrepresentationtoperform wordsinSTStasks,anditknowstousesyntacticorderingand
+theSTStask.ThegoalistoobservewhereBERTstoresthemost semanticcoherencewheninferringsemanticsimilarity.Thefact
+STS-relatedknowledge,andwheresuchknowledgeisthemost thatbacktranslationdoesnothelpimpliesthatback-translatedsen-
+lacking.Thisallowsustomakeaninformeddecisiononwhich tencesmaycontainsemanticshiftsand/orsyntacticerrors,which
+BERTlayer(s)toinjectpriorknowledge. canmisleadBERT.
+Belowwediscusstheresultsandimplicationsofthetwostudies.
+89.0
+Average F1
+3.1 EffectofDataAugmentation
+88.5
+Inshort,dataaugmentationtechniquesusepriorknowledgeand
+relativelysimplealgorithmstoderivenewtrainingdatafromorigi- 88.0
+88.0
+naltrainingdata[43].Itisaneffectivewayofenrichingtheoriginal 87.7
+datawithtask-specificknowledge.Belowwedescribeseveraldata 87.5 87.4
+87.3
+augmentationstrategiesandthecorrespondingpriorknowledge
+87.1
+relatedtoSTS. 87.0 87.0
+86.8
+(1) Splitandswap:Foreachsentence,splititatarandomposition
+86.5
+andswapthetwosegments.Theassumptionisthatalthougha
+sentencecouldbeungrammaticalaftersuchanoperation,its 86.0
+essentialmeaningshouldbepreserved. (0) (1) (2) (3) (4) (5) (6)
+(2) Addrandomword:Foreachsentence,pickarandomwordfrom
+thevocabularythatisnotinthesentence,andinsertitata Figure1:EffectofaugmentingtheMRPCdatasetforBERT.
+randompositioninthatsentence.Theassumptionisthatsuch The X-axis represents different data augmentation strate-
+anout-of-contextwordactsasanoisytypoandshouldnot giescorrespondingtotheorderinthetext,where(0)repre-
+affectthemainmeaningofthesentence. sentstheoriginaltrainingdatawithoutaugmentation,and
+(3) Backtranslation:AllsentencesinMRPCareinEnglish.Using theserialnumber(1)to(6)representsSplitandswap,Add
+Google Translate, we translate the sentence to Chinese and randomword,Backtranslation,Addhigh-TfIdfword,Delete
+thenbacktoEnglish.Theassumptionisthattranslationshould low-TfIdf word, Replace synonyms, respectively. Error bars
+rewritethesentenceinadifferentwaybutpreservemeaning.
+show±1standarddeviationaroundtheaverageof10runs.
+(4) Addhigh-TfIdfword:Foreachsentence,findthewordwiththe
+highestTfIdfweightandinsertitatarandompositioninthat
+sentence.Wordswithhigh-TfIdfweightsareusuallycontent 84
+words,thereforerepeatingthemshouldnotchangethemeaning Average F1
+ofthesentencebymuch.
+82
+(5) Deletelow-TfIdfword:Find𝑘wordswiththelowestTfIdfweights
+inthesentencepair.Thenforeachofthesewords,deleteitfrom 80.4 80.2
+thesentencewithprobability𝑝.Weset𝑘 =5,𝑝 =0.5.Words 80 79.9
+79.3
+withlowTfIdfweightsareusuallystopwordsorfunctionalwords 78.6 78.4 78.8
+(e.g.,“the”,“of”,“and”),andthereforemaynotbeessentialto 78
+themeaningofthesentence.
+(6) Replacesynonyms:Foreachwordinasentence,seeiftheword
+76
+has synonyms in WordNet. If so, pick the first word in the
+synonym list that is not the word itself. The assumption is
+thatreplacingwordswiththeirsynonymsdoesnotchangethe 74
+(0) (1) (2) (3) (4) (5) (6)
+meaningofasentence.Inprinciple,otherresourcessuchas
+ConceptNetandUMLSalsoprovidesynonymknowledgeand
+Figure2:EffectofaugmentingtheMRPCdatasetforESIM.
+canbeusedhereinplaceofWordNet.
+X-axislabelsaredefinedsimilarlyasthoseinFigure1.
+Weusethestandardtrain-testsplitprovidedintheMRPCdataset.
+Then,weapplyeachoftheabovedataaugmentationstrategies Asacomparison,weapplythesameaugmenteddatatoESIM.
+onthetrainingdata,eachresultingina2×increaseoftraining TheresultsareshowninFigure2.NotethatBERToutperforms
+data size. Figure 1 shows the 𝐹 performance of BERT trained ESIMbyalargemargin.Herewefocusontherelativedifferences
+1
+byeachaugmenteddataset,aswellastheperformancewithout madebydifferentaugmentationstrategiesonESIM.ESIMbenefits
+WWW’21,April19–23,2021,Ljubljana,Slovenia XiaandWang,etal.
+4 PROPOSEDALGORITHM
+87
+Average F1 86.3 86.2 Inthissection,wedesignageneralalgorithmforincorporating
+86 synonymknowledgeintotheBERTmodel.Accordingtothefind-
+85.5
+85.2 85.0 ingsinSection3,thisknowledgeshouldbeaddedtolowerlayers
+85
+ofBERT.Sinceeachattentionlayercomputessimilaritybetween
+84 83.8 allpairsofwords,andithasbeenshownthattheattentioninthe
+83.5
+firstlayerisbroadanduninformed[8,33],wedecidetouseword
+83.1
+83 82.5 82.6 similarityknowledgetomodulatetheattentionatthefirstlayer.As
+82.0 acomparisonbaseline,WeaddthesameknowledgeintotheESIM
+82 81.8
+model.Belowwedescribeourapproachindetail.
+81
+4.1 WordSimilarityMatrix
+80
+0 1 2 3 4 5 laye6 r 7 8 9 10 11 G aniv de 𝑏nt =wo (p 𝑤i 1ec ,e ·s ··o ,f 𝑤te 𝑏x ,t ··(i ·.e ,. 𝑤,s 𝑙e 𝑏n ),te wnc ee cs) o𝑎 ns= tru(𝑤 ct1, a·· w· o,𝑤 rd𝑎, s· im·· il, a𝑤 r𝑙 i𝑎 ty)
+matrix𝑆 ofsize𝑙
+𝑎
+×𝑙 𝑏.Thegoalofthismatrix𝑆 istoincrease
+Figure3:PerformanceofeachBERTlayeronMRPCdataset. BERT’sattentiononsemanticallysimilarwordpairs.
+Wecalculatethevalueofeachcellin𝑆basedonsemanticrela-
+tionsinWordNet.Foralexicalpair(𝑤 𝑎,𝑤 𝑏),ifwordsinthepair
+aresynonymsinWordNet,thecellvalue𝑆
+𝑎𝑏
+=1.Otherwise,if𝑤
+𝑎
+and𝑤
+𝑏
+arenotsynonyms,weset𝑆
+𝑎𝑏
+asavaluein[0,1]according
+tothemethodproposedbyWu-Palmer[42],whichcalculatesword
+fromalldataaugmentationstrategiesexceptforAddrandomword.
+similaritybasedontheirtopologicaldistanceinWordNet.Incases
+BothBacktranslationandSplitandswapareeffectivestrategies(>1%
+whereoneorbothwordsinapaircannotbefoundinWordNet,or
+absolutegainin𝐹 ),whichdonotapplyforBERT.Thisindicates
+1 thepairofwordsdonothaveavalidWu-Palmersimilarityvalue
+thatapretrainedBERTmodelhasrichpriorknowledgeforthe
+(e.g.ifonewordisastopwordlike“into”),wedirectlysetthepair-
+STStaskthatapre-Transformermodeldoesnotpossess.Similarto
+wisesimilarityvalueto0.Forpropernamesofpeopleandplaces,if
+BERT,ReplacesynonymscansubstantiallybenefitESIMaswell.
+wordsinthepairarethesame,thevaluewillbesetto1,otherwise
+itwillbe0.Figure4visualizestheheatmapofthesimilaritymatrix
+constructedfortwosentencepairs.Wecomputewordsimilarity
+3.2 DifferentBERTLayersontheSTSTask
+matricesforallsentencepairsinbothtrainingandtestdatasetasa
+Figure3showstheperformanceofusingeachpre-trainedBERT
+preprocessingstep.
+layerontheMRPCparaphraseidentificationtask.Inthisstudy,the
+Notethatourmethodisgeneralandcompatiblewithotherse-
+originaltrainingdatawasusedwithoutanyaugmentation.Again,
+manticsimilarityresources,suchasWikipedia,ConceptNet,and
+theperformancelevelsareaveragedacross10differentruns.
+UMLS(UnifiedMedicalLanguageSystem)Metathesaurus.Wecan
+Since the BERT layer parameters are “frozen” (not trainable)
+construct𝑆usingword/conceptsimilarityknowledgeinthesere-
+in this task, the performance shows that BERT’s middle layers
+sourcesaswell.Alsonotethatsimplewordlookupdoesnotresolve
+are inherently good at this task, while lower and upper layers
+wordsenseambiguity,andWordNetdoesnotcovermanyacronyms
+arenot.ThisechoeswithrecentfindingsonBERTlayers.Lower
+andabbreviations.Weleavefurtherrefinementsofwordsimilarity
+layerswerefoundtoperformbroadattentionacrossallpairsof
+matrix𝑆forfuturework.
+words[8].Middlelayerswerefoundtomostlycapturetransferable
+syntacticandsemanticknowledge[16,36].Itisnotsurprisingthat
+4.2 BidirectionalEncoderRepresentations
+theupperlayersdonotperformwell,astheselayersarespecifically
+fromTransformers(BERT)
+tunedtowardsthepre-trainingtasksofBERT–maskedlanguage
+modelingandnext-sentenceprediction–notSTStasks. BERTisapre-trainedlanguagemodelwithstate-of-the-artper-
+formanceonmanyNLPtasks.Wefine-tuneGoogle’spre-trained
+Tosummarize,thedataaugmentationstudyshowsthatBERT BERT-basemodelinourimplementation.
+knowsabouttheimportanceofstopwords,contentwords,and WordsimilarityknowledgeisaddedintoBERT’smulti-headat-
+syntacticstructurefortheSTStask,butitsknowledgeinword tention(bothself-attentionandcross-attention).Intheembedding
+synonymscanbefurtherimproved.Thelayer-wiseperformance stage,weusethesummationofthreeparts:tokenembedding,po-
+studyshowsthatlowerlayersofBERTneedsthemostimprovement sitionembedding,andsegmentembedding,whichisthesameas
+forSTStasks.Combiningresultsfromthetwostudies,weidentify BERT.IntheTransformerstage,ourmethodissimilartoBERT.
+apromisingdirection,i.e.,toincorporatesynonymknowledgeinto
+lowlayersofBERT(nextsection).Wewouldliketonotethatthe 4.2.1 Multi-HeadAttentioninBERT. BERT’sattentionfunction
+aboveanalysisandreasoningprocedurecanbepotentiallyapplied canbedescribedasamappingfromqueryvector𝑄 andasetof
+toidentify“knowledgedeficiency”ofBERTinotherNLPtasks key-valuevectorpairs(𝐾,𝑉)toanoutputvector–theattention
+as long as one can associate different kinds of knowledge with strengths.Multi-headattentionlinearlyprojectsthequeries,keys
+differentsubsetsoftrainingdata. andvaluesℎtimes(ℎisthenumberof“heads”)withdifferentlinear
+UsingPriorKnowledgetoGuideBERT’sAttentioninSemanticTextualMatchingTasks WWW’21,April19–23,2021,Ljubljana,Slovenia
+where𝑆 representsthewordsimilaritymatrixwecalculatedin
+advance(Section4.1).Asmentionedbefore,weonlyaddsuchprior
+    knowledgeintheattentionofthefirstBERTlayer,asthatlayer’s
+ $
+    attentionisbroadanduninformed[8,33].
+ P D Q
+ L V    
+ M X P S L Q J    
+external
+ L Q W R Similarity
+    knowledge base
+Matrix
+ Z D W H U
+    Q Linear
+Mask SoftMax
+ $  P D Q  L V  F X W W L Q J  S D S H U MatMul Scale Concat Linear
+   
+ $ K Linear
+   
+ P D Q
+V Linear MatMul
+ L V    
+ F O L P E L Q J    
+ D Figure 5: Injecting word similarity knowledge in BERT’s
+   
+ U R S H multi-headattention.
+   
+ $  P D Q  F O L P E V  D  U R S H
+4.3 EnhancedSequentialInferenceModel
+Figure 4: Heat map for two sentence pairs taken from the
+Inthissection,weshowthatourmethodcanalsobeusedtoincor-
+STS-B dataset, where the ground-truth similarity score of
+porateknowledgeintotheEnhancedSequentialInferenceModel
+thefirstsentencepair(“Amanisjumpingintowater”and
+(ESIM).Thismodelexplicitlycomputespairwisewordsimilarities
+“Amaniscuttingpaper”)islabeledas0.8,andthesimilarity
+asacomponent[5].BeforeBERTwasproposed,ESIMwasoneof
+scoreofthesecondsentencepairis5(“Amanisclimbing
+thestate-of-the-artmethodsforsentencepairmodelingtasks.In
+arope”and“A manclimbsarope”). Thehigherscore,the
+thispaper,weuseESIMasanon-Transformermodelforbaseline
+moresimilarthetwosentences.
+comparison.
+projectionsto𝑑 ,𝑑 ,and𝑑 dimensions,respectively.Next,oneach 4.3.1 TheOriginalESIM. ESIMfirstusesabi-directionallongshort-
+𝑘 𝑘 𝑣 termmemorynetwork(BiLSTM)toencodetheinputsentences
+headoftheseprojectionsofqueries,keysandvalues,itperforms
+𝑎and𝑏.Forthe𝑖-thtokenofsentence𝑎,thehiddenstatevector
+theattentionfunctioninparallel.Thisproduces𝑑 -dimensional
+𝑣
+generatedbytheBiLSTMisdenotedas𝑎 .Similarlywecandefine
+outputvalues.Thesevaluesareconcatenatedandprojectedagain 𝑖
+astatevector𝑏 forthe𝑗-thtokenofsentence𝑏:
+togetthefinalattention: 𝑗
+𝑀𝑢𝑙𝑡𝑖𝐻𝑒𝑎𝑑(𝑄,𝐾,𝑉)=𝐶𝑜𝑛𝑐𝑎𝑡(ℎ𝑒𝑎𝑑 1,...,ℎ𝑒𝑎𝑑 ℎ)𝑊𝑂 ; 𝑎 𝑖 =𝐵𝑖𝐿𝑆𝑇𝑀(𝑎,𝑖) ∀𝑖 ∈ [1,...,𝑙 𝑎]; (4)
+(1)
+ℎ𝑒𝑎𝑑
+𝑖
+=𝐴𝑡𝑡𝑒𝑛𝑡𝑖𝑜𝑛(𝑄𝑊 𝑖𝑄 ,𝐾𝑊 𝑖𝐾,𝑉𝑊 𝑖𝑉 ), 𝑏 𝑗 =𝐵𝑖𝐿𝑆𝑇𝑀(𝑏,𝑗) ∀𝑗 ∈ [1,...,𝑙 𝑏].
+ESIMcomputestheattentionweights𝑒 astheinnerproductof
+where𝑊𝑄 ∈ R𝑑𝑚𝑜𝑑𝑒𝑙×𝑑𝑘,𝑊𝐾 ∈ R𝑑𝑚𝑜𝑑𝑒𝑙×𝑑𝑘,𝑊𝑉 ∈ R𝑑𝑚𝑜𝑑𝑒𝑙×𝑑𝑣 𝑖𝑗
+𝑖 𝑖 𝑖 ahiddenstatepair⟨𝑎 𝑖,𝑏 𝑗⟩foralltokensinsequences𝑎and𝑏:
+and𝑊𝑂 ∈ Rℎ𝑑𝑣×𝑑𝑚𝑜𝑑𝑒𝑙 areparametermatricesrepresentingthe
+project𝑖 ions.𝑑 𝑚𝑜𝑑𝑒𝑙 isBERT’shiddenlayersize.Thecalculationof 𝑒 𝑖𝑗 =𝑎𝑇 𝑖𝑏 𝑗 . (5)
+BERT’sattentionusesscaleddot-product:
+Theattentionweightsarethennormalizedandusedascoeffi-
+𝑠𝑐𝑜𝑟𝑒𝑠 =𝑄𝐾𝑇 +𝑀𝐴𝑆𝐾 ; cientstocomputea“softalignment”betweenawordinonesen-
+𝑠𝑐𝑜𝑟𝑒𝑠 (2) tenceandallwordsintheothersentence:
+𝐴𝑡𝑡𝑒𝑛𝑡𝑖𝑜𝑛(𝑄,𝐾,𝑉)=𝑠𝑜𝑓𝑡𝑚𝑎𝑥( )𝑉 ,
+√︁𝑑 𝑘 ∑︁𝑙𝑏 exp(𝑒 𝑖𝑗)
+w prh ee trr ae in𝑀 in𝐴 g𝑆𝐾 tasi ksa fom rBat Er Rix Tu .sedinmaskedlanguagemodeling,the 𝛽 𝑖 = 𝑗=1(cid:205)𝑙 𝑘𝑎 =1exp(𝑒 𝑖𝑘)𝑏 𝑗 ;
+(6)
+∑︁𝑙𝑎 exp(𝑒 𝑖𝑗)
+4.2.2 Knowledge-GuidedAttention. Toaddpriorknowledge,we 𝛼 𝑗 = 𝑎 𝑖,
+makeadjustmentstothemulti-headattentionphaseasshownin 𝑖=1 (cid:205)𝑙 𝑘𝑏 =1exp(𝑒 𝑘𝑗)
+Figure5.WecalculatetheHadamardproduct(i.e.,element-wise
+where𝛽 isthe“subphrase”in𝑏thatissoftlyalignedtowordsin𝑎
+product)ofthe𝑠𝑐𝑜𝑟𝑒𝑠 usingthesimilaritymatrix𝑆 tomakethe 𝑖
+andviceversafor𝛼 .
+modelpaymoreattentiontothewordpairswithhighersimilarities 𝑗
+Aftersoft-alignment,ESIMusesTree-LSTMmodeltohelpcollect
+intwosentences:
+localinferenceinformationoverlinguisticphrasesandclauses.The
+𝑠𝑐𝑜𝑟𝑒𝑠 =𝑄𝐾𝑇 ⊙𝑆+𝑀𝐴𝑆𝐾 ; outputoftheTree-LSTMmodelisthenmax-pooled,averaged,and
+𝑠𝑐𝑜𝑟𝑒𝑠 (3) concatenatedasinputtoafinalmultilayerperception.Wereferthe
+𝐴𝑡𝑡𝑒𝑛𝑡𝑖𝑜𝑛(𝑄,𝐾,𝑉)=𝑠𝑜𝑓𝑡𝑚𝑎𝑥( )𝑉 ,
+√︁𝑑 readerto[5]formoredetails.
+𝑘
+WWW’21,April19–23,2021,Ljubljana,Slovenia XiaandWang,etal.
+toindicatewhethereachpairofsentencescapturesthepara-
+Final multilayer perceptron
+phrase/semanticequivalencerelationshipthroughbinary
+judgment.Ithas4,076traindataand1,725testdata.Inthis
+Concatentation
+external paper,wesplit10%trainingdataasthevalidationsetaccord-
+knowledge base ingtoGLUE[40]standardizedsplits.InSection3,weused
+Similarity Matrix thisdatasetasapilottounderstandBERT.
+An
+airplane • STS-B[3]isacollectionofsentencepairsextractedfrom
+moves
+along newsheadlines,videoheadlines,imageheadlines,andnatu-
+a rallanguageinferencedata.Itcomprisesaselectionofthe
+Tree Tree Tree runway Tree Tree Tree
+LSTM LSTM …… LSTM Aplaneridesonaroad LSTM LSTM …… LSTM EnglishdatasetsusedintheSTStasksorganizedinthecon-
+An textofSemEvalbetween2012and2017whichincludes5,749
+airplane
+moves traindata,1,500developmentdataand1,379testdata.
+along
+a • QQP[20]isadatasetusedtodeterminewhetheraquestion
+runway
+Aplaneridesonaroad pairisduplicated.Itconsistsofmorethan400,000rowsof
+potentialquestionduplicatepairscollectedfromQuora.com.
+Inthispaper,weusethesamedataandsplitbyWangin
+BiLSTM BiLSTM BiLSTM BiLSTM BiLSTM BiLSTM
+…… …… article[41],with10,000questionpairseachfordevelopment
+W1 W2 W6 W1 W2 W6
+An airplanemovesalongarunway A plane rides ona road andtest.Besides,inbothdevelopmentandtestset,thenum-
+berofbothparaphrasingandnon-paraphrasingsentence
+pairsis5000.Accuracyisusedastheevaluationmetricfor
+Figure6:InjectingWordSimilarityKnowledgeinESIM
+thisdataset.
+• Twitter-URL[22]iscollectedfromtweetsthatsharethe
+4.3.2 Knowledge-Guided ESIM. The overall architecture of the sameURLofnewsarticlesbyLan.Itincludes56,787sentence
+knowledge-enhancedESIMisillustratedinFigure6.Toinjectword pairs, and each sentence pair is annotated by 6 Amazon
+similarityknowledge,wealsocomputetheHadamardproductbe- MechanicalTurkworkers.Therefore,atotalof6workers
+tweentheattentionweightmatrix𝑒andthewordsimilaritymatrix judgedifthispairisaparaphraseornot.Ifn≤2workers
+𝑆definedinSection4.1: werepositive,wetreatthemasnon-paraphrasing;ifn≥4,
+𝑝
+𝑖𝑗
+=𝑒
+𝑖𝑗
+⊙𝑆
+𝑖𝑗
+. (7)
+wetreatthemasparaphrasing;ifn=3,wediscardthem.
+Afterthistreatment,therewere42,220pairsfortrainingand
+Sothatthesoftalignmentwillbeupdatedasfollows: 9,334pairsfortest.
+∑︁𝑙𝑏 exp(𝑝 𝑖𝑗)
+𝛽 𝑖 = 𝑗=1(cid:205)𝑙 𝑘𝑎 =1exp(𝑝 𝑖𝑘)𝑏 𝑗 ;
+(8)
+W5. e2 impI lm emp el ne tm theen mt oa dt ei lso wn itD he tht eai sl as
+mePyTorchframework.Be-
+∑︁𝑙𝑎 exp(𝑝 𝑖𝑗) low, we summarize the implementation details that are key for
+𝛼 𝑗 = 𝑎 𝑖, reproducingresultsforeachmodel.(Thesourcecodeisavailable
+𝑖=1 (cid:205)𝑙 𝑘𝑏 =1exp(𝑝 𝑘𝑗) athttps://github.com/xiatingyu/Bert_sim).
+TheremainingstepsaresimilartotheoriginalESIM. • BERT:WecompareourproposedmodelwithaBERTmodel
+withoutpriorknowledge.Bothmodelsadopttheconfigura-
+5 EXPERIMENTS tionofGoogle’sBERT [10].Wesetthenumberofboth
+base
+Inthissection,weevaluateourproposedmethodandcompareit self-attentionlayersandheadsas12,andthedimensionof
+withbaselinemodelsthatdonotincorporatepriorknowledge. embeddingvectorsas768.Thetotalnumberoftrainable
+Thebenefitofincorporatingpriorknowledgeinmachinelearn- parametersofboththeoriginalBERT baseandourproposed
+ingmodelsismostsalientwhentrainingdataissmall.Indeed,when model(calledBERT base-Sim)arethesame(110M),therefore
+trainingdataisabundant,thosedataalreadycontainsufficienttask- weareperformingahead-to-headcomparison.
+specificknowledge,diminishingthebenefitofpriorknowledge. • ESIM:WordembeddingsofESIMmodelisinitializedwith
+Thereforebesidesthestandardsettingwheredifferentmodelsare 840B-300dGlovewordvectors[30].Embeddingsofout-of
+evaluatedon100%trainingdata,wearemoreinterestedinevaluat- vocabularywordsarerandomlyinitialized.Allparameters,
+ingourapproachaswevarythesizeoftrainingdatafromsmallto includingwordembeddings,areupdatedduringtraining.In
+large.Thismotivatesustofurtherconductlearningcurveanalyes. ordertoverifytheinfluenceofpriorknowledgeonthemodel
+effect,weusethesameparametersmentionedinpaper[5],
+5.1 Datasets includingoptimizationmethod,learningrate,dropoutrate.
+Weusefourpopularbenchmarkdatasetsinourexperiments:two WecallourproposedmodelESIM-Sim.
+relativelysmallsemantictextualsimilaritydatasetsandtworela-
+tivelylargeparaphraseidentificationdatasets. 5.3 PerformanceAcrossFourSTSDatasets
+• MRPC[11]isacorpusofsentencepairswithartificialan- WeaddpriorknowledgetobothESIMmodelandBERTmodeland
+notationsautomaticallyextractedfromonlinenewssources trainthemontheabovefourdatasets.Table1showstheresults
+UsingPriorKnowledgetoGuideBERT’sAttentioninSemanticTextualMatchingTasks WWW’21,April19–23,2021,Ljubljana,Slovenia
+Table 1: Semantic textual matching performance in four datasets (%), based on our re-implementation of each method in
+PyTorch.EachperformancevalueofESIMandESIM-Sim(BERT andBERT -Sim)aretheaverageof10(5)runswithdif-
+base base
+ferentrandomseeds,respectively.Valuesintheparenthesesarestandarddeviations(SD).PC:Pearsoncorrelationcoefficient.
+SC:Spearman’srankcorrelationcoefficient.Thebestaverageperformanceineachcolumnisinbold.
+MRPC STS-B QQP TwitterURL
+F1(SD) Macro-F1(SD) PC(SD) SC(SD) F1(SD) Accuracy(SD) F1(SD) Macro-F1(SD)
+ESIM 78.5(2.0) 56.5(6.2) 47.2(0.7) 44.0(0.8) 87.6(0.5) 87.5(0.5) 59.1(2.3) 71.3(2.1)
+ESIM-Sim 79.1(1.5) 60.3(5.8) 59.3(1.3) 56.4(1.4) 87.5(0.5) 87.6(0.5) 65.3(1.7) 78.2(1.3)
+BERT
+base
+87.0(1.5) 80.7(1.7) 84.4(0.7) 82.9(0.7) 90.7(0.4) 90.8(0.4) 76.0(0.7) 84.8(0.5)
+BERT base-Sim 88.3(0.3) 81.2(1.1) 85.1(1.2) 83.8(1.1) 90.5(0.4) 90.7(0.4) 76.2(0.7) 85.0(0.6)
+80 86 86
+90
+84 84
+70
+82 88 82
+60 80 80
+86
+BERT 78 BERT BERT 78 BERT
+BERT-Sim BERT-Sim BERT-Sim BERT-Sim
+50 76
+10 20 30 40 50 60 70 80 90100 10 20 30 40 50 60 70 80 90100 10 20 30 40 50 60 70 80 90100 10 20 30 40 50 60 70 80 90100
+Percent of supervised training data(%) Percent of supervised training data(%) Percent of supervised training data(%) Percent of supervised training data(%)
+(a)MRPC (b)STS-B (c)QQP (d)TwitterURL
+Figure7:PerformanceofBERTandBERT-Simwithdifferentamountsoftrainingdata.X-axis:Percentofsupervisedtraining
+data.Y-axis:Macro-F1forMRPCandTwitter-URL,AccuracyforQQPandPearsonCorrelationforSTS-B.Thecoloredbands
+indicate±1standarddeviationcorrespondingtodifferentpercentagesoftrainingdata.
+70 60 88 90
+60 50 86 80
+84
+40 70
+50 82
+30 60
+ESIM ESIM 80 ESIM ESIM
+40
+ESIM-Sim ESIM-Sim ESIM-Sim ESIM-Sim
+20 78 50
+10 20 30 40 50 60 70 80 90100 10 20 30 40 50 60 70 80 90100 10 20 30 40 50 60 70 80 90100 10 20 30 40 50 60 70 80 90100
+Percent of supervised training data(%) Percent of supervised training data(%) Percent of supervised training data(%) Percent of supervised training data(%)
+(a)MRPC (b)STS-B (c)QQP (d)TwitterURL
+Figure8:PerformanceofESIMandESIM-Simwithdifferentamountsoftrainingdata.X-axis:Percentofsupervisedtraining
+data.Y-axis:Macro-F1forMRPCandTwitter-URL,AccuracyforQQPandPearsonCorrelationforSTS-B.Thecoloredbands
+indicate±1standarddeviationcorrespondingtodifferentpercentagesoftrainingdata.
+withourimplementation.Weuseaccuracy,F scoreofthepositive splitindifferentways,forexampleQQPdataset.(ii)Therandom
+1
+class,macro-F score,Pearsoncorrelation,Spearmancorrelation shufflingofthetrainingsetcausesthedeviationofthetestresult.
+1
+forevaluationondifferentdatasets.Thesemetricsfollowprevious
+literature[10,40,41].ComparedwiththeBERTmodel,ESIMmodel
+5.4 LearningCurveAnalysis
+hasafastertrainingspeedandtakesuplessmemory,soinTable
+Atthesametime,foreachdataset,werandomlyselectfrom10%to
+1theresultsofESIMmodelandESIM-Simmodelaretheaverage
+100%datafromtrainingsetastrainingdata.ForBERTandBERT-
+aftertraining10times.ForBERTmodel,duetoitsslowtraining
+Sim,wehavetrained5timesforeachtrainingscaleofeachdataset.
+speedandlargememoryusage,theresultsaretheaverageover5
+WeshowtheresultsinFigure7.Similarly,forESIMandESIM-Sim,
+runs.Inaddition,ourresultshaveslightdeviationfromtheresults
+wehavetrained10runs;theresultsareshowninFigure8.
+reportedintheGoogleBERTpaper[10].Wesuspectthefollowing
+Toverifyourhypothesisthatwordsimilarityknowledgeismost
+potentialreasons:(i)Thetrainingsetandthevalidationsetare
+neededinthefirstlayer,weexploredanalternativeapproachfor
+comparison–toinjectthisknowledgeintoBERT’sattentionon
+WWW’21,April19–23,2021,Ljubljana,Slovenia XiaandWang,etal.
+Table2:ExamplesentencepairsintheTwitterURLdataset.Thefoursentencepairssharesacommonsentence.
+Sentencepair Label
+𝑠 :Scientistscreate3D-printedobjectsthatcanchangeshapeaftertheyareprinted.
+𝑎 Paraphrase
+𝑠 :Shape-shifting3Dprintedobjectsarenowathing.
+𝑏
+𝑠 :Scientistscreate3D-printedobjectsthatcanchangeshapeaftertheyareprinted.
+𝑎 Paraphrase
+𝑠 :3D-printedobjectschangeshapeafterprintedanopendoortonewusecases.
+𝑏
+𝑠 :Scientistscreate3D-printedobjectsthatcanchangeshapeaftertheyareprinted.
+𝑎 Non-paraphrase
+𝑠 :Imagineadrunkguyinthebar’sbathroom,watchingtheurinalcakesmorph.
+𝑏
+𝑠 :Scientistscreate3D-printedobjectsthatcanchangeshapeaftertheyareprinted.
+𝑎 Non-paraphrase
+𝑠 :4Dprintedmaterialsarethefutureofarchitecture.Somanygreatpotentialapplications,esp.ingreendesign.
+𝑏
+ThelearningcurvesinFigure7and8revealanumberofinter-
+80 estingpatterns.Ourproposedmethodforaddingpriorknowledge
+improvesmodelperformancealmostconsistentlyacrossalltraining
+datasizes.Itisencouragingtoseethattheinjectedpriorknowledge
+70
+didnotimposeanunnecessarilystronginductivebias(inthesense
+ofbias-variancetrade-off)tothemodels.Inotherwords,theprior
+60 knowledgeisconsistentwiththelearningobjectiveandbeneficial
+BERT without Similarity Matrix tothemodelsallalongthelearningprocess.
+First attention head with Similarity Matrix
+All attention heads with Similarity Matrix OnMRPC,STS-B,andQQPdatasets,priorknowledgeprovides
+50
+10 20 30 40 50 60 70 80 90 100 themostsalientperformancegainhappenswhenthetrainingdata
+Percent of supervised training data(%) issmall,andtheESIMgainsmorethanBERT.Thisisinagreement
+withourobservationinTable1.AlsonotethatBERTtrainedon10%
+Figure 9: The effect of adding prior knowledge to differ- to20%ofthetrainingdatacanalreadyoutperformESIMtrained
+ent attention heads on the model performance on MRPC onfulltrainingdata,andBERTgainsperformanceatafasterrate
+dataset.They-axisrepresentsMacro-F1. thanESIM.Thisagainhighlightstherichknowledgeandsuperior
+learningcapabilityofBERT,comparedtonon-Transformermodels.
+Thesefindingssuggestthatitismostsensibletoconsideradding
+alllayers.WeusedtheMRPCdatasetinthisanalysis.Thelearning knowledgetoBERTifthetrainingdataisscarce,i.e.ontheorder
+curveisshowninFigure9. ofhundredsofsentencepairsforaSTStask.
+InFigure9,wecomparedtheresultsbetweenaddingpriorknowl-
+5.5 Discussion edgetothefirstlayerofBERT’smulti-headattentionvs.adding
+priorknowledgetoalllayers,ontheMRPCdataset.Weobserve
+InTable1,onthetworelativelysmalldatasets(MRPCandSTS-B),
+thataddingknowledgetoalllayerswillimpedethemodelfrom
+weobservesalientperformancegainwhenknowledgeisincor-
+learning,creatinganundesirableinductivebias.Incontrast,adding
+poratedinthemodel(ESIMvs.ESIM-Sim;BERTvs.BERT-Sim).
+knowledgetothefirstlayerismorereasonable.Thisindicatesthat
+Onthetworelativelylargedatasets(QQPandTwitterURL),the
+thebroad/uniformattentiononlowerlayersofBERTneedstobe
+performancegainisminimalifany.Thisiswhatweexpected–
+guided,whileinhigherlayersattentionheadshavededicatedroles
+priorknowledgeismostbeneficialwhenthetrainingdataissmall.
+incollectingspecificsyntacticandsemanticinformation.
+Comparingtheperformancegainwithineachmodelfamily,we
+What’speculiaristhatontheTwitterURLdataset,wedonotsee
+observethatBERTgainslessperformancethanESIMwhenthe
+similarresultsastheotherdatasets.Wespeculatethisismainly
+wordsimilarityknowledgeisadded.Thisechoswithourfindingin
+relatedtotheformofthedataset.WeshowpartoftheTwitterURL
+Section3thatapre-trainedBERTalreadycontainsmuchknowledge
+dataset in detail in Table 2. In the TwitterURL dataset, it often
+aboutsemantictextualmatchingtasks.Incomparison,ESIMlacks
+happensthatthesamesentence𝑠 correspondstomanydifferent
+thesamelevelofknowledgeevenitisinitializedwithpre-trained 𝑎
+𝑠 ’s,sowhenweincreasethetrainingdatafrom10%to100%,a
+wordvectors. 𝑏
+modeldoesnotseemanycompletelynewsentencepairs–itmay
+Acrossthedatasets,weobservethatthegaininF scoreismainly
+1 havealreadyseenatleastoneofthetwosentences.Thisexplains
+causedbyasalientincreaseinprecisionandanegligibledecrease
+whytheresultsobtainedwhenthetrainingdatais10%oftheentire
+inrecall.Inotherwords,priorknowledgemainlyhelpedBERT
+trainingsetaresimilartotheresultson100%trainingdata.
+reducefalsepositivesonthesemantictextsimilaritytask.This
+InSection3,weusesynonymknowledgetoaugmenttheMRPC
+impliesthattheoriginalBERTmaynotbeabletotellthesubtle
+semanticdifferencebetweenapairofrelated(butnotsynonymous)
+datasetandtrainaBERTmodelthatachieves88.0±0.4%F1score.
+words,andthereforewronglyclassifiednon-paraphrasesentences
+InTable1,BERT-Simachieves88.3±0.3%F1scoreusingthesame
+formofknowledge.ThissuggestsBERT-Simperformsatthesame
+asparaphrases.
+UsingPriorKnowledgetoGuideBERT’sAttentioninSemanticTextualMatchingTasks WWW’21,April19–23,2021,Ljubljana,Slovenia
+levelas(orslightlybetterthan)adata-augmentedBERT.InTable ACKNOWLEDGEMENT
+3,weshowthistypeofcomparisononallfourdatasets.BERT-sim Theauthorswouldliketothanktheanonymousrefereesfortheir
+slightlyoutperformdataaugmentationbecauseitcaninjectword valuablecomments.ThisworkissupportedbytheNationalNatural
+similarityknowledge–e.g.“happy”and“glad”aresynonyms– ScienceFoundationofChina(No.61976102andNo.U19A2065)and
+intothemodelevenifthosewordsdonotappearinthetraining theFundamentalResearchFundsfortheCentralUniversities,JLU.
+data.Whereasfordataaugmentation,ifnosentenceinthetraining
+data contains the word “happy” or “glad”, then the knowledge
+REFERENCES
+that“happy”and“glad”aresynonymscannotbeaddedbydata
+[1] IslamBeltagy,StephenRoller,PengxiangCheng,KatrinErk,andRaymondJ.
+augmentation,i.e.,replacingsynonymsintrainingdata.Therefore Mooney.2015.RepresentingMeaningwithaCombinationofLogicalFormand
+thebenefitofdataaugmentationdependsontrainingdata,while Vectors.CoRRabs/1505.06816(2015).
+[2] OlivierBodenreider.2004. Theunifiedmedicallanguagesystem(UMLS):in-
+thebenefitofknowledgeinjectiondoesnot.
+tegratingbiomedicalterminology. Nucleicacidsresearch32,suppl_1(2004),
+D267–D270.
+[3] DanielCer,MonaDiab,EnekoAgirre,InigoLopez-Gazpio,andLuciaSpecia.2017.
+Table3:Performanceinfourdatasets(%)usingdataaugmen- Semeval-2017task1:Semantictextualsimilarity-multilingualandcross-lingual
+focusedevaluation.arXivpreprintarXiv:1708.00055(2017).
+tation and knowledge injection. We report for one metric [4] JindongChen,YizhouHu,JingpingLiu,YanghuaXiao,andHaiyunJiang.2019.
+perdatasetastheothermetrichassimilartrends.Numbers Deepshorttextclassificationwithknowledgepoweredattention.InProceedings
+inparenthesesarestandarddeviations.
+oftheAAAIConferenceonArtificialIntelligence,Vol.33.6252–6259.
+[5] QianChen,XiaodanZhu,ZhenhuaLing,SiWei,HuiJiang,andDianaInkpen.
+2017.EnhancedLSTMforNaturalLanguageInference.InProceedingsofthe55th
+AnnualMeetingoftheAssociationforComputationalLinguistics(ACL2017).ACL,
+Dataset/metric Data-augmentedBERT BERT-Sim Vancouver,1657–1668.
+MRPC/F1 88.0(0.4) 88.3(0.3) [6] QianChen,XiaodanZhu,Zhen-HuaLing,DianaInkpen,andSiWei.2018.Neural
+STS-B/Pearsoncorr. 84.4(0.7) 85.1(1.2) NaturalLanguageInferenceModelsEnhancedwithExternalKnowledge.In
+Proceedingsofthe56thAnnualMeetingoftheAssociationforComputational
+QQP/Accuracy 90.6(0.3) 90.7(0.4) Linguistics(Volume1:LongPapers).AssociationforComputationalLinguistics,
+TwitterURL/F1 75.9(0.7) 76.2(0.7) 2406–2417.
+[7] Yun-NungChen,DilekHakkani-Tur,GokhanTur,AsliCelikyilmaz,Jianfeng
+Gao,andLiDeng.2016.Knowledgeasateacher:Knowledge-guidedstructural
+attentionnetworks.arXivpreprintarXiv:1609.03286(2016).
+Notethatbecauseofextratrainingdata,thedataaugmentation [8] KevinClark,UrvashiKhandelwal,OmerLevy,andChristopherD.Manning.
+2019. WhatDoesBERTLookAt?AnAnalysisofBERT’sAttention.InBlack-
+approachtakestwiceasmuchtimetotrainthandirectlyinjecting BoxNLP@ACL.
+knowledgeintothemodel.Table4showsper-epochtrainingtime [9] DipanjanDasandNoahASmith.2009.Paraphraseidentificationasprobabilistic
+onfourdatasets.Thishighlightsanadvantageofourproposed
+quasi-synchronousrecognition.InProceedingsoftheJointConferenceofthe47th
+AnnualMeetingoftheACLandthe4thInternationalJointConferenceonNatural
+approach–itperformsatleastaswellasthedataaugmentation LanguageProcessingoftheAFNLP.468–476.
+approachwithonlyhalfthetrainingtime. [10] JacobDevlin,Ming-WeiChang,KentonLee,andKristinaToutanova.2018.BERT:
+Pre-trainingofDeepBidirectionalTransformersforLanguageUnderstanding.
+arXivpreprintarXiv:1810.04805(2018).
+[11] WilliamBDolanandChrisBrockett.2005.AutomaticallyConstructingaCorpus
+Table 4: Per-epoch training time (in seconds) on the four ofSententialParaphrases.InProceedingsoftheThirdInternationalWorkshopon
+datasetsusingdataaugmentationandknowledgeinjection. Paraphrasing(IWP2005).
+[12] AllysonEttinger.2020. WhatBERTisnot:Lessonsfromanewsuiteofpsy-
+cholinguisticdiagnosticsforlanguagemodels.TransactionsoftheAssociationfor
+ComputationalLinguistics8(2020),34–48.
+Dataset Data-augmentedBERT BERT-Sim
+[13] SamuelFernandoandMarkStevenson.2008.Asemanticsimilarityapproachto
+MRPC 73 36 paraphrasedetection.InProceedingsofthe11thannualresearchcolloquiumofthe
+STS-B 99 53 UKspecialinterestgroupforcomputationallinguistics.45–52.
+[14] SuchinGururangan,AnaMarasović,SwabhaSwayamdipta,KyleLo,IzBeltagy,
+QQP 6372 3206
+DougDowney,andNoahA.Smith.2020.Don’tStopPretraining:AdaptLanguage
+TwitterURL 775 338 ModelstoDomainsandTasks.InProceedingsofthe58thAnnualMeetingof
+theAssociationforComputationalLinguistics.AssociationforComputational
+Linguistics,Online,8342–8360.
+[15] PengchengHe,XiaodongLiu,JianfengGao,andWeizhuChen.2020.DeBERTa:
+Decoding-enhancedBERTwithDisentangledAttention. arXiv:cs.CL/2006.03654
+[16] JohnHewittandChristopherDManning.2019.Astructuralprobeforfinding
+6 CONCLUSION syntaxinwordrepresentations.InProceedingsofthe2019Conferenceofthe
+Inthispaper,byanalyzingwhatBERThasalreadyknown,what NorthAmericanChapteroftheAssociationforComputationalLinguistics:Human
+LanguageTechnologies,Volume1(LongandShortPapers).4129–4138.
+task-specificknowledgeBERTneedsandwhereitneedsit,wepro- [17] SeppHochreiterandJürgenSchmidhuber.1997.Longshort-termmemory.Neural
+posedaneffectiveandefficientmethodforinjectingwordsimilarity computation9,8(1997),1735–1780.
+[18] BaotianHu,ZhengdongLu,HangLi,andQingcaiChen.2014.Convolutionalneu-
+knowledgeintoBERTwithoutaddingnewtrainingtaskbutdirectly
+ralnetworkarchitecturesformatchingnaturallanguagesentences.InAdvances
+guidingmodel’sattention.Thismethodisalsoapplicabletonon- inneuralinformationprocessingsystems.2042–2050.
+Transformerdeepmodel.Throughexperimentsondifferentscale [19] AdrianIfteneandAlexandraBalahur.2007. Hypothesistransformationand
+datasetsonthesemantictextualsimilarity(STS)task,weprove
+semanticvariabilityrulesusedinrecognizingtextualentailment.InProceedings
+oftheACL-PASCALWorkshoponTextualEntailmentandParaphrasing.125–130.
+thatthepriorknowledgeofwordsimilarityisabletoconsistently [20] ShankarIyer,NikhilDandekar,andKornélCsernai.2017. Firstquoradataset
+improvetheSTSperformanceofBERTandthebenefitisespecially release:Questionpairs.URLhttps://data.quora.com/First-Quora-Dataset-Release-
+Question-Pairs(2017).
+salientwhentrainingdataisscarce. [21] MandarJoshi,DanqiChen,YinhanLiu,DanielS.Weld,LukeZettlemoyer,and
+OmerLevy.2019. SpanBERT:ImprovingPre-trainingbyRepresentingand
+PredictingSpans.arXivpreprintarXiv:1907.10529(2019).
+WWW’21,April19–23,2021,Ljubljana,Slovenia XiaandWang,etal.
+[22] WuweiLan,SiyuQiu,HuaHe,andWeiXu.2017. AContinuouslyGrowing [47] ZhengyanZhang,XuHan,ZhiyuanLiu,XinJiang,MaosongSun,andQunLiu.
+DatasetofSententialParaphrases.InProceedingsofThe2017Conferenceon 2019.ERNIE:EnhancedLanguageRepresentationwithInformativeEntities.In
+EmpiricalMethodsonNaturalLanguageProcessing(EMNLP).Associationfor ProceedingsofACL2019.
+ComputationalLinguistics,1235–1245. [48] ZhuoshengZhang,YuweiWu,HaiZhao,ZuchaoLi,ShuailiangZhang,XiZhou,
+[23] WuweiLanandWeiXu.2018.NeuralNetworkModelsforParaphraseIdentifi- andXiangZhou.2020.Semantics-AwareBERTforLanguageUnderstanding.In
+cation,SemanticTextualSimilarity,NaturalLanguageInference,andQuestion AAAI.AAAIPress,9628–9635.
+Answering.InProceedingsofthe27thInternationalConferenceonComputational
+Linguistics.AssociationforComputationalLinguistics,3890–3902.
+[24] ZhenzhongLan,MingdaChen,SebastianGoodman,KevinGimpel,Piyush
+Sharma,andRaduSoricut.2019. ALBERT:ALiteBERTforSelf-supervised
+LearningofLanguageRepresentations.InInternationalConferenceonLearning
+Representations.
+[25] GuanyuLi,PengfeiZhang,andCaiyanJia.2018.AttentionBoostedSequential
+InferenceModel.CoRRabs/1812.01840(2018).
+[26] WeijieLiu,PengZhou,ZheZhao,ZhiruoWang,QiJu,HaotangDeng,andPing
+Wang.2020.K-BERT:EnablingLanguageRepresentationwithKnowledgeGraph.
+InProceedingsofAAAI2020.
+[27] YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,MandarJoshi,DanqiChen,Omer
+Levy,MikeLewis,LukeZettlemoyer,andVeselinStoyanov.2019.RoBERTa:A
+RobustlyOptimizedBERTPretrainingApproach.arXivpreprintarXiv:1907.11692
+(2019).
+[28] GeorgeAMiller.1995.WordNet:alexicaldatabaseforEnglish.Commun.ACM
+38,11(1995),39–41.
+[29] AnkurP.Parikh,OscarTäckström,DipanjanDas,andJakobUszkoreit.2016.A
+DecomposableAttentionModelforNaturalLanguageInference.InEMNLP.The
+AssociationforComputationalLinguistics,2249–2255.
+[30] JeffreyPennington,RichardSocher,andChristopherDManning.2014.Glove:
+Globalvectorsforwordrepresentation.InProceedingsofthe2014conferenceon
+empiricalmethodsinnaturallanguageprocessing(EMNLP).1532–1543.
+[31] MatthewEPeters,MarkNeumann,MohitIyyer,MattGardner,Christopher
+Clark,KentonLee,andLukeZettlemoyer.2018. Deepcontextualizedword
+representations.InProceedingsofNAACL-HLT.2227–2237.
+[32] AlecRadford,KarthikNarasimhan,TimSalimans,andIlyaSutskever.2018.Im-
+provinglanguageunderstandingbygenerativepre-training.
+[33] AnnaRogers,OlgaKovaleva,andAnnaRumshisky.2020.Aprimerinbertology:
+Whatweknowabouthowbertworks.arXivpreprintarXiv:2002.12327(2020).
+[34] MdArafatSultan,StevenBethard,andTamaraSumner.2014.BacktoBasicsfor
+MonolingualAlignment:ExploitingWordSimilarityandContextualEvidence.
+TransactionsoftheAssociationforComputationalLinguistics2(2014),219–230.
+[35] MdArafatSultan,StevenBethard,andTamaraSumner.2015.Dls@cu:Sentence
+similarityfromwordalignmentandsemanticvectorcomposition.InProceedings
+ofthe9thInternationalWorkshoponSemanticEvaluation(SemEval2015).148–153.
+[36] IanTenney,DipanjanDas,andElliePavlick.2019.BERTRediscoverstheClassical
+NLPPipeline.InProceedingsofthe57thAnnualMeetingoftheAssociationfor
+ComputationalLinguistics.4593–4601.
+[37] IanTenney,PatrickXia,BerlinChen,AlexWang,AdamPoliak,RThomasMcCoy,
+NajoungKim,BenjaminVanDurme,SamuelRBowman,DipanjanDas,etal.2019.
+Whatdoyoulearnfromcontext?probingforsentencestructureincontextualized
+wordrepresentations.arXivpreprintarXiv:1905.06316(2019).
+[38] GauravSinghTomar,ThyagoDuque,OscarTäckström,JakobUszkoreit,and
+DipanjanDas.2017.NeuralParaphraseIdentificationofQuestionswithNoisy
+Pretraining.InSWCN@EMNLP.AssociationforComputationalLinguistics,142–
+147.
+[39] AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,
+AidanNGomez,ŁukaszKaiser,andIlliaPolosukhin.2017. Attentionisall
+youneed.InAdvancesinneuralinformationprocessingsystems.5998–6008.
+[40] AlexWang,AmanpreetSingh,JulianMichael,FelixHill,OmerLevy,andSamuelR.
+Bowman.2019. GLUE:AMulti-TaskBenchmarkandAnalysisPlatformfor
+NaturalLanguageUnderstanding. IntheProceedingsofICLR.
+[41] ZhiguoWang,WaelHamza,andRaduFlorian.2017.Bilateralmulti-perspective
+matchingfornaturallanguagesentences.InProceedingsofthe26thInternational
+JointConferenceonArtificialIntelligence.4144–4150.
+[42] ZhibiaoWuandMarthaPalmer.1994.Verbssemanticsandlexicalselection.In
+Proceedingsofthe32ndannualmeetingonAssociationforComputationalLinguis-
+tics.133–138.
+[43] QizheXie,ZihangDai,EduardHovy,Minh-ThangLuong,andQuocVLe.
+2019.Unsuperviseddataaugmentationforconsistencytraining.arXivpreprint
+arXiv:1904.12848(2019).
+[44] WeiXu,AlanRitter,ChrisCallison-Burch,WilliamBDolan,andYangfengJi.
+2014.ExtractinglexicallydivergentparaphrasesfromTwitter.Transactionsof
+theAssociationforComputationalLinguistics2(2014),435–448.
+[45] ZhilinYang,ZihangDai,YimingYang,JaimeCarbonell,RussRSalakhutdinov,
+andQuocVLe.2019.Xlnet:Generalizedautoregressivepretrainingforlanguage
+understanding.InAdvancesinneuralinformationprocessingsystems.5753–5763.
+[46] WenpengYin,HinrichSchütze,BingXiang,andBowenZhou.2016. Abcnn:
+Attention-basedconvolutionalneuralnetworkformodelingsentencepairs.Trans-
+actionsoftheAssociationforComputationalLinguistics4(2016),259–272.

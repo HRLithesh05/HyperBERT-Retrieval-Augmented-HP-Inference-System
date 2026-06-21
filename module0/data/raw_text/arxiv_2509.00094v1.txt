@@ -1,0 +1,1029 @@
+Automatic Pronunciation Error Detection and
+Correction of the Holy Quran’s Learners Using
+Deep Learning
+Abdullah Abdelfttah Mahmoud I. Khalil Hazem Abbas
+ComputerandSystemsEngineering ComputerandSystemsEngineering ComputerandSystemsEngineering
+FacultyofEngineeringAinShamsUniversity FacultyofEngineeringAinShamsUniversity FacultyofEngineeringAinShamsUniversity
+Cairo,Egypt Cairo,Egypt Cairo,Egypt
+abdullahmlyossef@gmail.com mahmoud.khalil@eng.asu.edu.eg hazem.abbas@eng.asu.edu.eg
+Abstract—Assessingspokenlanguageischallenging,andquan- nor released data/models. Consequently, new research must
+tifyingpronunciationmetricsformachinelearningmodelsiseven start from basics: defining phoneticization, data, and models.
+harder. However, for the Holy Quran, this task is simplified by
+To bridge this gap, we introduce:
+the rigorous recitation rules (tajweed) established by Muslim
+scholars, enabling highly effective assessment. Despite this • APhonetizer: EncodesallTajweedrulesandarticulation
+advantage, the scarcity of high-quality annotated data remains attributes (Sifat) defined by classical scholars, except
+a significant barrier. Ishmam ( )
+ﻡ(cid:1543)(cid:4505)(cid:4493)ﺇ
+In this work, we bridge these gaps by introducing: (1)
+• A 98% automated pipeline: Generates highly accurate
+A 98% automated pipeline to produce high-quality Quranic
+datasets from expert recitations
+datasets – encompassing: Collection of recitations from ex-
+pert reciters, Segmentation at pause points (waqf) using our • A dataset: ∼300K annotated utterances (890 hours)
+fine-tuned wav2vec2-BERT model, Transcription of segments, • Integration: Our multi-level CTC model proves the
+Transcript verification via our novel Tasmeea algorithm; (2) Quranic phonetic script is learnable (0.16% average
+850+ hours of audio ( 300K annotated utterances); (3) A
+phoneme error rate)
+novel ASR-based approach for pronunciation error detection,
+utilizing our custom Quran Phonetic Script (QPS) to encode The paper is organized as follows:
+Tajweed rules (unlike the IPA standard for Modern Standard • Related Work: Expands on strengths/weaknesses of
+Arabic). QPS uses a two-level script: (Phoneme level): Encodes
+prior research
+Arabic letters with short/long vowels. (Sifa level): Encodes
+• Quran Phonetic Script: Introducesourtwo-levelscript:
+articulationcharacteristicsofeveryphoneme. Wefurtherinclude
+comprehensive modeling with our novel multi-level CTC Model phonemes and Sifat (10 attributes → 11 total levels)
+which achieved 0.16% average Phoneme Error Rate (PER) on • Data Pipeline: Stages include:
+thetestset. Wereleaseallcode,data,andmodelsasopen-source:
+1) Digitized Quran script as foundation
+https://obadx.github.io/prepare-quran-dataset/
+2) Hafs methodology criteria
+IndexTerms—MispronunciationDetectionModel,ArabicNat-
+ural Language Processing, End-to-end Models 3) Expert recitation collection
+4) Segmentation at pause points ( )
+(cid:1688)(cid:1698)ﻭ
+I Introduction 5) Segment transcription
+Assessing pronunciation is not a simple task [1], as it does 6) Validation via Tasmee ( (cid:1557)(cid:1645)(cid:1860)(cid:2797)(cid:2780)) algorithm
+not only rely on pronouncing phonemes correctly but also • Modeling: Demonstrates learnability of the phonetic
+involves other factors like intonation, prosody, and stress. script
+Does learning these mean one is done? No—other factors • Results: Analysis of outcomes
+include fluency and completeness [1]. However, the Holy • Limitations & Future Work: Next research directions
+Quran presents unique characteristics: it is among the easiest • Conclusion: Summary of contributions
+spoken texts to learn despite containing special phonemes • Appendix: Details on Mushaf attributes and algorithms
+absent in other languages.
+II Related Work
+The pronunciation of the Holy Quran is governed by rigor-
+ouslystrictrulesformallydefinedbyancientMuslimscholars II-A Quran Pronunciation Datasets
+since the 6th century. Despite their beauty and precision, We discuss the most important datasets here. everyayah1 is
+these rules have not been comprehensively digitized (to our
+thelargestopenlyavailabledatasetwith26completeMushafs
+knowledge) for Quranic pronunciation assessment.
+segmented and annotated by Ayah by experts like Al Hossary
+Although RDI pioneered computer-aided Quranic instruc-
+tion [2], they neither disclosed their phoneticization process 1everyayah.com
+and non-experts such as Fares Abbad. Qdat [3] contains III Quran Phonetic Script
+1509 utterances of single specific Ayahs labeled for three
+We consider the Quran Phonetic Script to be the most
+rules: Madd, Ghunna, and Ikhfaa. Although the scale is
+valuable and important contribution of our work. By for-
+relatively small, it was widely adopted by the community
+malizing the assessment of Holy Quran pronunciation as an
+[4], and [5] due to being open-source. The Tarteel v1 dataset
+ASR problem represented through this script, we provide a
+[6] consists of 25K utterances with diacritics and no Tajweed
+comprehensive solution to the task.
+rules. The latter is the Tarteel2 private dataset, a massive
+9K-hour collection annotated with diacritics without Tajweed III-A Motivation for Developing Quran Phonetic Script
+rules. The most recent benchmark is IqraaEval [7], which Modern Standard Arabic (MSA) orthography cannot ad-
+presents a test set of 2.2 hours from 18 speakers, but uses equately represent Tajweed rules for error detection. For
+Modern Standard Arabic (MSA) without Tajweed rules. example, MSA cannot measure the precise length of Madd
+rules. Previous research (e.g., [23]) focused on single rules
+II-B Quran Pronunciation Models
+like Qalqalah. Our phonetic script addresses this limitation
+To our knowledge, the first work addressing automated by capturing all Tajweed pronunciation errors except Ishmam
+pronunciation assessment for the Holy Quran is RDI [2], ( ), which involves a visual mouth movement without
+ﻡ(cid:1543)(cid:4505)(cid:4493)ﺇ
+which built a complete system for detecting pronunciation audible output.
+errors. The work does not specify which errors were included
+III-B Background
+or excluded but mentions testing Qalqala, Idgham, and Iqlab
+rules. It also omits details on Quranic word phoneticization. We based our script on classical Muslim scholarship rather
+Subsequent work continued with [8] and [9], using Deep than the International Phonetic Alphabet (IPA) for these rea-
+Neural Networks (DNNs) to replace HMMs and improve the sons:
+system. Many studies rely on modeling phoneme duration for 1) Historical Precedence: Muslim scholars from the 6th
+duration-dependent rules like Madd and Ghunna, e.g., [10], to 14th centuries rigorously defined Quranic errors cen-
+[11], but use limited datasets and focus on specific verses turies before modern phonetics emerged in the West.
+rather than the entire Quran. Others concentrate on detecting 2) Scientific Foundation: Scholars like Al-Khalil ibn
+specific rules like Qalqala [4] or Ghunna and Madd [5], [12]. Ahmad(6thcenturyAH)systematicallydescribedartic-
+However, most efforts except RDI work train on small-scale ulations and attributes with remarkable accuracy com-
+datasets from specific Quranic chapters. parable to modern phonetics [24].
+At this point, Tarteel emerges; though lacking Tajweed 3) Pedagogical Relevance: Learners’ errors align with
+rules, they built a robust ASR system for diacritized character classical definitions according to expert Quran teachers.
+detection. Theydevelopedacrowd-sourceddataset[6]of25K
+III-C Defining Mistakes in Quran Recitation
+utterances (68 hours), later extended via application users to
+9K hours of private annotated data. The work most aligned Following [25], Quran recitation errors fall into three cate-
+withourvisionofdetectingallerrortypes(includingTajweed gories:
+and Sifat/articulation attributes) is [13]. Although it relies on • Articulation Errors: Incorrect pronunciation of
+HMMsandminimaldata, itintroducesamulti-leveldetection phonemes
+system: Makhraj (phoneme level) and Tajweed rules level. • AttributeErrors: Mistakesinlettercharacteristics(Sifat
+al-Huruf)
+II-C Pretrained Speech Encoders with Self-Supervised
+• TajweedRuleErrors: Incorrectapplicationofruleslike
+Learning (SSL)
+Ghunnah, Madd, etc.
+Speech pretraining began early [14] but was constrained by Our script comprehensively addresses all three aspects
+the sequential nature of Recurrent Neural Networks (RNNs) through two output levels:
+[15]. The rise of Transformers [16] facilitated greater GPU
+• Phonemes Level: Represents letters, vowels, and
+parallelization, enabling large-scale pretraining. BERT [17]
+Tajweed rules
+using Masked Language Modeling (MLM) introuduce large
+• Sifat Level: Represents articulation attributes for each
+unsuprvisedpretraingwhichhasbetterresultsondownstream
+phoneme
+taks. This soon extended to speech with wav2vec [18] and
+Refer to tables: VI VII for Phonemes and Sifat levels.
+wav2vec2.0, which added product quantization [19]. Con-
+former later replaced vanilla Transformers for speech by Key Design Principles
+integrating convolution [20]. Google’s Wav2Vec2-BERT [21]
+1) Madd Representation:
+then applied MLM to speech. Finally, Facebook extended
+• NormalMaddappearsasconsecutivemaddsymbols
+Wav2Vec2-BERT pretraining [22] to 4.5M hours (including
+(e.g., 4-beat Madd: )
+110K Arabic hours), ideal for low-resource language fine- ﺍﺍﺍﺍ
+• Madd al-Leen represented with multiple waw/yaa
+tuning.
+symbols
+2tarteel.ai 2) Emphatic Articulation:
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+• Stressed Ghunnah (e.g., ) as three con- IV-A Choose a Digitized Version of the Holy Quran
+ﺓﺩ(cid:1678)(cid:1933)(cid:2510)(cid:2506)ﺍ ﻥ(cid:1960)(cid:1655)(cid:1843)ﺍ
+secutive noon symbols ( (cid:3476)(cid:3459)(cid:1614)) TheQuranhasmultipledigitizedversionsincludingTanzil3
+• Ikhfa represented as three consecutive and King Fahd Complex4. We chose Tanzil because:
+noon_mokhfah ( ) or meem_mokhfah ( )
+(cid:3478)(cid:3473)(cid:1629) ۾۾۾ • It uses standard Unicode characters
+3) Idgham Handling:
+• Contains both Imlaei and Uthmani versions
+• Assimilation represented by doubling (e.g., • Maintains high accuracy
+(cid:1837)ْ َ(cid:1860)ْ(cid:1571)َ(cid:1604)(cid:1862)َ(cid:1857)
+→ ) We excluded KFGQPC due to its evolving/unstable nature
+(cid:1837)َ(cid:1860)(cid:1571)َ(cid:1645)(cid:3992)(cid:1645)َ(cid:1857)
+4) Special Cases: compared to Tanzil.
+• Sakin: No following symbol IV-B Define Variant Criteria for Hafs
+• Imala: fatha_momala and alif_momala
+Hafs riwayah contains variants, e.g., Madd Al-Munfasil (
+• Rawm: dama_mokhtalasa marker (cid:1678)(cid:1857)
+) can extend 2, 4, 5, or 6 beats. We rigorously defined
+(cid:1837)(cid:1905)(cid:1712)(cid:1655)(cid:2510)(cid:2506)ﺍ
+Example: In table I shows how our phonetizer works.
+these variants through the Qira’at literature [26], summarized
+in the following attributes in the Appendix section VIII-B.
+III-D Development Methodology
+IV-C Collect Expert Recitations
+Our phonetization has two steps:
+We collected recitations from 22 world-class reciters with
+1) Imlaey to Uthmani Conversion
+premium audio quality, totaling 893 hours pre-filtering.
+We selected Uthmani script as our foundation because:
+• Contains specialized Tajweed diacritics (Madd,
+Tasheel, etc.)
+• Preserves pause rules critical for recitation (e.g.,
+stopping on )
+(cid:1576)(cid:4487)(cid:4469)ﺭ
+In order to do that, we created an annotation UI to
+manuallyannotatemisalignedwordsinbothscripts. For
+example II, after that, we developed an algorithm that
+Figure 1: Database Collection Statistics
+relies on the annotations to convert Imlaey to Uthmani.
+2) Uthmani to Phonetic Script Conversion
+We implemented the process through 26 sequential op-
+erations. Each operation contains one or more regular
+expressions, as shown in the Appendix VIII-A.
+3) Extracting Sifat: Next, we extract the 10 attributes
+(Sifat) defined in Table VII, excluding Inhiraf ( ),
+ﻑﺍ(cid:1888)(cid:3548)(cid:3766)ﺇ
+as it describes the shidda/rakhawa spectrum, and Leen
+( ), as it was already handled through our Madd
+(cid:3476)(cid:3449)(cid:4845)(cid:4839)ﺍ
+representation.
+IV Data Preparation
+Figure 2: Reciters Statistics
+To prepare the data, we first defined selection criteria. We
+We developed a web GUI using Streamlit5 that:
+aimedtocollectrecitationsfromthebestrecitersworldwideto
+serve as references for judging Quran learners. In our study, • Downloads and extracts metadata for each track
+we considered only Hafs riwayah ( ) as it’s the most • Organizes data by Moshaf (each chapter as ”001.mp3”)
+(cid:1895)(cid:1712)(cid:1739)(cid:1776)(cid:1604)ﺍﻭﺭ
+popular recitation method globally. Recognizing that manual • Annotates Moshaf attributes
+dataannotationrequiressignificanteffortandtime,wecreated
+IV-D Segment Recitations
+a 98% automated pipeline for data collection. The steps are:
+Since Tajweed rules are affected by pauses ( ), accurate
+(1) Choose a digitized Quran script as the project foundation. (cid:1688)(cid:1698)ﻭ
+segmentation is crucial. We initially tested open-source Voice
+(2) Define criteria for Hafs methodology. (3) Collect expert
+Activity Detection (VAD) models including SileroVAD [27]
+recitations (4) Segment recitations at pause points ( ) (5)
+(cid:1688)(cid:1698)ﻭ
+and PyAnnotate [28]. Poor Quran-specific performance led
+Transcribesegments. (6) Validatedata throughTasmee ( )
+(cid:1557)(cid:1645)(cid:1860)(cid:2797)(cid:2780)
+us to develop a custom segmenter by fine-tuning Wav2Vec2-
+Algorithm. (7) Develop Quran Phonetic Script.
+BERT [22] for frame-level classification.
+We define a Moshaf as a complete Quran recitation (chap-
+ters 1-114) by a specific reciter. Statistics are summarized in
+3https://tanzil.net
+tableIII.Wemanuallyannotated5400samplesoutof286,537 4https://qurancomplex.gov.sa
+utterances, resulting for the automation ratio of 98%. 5https://streamlit.io/
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+Table I: Examples of Uthmani to Phonetic Script Conversion with Sifat Attributes
+Uthmani Phonetic H/J S/R T/T Itb Saf Qal Tik Taf Ist Gho
+ﺃ(cid:5466) َﺀ jahr shd mrq mnf no nql nkr ntf nst nmg
+hams shd mrq mnf no nql nkr ntf nst nmg
+ﺕُ ﺕُ
+hams rkh mrq mnf no nql nkr ntf nst nmg
+ـ(cid:1739)َ ﺡَ
+ـٰٓ ﺍﺍﺍﺍﺍﺍ hams rkh mrq mnf no nql nkr ntf nst nmg
+jahr shd mrq mnf no nql nkr ntf nst nmg
+ﺝّ(cid:1441) ُ(cid:3847)(cid:4114)
+ﻭٓ ۥۥۥۥۥۥ jahr rkh mrq mnf no nql nkr ntf nst nmg
+ﻥِّ ِ(cid:3476)(cid:3459)(cid:2573)(cid:3259) jahr btw mrq mnf no nql nkr ntf nst mg
+ﻯ ۦۦ jahr rkh mrq mnf no nql nkr ntf nst nmg
+Phonetizationofword((cid:4620)ِّ(cid:4547)(cid:1960)ٓ(cid:1760)ّ(cid:1441)َٰ(cid:3548)(cid:3769)ُٓ ﺃ(cid:5466))
+AttributeAbbreviations:
+H/J:Hams/Jahr S/R:Shidda/Rakhawa T/T:Tafkheem/Taqeeq Itb: Itbaq
+Saf: Safeer Qal: Qalqla Tik: Tikraar Taf: Tafashie Ist: Istitala Gho: Ghonna
+ValueAbbreviations:
+shd: shadeed rkh: rikhw btw: between mrq: moraqaq
+mof: mofakham mnf: monfateh mtb: motbaq no: no_safeer
+nql: not_moqalqal nkr: not_mokarar ntf: not_motafashie
+nst: not_mostateel nmg: not_maghnoon mg: maghnoon
+Table II: Example of misalignment between Uthmani and • Minimum silence duration (merges segments)
+Imlaey Scripts • Minimum speech duration (discards short segments)
+ImlaeyScript UthmaniScript • Padding (added at segment boundaries)
+ّﻡ(cid:1439)ﺃ(cid:1441) (cid:2726)َْ(cid:2705)ﺍ(cid:1543)َ(cid:4044) ّﻡ(cid:1439)ُ(cid:1949)َ(cid:1655)ْ(cid:3999)َ(cid:3951) IV-D1a Data Augmentation: Using the Audiomenta-
+tions [29] library, we replicated SileroVAD’s noise setup on
+40% of samples, adding:
+Table III: Dataset Statistics per Moshaf
+MoshafID Hours Length • TimeStretch (0.8x-1.5x) to simulate recitation speeds
+0.0 28.47721296 9133 • Sliding window truncation (1-second windows) for long
+0.1 40.31257093 10764
+0.2 49.46541671 9971 samples instead of exclusion
+0.3 37.18758118 12604 IV-D2 Training Segmenter: We fine-tuned Wav2Vec2-
+1.0 28.40784367 10939
+BERT for frame classification (1 epoch):
+2.0 51.04665234 9942
+2.1 30.02847051 10394 Results of our segmenter on unseen mosahf in table IV-D2:
+3.0 25.19377593 10444
+4.0 29.12333379 10994
+TableIV:Testresultsofthesegmenteronunseenfullmoshaf.
+5.0 28.01777693 11482
+6.0 39.38568468 12435 The result is validated by actual usage of the segmenter
+7.0 28.25627201 9907
+Metric Value
+8.0 30.85935158 10330
+TestLoss 0.0277
+9.0 27.95178738 10642
+TestAccuracy 0.9935
+11.0 24.00685052 10363
+TestF1Score 0.99476
+12.0 33.42429862 9880
+13.0 33.99108879 9377
+19.0 30.11410843 11278
+IV-E Transcribe Segmented Parts
+22.0 28.10947704 10332
+24.0 28.51243509 9868 We employed Tarteel ASR [30] (Whisper fine-tuned on
+25.0 16.92910042 7922
+Quranic recitations [31]). To handle its 30-second limit, we
+26.0 30.44461112 11565
+26.1 32.71190443 11850 used sliding window truncation (10-second windows), with
+27.0 28.05097968 11213 verification in the next step.
+28.0 31.05318768 10535
+29.0 27.78900316 11061 IV-F Verification of Segmentation and Transcription
+30.0 29.14366461 11312
+Total 847.9944402 286537 Segmentation Verification: Manual inspection of 50-75
+random samples per Moshaf. Moshaf 25.0 was excluded due
+to poor segmentation.
+IV-D1 Preparing Segmenter Data: We selected mosahf Transcription Verification: Tasmeea-inspired algorithm:
+compatible with SileroVAD v4, using EveryAyah6 (pre- (1)MatchsegmentstoQuranictext. (2)Identifymissingsurah
+segmented by ayah) as ground truth. After tuning parameters parts. (3) Manual correction.
+per Moshaf: Refer to the Tasmeea Algorithm in the Appendix 1
+• Threshold Aftermatching,wecataloguedmissingQuranicportionsper
+surah. Then correct transcription errors identified through the
+6https://everyayah.com/ above process.
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+V Modeling The Quran Phonetic Script detect them even though it was not trained on recitations
+with pronunciation errors. Although this is not sufficient,
+Our Quran Phonetic script has two outputs: phonemes and
+we plan to annotate available datasets like [6] to conduct
+sifat (which has 10 attributes). We modeled this as follows:
+comprehensive evaluations.
+Imagine you are given an input speech utterance and want
+We note that the PER across nearly all levels is balanced,
+to output transcripts in Arabic, English, French, and German
+except for the phoneme level, as it has a much larger vocab-
+simultaneously. We implemented this as a speech encoder
+ulary of 44 (with padding).
+with a linear layer for each language. Replacing languages
+with our 11 levels (phonemes and the 10 sifat), we obtain 11
+Table V: Test Results on moshaf 26.1 and 19.0
+parallel transcription levels. We chose CTC loss [32] without
+Metric Value
+language model integration because we aim to capture what
+loss 0.01162
+theuseractuallysaid,notwhattheyintendedtosay. Wename per_phonemes 0.00543
+our architecture Multi-level CTC. per_hams_or_jahr 0.00117
+per_shidda_or_rakhawa 0.00172
+WecomputethelossbyaveragingallCTClossesforthe11
+per_tafkheem_or_taqeeq 0.00167
+levels, assigning a weight of 0.4 to the phonemes level as it per_itbaq 0.00092
+has the largest vocabulary size (43) compared to other levels. per_safeer 0.00132
+per_qalqla 0.00085
+We fine-tuned Facebook’s Wav2Vec2-Bert [22] for a single
+per_tikraar 0.0009
+epoch with a constant learning rate of 5e-5 with 64 batch per_tafashie 0.0016
+size. We applied augmentations identical to Silero VAD [27] per_istitala 0.0008
+per_ghonna 0.0013
+using the audiomentations library [29], with additional
+average_per 0.0016
+augmentations: TimeStretch and GainTransition. We
+filteredoutsampleslongerthan30 secondsnotduetomodel
+VII Limitations and Future Work
+limitations, but for efficient GPU utilization - sacrificing only
+3k samples out of 250k training samples. Ourprimarylimitationisthatourdatasetconsistsofgolden
+The training was done using an H200 GPU with 141 GB recitations with no errors, limiting our ability to evaluate
+of GPU memory for 7 hours. performance on real-world data. Although we tested on a
+few actual samples and successfully detected madd, ghunnah,
+VI Results
+and qalqalah errors, we need to develop a comprehensive
+WetrainedonallMushafprovidedabove,reservingMushaf datasetcontainingerror-containingrecitationstranscribedwith
+26.1and19.0fortesting. Theevaluationresultsarepresented our Quran Phonetic Script.
+inTableV.WenoticethattheAveragePhonemeErrorRateis A secondary limitation arises from attribute-specific ar-
+0.16%,whichprovesourideathattheQuranPhoneticsScript ticulation patterns: Certain attributes apply exclusively to
+can be learned. individual letters, such as Istitala for (ﺽ) and Tikrar
+We tested some actual samples with errors in Madd, for .(ﺭ) Consequently, we expect our model will be unable
+Ghunna, Qalqala, and Tafkheem. The model was able to to capture instances of (ﺽ) without Istitala or (ﺭ) without
+Figure 3: VAD architecture vs. standard streaming models
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+Acknowledgment
+Weexpressourprofoundgratitudetoseveralindividualsand
+organizations: Sheikh Ahmed Abdelsalam, Sheikh Mustafa
+Fathy, and Sheikh Mohamed Rabee for their invaluable guid-
+ance in understanding and representing Tajweed rules and
+learner mistakes. We also thank BA-HPC7 for providing ac-
+cesstohigh-performancecomputingresourcesandfacilitating
+dataprocessing. SpecialappreciationgoestoEngineerKhaled
+Bahaa for his assistance with paying method for GPUs.
+References
+[1] Y. E. Kheir, A. Ali, and S. A. Chowdhury, “Automatic pronunciation
+assessment–areview,”arXivpreprintarXiv:2310.13974,2023.
+[2] M. Sherif, A. Samir, A. Khalil, and R. Mohsen, “Enhancing usability
+ofcaplsystemforquranrecitationlearning.” INTERSPEECH,2007.
+[3] H.M.Osman,B.S.Mustafa,andY.Faisal,“Qdat: adatasetforreciting
+thequran,”InternationalJournalonIslamicApplicationsinComputer
+ScienceAndTechnology,vol.9,no.1,pp.1–9,2021.
+[4] D. Omran, S. Fawzi, and A. Kandil, “Automatic detection of some
+tajweedrules,”in202320thLearningandTechnologyConference(LT),
+2023,pp.157–160.
+Figure 4: Multi-level CTC loss Architecture composed of [5] D. Shaiakhmetov, G. Gimaletdinova, K. Momunov, and S. Cankurt,
+11 Heads for every level and CTC loss for every level with “Evaluation of the pronunciation of tajweed rules based on dnn
+as a step towards interactive recitation learning,” arXiv preprint
+weighted average loss
+arXiv:2503.23470,2025.
+[6] H.I.Khan,A.Abid,M.M.Moussa,andA.Abou-Allaban,“Thetarteel
+dataset: crowd-sourcedandlabeledquranicrecitation,”2021.
+[7] Y. E. Kheir, O. Ibrahim, A. Meghanani, N. Almarwani, H. O. Toyin,
+S.Alharbi,M.Alfadly,L.Alkanhal,I.Selim,S.Elbataletal.,“Towards
+a unified benchmark for arabic pronunciation assessment: Quranic
+recitationascasestudy,”arXivpreprintarXiv:2506.07722,2025.
+[8] S. M. Abdou and M. Rashwan, “A computer aided pronunciation
+learning system for teaching the holy quran recitation rules,” in 2014
+IEEE/ACS 11th International Conference on Computer Systems and
+Applications(AICCSA). IEEE,2014,pp.543–550.
+[9] M. Al-Marri, H. Raafat, M. Abdallah, S. Abdou, and M. Rashwan,
+“Computeraidedqur’anpronunciationusingdnn,”JournalofIntelligent
+&FuzzySystems,vol.34,no.5,pp.3257–3271,2018.
+[10] A.Mohammed, M.S.B.Sunar,andM.S.H.Salam, “Recognitionof
+holy quran recitation rules using phoneme duration,” in International
+Conference of Reliable Information and Communication Technology.
+Springer,2017,pp.343–352.
+[11] A.M.A.Alqadasi,A.M.Zeki,M.S.Sunar,M.S.B.H.Salam,R.Ab-
+dulghafor, and N. A. Khaled, “Improving automatic forced alignment
+forphonemesegmentationinquranicrecitation,”IEEEAccess,vol.12,
+Figure 5: Recitations lengths in seconds for the whole dataset pp.229–244,2023.
+[12] Y. S. Alsahafi and M. Asad, “Empirical study on mispronunciation
+detectionfortajweedrulesduringquranrecitation,”in20246thInter-
+national Conference on Computing and Informatics (ICCI), 2024, pp.
+Tikrar. This limitation similarly applies to Tajweed rules
+39–45.
+that occur less frequently in the Holy Quran, such as Imala, [13] B. Putra, B. T. Atmaja, and D. Prananto, “Developing speech recog-
+Rawm, and Tasheel. nition system for quranic verse recitation learning software,” IJID
+(International Journal on Informatics for Development), vol. 1, no. 2,
+pp.1–8,2012.
+VIII Conclusion [14] G.E.HintonandR.R.Salakhutdinov,“Reducingthedimensionalityof
+data with neural networks,” science, vol. 313, no. 5786, pp. 504–507,
+We present a novel approach for assessing pronunciation 2006.
+errors in Holy Quran learners through a multi-level Quran [15] J. J. Hopfield, “Neural networks and physical systems with emer-
+gent collective computational abilities,” Proceedings of the National
+Phonetic Script that captures all pronunciation errors for
+AcademyofSciences,vol.79,no.8,pp.2554–2558,1982.
+Hafs (except Ishmam, as it is a visual diacritic not orally [16] A.Vaswani,N.Shazeer,N.Parmar,J.Uszkoreit,L.Jones,A.N.Gomez,
+produced). Weprovide890hoursofannotatedaudiodatawith Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” Advances in
+NeuralInformationProcessingSystems,vol.30,pp.5998–6008,2017.
+300K samples, a 98%-efficient pipeline for generating similar
+[17] J. Devlin, M.-W. Chang, K. Lee, and K. Toutanova, “Bert: Pre-
+datasets, and a novel multi-level CTC model. Achieving a trainingofdeepbidirectionaltransformersforlanguageunderstanding,”
+0.16% average phoneme error rate on unseen test data proves Proceedings of the North American Chapter of the Association for
+Computational Linguistics: Human Language Technologies (NAACL-
+the learnability of the Quran Phonetic Script, fundamentally
+HLT),pp.4171–4186,2019.
+transformingHolyQuranpronunciationassessmentmethodol-
+ogy. 7https://hpc.bibalex.org/
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+[18] S. Schneider, A. Baevski, R. Collobert, and M. Auli, “wav2vec: Table VI: Phoneme Set (43 Symbols)
+Unsupervised pre-training for speech recognition,” arXiv preprint
+Phoneme Name Symbol
+arXiv:1904.05862,2019.
+[19] A. Baevski, Y. Zhou, A. Mohamed, and M. Auli, “wav2vec 2.0: hamza
+ﺀ
+A framework for self-supervised learning of speech representations,” baa
+Advancesinneuralinformationprocessingsystems,vol.33,pp.12449– ﺏ
+taa
+12460,2020. ﺕ
+thaa
+[20] A. Gulati, J. Qin, C.-C. Chiu, N. Parmar, Y. Zhang, J. Yu, W. Han, ﺙ
+jeem
+S.Wang,Z.Zhang,Y.Wuetal.,“Conformer: Convolution-augmented ﺝ
+transformer for speech recognition,” arXiv preprint arXiv:2005.08100, haa_mohmala ﺡ
+2020. khaa
+ﺥ
+[21] Y.-A. Chung, Y. Zhang, W. Han, C.-C. Chiu, J. Qin, R. Pang, and
+daal
+Y. Wu, “W2v-bert: Combining contrastive learning and masked lan- ﺩ
+thaal
+guagemodelingforself-supervisedspeechpre-training,”in2021IEEE ﺫ
+Automatic Speech Recognition and Understanding Workshop (ASRU). raa ﺭ
+IEEE,2021,pp.244–250. zay ﺯ
+[22] L.Barrault,Y.-A.Chung,M.C.Meglioli,D.Dale,N.Dong,M.Dup- seen ﺱ
+penthaler, P.-A. Duquenne, B. Ellis, H. Elsahar, J. Haaheim et al., sheen
+ﺵ
+“Seamless: Multilingual expressive and streaming speech translation,” saad
+ﺹ
+arXivpreprintarXiv:2312.05187,2023. daad
+ﺽ
+[23] D. Omran, S. Fawzi, and A. Kandil, “Automatic detection of some taa_mofakhama –
+tajweed rules,” in 2023 20th Learning and Technology Conference
+zaa_mofakhama –
+(L&T). IEEE,2023,pp.157–160.
+ayn
+[24] ,“ ﻉ
+(cid:2611)(cid:1564),ﺓ(cid:2859)(cid:2819)(cid:1652)(cid:1777) ﺀ(cid:1960)(cid:1898)(cid:4626)(cid:4589)ﺓﺀﺍ(cid:1888)(cid:1698)ﻱ(cid:1678)(cid:1645)(cid:1777)ﺍ(cid:1888)(cid:1712)(cid:1843)ﺍ(cid:1678)(cid:4487)(cid:4469)ﺃ(cid:2726)(cid:2705)(cid:1837)(cid:1645)(cid:1849)(cid:2629)(cid:2061)ﺍ(cid:1678)(cid:1655)(cid:1564)(cid:1543)(cid:4827)(cid:4772)(cid:1543)(cid:1712)(cid:1900)ﻭﺡ(cid:1543)(cid:3890)(cid:1905)(cid:1843)ﺍﻑﻭ(cid:1888)(cid:2630)(cid:2061)ﺍﺝﺭ(cid:1543)(cid:3547)(cid:2684) ghyn
+” , vol. 31, pp. ﻍ
+.(cid:3283)(cid:3249)(cid:1678)(cid:2630)(cid:2061)ﺍ(cid:4626)(cid:4547)(cid:1543)(cid:1930)(cid:4845)(cid:4839)ﺍﺱﺭ(cid:4404)(cid:4383)ﺍ (cid:1776)(cid:1645)(cid:1857)(cid:3080)(cid:3075)(cid:1919)(cid:2517)(cid:2513)ﺍﻡ(cid:2058)(cid:2042)(cid:1571)(cid:4845)(cid:4839)ﺭﺩ(cid:1543)(cid:1711)(cid:1843)ﺍ(cid:1678)(cid:1652)(cid:1564)(cid:2859)(cid:2819)(cid:1857)(cid:2521)(cid:2513)ﺍ(cid:1776)(cid:1571)(cid:1857)(cid:1543)(cid:3877)(cid:4397)(cid:4389)(cid:3552)(cid:2684) faa
+165–190,022023. ﻑ
+qaf
+[25] , . ,2021. ﻕ
+(cid:2262)(cid:2228)(cid:1960)(cid:1919)ﺱ(cid:1678)(cid:1922)ﺭ(cid:3476)(cid:3449)(cid:1857)ﺃ ﺭ(cid:1960)(cid:1905)(cid:2510)(cid:2506)ﺍ(cid:2262)(cid:2228)(cid:1960)(cid:1760)(cid:1658)(cid:1843)ﺍ (cid:1776)(cid:2563)(cid:3259)ﺁ(cid:1888)(cid:1711)(cid:1843)ﺍﺕ(cid:1543)(cid:1919)ﺍﺭ(cid:4404)(cid:4929)(cid:4839)(cid:4626)(cid:4547)(cid:1543)(cid:1620)(cid:1960)(cid:1566)(cid:1843)ﺍﺭﺍﺩ kaf
+[26] , . ﻙ
+ﻉ(cid:1543)(cid:1652)(cid:1903)(cid:1843)ﺍ(cid:2444)(cid:2427)(cid:3871) (cid:1895)(cid:1712)(cid:1739)(cid:1862)(cid:1564)(cid:1543)(cid:4827)(cid:4800)(cid:1699)(cid:1688)(cid:1849)(cid:1658)(cid:3056)(cid:3055)(cid:3051)ﺍﺕ(cid:1543)(cid:3095)(cid:4213)(cid:4221)(cid:1843)ﺍ(cid:4626)(cid:4589)(cid:1895)(cid:1655)(cid:1843)ﺍ(cid:3843)(cid:3715)(cid:3684)(cid:3932) (cid:4626)(cid:4544)(cid:1543)(cid:1652)(cid:1843)ﺍ(cid:2085)(cid:2069)(cid:1946)(cid:1905)(cid:1857)(cid:1776)(cid:1571)(cid:1652)(cid:1946)(cid:1857)ﻭ(cid:1776)(cid:1652)(cid:1658)(cid:1821)(cid:1857) lam
+ﻝ
+ﻩﺩ(cid:2518)(cid:2513)ﻭﺃﻭ(cid:3617)(cid:3584)(cid:1849)(cid:2630)(cid:2061)ﺍ,,ـﻫ1380 (ـ(cid:1777)1380(cid:4626)(cid:4589)(cid:1960)(cid:1617))ﻉ(cid:1543)(cid:1652)(cid:1903)(cid:1843)ﺍ(cid:2444)(cid:2427)(cid:3871) :(cid:1688)(cid:1843)(cid:1949)(cid:2510)(cid:2506)ﺍ. meem ﻡ
+[27] S.Team,“Silerovad: pre-trainedenterprise-gradevoiceactivitydetector noon
+(vad), number detector and language classifier,” https://github.com/ ﻥ
+haa
+snakers4/silero-vad,2024. ﻩ
+waw
+[28] A.PlaquetandH.Bredin,“Powersetmulti-classcrossentropylossfor ﻭ
+yaa
+neuralspeakerdiarization,”inProc.INTERSPEECH2023,2023. ﻱ
+[29] I.JordalandContributors,“Audiomentations:Apythonlibraryforaudio alif ﺍ
+dataaugmentation,”https://github.com/iver56/audiomentations,2025. yaa_madd ۦ
+[30] T. AI, “Whisper base arabic quran (automatic speech recognition waw_madd
+ۥ
+for quranic recitation),” https://huggingface.co/tarteel-ai/ fatha
+whisper-base-ar-quran, 2023, model by Tarteel AI. Company website: َ
+https://www.tarteel.ai/. dama ُ
+[31] A. Radford, J. W. Kim, T. Xu, G. Brockman, C. McLeavey, and kasra ِ
+I.Sutskever, “Robustspeechrecognitionvialarge-scaleweaksupervi- fatha_momala
+۪
+sion,”inInternationalconferenceonmachinelearning. PMLR,2023,
+pp.28492–28518. alif_momala ـ
+[32] A.Graves,S.Fernández,F.Gomez,andJ.Schmidhuber,“Connectionist hamza_mosahala
+ٲ
+temporal classification: Labelling unsegmented sequence data with qlqla
+ﭾ
+recurrent neural networks,” in Proceedings of the 23rd International
+noon_mokhfah
+ConferenceonMachineLearning(ICML2006). ACM,2006,pp.369– ﮞ
+meem_mokhfah
+376. ۾
+sakt
+ۜ
+Appendix
+dama_mokhtalasa
+ؙ
+VIII-A Uthmani to Phonetic Conversion Operations
+The 26 sequential phonetization operations:
+1) DisassembleHrofMoqatta ( ): Sepa- 5) ConvertAlifMaksora ( ): Converts
+(cid:1776)(cid:1571)(cid:1946)(cid:1711)(cid:1857) ﻑﻭ(cid:3515)(cid:3486) (cid:1785)(cid:1645)(cid:1821)(cid:1712)(cid:1617) ﺓﺭ(cid:1960)(cid:1905)(cid:1711)(cid:2510)(cid:2506)ﺍ(cid:1688)(cid:1843)(cid:2521)(cid:2513)ﺍ(cid:1837)(cid:1604)(cid:1960)(cid:3548)(cid:3769) ﻯ
+rates Quranic initials (e.g., ) into individual letters. in Uthmani script to either yaa ( ) or alif () based on
+(cid:3539)(cid:3522)ﺍ،(cid:4693)(cid:4648)ﺍ ﻱ ﺍ
+2) SpecialCases ( ): Handles special words like context.
+(cid:1776)(cid:1900)(cid:1543)(cid:3872)ﺕ(cid:2518)(cid:2513)(cid:1543)(cid:3873)
+that have different pronunciation forms defined in 6) NormalizeHmazat ( ): Standardizes hamza
+(cid:1940)(cid:1930)(cid:3999)(cid:3951) ﺕﺍ(cid:1886)(cid:1860)(cid:2902)(cid:2898)ﺍ (cid:1678)(cid:1645)(cid:1739)(cid:1960)(cid:1617)
+MoshafAttributes. forms ( ) to .
+ﺉﺅﺇﺃ ﺀ
+3) BeginWithHamzatWasl ( ): Processes
+(cid:1837)(cid:1900)(cid:1960)(cid:1843)ﺍ ﺓ(cid:1886)(cid:1860)(cid:4827)(cid:4766) ﺀ(cid:1678)(cid:1652)(cid:1843)ﺍ 7) IthbatYaaYohie ( ): Handles words like
+(cid:3611)(cid:3577)(cid:3548)(cid:3756)ﺀ(cid:1543)(cid:1604)ﺕ(cid:1543)(cid:2570)(cid:3265)ﺇ ۦ(cid:1968)ِ ْ(cid:3548)(cid:3756)ُ
+words starting with connecting hamza ( ﭐ) and converts where two yaa letters occur - resolves conflicts when
+it to hamza ( ﺀ) with appropriate harakah for nouns and pausing on words with consecutive consonants (
+ﺀ(cid:1543)(cid:1711)(cid:1658)(cid:1843)ﺍ
+verbs. ) by adding another yaa at end.
+(cid:3476)(cid:3449)(cid:1655)(cid:1803)(cid:1543)(cid:1930)(cid:1843)ﺍ
+4) BeginWithSaken ( (cid:1862)(cid:1803)(cid:1543)(cid:2797)(cid:2774) ﺀ(cid:1678)(cid:1652)(cid:1843)ﺍ): Manages words begin- 8) RemoveKasheeda ( ﺓ(cid:1678)(cid:1645)(cid:1933)(cid:1821)ـ(cid:1843)ﺍ (cid:4397)(cid:4383)ﺍﺯﺇ): Deletes elongation
+ning with a consonant (sakin) like , as Arabic marks ( ) from text.
+(cid:1557)ْ َ(cid:1946)(cid:1711)َْ(cid:1645)ْ(cid:1843) ـــ
+doesn’t start utterances with consonants. 9) RemoveHmzatWaslMiddle ( ): Re-
+(cid:1776)(cid:1645)(cid:1946)(cid:1919)(cid:1960)(cid:1843)ﺍ(cid:1837)(cid:1900)(cid:1960)(cid:1843)ﺍﺓ(cid:1886)(cid:4487)(cid:4485)(cid:4397)(cid:4383)ﺍﺯﺇ
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+Table VII: Sifat Set (10 Attributes)
+Sifat(English) Sifat(Arabic) AvailableAttributes(English) AvailableAttributes(Arabic)
+hams_or_jahr hams,jahr
+(cid:1888)(cid:1779)(cid:2634)(cid:2061)ﺍﻭﺃ(cid:1908)(cid:1860)(cid:2902)(cid:2898)ﺍ (cid:1888)(cid:1779)(cid:1743),(cid:1908)(cid:4487)(cid:4485)
+shidda_or_rakhawa shadeed,between,rikhw
+ﺓﻭ(cid:1543)(cid:3872)(cid:3539)(cid:3522)ﺍﻭﺃﺓ(cid:1678)(cid:1933)(cid:1843)ﺍ (cid:1960)(cid:1738)ﺭ,(cid:3476)(cid:3449)(cid:1611)(cid:3476)(cid:3449)(cid:1611),(cid:2262)(cid:2228)(cid:1678)(cid:1922)
+tafkheem_or_taqeeq mofakham,moraqaq
+(cid:1873)(cid:1645)(cid:1698)(cid:2859)(cid:2832)(cid:1843)ﺍﻭﺃ(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1658)(cid:1843)ﺍ (cid:1873)(cid:1698)(cid:2613)(cid:2598),(cid:1854)(cid:1755)(cid:1712)(cid:1857)
+itbaq monfateh,motbaq
+ﻕ(cid:1543)(cid:1652)(cid:1943)(cid:2517)(cid:2513)ﺍ (cid:1873)(cid:1652)(cid:1946)(cid:1857),(cid:1722)(cid:1658)(cid:1712)(cid:1655)(cid:1857)
+safeer safeer,no_safeer
+(cid:2859)(cid:2819)(cid:1712)(cid:1905)(cid:1843)ﺍ (cid:2859)(cid:2819)(cid:1712)(cid:1900)(cid:2518)(cid:2513),(cid:2859)(cid:2819)(cid:1712)(cid:1900)
+qalqla moqalqal,not_moqalqal
+(cid:4397)(cid:4389)(cid:1711)(cid:1849)(cid:1711)(cid:1843)ﺍ (cid:1837)(cid:1711)(cid:1849)(cid:1711)(cid:1857)(cid:2859)(cid:2819)(cid:3866),(cid:1837)(cid:1711)(cid:1849)(cid:1711)(cid:1857)
+tikraar mokarar,not_mokarar
+ﺭﺍ(cid:2893)(cid:2866)(cid:1658)(cid:1843)ﺍ ﺭ(cid:2893)(cid:2866)(cid:1857)(cid:2859)(cid:2819)(cid:3866),ﺭ(cid:2893)(cid:2866)(cid:1857)
+tafashie motafashie,not_motafashie
+(cid:3700)(cid:3922)(cid:1712)(cid:1658)(cid:1843)ﺍ (cid:3700)(cid:3922)(cid:1712)(cid:1658)(cid:1857)(cid:2859)(cid:2819)(cid:3866),(cid:3700)(cid:3922)(cid:1712)(cid:1658)(cid:1857)
+istitala mostateel,not_mostateel
+(cid:4397)(cid:4383)(cid:1543)(cid:1946)(cid:1658)(cid:1919)(cid:2518)(cid:2513)ﺍ (cid:1837)(cid:1645)(cid:1946)(cid:1658)(cid:1930)(cid:1857)(cid:2859)(cid:2819)(cid:3866),(cid:1837)(cid:1645)(cid:1946)(cid:1658)(cid:1930)(cid:1857)
+ghonna maghnoon,not_maghnoon
+(cid:1776)(cid:1655)(cid:1566)(cid:1843)ﺍ ﻥ(cid:1960)(cid:1655)(cid:1566)(cid:1857)(cid:2859)(cid:2819)(cid:3866),ﻥ(cid:1960)(cid:1655)(cid:1566)(cid:1857)
+moves connecting hamza () in non-initial positions. Algorithm 1 Tasmeea Algorithm
+ﭐ
+10) RemoveSkoonMostadeer ( Require: text_segments = [s ,s ,...,s ], sura_idx,
+ﻥ(cid:1960)(cid:1821)(cid:1919) (cid:1557)(cid:1698)(cid:1960)(cid:1699) ﻱ(cid:4403)(cid:4383)ﺍ ﻑ(cid:1888)(cid:2630)(cid:2061)ﺍ ﻑ(cid:1677)(cid:3873) 1 2 n
+): Eliminatesletterswithcircularsukoondiacritics overlap_words = 6, window_words = 30,
+(cid:2037)(cid:1996)(cid:1678)(cid:1658)(cid:1930)(cid:1857)
+like alif in . acceptance_ratio=0.5, flags for special phrases
+۟ﺍ(cid:1960)ُ(cid:1571)َ(cid:4487)َ(cid:4473)
+11) SkoonMostateel ( ): Removes alif with Ensure: List of tuples (match,ratio) per segment
+(cid:1837)(cid:1645)(cid:1946)(cid:1658)(cid:1930)(cid:1857) ﻥ(cid:1960)(cid:1821)(cid:1919)
+elongatedsukoonmid-wordandaddsitattheendduring 1: aya←1 {Start at first verse}
+pauses ( ). 2: penalty ←0
+(cid:1688)(cid:1698)ﻭ
+12) MaddAlewad ( ﺽ(cid:1960)(cid:1571)(cid:1843)ﺍ (cid:1678)(cid:1857)): Removes alif after tanween 3: for each segment s i in text_segments do
+fatha mid-word and adds alif while removing tanween 4: norm_text ← normalize(s i) {Remove
+at pause positions ( ). spaces/diacritics}
+(cid:1688)(cid:1698)ﻭ
+13) WawAlsalah ( ): Replaces letter waw ( ) with 5: min_win ← window_words − 10, max_win ←
+ﺓ(cid:3080)(cid:3075)(cid:1905)(cid:1843)ﺍ ﻭﺍﻭ ﻭ
+small alif above combined with alif. window_words+10
+14) EnlargeSmallLetters ( ): Resizes 6: start_range ← [−(overlap + penalty),(overlap +
+ﺓ(cid:2859)(cid:2819)(cid:1566)(cid:1905)(cid:1843)ﺍ ﻑﻭ(cid:1888)(cid:2630)(cid:2061)ﺍ (cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1617)
+miniature Arabic letters to standard proportions. max(window_words,max_win)+penalty]
+15) CleanEnd ( ): Removes redundant diacritics 7: if first segment and include_istiaatha then
+(cid:1776)(cid:1604)(cid:1543)(cid:4827)(cid:4810)(cid:1843)ﺍ (cid:1688)(cid:1645)(cid:1945)(cid:2573)(cid:3262)
+and spaces at word endings. 8: Check istiaatha special case
+16) NormalizeTaa ( ): Converts (taa marbuta) to 9: else if last segment and include_sadaka then
+ﺀ(cid:1543)(cid:1658)(cid:1843)ﺍ (cid:1678)(cid:1645)(cid:1739)(cid:1960)(cid:1617) ﺓ
+or based on context, and converts final to haa ( ). 10: Check sadaka special case
+ﺕ ﻩ ﺓ ﻩ
+17) AddAlifIsmAllah ( ): Inserts compen- 11: end if
+(cid:1348)(cid:6128)(cid:1346)ﺍ (cid:4030)(cid:3908)ﺍ (cid:1688)(cid:1843)ﺃ (cid:1776)(cid:1699)(cid:1543)(cid:1898)ﺇ
+12:
+best_ratio←0, best_match←null
+satory alif in derivatives of ” ”.
+(cid:1348)(cid:6128)(cid:1346)ﺍ 13: for each start position p in start_range do
+18) PrepareGhonnaIdghamIqlab ( ﻡ(cid:1543)(cid:3866)ﺩ(cid:2517)(cid:2513)ﺍﻭ (cid:1776)(cid:1655)(cid:1566)(cid:1843)ﺍ (cid:1776)(cid:1642)(cid:1645)(cid:4827)(cid:4772) 14: for each window size w ∈ [min_win,max_win]
+ﺏ(cid:3080)(cid:3075)(cid:1698)(cid:2517)(cid:2513)ﺍﻭ): Preprocesses text for nasalization, do
+assimilation, and conversion rules. 15: c← extract candidate at (aya, p, w)
+19) IltiqaaAlsaknan (
+(cid:3476)(cid:3449)(cid:1655)(cid:1803)(cid:1543)(cid:1930)(cid:1843)ﺍ
+ﺀ(cid:1543)(cid:1711)(cid:1658)(cid:1843)ﺍ): Resolves consecutive
+16:
+dist←edit_distance(norm_text,c)
+consonants by inserting vowels. 17: ratio ← 1 −
+20) DeleteShaddaAtBeginning (
+(cid:1776)(cid:1604)ﺍ(cid:1678)(cid:1652)(cid:1843)ﺍ (cid:4626)(cid:4589) ﺓ(cid:1678)(cid:1933)(cid:1843)ﺍ
+ﻑ(cid:1677)(cid:3873)): Re- min(dist,|norm_text|)/|norm_text|
+moves shadda ( ّ) from word-initial letters. 18: if ratio>best_ratioor(ratio=best_ratioand
+21) Ghonna ( ): Applies nasalization during pronuncia- |p|<|best_start|) then
+(cid:1776)(cid:1655)(cid:1559)
+tion of sakin noon and tanween. 19: update best_ratio, best_match, best_start,
+22) Tasheel ( ): Adds a letter representing alif with best_window
+(cid:1837)(cid:1645)(cid:4829)(cid:3662)(cid:3645)
+tasheel easing. 20: end if
+23) Imala ( (cid:4397)(cid:4383)(cid:1543)(cid:1857)ﺇ): Converts fatha with imala to 21: end for
+fatha_momala phoneme and alif with imala to 22: end for
+alif_momala phoneme. 23: if best_ratio<acceptance_ratio then
+24) Madd ( (cid:1678)(cid:1857)): Adds madd symbols for all madd types, 24: output (null, best_ratio)
+inserting madd_alif ( ﺍ), madd_waw ( ۥ), and madd_yaa 25: penalty ←max_win
+( ۦ). 26: aya←aya+1 {Default advance}
+25) Qalqla ( (cid:1776)(cid:1711)(cid:1849)(cid:1698)): Adds echoing effect to ﺩ ,ﺝ ,ﺏ ,ﻁ ,ﻕ 27: else
+letters with sukoon. 28: output (best_match, best_ratio)
+26) RemoveRasHaaAndShadda( ﻥ(cid:1960)(cid:1821)(cid:1930)(cid:1843)ﺍ(cid:1776)(cid:1857)(cid:3080)(cid:3075)(cid:3871)ﺀ(cid:1543)(cid:2630)(cid:2061)ﺍﺱﺃﺭ(cid:4397)(cid:4383)ﺍﺯﺇ): 29: aya←aya+best_start+best_window
+Deletes sukoon diacritic marks. 30: penalty ←0
+31: end if
+32: end for
+33: Complexity: O(N ·W ·L2) {N=segments, W=window
+size, L=segment length}
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+VIII-B Moshaf Attribute Definitions • madd_mottasel_waqf ( )
+(cid:1543)(cid:1712)(cid:1698)ﻭ(cid:1837)(cid:1905)(cid:1658)(cid:2510)(cid:2506)ﺍ(cid:1678)(cid:2510)(cid:2506)ﺍﺭﺍ(cid:1678)(cid:1711)(cid:1857)
+• rewaya ( ) – Values:
+(cid:1776)(cid:1604)ﺍﻭ(cid:3539)(cid:3522)ﺍ
+– Values: - hafs ( ) ∗ - 4
+(cid:1895)(cid:1712)(cid:1739)
+– Default Value: ∗ - 5
+– More Info: The type of the quran Rewaya. ∗ - 6
+– Default Value:
+• recitation_speed ( )
+ﺓﻭ(cid:3080)(cid:3075)(cid:1658)(cid:1843)ﺍ(cid:1776)(cid:3871)(cid:3684)(cid:3908)
+– More Info: The length of Madd Almotasel at pause
+– Values:
+for Hafs.. Example ” ”.
+∗ - mujawad ( ) ﺀ(cid:1543)(cid:1860)(cid:1930)(cid:1843)ﺍ
+∗ - above_murﺩ a(cid:1960)(cid:3552)(cid:2684) ttal ( ) • madd_aared_len ( ﺽﺭ(cid:1543)(cid:1571)(cid:1843)ﺍ(cid:1678)(cid:2510)(cid:2506)ﺍﺭﺍ(cid:1678)(cid:1711)(cid:1857))
+(cid:1837)(cid:1617)(cid:1888)(cid:2510)(cid:2506)ﺍ(cid:1873)(cid:1604)(cid:1960)(cid:1699)
+∗ - murattal ( ) – Values:
+(cid:1837)(cid:1617)(cid:2613)(cid:2598)
+∗ - hadr ( ) ∗ - 2
+ﺭ(cid:1678)(cid:3873)
+∗ - 4
+– Default Value: murattal ( )
+(cid:1837)(cid:1617)(cid:2613)(cid:2598) ∗ - 6
+– More Info: The recitation speed sorted from slowest
+– Default Value:
+to the fastest
+ﻉ(cid:3684)(cid:3908)(cid:2521)(cid:2513)ﺍ(cid:4626)(cid:4607)ﺇ(cid:1546)(cid:1946)(cid:1611)(cid:2521)(cid:2513)ﺍ(cid:1862)(cid:1857)(cid:1776)(cid:2570)(cid:3262)(cid:2613)(cid:2598)ﺓﻭ(cid:3080)(cid:3075)(cid:1658)(cid:1843)ﺍ(cid:1776)(cid:3871)(cid:3684)(cid:3908)
+– More Info: The length of Mad Al Aared ”
+• takbeer ( ) ﺽﺭ(cid:1543)(cid:1571)(cid:1843)ﺍ(cid:1678)(cid:1857)
+(cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1658)(cid:1843)ﺍ ”.
+ﻥ(cid:1960)(cid:1821)(cid:1930)(cid:4845)(cid:4839)
+– Values:
+• madd_alleen_len ( )
+∗ - no_takbeer ( ) (cid:3476)(cid:3449)(cid:4845)(cid:4839)ﺍ(cid:1678)(cid:1857)ﺭﺍ(cid:1678)(cid:1711)(cid:1857)
+(cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1617)(cid:2518)(cid:2513) – Values:
+∗ - beginning_of_sharh (
+ﻝﻭ(cid:2521)(cid:2513) ﺡ(cid:3684)(cid:3922)(cid:1843)ﺍ ﻝﻭﺃ (cid:1862)(cid:1857) (cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1658)(cid:1843)ﺍ ∗ - 2
+ﺱ(cid:1543)(cid:1655)(cid:1843)ﺍ) ∗ - 4
+∗ - end_of_doha ( ﺱ(cid:1543)(cid:1655)(cid:1843)ﺍ(cid:3515)(cid:3485)(cid:2522)(cid:2513)(cid:1968)(cid:1756)(cid:1903)(cid:1843)ﺍ(cid:3515)(cid:3485)ﺁ(cid:1862)(cid:1857)(cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1658)(cid:1843)ﺍ) ∗ - 6
+∗ - general_takbeer ( )
+(cid:1776)(cid:1611)(cid:1960)(cid:1658)(cid:1843)ﺍ(cid:2518)(cid:2513)ﺇﺓﺭ(cid:1960)(cid:1919)(cid:4255)(cid:4173)ﻝﻭﺃ(cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1658)(cid:1843)ﺍ – Default Value: None
+– Default Value: no_takbeer ( (cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1617)(cid:2518)(cid:2513)) – More Info: The length of the Madd al-Leen when
+– More Info: The ways to add takbeer ( (cid:2859)(cid:2826)(cid:1803)ﺃ (cid:1348)(cid:6128)(cid:1346)ﺍ) after stopping at the end of a word (for a sakin waw or
+Istiaatha ( ﺓﺫ(cid:1543)(cid:1571)(cid:1658)(cid:1919)ﺍ) and between end of the surah and ya preceded by a letter with a fatha) should be less
+beginning of the surah. no_takbeer: ” (cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1617) (cid:2518)(cid:2513)” — than or equal to the length of Madd al-’Arid (the
+NoTakbeer(Noproclamationofgreatness,i.e.,there temporary stretch due to stopping). Default Value
+is no Takbeer recitation) beginning_of_sharh: is equal to madd_aared_len.
+ﻑ(cid:1960)(cid:1711)(cid:1843)ﺍ(cid:1862)(cid:1564)(cid:3476)(cid:3449)(cid:4845)(cid:4839)ﺍ(cid:1678)(cid:1857)ﺭﺍ(cid:1678)(cid:1711)(cid:1857)
+” ” — Takbeer from
+ﺱ(cid:1543)(cid:1655)(cid:1843)ﺍ ﻝﻭ(cid:2521)(cid:2513) ﺡ(cid:3684)(cid:3922)(cid:1843)ﺍ ﻝﻭﺃ (cid:1862)(cid:1857) (cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1658)(cid:1843)ﺍ ﻥ(cid:1960)(cid:1821)(cid:1604)ﻥﺃ(cid:1589)(cid:3552)(cid:3756)ﻭ(ﺡ(cid:1960)(cid:1658)(cid:1712)(cid:1857)ﻑ(cid:3515)(cid:3486)(cid:1543)(cid:1779)(cid:1849)(cid:1652)(cid:1698)ﻭ(cid:1776)(cid:1655)(cid:1803)(cid:1543)(cid:1930)(cid:1843)ﺍﺀ(cid:1543)(cid:1645)(cid:1843)ﺍﻭ(cid:1776)(cid:1655)(cid:1803)(cid:1543)(cid:1930)(cid:1843)ﺍﻭﺍ(cid:2058)(cid:2042)(cid:1843))
+the beginning of Surah Ash-Sharh to the begin-
+ning of Surah An-Nas end_of_dohaf: ” ﺽﺭ(cid:1543)(cid:1571)(cid:1843)ﺍ(cid:1557)(cid:1857)ﻱﻭ(cid:1543)(cid:2797)(cid:2767)ﻭﺃ(cid:1862)(cid:1857)(cid:1837)(cid:1698)ﺃ(cid:3476)(cid:3449)(cid:4845)(cid:4839)ﺍ(cid:1678)(cid:1857)ﺭﺍ(cid:1678)(cid:1711)(cid:1857)
+(cid:1862)(cid:1857) (cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1658)(cid:1843)ﺍ
+” — Takbeer from the end • ghonna_lam_and_raa ( ﺀﺍ(cid:3539)(cid:3522)ﺍﻭﻡ(cid:3080)(cid:4851)(cid:4839)ﺍ(cid:1776)(cid:1655)(cid:1559))
+ﺱ(cid:1543)(cid:1655)(cid:1843)ﺍ (cid:3515)(cid:3485)(cid:2522)(cid:2513) (cid:1968)(cid:1756)(cid:1903)(cid:1843)ﺍ (cid:3515)(cid:3485)ﺁ
+of Surah Ad-Duha to the end of Surah An-Nas – Values:
+general_takbeer: ” ” — ∗ - ghonna ( )
+(cid:1776)(cid:1611)(cid:1960)(cid:1658)(cid:1843)ﺍ (cid:2518)(cid:2513)ﺇ ﺓﺭ(cid:1960)(cid:1919) (cid:4255)(cid:4173) ﻝﻭﺃ (cid:2859)(cid:2819)(cid:1652)(cid:1821)(cid:1658)(cid:1843)ﺍ (cid:1776)(cid:1655)(cid:1559)
+TakbeeratthebeginningofeverySurahexceptSurah ∗ - no_ghonna ( )
+(cid:1776)(cid:1655)(cid:1559)(cid:2518)(cid:2513)
+At-Tawbah – Default Value: no_ghonna ( )
+(cid:1776)(cid:1655)(cid:1559)(cid:2518)(cid:2513)
+• madd_monfasel_len ( ) – MoreInfo: Theghonnaformerging(Idghaam)noon
+(cid:1837)(cid:1905)(cid:1712)(cid:1655)(cid:2510)(cid:2506)ﺍ(cid:1678)(cid:1857)
+– Values: with Lam and Raa for Hafs.
+∗ - 2 • meem_aal_imran ( (cid:3080)(cid:3075)(cid:1900)ﻭ{(cid:1348)(cid:6128)(cid:1346)ﺍ(cid:4693)(cid:4648)ﺍ} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617)(cid:4393)(cid:4383)(cid:1960)(cid:1698)(cid:4626)(cid:4589)ﻥﺍ(cid:1888)(cid:4487)(cid:4454)ﻝﺁ(cid:2162)(cid:2135)(cid:1857))
+∗ - 3 – Values:
+∗ - 4 ∗ - waqf ( )
+(cid:1688)(cid:1698)ﻭ
+∗ - 5 ∗ - wasl_2 ( )
+(cid:3476)(cid:3449)(cid:1658)(cid:1803)(cid:3515)(cid:3486)(cid:1543)(cid:1777)(cid:1678)(cid:1857)ﻭ(cid:2162)(cid:2135)(cid:2510)(cid:2506)ﺍ(cid:1722)(cid:1658)(cid:1699)
+– Default Value: ∗ - wasl_6 ( )
+ﺕ(cid:4260)(cid:4173)(cid:3515)(cid:3486)(cid:1776)(cid:1658)(cid:1919)(cid:1543)(cid:1777)(cid:1678)(cid:1857)ﻭ(cid:2162)(cid:2135)(cid:2510)(cid:2506)ﺍ(cid:1722)(cid:1658)(cid:1699)
+– More Info: The length of Mad Al Monfasel ”
+(cid:1678)(cid:1857) – Default Value: waqf ( )
+(cid:1688)(cid:1698)ﻭ
+” for Hafs Rewaya.
+(cid:1837)(cid:1905)(cid:1712)(cid:1655)(cid:2510)(cid:2506)ﺍ – More Info: The ways to recite the word meem Aal
+• madd_mottasel_len ( (cid:1837)(cid:1905)(cid:1658)(cid:2510)(cid:2506)ﺍ(cid:1678)(cid:2510)(cid:2506)ﺍﺭﺍ(cid:1678)(cid:1711)(cid:1857)) Imran ( ) at connected recitation. waqf: Pause
+(cid:1348)(cid:6128)(cid:1346)ﺍ (cid:4693)(cid:4648)ﺍ
+– Values: with a prolonged madd (elongation) of 6 harakat
+∗ - 4 (beats). wasl_2 Pronounce ”meem” with fathah (a
+∗ - 5 short”a”sound)andstretchitfor2harakat. wasl_6
+∗ - 6 Pronounce ”meem” with fathah and stretch it for 6
+harakat.
+– Default Value:
+– MoreInfo: ThelengthofMadAlMotasel” (cid:1837)(cid:1905)(cid:1658)(cid:2510)(cid:2506)ﺍ(cid:1678)(cid:1857)” • madd_yaa_alayn_alharfy ( (cid:3476)(cid:3449)(cid:1571)(cid:4845)(cid:4839)(cid:4626)(cid:4589)(cid:1888)(cid:2630)(cid:2061)ﺍﻡﺯ(cid:3080)(cid:4851)(cid:4839)ﺍ(cid:1678)(cid:2510)(cid:2506)ﺍﺭﺍ(cid:1678)(cid:1711)(cid:1857))
+for Hafs. – Values:
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+∗ - 2 ∗ - sakt ( )
+(cid:1576)(cid:1821)(cid:1919)
+∗ - 4 ∗ - waqf ( )
+(cid:1688)(cid:1698)ﻭ
+∗ - 6 ∗ - idraj ( )
+ﺝﺍﺭﺩﺇ
+– Default Value: 6 – Default Value: sakt ( )
+(cid:1576)(cid:1821)(cid:1919)
+– More Info: The length of Lzem Harfy of Yaa in – MoreInfo: Thewaystorecitetheword” ”(Bal
+ﻥﺍﺭ(cid:1837)(cid:1611)
+letter Al-Ayen Madd ” (cid:3476)(cid:3449)(cid:1571)(cid:1843)ﺍ ﻑ(cid:1888)(cid:2630)(cid:2061) ﻡﺯ(cid:3080)(cid:4851)(cid:4839)ﺍ (cid:4626)(cid:4589)(cid:1888)(cid:2630)(cid:2061)ﺍ (cid:1678)(cid:2510)(cid:2506)ﺍ” in Ran)inSuratAlMotaffin. saktmeansslightpause.
+surar: Maryam ” (cid:4693)(cid:4665)(cid:2613)(cid:2598)”, AlShura ” ﻯﺭ(cid:1960)(cid:1933)(cid:1843)ﺍ”. idraj means not sakt. waqf: means full pause, so
+• saken_before_hamz ( ) we can not determine whether the reciter uses sakt
+(cid:1886)(cid:1860)(cid:2902)(cid:2898)ﺍ(cid:1837)(cid:1652)(cid:1698)(cid:1862)(cid:1803)(cid:1543)(cid:1930)(cid:1843)ﺍ
+– Values: or idraj (no sakt).
+∗ - tahqeek ( (cid:1873)(cid:1645)(cid:1711)(cid:3548)(cid:3769)) • sakt_maleeyah ( (cid:1776)(cid:1698)(cid:1543)(cid:2630)(cid:2061)(cid:1543)(cid:1611){(cid:4901)(cid:4881)(cid:1777)(cid:1772)(cid:1645)(cid:1843)(cid:1543)(cid:1857)}(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617)(cid:4393)(cid:4383)(cid:1960)(cid:1698)(cid:1772)(cid:3877)ﻭ)
+∗ - general_sakt ( ) – Values:
+ﻡ(cid:1543)(cid:3871)(cid:1576)(cid:1821)(cid:1919)
+∗ - local_sakt ( ) ∗ - sakt ( )
+ﺹ(cid:1543)(cid:3872)(cid:1576)(cid:1821)(cid:1919) (cid:1576)(cid:1821)(cid:1919)
+– Default Value: tahqeek ( (cid:1873)(cid:1645)(cid:1711)(cid:3548)(cid:3769)) ∗ - waqf ( (cid:1688)(cid:1698)ﻭ)
+– MoreInfo: ThewaysofHafsforsakenbeforehamz. ∗ - idgham ( ﻡ(cid:1543)(cid:3866)ﺩﺇ)
+”The letter with sukoon before the hamzah ( )”.And – Default Value: waqf ( )
+ﺀ (cid:1688)(cid:1698)ﻭ
+it has three forms: full articulation (tahqeeq), – MoreInfo: Thewaystorecitetheword{ }in
+(cid:4901)(cid:4881)(cid:1777)(cid:1772)(cid:1645)(cid:1843)(cid:1543)(cid:1857)
+general pause (general_sakt), and specific pause Surah Al-Ahqaf. sakt means slight pause. idgham
+(local_skat). Assimilation of the letter ’Ha’ ( ) into the letter
+ﻩ
+• sakt_iwaja ( (cid:1688)(cid:1779)(cid:6156)ـ(cid:1843)ﺍ(cid:4626)(cid:4589)(cid:1543)(cid:3877)(cid:1960)(cid:1564)(cid:1678)(cid:1655)(cid:1564)(cid:1576)(cid:1821)(cid:1930)(cid:1843)ﺍ) ’Ha’( ﻩ)withcompleteassimilation.waqf: meansfull
+pause, so we can not determine whether the reciter
+– Values:
+uses sakt or idgham.
+∗ - sakt ( )
+(cid:1576)(cid:1821)(cid:1919)
+∗ - waqf ( ) • between_anfal_and_tawba ( (cid:1776)(cid:1611)(cid:1960)(cid:1658)(cid:1843)ﺍﻭﻝ(cid:1543)(cid:1712)(cid:1614)(cid:2521)(cid:2513)ﺍ(cid:3476)(cid:3449)(cid:1611)(cid:1772)(cid:3877)ﻭ)
+(cid:1688)(cid:1698)ﻭ
+∗ - idraj ( ) – Values:
+ﺝﺍﺭﺩﺇ
+– Default Value: waqf ( (cid:1688)(cid:1698)ﻭ) ∗ - waqf ( (cid:1688)(cid:1698)ﻭ)
+– More Info: The ways to recite the word ” (cid:1543)(cid:3877)(cid:1960)(cid:1564)” ∗ - sakt ( (cid:1576)(cid:1821)(cid:1919))
+(Iwaja). sakt means slight pause. idraj means ∗ - wasl ( (cid:1837)(cid:1900)ﻭ)
+not sakt. waqf: means full pause, so we can not – Default Value: waqf ( )
+(cid:1688)(cid:1698)ﻭ
+determine whether the reciter uses sakt or idraj – MoreInfo: ThewaystoreciteendofSurahAl-Anfal
+(no sakt). and beginning of Surah At-Tawbah.
+• sakt_marqdena ( ) • noon_and_yaseen (
+(cid:4021)(cid:3632)(cid:4626)(cid:4589)(cid:1543)(cid:1614)(cid:1678)(cid:1698)(cid:2613)(cid:2598)(cid:1678)(cid:1655)(cid:1564)(cid:1576)(cid:1821)(cid:1930)(cid:1843)ﺍ (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:1862)(cid:1857) ﻭﺍ(cid:1960)(cid:1843)ﺍ (cid:1678)(cid:1655)(cid:1564) ﻥ(cid:1960)(cid:1655)(cid:1843)ﺍ (cid:4626)(cid:4589) ﺭ(cid:1543)(cid:1779)(cid:1942)(cid:2517)(cid:2513)ﺍﻭ ﻡ(cid:1543)(cid:3866)ﺩ(cid:2517)(cid:2513)ﺍ
+– Values: )
+{(cid:1982)(cid:1978)(cid:1711)(cid:1843)ﺍﻭﻥ}ﻭ{ﻥﺁ(cid:1888)(cid:1711)(cid:1843)ﺍﻭ(cid:4021)(cid:3632)} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617)
+∗ - sakt ( (cid:1576)(cid:1821)(cid:1919)) – Values:
+∗ - waqf ( (cid:1688)(cid:1698)ﻭ) ∗ - izhar ( )
+∗ - idraj ( ﺝﺍﺭﺩﺇ) ∗ - idghamﺭ ((cid:1543)(cid:1779)(cid:1942)ﺇ )
+ﻡ(cid:1543)(cid:3866)ﺩﺇ
+– Default Value: waqf ( )
+(cid:1688)(cid:1698)ﻭ – Default Value: izhar ( )
+ﺭ(cid:1543)(cid:1779)(cid:1942)ﺇ
+– More Info: The ways to recite the word ” ”
+(cid:1543)(cid:1614)(cid:1678)(cid:1698)(cid:2613)(cid:2598) – More Info: Whether to merge noon of both: { }
+(cid:4021)(cid:3632)
+(Marqadena) in Surat Yassen. sakt means slight
+and { } with ( ) ”idgham” or not ”izhar”.
+ﻥ ﻭ
+pause. idraj means not sakt. waqf: means full
+• yaa_ataan ( )
+pause, so we can not determine whether the reciter (cid:1837)(cid:2214)(cid:2197)(cid:2170)(cid:1543)(cid:1611){ﻥ(cid:1543)(cid:1617)ﺁ}(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617)(cid:4393)(cid:4383)(cid:1960)(cid:1698)(cid:4626)(cid:4589)(cid:1543)(cid:1712)(cid:1698)ﻭ(cid:1543)(cid:1779)(cid:1699)(cid:1677)(cid:3873)ﻭﺀ(cid:1543)(cid:1645)(cid:1843)ﺍﺕ(cid:1543)(cid:2570)(cid:3265)ﺇ
+– Values:
+uses sakt or idraj (no sakt).
+∗ - wasl ( )
+• sakt_man_raq ( ) (cid:1837)(cid:1900)ﻭ
+(cid:1776)(cid:1857)(cid:1543)(cid:1645)(cid:1711)(cid:1843)ﺍ(cid:4626)(cid:4589)ﻕﺍﺭ(cid:1862)(cid:1857)(cid:1678)(cid:1655)(cid:1564)(cid:1576)(cid:1821)(cid:1930)(cid:1843)ﺍ ∗ - hadhf ( )
+– Values: ﻑ(cid:1677)(cid:3873)
+∗ - ithbat ( )
+∗ - sakt ( ) ﺕ(cid:1543)(cid:2570)(cid:3265)ﺇ
+(cid:1576)(cid:1821)(cid:1919) – Default Value: wasl ( )
+∗ - waqf ( ) (cid:1837)(cid:1900)ﻭ
+(cid:1688)(cid:1698)ﻭ – MoreInfo: Theaffirmationandomissionoftheletter
+∗ - idraj ( )
+ﺝﺍﺭﺩﺇ ’Yaa’ in the pause of the verse { } in Surah An-
+(cid:4626)(cid:4547)(cid:1543)(cid:1617)ﺁ
+– Default Value: sakt ( (cid:1576)(cid:1821)(cid:1919)) Naml. wasl: means connected recitation without
+– More Info: The ways to recite the word ” ”
+ﻕﺍﺭ (cid:1862)(cid:1857) pausing as ( ). hadhf: means deletion of letter
+َ(cid:4626)(cid:4547)(cid:1543)(cid:1617)ﺁ
+(Man Raq) in Surat Al Qiyama. sakt means slight
+( ) at pause so recited as ( ). ithbat: means
+ﻱ ﻥ(cid:1543)(cid:1617)ﺁ
+pause. idraj means not sakt. waqf: means full
+confirmation reciting letter ( ) at pause as ( ).
+pause, so we can not determine whether the reciter ﻱ (cid:4626)(cid:4547)(cid:1543)(cid:1617)ﺁ
+uses sakt or idraj (no sakt). • start_with_ism ( ﺕﺍ(cid:1888)(cid:4979)(cid:4958)(cid:3861)ﺍﺓﺭ(cid:1960)(cid:1919)(cid:4626)(cid:4589){(cid:4030)(cid:3908)(cid:2518)(cid:2513)ﺍ}(cid:1776)(cid:3095)(cid:4213)(cid:4221)(cid:1611)ﺃ(cid:1678)(cid:1652)(cid:1843)ﺍ(cid:1772)(cid:3877)ﻭ)
+• sakt_bal_ran ( ) – Values:
+(cid:3476)(cid:3449)(cid:1712)(cid:1712)(cid:1946)(cid:2510)(cid:2506)ﺍ(cid:4626)(cid:4589)ﻥﺍﺭ(cid:1837)(cid:1611)(cid:1678)(cid:1655)(cid:1564)(cid:1576)(cid:1821)(cid:1930)(cid:1843)ﺍ
+– Values: ∗ - wasl ( )
+(cid:1837)(cid:1900)ﻭ
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+∗ - lism ( ) • yalhath_dhalik (
+(cid:4030)(cid:3919)(cid:1843) {(cid:4859)(cid:4839)ﺫ (cid:1578)(cid:1779)(cid:1849)(cid:1604)} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) (cid:1772)(cid:1857)(cid:1678)(cid:3871)ﻭ ﻡ(cid:1543)(cid:3866)ﺩ(cid:2517)(cid:2513)ﺍ
+∗ - alism ( (cid:4030)(cid:3919)(cid:1843)ﺃ) ﻑﺍ(cid:2613)(cid:1564)(cid:2521)(cid:2513)(cid:1543)(cid:1611))
+– Default Value: wasl ( ) – Values:
+(cid:1837)(cid:1900)ﻭ
+– More Info: The ruling on starting with the word ∗ - izhar ( )
+ﺭ(cid:1543)(cid:1779)(cid:1942)ﺇ
+{ }inSurahAl-Hujurat. lismRecitedas( )at ∗ - idgham ( )
+(cid:4030)(cid:3908)(cid:2518)(cid:2513)ﺍ (cid:4030)(cid:3919)(cid:1843) ﻡ(cid:1543)(cid:3866)ﺩﺇ
+∗ - waqf ( )
+thebeginning. alismRecitedas( ). wasl: means (cid:1688)(cid:1698)ﻭ
+(cid:4030)(cid:3919)(cid:1843)ﺃ
+– Default Value: idgham ( )
+completing recitation without pausing as normal, So ﻡ(cid:1543)(cid:3866)ﺩﺇ
+– More Info: The assimilation (idgham) and non-
+Reciting is as ( ).
+(cid:4030)(cid:3919)(cid:1843)(cid:1908)(cid:3989)(cid:3958)
+assimilation(izhar)intheverse{ }inSurah
+(cid:4859)(cid:4839)ﺫ(cid:1578)(cid:1779)(cid:1849)(cid:1604)
+• yabsut ( ) Al-A’raf. waqf: means the reciter has paused on
+ﺓ(cid:1888)(cid:1711)(cid:1652)(cid:1843)(cid:1543)(cid:1611){(cid:1940)(cid:1930)(cid:3999)(cid:3951)ﻭ(cid:1893)(cid:1652)(cid:1711)(cid:1604)(cid:1348)(cid:6128)(cid:1346)ﺍﻭ} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617)(cid:4393)(cid:4383)(cid:1960)(cid:1698)(cid:4626)(cid:4589)ﺩ(cid:1543)(cid:1905)(cid:1843)ﺍﻭ(cid:3476)(cid:3449)(cid:1930)(cid:1843)ﺍ
+– Values: ( )
+(cid:1578)(cid:1779)(cid:1849)(cid:1604)
+∗ - seen ( ) • irkab_maana ( )
+(cid:3476)(cid:3449)(cid:1919) ﺩ(cid:1960)(cid:4827)(cid:4766){(cid:1543)(cid:1655)(cid:1571)(cid:1857)(cid:1589)(cid:1803)ﺭﺍ} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617)(cid:4393)(cid:4383)(cid:1960)(cid:1698)(cid:4626)(cid:4589)ﺭ(cid:1543)(cid:1779)(cid:1942)(cid:2517)(cid:2513)ﺍﻭﻡ(cid:1543)(cid:3866)ﺩ(cid:2517)(cid:2513)ﺍ
+∗ - saad ( ﺩ(cid:1543)(cid:1900)) – Values:
+– Default Value: seen ( (cid:3476)(cid:3449)(cid:1919)) ∗ - izhar ( ﺭ(cid:1543)(cid:1779)(cid:1942)ﺇ)
+– More Info: The ruling on pronouncing seen ( ﺱ) or ∗ - idgham ( ﻡ(cid:1543)(cid:3866)ﺩﺇ)
+saad ( ) in the verse { } in Surah ∗ - waqf ( )
+ﺹ (cid:1940)(cid:1930)(cid:3999)(cid:3951)ﻭ (cid:1893)(cid:1652)(cid:1711)(cid:1604) (cid:1348)(cid:6128)(cid:1346)ﺍﻭ (cid:1688)(cid:1698)ﻭ
+Al-Baqarah. – Default Value: idgham ( )
+ﻡ(cid:1543)(cid:3866)ﺩﺇ
+• bastah ( – MoreInfo: Theassimilationandclearpronunciation
+{(cid:1776)(cid:1946)(cid:2797)(cid:2774) (cid:2671)(cid:2665)(cid:2629)(cid:2061)ﺍ (cid:4626)(cid:4589) (cid:4693)(cid:4632)ﺩﺍﺯﻭ} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) ﺩ(cid:1543)(cid:1905)(cid:1843)ﺍﻭ (cid:3476)(cid:3449)(cid:1930)(cid:1843)ﺍ
+ﻑﺍ(cid:2613)(cid:1564)(cid:2521)(cid:2513)(cid:1543)(cid:1611)) in the verse { (cid:1543)(cid:1655)(cid:1571)(cid:1857) (cid:1589)(cid:1803)ﺭﺍ} in Surah Hud. This refers
+to the recitation rules concerning whether the letter
+– Values:
+”Noon”( )isassimilatedintothefollowingletteror
+∗ - seen ( ) ﻥ
+(cid:3476)(cid:3449)(cid:1919) pronouncedclearlywhenrecitingthisspecificverse.
+∗ - saad ( )
+ﺩ(cid:1543)(cid:1900) waqf: means the reciter has paused on ( )
+(cid:1589)(cid:1803)ﺭﺍ
+– Default Value: seen ( )
+(cid:3476)(cid:3449)(cid:1919) • noon_tamnna (
+– More Info: The ruling on pronouncing seen ( ) or (cid:1543)(cid:1655)(cid:1857)(cid:1546)(cid:1617) (cid:2518)(cid:2513)} (cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) (ﺱ(cid:3080)(cid:3075)(cid:1658)(cid:1738)(cid:2518)(cid:2513)ﺍ) ﻡﻭ(cid:3539)(cid:3522)ﺍﻭ ﻡ(cid:1543)(cid:4505)(cid:4493)(cid:2517)(cid:2513)ﺍ
+ﺱ
+)
+saad ( ) in the verse { } in Surah {(cid:1688)(cid:1919)(cid:1960)(cid:1604)(cid:2438)(cid:2427)(cid:3871)
+ﺹ (cid:1776)(cid:1946)(cid:2797)(cid:2774)(cid:2671)(cid:2665)(cid:2629)(cid:2061)ﺍ(cid:4626)(cid:4589)(cid:4693)(cid:4632)ﺩﺍﺯﻭ
+Al-A’raf. – Values:
+• almusaytirun (
+{ﻥﻭ(cid:1888)(cid:1946)(cid:1645)(cid:1905)(cid:2510)(cid:2506)ﺍ (cid:1854)(cid:1777) ﻡﺃ} (cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) ﺩ(cid:1543)(cid:1905)(cid:1843)ﺍﻭ (cid:3476)(cid:3449)(cid:1930)(cid:1843)ﺍ
+∗ - ishmam ( ﻡ(cid:1543)(cid:4505)(cid:4493)ﺇ)
+∗ - rawm ( )
+) ﻡﻭﺭ
+ﺭ(cid:1960)(cid:1946)(cid:1843)(cid:1543)(cid:1611)
+– Values: – Default Value: ishmam ( ﻡ(cid:1543)(cid:4505)(cid:4493)ﺇ)
+∗ - seen ( ) – More Info: The nasalization (ishmam) or the slight
+(cid:3476)(cid:3449)(cid:1919)
+∗ - saad ( ) drawing (rawm) in the verse { (cid:1688)(cid:1919)(cid:1960)(cid:1604)(cid:2438)(cid:2427)(cid:3871)(cid:1543)(cid:1655)(cid:1857)(cid:1546)(cid:1617)(cid:2518)(cid:2513)}
+ﺩ(cid:1543)(cid:1900)
+– Default Value: saad ( ﺩ(cid:1543)(cid:1900)) • harakat_daaf ( {(cid:1688)(cid:1571)(cid:1898)} (cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) ((cid:4030)(cid:3930) ﻭﺃ (cid:1722)(cid:1658)(cid:1699)) ﺩ(cid:1543)(cid:1903)(cid:1843)ﺍ (cid:4366)(cid:4330)(cid:3515)(cid:3486)
+– MoreInfo: Thepronunciationof seen( )or saad )
+ﺱ ﻡﻭ(cid:3539)(cid:3522)(cid:1543)(cid:1611)
+( ﺹ) in the verse { ﻥﻭ(cid:1888)(cid:1946)(cid:1645)(cid:1905)(cid:2510)(cid:2506)ﺍ(cid:1854)(cid:1777)ﻡﺃ} in Surah At-Tur. – Values:
+• bimusaytir ( ∗ - fath ( )
+{(cid:1888)(cid:1946)(cid:1645)(cid:1905)(cid:2963)(cid:2942) (cid:1854)(cid:4827)(cid:4800)(cid:1849)(cid:3871) (cid:1576)(cid:1930)(cid:1843)} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) ﺩ(cid:1543)(cid:1905)(cid:1843)ﺍﻭ (cid:3476)(cid:3449)(cid:1930)(cid:1843)ﺍ (cid:1722)(cid:1658)(cid:1699)
+) ∗ - dam ( )
+(cid:1776)(cid:1645)(cid:1922)(cid:1543)(cid:1566)(cid:1843)(cid:1543)(cid:1611) (cid:4030)(cid:3930)
+– Values: – Default Value: fath ( )
+(cid:1722)(cid:1658)(cid:1699)
+∗ - seen ( ) – MoreInfo: Thevowelmovementoftheletter’Dhad’
+(cid:3476)(cid:3449)(cid:1919)
+∗ - saad ( ) ( )(whetherwithfathordam)intheword{ }
+ﺩ(cid:1543)(cid:1900) ﺽ (cid:1688)(cid:1571)(cid:1898)
+– Default Value: saad ( ) in Surah Ar-Rum.
+ﺩ(cid:1543)(cid:1900)
+– MoreInfo: Thepronunciationof seen( )or saad • alif_salasila (
+ﺱ {(cid:3080)(cid:3075)(cid:1919)(cid:3080)(cid:3075)(cid:1919)} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) (cid:1543)(cid:1712)(cid:1698)ﻭ (cid:1543)(cid:1779)(cid:1699)(cid:1677)(cid:3873)ﻭ (cid:1688)(cid:1843)(cid:2521)(cid:2513)ﺍ ﺕ(cid:1543)(cid:2570)(cid:3265)ﺇ
+( ) in the verse { } in Surah Al- )
+ﺹ (cid:1888)(cid:1946)(cid:1645)(cid:1905)(cid:2963)(cid:2942) (cid:1854)(cid:4827)(cid:4800)(cid:1849)(cid:3871) (cid:1576)(cid:1930)(cid:1843) ﻥ(cid:1543)(cid:2797)(cid:2777)(cid:2517)(cid:2513)ﺍﺓﺭ(cid:1960)(cid:2797)(cid:2774)
+Ghashiyah. – Values:
+• tasheel_or_madd ( ∗ - hadhf ( )
+(cid:3047)(cid:2596)(cid:1898)(cid:1960)(cid:2963)(cid:2942) {(cid:2726)(cid:2698)(cid:3006)(cid:2979)(cid:4403)(cid:4383)ﺁ} :(cid:4620)(cid:4607)(cid:1543)(cid:1571)(cid:1617) (cid:4393)(cid:4383)(cid:1960)(cid:1698) (cid:4626)(cid:4589) (cid:1837)(cid:1900)(cid:1960)(cid:1843)ﺍ ﺓ(cid:1886)(cid:4487)(cid:4485) ﻑ(cid:1677)(cid:3873)
+∗ - ithbat ( )
+) ﺕ(cid:1543)(cid:2570)(cid:3265)ﺇ
+(cid:1837)(cid:2214)(cid:2197)(cid:2170)ﺍﻭ(cid:4021)(cid:3642)(cid:1960)(cid:2563)(cid:3256){(cid:1348)(cid:6128)(cid:1346)ﺁ}ﻭ(cid:4021)(cid:3642)(cid:1960)(cid:1604)(cid:3047)(cid:2596)(cid:1898)(cid:1960)(cid:1857){ﻥ(cid:2522)(cid:2513)ﺁ}ﻭﻡ(cid:1543)(cid:1571)(cid:1614)(cid:2521)(cid:2513)ﺍ ∗ - wasl ( )
+– Values: (cid:1837)(cid:1900)ﻭ
+– Default Value: wasl ( )
+∗ - tasheel ( ) (cid:1837)(cid:1900)ﻭ
+(cid:1837)(cid:1645)(cid:4829)(cid:3662)(cid:3645) – More Info: Affirmation and omission of the ’Alif’
+∗ - madd ( )
+(cid:1678)(cid:1857) when pausing in the verse { } in Surah Al-
+(cid:3080)(cid:3075)(cid:1919)(cid:3080)(cid:3075)(cid:1919)
+– Default Value: madd ( )
+(cid:1678)(cid:1857) Insan. This refers to the recitation rule regarding
+– More Info: Tasheel of Madd ” ” for
+(cid:1678)(cid:2510)(cid:2506)ﺍ ﻭﺃ (cid:1837)(cid:1645)(cid:4829)(cid:3919)(cid:4005)(cid:1843)ﺍ (cid:1557)(cid:1743)ﻭ whether the final ”Alif” in the word ” ” is pro-
+(cid:3080)(cid:3075)(cid:1919)(cid:3080)(cid:3075)(cid:1919)
+6wordsinTheHolyQuran: ” ”, ” ”, ” ”. nounced (affirmed) or omitted when pausing (waqf)
+(cid:2726)(cid:2698)(cid:3006)(cid:2979)(cid:4403)(cid:4383)ﺍﺀ (cid:1348)(cid:6128)(cid:1346)ﺍﺀ (cid:2726)(cid:2695)ﺍﺀ
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.
+at this word during recitation in the specific verse – MoreInfo: Emphasisandsofteningoftheletter’Ra’
+from Surah Al-Insan. hadhf: means to remove in the word { } in Surah Yunus, and in the loca-
+(cid:3684)(cid:3937)(cid:1857)
+alif () during pause as ( ) ithbat: means to tions of Surah Yusuf and Surah Az-Zukhruf when
+ﺍ (cid:1837)(cid:1919)(cid:3080)(cid:3075)(cid:1919)
+recite alif () during pause as ( ) wasl means pausing (waqf). This refers to the recitation rules
+ﺍ (cid:3080)(cid:3075)(cid:1919)(cid:3080)(cid:3075)(cid:1919)
+completingtherecitationasnormalwithoutpausing, regarding whether the letter ”Ra” ( ) in the word
+ﺭ
+so recite it as ( ) ” ” is pronounced with emphasis (tafkheem) or
+(cid:2518)(cid:2513)(cid:3080)(cid:3075)(cid:3866)ﺃﻭ(cid:1837)َ (cid:1919)(cid:3080)(cid:3075)(cid:1919) (cid:3684)(cid:3937)(cid:1857)
+softening (tarqeeq) at the specific pauses in these
+• idgham_nakhluqkum (
+ﻭﺃ (cid:1543)(cid:1905)(cid:1698)(cid:1543)(cid:1614) (cid:1543)(cid:1857)(cid:1543)(cid:3866)ﺩﺇ ﻑ(cid:4260)(cid:4221)(cid:1843)ﺍ (cid:4626)(cid:4589) ﻑ(cid:1543)(cid:1711)(cid:1843)ﺍ ﻡ(cid:1543)(cid:3866)ﺩﺇ
+Surahs. wasl: means not pausing so we only have
+)
+ﺕ(cid:3080)(cid:3075)(cid:1919)(cid:1888)(cid:2510)(cid:2506)(cid:1543)(cid:1611){(cid:2753)(cid:2739)(cid:1711)(cid:1849)(cid:3547)(cid:3766)}(cid:3080)(cid:3075)(cid:1857)(cid:4260)(cid:4173) one way (tafkheem of Raa)
+– Values:
+• raa_nudhur ( )
+∗ - idgham_kamil ( ) (cid:1543)(cid:1712)(cid:1698)ﻭ(cid:1888)(cid:1860)(cid:1711)(cid:1843)(cid:1543)(cid:1611){ﺭ(cid:2261)(cid:2238)}ﺀﺍﺭ(cid:4626)(cid:4589)(cid:1873)(cid:1645)(cid:1698)(cid:2859)(cid:2832)(cid:1843)ﺍﻭ(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1658)(cid:1843)ﺍ
+(cid:1837)(cid:1857)(cid:4260)(cid:4173)ﻡ(cid:1543)(cid:3866)ﺩﺇ – Values:
+∗ - idgham_naqis ( )
+(cid:1895)(cid:1698)(cid:1543)(cid:1614)ﻡ(cid:1543)(cid:3866)ﺩﺇ ∗ - wasl ( )
+– Default Value: idgham_kamil ( ) (cid:1837)(cid:1900)ﻭ
+(cid:1837)(cid:1857)(cid:4260)(cid:4173)ﻡ(cid:1543)(cid:3866)ﺩﺇ ∗ - tafkheem ( )
+– More Info: Assimilation of the letter ’Qaf’ into the (cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1617)
+∗ - tarqeeq ( )
+letter’Kaf,’whetherincomplete(idgham_naqis)or (cid:1873)(cid:1645)(cid:1698)(cid:2037)(cid:2009)
+– Default Value: tafkheem ( )
+complete (idgham_kamil), in the verse { } in (cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1617)
+(cid:2753)(cid:2739)(cid:1711)(cid:1849)(cid:3547)(cid:3766)
+Surah Al-Mursalat. – More Info: Emphasis and softening of the letter
+’Ra’ in the word { } in Surah Al-Qamar when
+• raa_firq ( ) ﺭ(cid:2261)(cid:2238)
+(cid:3080)(cid:3075)(cid:1900)ﻭﺀﺍ(cid:1888)(cid:1571)(cid:1933)(cid:1843)ﺍ(cid:4626)(cid:4589){ﻕ(cid:1888)(cid:1699)}ﺀﺍﺭ(cid:4626)(cid:4589)(cid:1873)(cid:1645)(cid:1698)(cid:2859)(cid:2832)(cid:1843)ﺍﻭ(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1658)(cid:1843)ﺍ
+pausing (waqf). This refers to the recitation rules
+– Values:
+regarding whether the letter ”Ra” ( ) in the word
+ﺭ
+∗ - waqf ( (cid:1688)(cid:1698)ﻭ) ” ﺭ(cid:2261)(cid:2238)” is pronounced with emphasis (tafkheem) or
+∗ - tafkheem ( (cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1617)) softening (tarqeeq) when pausing at this word in
+∗ - tarqeeq ( ) Surah Al-Qamar. wasl: means not pausing so we
+(cid:1873)(cid:1645)(cid:1698)(cid:2037)(cid:2009)
+– Default Value: tafkheem ( ) only have one way (tarqeeq of Raa)
+(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1617)
+– More Info: Emphasis and softening of the letter • raa_yasr(
+ﺀﺍ(cid:1888)(cid:1571)(cid:1933)(cid:1843)ﺍﻭ(cid:1772)(cid:1946)(cid:1611){(cid:3684)(cid:3908)ﺃﻥﺃ}ﻭ(cid:1888)(cid:1760)(cid:1712)(cid:1843)(cid:1543)(cid:1611){(cid:3684)(cid:3662)(cid:3632)}ﺀﺍﺭ(cid:4626)(cid:4589)(cid:1873)(cid:1645)(cid:1698)(cid:2859)(cid:2832)(cid:1843)ﺍﻭ(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1658)(cid:1843)ﺍ
+’Ra’ in the word { } in Surah Ash-Shu’ara’ when
+ﻕ(cid:1888)(cid:1699) )
+(cid:1543)(cid:1712)(cid:1698)ﻭﻥ(cid:1543)(cid:3872)(cid:4404)(cid:4383)ﺍﻭ(cid:1888)(cid:4979)(cid:4958)(cid:3861)ﺍﻭﺩ(cid:1960)(cid:4827)(cid:4766){(cid:3684)(cid:3908)(cid:1546)(cid:1699)}ﻭ
+connected (wasl). This refers to the recitation rules
+– Values:
+concerning whether the letter ”Ra” ( ) in the word
+ﺭ ∗ - wasl ( )
+” ” is pronounced with emphasis (tafkheem) (cid:1837)(cid:1900)ﻭ
+ﻕ(cid:1888)(cid:1699) ∗ - tafkheem ( )
+or softening (tarqeeq) when reciting the specific (cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1617)
+versefromSurahAsh-Shu’ara’inconnectedspeech. ∗ - tarqeeq ( (cid:1873)(cid:1645)(cid:1698)(cid:2037)(cid:2009))
+waqf: means pausing so we only have one way – Default Value: tarqeeq ( )
+(cid:1873)(cid:1645)(cid:1698)(cid:2037)(cid:2009)
+(tafkheem of Raa) – MoreInfo: Emphasisandsofteningoftheletter’Ra’
+• raa_alqitr ( (cid:1543)(cid:1712)(cid:1698)ﻭ(cid:1546)(cid:1652)(cid:1919)(cid:4626)(cid:4589){(cid:1888)(cid:1946)(cid:1711)(cid:1843)ﺍ}ﺀﺍﺭ(cid:4626)(cid:4589)(cid:1873)(cid:1645)(cid:1698)(cid:2859)(cid:2832)(cid:1843)ﺍﻭ(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1658)(cid:1843)ﺍ) in the word { (cid:3684)(cid:3662)(cid:3632)} in Surah Al-Fajr when pausing
+(waqf). This refers to the recitation rules regarding
+– Values:
+whether the letter ”Ra” ( ) in the word ” ” is
+∗ - wasl ( ) ﺭ (cid:3684)(cid:3662)(cid:3632)
+(cid:1837)(cid:1900)ﻭ pronounced with emphasis (tafkheem) or softening
+∗ - tafkheem ( )
+(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1617) (tarqeeq) when pausing at this word in Surah Al-
+∗ - tarqeeq ( (cid:1873)(cid:1645)(cid:1698)(cid:2037)(cid:2009)) Fajr. wasl: means not pausing so we only have one
+– Default Value: wasl ( ) way (tarqeeq of Raa)
+(cid:1837)(cid:1900)ﻭ
+– MoreInfo: Emphasisandsofteningoftheletter’Ra’
+• meem_mokhfah ( )
+(cid:1776)(cid:4487)(cid:4449)(cid:1678)(cid:1857)ﻭﺃﺓ(cid:1543)(cid:1712)(cid:3547)(cid:2684)(cid:2162)(cid:2135)(cid:2510)(cid:2506)ﺍ(cid:1837)(cid:1777)
+in the word { } in Surah Saba’ when pausing
+(cid:1888)(cid:1946)(cid:1711)(cid:1843)ﺍ – Values:
+(waqf). This refers to the recitation rules regarding
+∗ - meem ( )
+whether the letter ”Ra” ( ) in the word ” ” is (cid:2162)(cid:2135)(cid:1857)
+ﺭ (cid:1888)(cid:1946)(cid:1711)(cid:1843)ﺍ
+pronounced with emphasis (tafkheem) or softening ∗ - ikhfaa ( ﺀ(cid:1543)(cid:1712)(cid:1738)ﺇ)
+(tarqeeq)whenpausingatthiswordinSurahSaba’. – Default Value: ikhfaa ( )
+ﺀ(cid:1543)(cid:1712)(cid:1738)ﺇ
+wasl: means not pausing so we only have one way – More Info: This is not a standard Hafs way but
+(tarqeeq of Raa) a disagreement between scholars in our century on
+• raa_misr ( how to pronounce Ikhfa for meem. Some scholars
+(cid:1688)(cid:1919)(cid:1960)(cid:1604) (cid:3047)(cid:2596)(cid:1898)(cid:1960)(cid:1857)ﻭ (cid:4021)(cid:3642)(cid:1960)(cid:1604) (cid:4626)(cid:4589) {(cid:3684)(cid:3937)(cid:1857)} ﺀﺍﺭ (cid:4626)(cid:4589) (cid:1873)(cid:1645)(cid:1698)(cid:2859)(cid:2832)(cid:1843)ﺍﻭ (cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1658)(cid:1843)ﺍ
+do full merging ( ) and the others open the lips
+) ﻡ(cid:1543)(cid:3866)ﺩﺇ
+(cid:1543)(cid:1712)(cid:1698)ﻭﻑ(cid:3515)(cid:3485)(cid:3537)(cid:3522)ﺍﻭ
+a little bit ( ). We did not want to add this, but
+– Values: ﺀ(cid:1543)(cid:1712)(cid:1738)ﺇ
+some of the best reciters disagree about this.
+∗ - wasl ( )
+(cid:1837)(cid:1900)ﻭ
+∗ - tafkheem ( )
+(cid:2162)(cid:2135)(cid:1755)(cid:1712)(cid:1617)
+∗ - tarqeeq ( )
+(cid:1873)(cid:1645)(cid:1698)(cid:2037)(cid:2009)
+– Default Value: wasl ( )
+(cid:1837)(cid:1900)ﻭ
+ThisworkhasbeensubmittedtotheIEEEInternationalConferenceonIntelligentComputingandSystems(ICICoS)2025forpossiblepublication.
+Copyrightmaybetransferredwithoutnotice,afterwhichthisversionmaynolongerbeaccessible.

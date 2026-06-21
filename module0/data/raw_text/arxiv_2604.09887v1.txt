@@ -1,0 +1,1098 @@
+SemEnrich: Self-Supervised Semantic Enrichment
+of Radiology Reports for Vision-Language
+Learning
+Ibrahim Gulluk1 and Olivier Gevaert2
+1 Electrical Engineering, Stanford University,
+2 Stanford Center For Biomedical Informatics Research
+{gulluk,ogevaert}@stanford.edu
+Abstract. Medical vision–language datasets are often limited in size
+and biased toward negative findings, as clinicians report abnormalities
+mostlybutmightomitsomepositive/neutralfindingsbecausetheymight
+be considered as irrelevant to the patient’s condition. We propose a self-
+supervised data enrichment method that leverages semantic clustering of
+report sentences. Then we enrich the findings in the medical reports in
+the training set by adding positive/neutral observations from different
+clustersinaself-supervisedmanner.Ourapproachyieldsconsistentgains
+in supervised fine-tuning (+5.63%, +3.04%, +7.40%, +5.30%, +7.47%
+average gains on COMET score, Bert score, Sentence Bleu, CheXbert-
+F1 and RadGraph-F1 scores respectively.). Ablation studies confirm
+that improvements stem from semantic clustering rather than random
+augmentation. Furthermore, we introduce a way to incorporate semantic
+cluster information into the reward design for GRPO training, which
+leads to further performance gains.(+2.78%, +3.14%, +12.80% average
+gainsonCOMETscore,BertscoreandSentenceBleuscoresrespectively.)
+We share our code at SemEnrich
+1 Introduction
+In recent years, vision-language models have been shown to be capable of gener-
+ating text from images. Considering the vast amount of data available on the
+internet, researchers have been able to build large vision-language models with
+the advances in computing power, that are capable of interpreting the image,
+classify the image, generate text from the image and even generate images from
+text. As a rule of thumb, the larger the dataset, the better the performance of
+the model. [17,14,9]
+However, in the medical field, where datasets are extremely limited in terms
+of the number of samples as well as the complexity of the medical tasks, pro-
+viding new datasets or improving existing datasets can be crucial to boost the
+performances of the models. Especially, benchmarks in medical visual question
+answering may include very simple questions like "which organ is presented" or
+"which image modality is presented" which may not be informative enough to
+judge the performance of the models that are supposed to be used in the real
+6202
+rpA
+01
+]GL.sc[
+1v78890.4062:viXra
+2 I. Gulluk et al.
+world. Due to these constraints, researchers have been working on providing new
+datasets. [12,27]
+ChestX-rayreportsconsistoftwoimportantsections:findingsandimpressions.
+The Findings section is a list of observations made by the radiologist from the
+X-ray image while the impressions section is a summary of the findings and
+final conclusion by the radiologist. In this work, we will focus on improving the
+findings section of the chest X-ray reports, as this is the core part where a LVLM
+can interpret the medical image, where the impression section might require
+patient health history and patient’s indication to reach a final conclusion.
+In contrast to other LLM datasets which might have chain of thoughts or
+causal reasoning/relationship between the sentences, in findings of chest X-rays,
+the observations or sentences are not related to each other in causal way. These
+canbeindependentormorepreciselythesedifferentobservationsmightbewritten
+down by the radiologist in a random order, which does not change the meaning
+of the observations. Thanks to this nature, we can think of there is a symmetric
+relationship between the observations in the findings section, so that we can
+represent them cluster them into groups and represent them in a graph structure
+without caring about which order they are written down.
+In this work, we will focus on improving the medical chest X-ray dataset in a
+self-supervisedmanner.Byimprovingthedataset,wemeanaddingnewsentences
+to the existing sentences of findings for each patient from the dataset itself. We
+willexperimentallyshowthat,thiskindofenrichmentofthedatasetwillimprove
+the overall performance in the test phase where we do not change the samples.
+This suggests that our method enhances the semantic meaning in the text data.
+Themainmotivationisthatwhenthesefindingsareprovidedbytheclinicians
+it is expected that they do not investigate and write down every aspect of
+the medical image, especially they might not mention every normal/positive
+observation, but focus on negative ones. We will work on this to add these
+skipped normal or positive findings in the medical images by a clustering based
+self-supervision. Being able to do that, we can make the dataset rich, so it can
+contain more information per image, so that for models it becomes easier to
+understand and examine these medical images.
+2 Related Work
+Researchers have been working on developing vision-language models for medical
+visual question answering and medical report generation despite limited medical
+datasets. The authors provided a medical image-caption dataset and trained a
+CLIP model [15]. Similar to this work, a Llama model is trained for medical
+multiple choice question answering [24].
+Llava-Med is designed for medical conversations which also include medical
+images [13]. R-Llava is proposed by [4] for enhanced medical visual question
+answeringviaregionofinterestinthemedicalimage.Theauthorsin[22]suggested
+a generalist medical AI which is capable of medical question answering, medical
+report generation as well as classification of medical images.
+SemEnrich 3
+Researchers have been proposing approaches to enhance the information
+extractionfromthemedicaldatasets.MMed-RAGisproposedasamedicalmulti
+modal RAG method which improves the quality of medical large vision language
+models by Domain-Aware Retrieval mechanism and preference fine tuning [25].
+UMed-LVLM is proposed to enhance medical visual question answering and
+classification through localization in medical images.
+Med-UniCisdesignedtoalignmedicaldatafromtwosourcelanguagesenglish
+and spanish to improve the understanding of medical data [23]. In another study,
+the authors suggest that global alignment and local alignment of visual and text
+representations can boost understanding of medical vision-language data [2].
+ArecentdatasetwhichwewillbeusinginourexperimentsReXGradient-160K
+proposed in [26]. This dataset includes 160K chest X-ray studies with 109,487
+unique patients from 79 medical sites. The choice of the dataset is discussed in
+section A.9. 3D-RAD dataset has been made public which includes 3D medical
+images with (question, answer) pairs [7]. RadVLM is proposed for conversational
+radiology multi modal model [6].
+SeveralworkshavebeenproposedforchestX-rayreportgeneration.Flamingo-
+CXR is a report generation model which is enhanced with expert evaluations
+[19] A memory driven transformer model is proposed for generating radiology
+reports [5]. An automated radiology report generation model is proposed [1]
+which utilizes conditioned transformers.
+3 Method
+Inthissectionwewillexplainhowweclusterthesentencesinthefindingssection
+of all reports and our method for self supervised enriching the findings in the
+reports.
+3.1 Representations of Findings
+InchestX-rayreportsthereareseveralfindingsandalsofinalimpressionsprovided
+by the clinician. This final impression conclusion is made by looking at patient
+history, patient indication, symptoms and also the findings in the chest X-ray.
+We will focus on on findings only in our expansion method, as this is the core
+part where a LVLM can interpret the medical image.
+We find the representations for each sentence in the findings section using a
+pretrained sentence transformer model. We utilize "all-MiniLM-L6-v2" model
+[18] for this purpose and lets denote it as f . Assume that we collect all
+sent
+the sentences in the findings section from all samples and there are N sen-
+tences in total. Then we have N representations f (s ) = x˜ ,f (s ) =
+sent 1 1 sent 2
+x˜ ,...,f (s ) = x˜ . where x˜ ∈ R384 is the representation of the i-th sen-
+2 sent N N i
+tence. Following the example in Figure 1, assume that s ="The lungs are
+1
+adequately inflated" , s ="There is no focal infiltrate" , s ="There is no
+2 3
+pleural effusion" , ... , s ="The bony thorax exhibits no acute abnormal-
+7
+ity" . Then we have f ("The lungs are adequately inflated") = x˜ ∈ R384 ,
+sent 1
+4 I. Gulluk et al.
+Fig.1: An example chest X-ray from the ReXGradient-160K dataset. Findings: The
+lungs are adequately inflated. There is no focal infiltrate. There is no pleural effusion.
+No pulmonary parenchymal nodules or masses are observed. The heart and pulmonary
+vascularityarenormal.Thereiscalcificationinthewallofthethoracicaorta.Thebony
+thoraxexhibitsnoacuteabnormality.Impression:Nopulmonarynodulesareobserved.
+There is no acute cardiopulmonary abnormality. Thoracic aortic atherosclerosis.
+f ("There is no focal infiltrate") = x˜ ∈ R384 and so on. Eventually we nor-
+sent 2
+malize these representations to unit length so that x
+i
+= ∥xx ˜˜i
+i∥
+for i=1,2,...,N.
+After obtaining the representations of each finding sentence in the training
+dataset, we are ready to cluster these sentences. Main motivation is to cluster
+sentences so that in each cluster we have sentences that have semantically very
+similar meaning.
+3.2 Clustering Finding Sentences
+We apply 3 main clustering methods to cluster the findings sentences using
+euclidean distance between the representations. These are K-means, DBSCAN
+andHDBSCAN.Weconductexperimentswiththesemethodsandprovideresults
+for all of them.
+When we applied DBSCAN and HDBSCAN algorithms, we obtained 995 and
+3125 as the number of clusters respectively. For K-means clustering method, we
+choose number of clusters as k =1000,2000,5000. The main difference between
+density based clustering methods and K-means is that density based clustering
+methods label samples in low density regions as outliers, while K-means forces
+all samples to be in a cluster. This nature will affect the quality of the clusters
+as well as the variaty within the clusters. And this is why we use less number of
+sentences that are clustered in density based clustering methods comparing to
+K-means. While K-means assigns all 184,535 sentences in the training dataset to
+a cluster, HDBSCAN assigns only 66,477 sentences to a cluster. In addition to
+SemEnrich 5
+that,thenumberofclustersisalsocreateatradeoffbetweenthelargerexpansion
+and noise in clusters. Type of the clustering method as well as the number of
+clusters parameter in K-means can be tuned to achive the best performance.
+However, in the experiments we will use the default parameters of the clustering
+methods and we just use three different number of clusters for K-means in order
+to prevent p-hacking.
+Below we provide examples of sentences that are grouped into the same
+cluster,demonstratingthatsemanticallysimilarfindingsaresuccessfullyclustered
+together:
+Cluster 1: Gray-White Differentiation
+“Gray-white differentiation appears unremarkable.” / “The gray-white matter dif-
+ferentiation is within normal limits.” / “Gray white differentiation is intact.” /
+...
+Cluster 2: IVC Filter
+“IVC filter noted within abdomen.” / “IVC filter seen in the abdomen.” / “IVC filter
+partially visualized in the abdomen.” / ...
+Cluster 3: Normal Size
+“moderate size is normal.” / “there is normal size.” / “it is grossly normal in size.” /
+“it is normal size and shape.” / ...
+Cluster 4: Imaging Artifacts
+“this could be due to the artifacts.” / “this may be an artifact.” / “this could be an
+artifact.” / “i suspect this is an artifact, but needs to be followed.” / ...
+3.3 Clustering Statistics
+Statistic Value
+Total Sentences 66,477
+Total Clusters 3,216
+Average Cluster Size 20.67
+Median Cluster Size 11.0
+Min Cluster Size 5
+Max Cluster Size 1,522
+Table 1: HDBSCAN clustering statistics for finding sentences.
+6 I. Gulluk et al.
+Fig.2: HDBSCAN log histogram of cluster sizes.
+Let’s denote the sentence to cluster id mapping as f :s →c where c is the
+C i i i
+cluster id of the i-th sentence. This way, each sentence belongs to a cluster and a
+findingsforachestX-ray,whichisnaturallyasetofsentences,canberepresented
+as a set of cluster ids.
+Eventually, we have K cluster ids C ={c ,c ,...,c } and we can represent
+1 2 K
+a findings for the j-th chest X-ray as {c ,c ,...,c } where r is the number of
+j1 j2 jr
+sentences in the findings of the j-th chest X-ray.
+3.4 Sign Determination of Clusters
+Wewilllabeleachclusteraspositiveornegative.Incontrasttomedicalusecase,by
+positivewemeanthatthefindingiscompletelynormalorhealthyornonsuspicious.
+By negative we mean that the finding is abnormal or suspicious or symptomatic.
+In order to determine the sign of a cluster, we need to determine the sign of
+the sentences in the cluster. In order to do this, we randomly select one sentence
+fromthe clusterandweuse thissentencetodetermine thesignof thecluster.We
+use an DeepSeek-R1 model to determine the sign of the sentences in the cluster.
+We use the following prompt:
+Evaluate whether the following sentence is positive or not. Any
+medical finding rather a normal finding should be considered as
+negative finding.
+- If it includes any medical finding rather than a normal finding of a
+completely healthy person, respond with ‘negative’.
+- If this finding seems like a finding of a healthy person, respond
+with ‘positive’.
+Provide only ‘positive’ or ‘negative’ as the output, with no
+explanation.
+The finding is: {finding}
+We repeat this process for all clusters and we get the sign of each cluster. We
+can denote this sign operation as h :c →s where s ∈{+1,−1} is the sign of
+S i i i
+the i-th cluster and +1,−1 corresponds to positive and negative respectively.
+SemEnrich 7
+“thereismildunchangedcardiomegaly”
+C 23 “ “hth ype er re inis flah ty iop ner ii sn nfl oa tt ei do ”n” “ “c ca ar rd di io om me eg ga al ly yi is sn sto at be ld e” ”
+“moderatecardiomegaly”
+“thereismildhyperinflation”
+“borderlinecardiomegaly”
+“underlyinghyperinflation”
+C
+C 2
+C C 1 C
+81 45 58
+C
+67
+C C
+19 54
+C C
+12 C 3
+C 4
+78
+“therearenoeffusions”
+“thereareupperlobeemphysematouschanges” “noevidenceofeffusion” C 87
+“possibleemphysematouschangesinupperlobes” “noeffusionisnoted”
+C C “emphysematouschangesoftheupperlobes” “nosizableeffusionisseen”
+42 33 “emphysematouschangeintherightupperlobe” “nolargeeffusionisevident”
+C
+91
+Patient 1 findings (4 sentences) Complete subgraph edges
+Patient 2 findings (4 sentences) Other clusters
+Patient 3 findings (3 sentences)
+Fig.3: Visualization of the cluster-based findings representation. Each node represents
+a cluster of semantically similar sentences. Patient 1’s findings (consisting of multiple
+sentences) forms a complete subgraph where each node corresponds to the cluster
+containing one of the finding sentences. The blue subgraph shows an example findings
+with 4 sentences: the bold text shows the original sentence, and italicized text shows
+other sentences from the same cluster. The green and orange subgraphs represent
+findings from other patients.
+3.5 Enriching the Findings
+In this section we will explain how we enrich the findings by adding sentences
+from diffent clusters to a patient’s findings.
+Definition 1. Connected Clusters: First, we call the clusters c and c are
+i j
+connected if there is a patient in the training dataset that has two different
+sentences in its findings from c and c . This tells us that propositions in c and
+i j i
+c arenotcontradictorytoeachotherandtheycancoexistinapatient’sfindings.
+j
+Definition 2.Valid Enrichment: Assume that we have a set of findings for
+the j-th patient and the findings belong to the clusters F ={c ,c ,...,c }
+j j1 j2 jr
+where r is the number of sentences in the findings of the j-th patient. For a set of
+clusters F ⊂C, we say that (F ,F ) is a valid enrichment if the following
+cand j cand
+conditions are met:
+8 I. Gulluk et al.
+• F ∩F =∅ (1)
+j cand
+• ∀x,y ∈F ∪F , =⇒ x,y are connected (2)
+j cand
+• ∀c∈F =⇒ h (c)=+1 (3)
+cand S
+This means that, when we have a set of findings for a patient, we add positive
+propositions from different clusters, as loon as there is no contradiction between
+the candidate findings and the existing findings. Main motivation is that when
+clinicians are writing the findings, they might not mention every normal or
+positive finding, but focus on negative ones. So that we definitely can not add
+negative findings to the existing findings. Also, we need to check if the candidate
+findings are contradictory to each other or not.
+Definition 3. Largest Valid Enrichment: Similarly assume that we have
+a set of findings for the j-th patient and the findings belong to the clusters
+F ={c ,c ,...,c } where r is the number of sentences in the findings of the
+j j1 j2 jr
+j-th patient. For a candidate set of clusters F ⊂C, we say that (F ,F )
+cand j cand
+is the largest valid enrichment if the following conditions are met:
+• (F ,F ) is a valid enrichment (4)
+j cand
+• ∀c∈C\(F ∪F ) =⇒ (5)
+j cand
+(F ∪F ,{c}) is not a valid enrichment (6)
+j cand
+This means that, when we have a set of findings for a patient, we add the
+largest number of positive propositions from different clusters, as long as there
+is no contradiction among the candidate findings and between the candidate
+findings and the existing findings. We want to add the most positive propositions
+to the existing findings and when we reach to the limit, we stop adding more
+propositions. Figure 4 illustrates an example of enrichment. The details of the
+largest valid enrichment problem and our algorithm for finding it is provided in
+Section A.5.
+3.6 Enrichment Examples
+Below we provide real examples of valid enrichments from our dataset. Each
+example shows the original findings and the expansion clusters that were added.
+Using the same initial findings, we can obtain different valid enrichments
+depending on the connectivity structure. These examples demonstrate that our
+enrichment method adds semantically meaningful positive findings that are
+consistent with the original report. Note that different valid enrichments can
+be obtained for the same initial findings, as long as all connectivity and sign
+constraints are satisfied.
+SemEnrich 9
+Base Findings + Candidates Valid Enrichments
+Enrichment 1: Enrichment 2:
+BaseFindingsFj
+c c
+c 6 ×Negative 2 2
+c c c c c c
+1 2 1 4 1 4
+c c
+3 3
+✓Valid c 5
+c c c
+5 8 9
+c c
+3 4
+c 7 ×Notconnected Fj∪{c5} Fj∪{c8,c9}
+Invalid Candidates:
+c 8 c 9 c 6 hS(c6)=−1(negativesign)
+✓Validpair
+c 7 Notconnectedtoc1,c3
+Positivecluster Negativecluster Connected
+Candidateedge Basefindings
+Fig.4: Illustration of the valid enrichment process. Left: The base findings F =
+j
+{c ,c ,c ,c } (enclosed in blue box) with candidate clusters (dashed nodes). Green
+1 2 3 4
+nodesarepositive,rednodesarenegative.Candidatec isvalid(positiveandconnected
+5
+to all base nodes). Candidate c is invalid (negative sign). Candidate c is invalid (not
+6 7
+connectedtoc andc ).Candidatesc andc formavalidpair(bothpositive,connected
+1 3 8 9
+to all base nodes and to each other). Note that c is not connected to c ,c , so they
+5 8 9
+cannot be in the same enrichment. Right: Two largest valid enrichments: F ∪{c }
+j 5
+and F ∪{c ,c }. Note that F ∪{c } is also a valid enrichment, but it is not a largest
+j 8 9 j 8
+valid enrichment.
+Enrichment Example 2 (Multiple Expansions)
+Initial Findings:
+– Right hilar mass is suspected.
+– Heart is normal in size. Lungs are clear.
+– No pneumothorax or effusion.
+– Airspace disease is present in the inferior right upper lobe.
+Expansion Cluster 1: “visualized bony thorax intact”, “the visualized
+bony structures of the thorax are intact”, ...
+Expansion Cluster 2:“normallungvolumes”,“lungvolumesarenormal”,
+“the lung volumes are normal”, ...
+10 I. Gulluk et al.
+Alternative Enrichment A (Same Initial Findings)
+Expansion Cluster 1: “no bony abnormality is seen”, “no acute bony
+abnormalities”, “no acute bony abnormality is seen”, ...
+Expansion Cluster 2:“normallungvolumes”,“lungvolumesarenormal”,
+“the lung volumes are normal”, ...
+Alternative Enrichment B (Same Initial Findings)
+Expansion Cluster 1: “trachea is midline”, “the trachea is midline”,
+“midline trachea”, ...
+Expansion Cluster 2: “visualized bony thorax intact”, “the visualized
+bony structures of the thorax are intact”, ...
+3.7 Model Architecture
+Ourmodelfollowsavision-languagearchitecturewhereavisionencoderprocesses
+the input chest X-ray image and projects it into the embedding space of a large
+language model. Specifically, the vision encoder (a Vision Transformer) takes the
+input image and produces visual features, which are then projected through a
+linear layer into m tokens that match the LLM’s embedding dimension.
+These m image tokens are concatenated with the tokenized findings to form
+the input sequence: [I ,I ,...,I ,y ,y ,...,y ], where I ,I ,...,I are the
+1 2 m 1 2 n 1 2 m
+projected image tokens and y ,...,y are the finding tokens. The concatenated
+1 n
+sequence is then fed into the LLM backbone.
+The model is trained using the standard next token prediction objective.
+However, during loss computation, we mask the image tokens so that the model
+only learns to predict the finding tokens given the image representation. This
+ensuresthatthemodellearnstogeneratefindingsconditionedonthevisualinput.
+Formally, the training objective is:
+n
+1 (cid:88)
+L=− logP (y |I ,I ,...,I ,y ,...,y ) (7)
+n θ t 1 2 m 1 t−1
+t=1
+where θ denotes the trainable parameters of the model, and P (y |·) represents
+θ t
+the probability of predicting token y given the image tokens and preceding text
+t
+tokens.
+3.8 Clustering can be used in Rewarding for RL Training
+Inthissection,wewillexplainhowthistypeofclusteringcanbeusedinrewarding
+forRLtrainingevenwithouttheenrichment.Inthismethod,wetrainourmodels
+using both findings and impression sections. We can think of findings as thinking
+process -as it is the section where the image findings are writtten down-, and we
+can think of impression section as the final conclusion. So that in our trainings,
+SemEnrich 11
+OutputTokens
+LargeLanguageModel
+ImageTokens TextTokens
+Projector
+TextPrompt
+VisionEncoder
+ImageInput
+Fig.5: Model architecture overview. The input chest X-ray is processed by a Vision
+Encoder and projected into image tokens. These are concatenated with the tokenized
+findings (text tokens) and fed into a Large Language Model for next token prediction.
+we format our input as follows: "<think> findings here </think><answer>
+impression here </answer>".OneclassicalwaytorewardthemodelinGRPO
+trainingistorewardthemodelbasedonthefinalanswer,whichischeckingexact
+match between the generated impression and the ground truth impression.
+However, we add a new reward function which is based on the clustering of
+thefindings.Assumethatforasamplethegroundtruthfindingsarebelongingto
+the following clusters: F ={c ,c ,...,c }. And also assume that we generated
+gt 1 2 l
+findings that are belonging to the following clusters: F ={c ,c ,...,c }.
+gen g1 g2 gm
+Our reward function is the F1 score between the ground truth clusters and
+the generated clusters:
+2·|F ∩F |
+R = gt gen +R (8)
+cl |F |+|F | exact
+gt gen
+where R is the exact match reward for the impression section. Namely,
+exact
+R =1[y =y ], where 1[·] is the indicator function and y and y are
+exact gt gen gt gen
+the ground truth impression and the generated impression respectively.
+Wecomparethisrewardalongwithexactmatchrewardwithonlyexactmatch
+reward for the impression section. Note that this is another usage of semantic
+clusters that is orthogonal to our enrichment method.
+4 Experiments
+In this section we will present the experiments we conducted to evaluate the
+performance of our model. As we mentioned in the previous section, we use the
+12 I. Gulluk et al.
+ReXGradient-160K dataset for our experiments. We first train our models on the
+raw dataset and these are going to be our baseline models. Then we will train
+our models on the enriched dataset. The training on the enrinched dataset is
+conducted as follows. We use the same raw dataset in our dataloader, however,
+when we get a batch of data, we enrich the findings of each element in the batch
+byaddingtheoneofthelargestvalidenrichmentsofthiselementrandomly.Note
+that, the test dataset is not enriched in any way.
+WeuseViT-B/16modelasourvisionencoder,whereourimagesizeis224x224.
+For the language model we use : DeepSeek-R1-Distill-Llama-8B, DeepSeek-R1-
+Distill-Qwen-1.5B, Mistral-7B-v0.1, Qwen3-8B, Gemma3-4B. In all of the ex-
+periments, the vision encoder is fixed and the only language model is changed
+across different experiments for the enrichment part. In our experiments we use
+the following hyperparameters: Batch size: 144, Learning rate: 1e-4, Epochs: 25,
+Optimizer: AdamW, Vision encoder: ViT-B/16 , image sizee: 224 x 224, Lora
+with rank=8. All experiments are performed using a single NVIDIA A100 GPU.
+4.1 Main Results
+Weprovidedtheresultsinthefollowingtableswithdifferentmetrics.Wecompare
+the baseline training with our methods that use clustering methods. We can
+observe that, our methods are consistently better than the baseline training
+across all metrics.
+We observe that for Sentence BLEU-1 score, HDBSCAN and Kmeans-5000
+outperform the baseline training in Table 2, while Kmeans-1000 underperforms
+the baseline training which is provided in Table 2. We also provided results for
+corpus BLEU scores ,in section A.6, our methods clearly outperform the baseline
+training,howevern-grambasedBLEUscores-especiallycorpusBLEU-arebiased
+in favor of longer outputs. Especially considering that our method where we
+enrich the dataset by adding new sentences from the dataset itself, our method
+might hacking the corpus BLEU score. So, these improvements in BLEU scores
+only might not be meaningful. We will use different metrics that can evaluate
+the quality of the generated sentences semantically.
+One of the most important metrics is COMET score in our case, it is because
+our method involves adding new sentences to the existings sentences for each
+sample. As COMETis a metric that punishes unnecessary, irrelevant and repeti-
+tive sentences, we might expect that our model would perform worse than the
+baseline training if the added sentences were noisy. However, as shown in Table
+3, rather than DBSCAN approach, our clustering based enrichment methods are
+consistently better than the baseline training. Considering that some metrics can
+be more valueable than others depending on the task, our methods outperform
+the baseline training in COMET score means that our method enriches the
+dataset with more relevant and useful sentences.
+Similarly, BERTScore (F1 values are reported), is informative in our case.
+As it is a contextual embedding–based similarity metric that evaluates semantic
+alignment between generated and reference texts. By capturing meaning corre-
+spondence beyond exact lexical overlap and balancing precision and recall, this
+SemEnrich 13
+metric is well-suited for assessing our enrichment method agains the baseline
+training.
+As shown in Table 4, our methods except DBSCAN are consistently better
+than the baseline training. This clearly suggests that our enrichment method
+with HDBSCAN and Kmeans variants add sentences that are more semantically
+aligned with the patients X-ray image.
+In addition, we provide METEOR, ChrF++, ROUGE, CIDER scores in the
+section A.6. Similarly, we observe similar performance gains on these metrics by
+our enrichment methods especially with HDBSCAN clustering.
+Table 2: Sentence BLEU-1 scores comparing baseline with clustering methods
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B27.58±0.8727.03±1.3129.51±0.8126.40±0.6628.74±0.97 28.16±0.62
+Gemma3-4B 21.63±0.7021.36±0.8323.83±0.9122.80±0.7422.25±0.70 23.32±0.32
+DS-R1-Llama-8B 27.45±0.8628.44±0.69 29.11±0.54 26.85±1.0029.09±0.7729.38±0.61
+Qwen3-8B 28.11±1.1728.02±0.5630.35±1.3526.88±0.7129.36±0.94 29.40±0.79
+Mistral-7B 29.87±1.6728.89±1.0032.64±1.0023.12±0.5229.58±0.69 32.53±1.15
+Mean 26.93 26.75 29.09 25.21 27.80 28.56
+Table 3: COMET scores comparing baseline with clustering methods
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B63.68±0.4963.28±0.6567.34±0.4165.76±0.4567.14±0.4366.38±0.49
+Gemma3-4B 62.05±0.5361.93±0.3564.59±0.6563.65±0.3963.51±0.3263.97±0.22
+DS-R1-Llama-8B 63.95±0.4864.24±0.5967.44±0.3166.66±0.3767.37±0.3767.02±0.36
+Qwen3-8B 63.80±0.8064.09±0.6367.71±0.7366.32±0.4067.40±0.4967.16±0.52
+Mistral-7B 63.59±0.7763.65±0.6069.16±0.5765.42±0.2668.10±0.4067.33±0.51
+Mean 63.41 63.44 67.25 65.56 66.70 66.37
+Table 4: BERTScore-F1 scores comparing baseline with clustering methods.
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B67.60±0.4866.94±0.6669.66±0.42 68.62±0.37 69.54±0.66 69.15±0.47
+Gemma3-4B 65.35±0.3165.17±0.31 66.80±0.60 66.93±0.4166.38±0.24 66.72±0.13
+DS-R1-Llama-8B 67.83±0.4467.74±0.53 69.80±0.34 69.20±0.51 69.92±0.5069.97±0.39
+Qwen3-8B 67.79±0.6767.54±0.3470.07±0.69 69.11±0.34 69.85±0.44 69.87±0.36
+Mistral-7B 67.86±0.7567.09±0.65 71.35±0.56 67.92±0.28 69.14±0.5871.40±0.59
+Mean 67.29 66.89 69.54 68.35 68.97 69.42
+14 I. Gulluk et al.
+Table 5: CheXbert-14 average F1 scores comparing baseline with clustering
+methods
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B 36.38±1.97 34.94±2.0136.52±1.6935.59±2.1235.90±2.98 35.17±2.99
+Gemma3-4B 27.12±1.93 22.33±1.2129.69±3.3225.11±1.5419.93±1.23 25.11±1.66
+DS-R1-Llama-8B 41.34±2.3738.32±2.03 39.72±2.38 39.60±2.7838.78±1.24 40.18±2.51
+Qwen3-8B 37.98±3.77 37.74±2.7739.31±1.4437.23±2.2138.17±2.77 38.80±3.42
+Mistral-7B 37.34±2.22 38.23±1.96 39.25±2.71 21.55±1.5438.43±2.7039.30±3.31
+Mean 36.03 34.31 36.90 31.82 34.24 35.71
+Table6:CheXbert-5averageF1scorescomparingbaselinewithclusteringmethods
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B 17.26±4.85 18.37±2.99 21.19±5.09 23.54±4.1723.23±4.8421.65±4.93
+Gemma3-4B 17.73±1.85 9.34±2.77 20.06±2.05 17.17±4.32 11.07±2.1812.88±1.16
+DS-R1-Llama-8B 31.90±3.4423.15±2.27 24.93±4.47 29.70±2.37 26.30±3.8927.51±5.28
+Qwen3-8B 21.97±5.39 22.48±4.14 25.02±3.51 26.22±3.1221.78±4.8025.77±4.69
+Mistral-7B 15.89±4.30 17.01±4.22 19.13±5.79 24.82±3.7616.03±3.0121.67±2.87
+Mean 20.95 18.07 22.06 24.29 19.68 21.90
+Table 7: RadGraph-F1 (complete) scores comparing baseline with clustering
+methods
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B26.51±1.0024.03±1.60 27.90±1.22 24.93±1.0328.25±1.6226.04±1.00
+Gemma3-4B 18.49±1.0716.23±1.2220.71±1.5520.62±0.82 18.90±0.93 19.83±0.97
+DS-R1-Llama-8B 26.08±1.1825.16±1.04 28.07±0.80 26.07±1.4028.34±1.2827.92±0.99
+Qwen3-8B 27.32±1.6924.78±1.1429.28±2.0025.97±1.35 28.69±1.47 28.32±1.22
+Mistral-7B 30.21±1.7228.73±1.6132.23±1.6023.69±1.02 31.45±1.47 31.65±1.72
+Mean 25.72 23.79 27.64 24.26 27.13 26.75
+4.2 Ablation Study
+In order to evaluate the effectiveness of the proposed method, we conducted
+an ablation study by comparing the performance of the baseline model with
+the performance of the model with HDBSCAN clustering and the model with
+random sentence addition. So that when we have an expansion according to the
+HDBSCAN clustering, instead of adding a sentence from the proposed cluster,
+we add a sentence from the random cluster. Eventually we can compare the
+SemEnrich 15
+performance of the baseline model with the performance of the model with
+HDBSCAN clustering and the model with random sentence addition.
+As we can see in tables 8, 9, 10, while the performance of the models with
+HDBSCAN clustering is better than the baseline training, Random Expansion of
+sentences does not improve the performance, but decreases it slightly comparing
+to the baseline training. This concludes that our proposed method of clustering
+sentences is semantically meaningful.
+Table 8: Ablation: COMET. Table 9: Ablation: Sentence-BLEU-1.
+Model Base HDB Random Model Base HDB Random
+DS-R1-Qwen-1.5B63.68±0.4967.34±0.4163.97±0.48 DS-R1-Qwen-1.5B27.58±0.8729.51±0.8126.88±1.01
+Gemma3-4B 62.05±0.5364.59±0.6561.97±0.41 Gemma3-4B 21.63±0.7023.83±0.9122.18±0.49
+DS-R1-Llama-8B 63.95±0.4867.44±0.3164.53±0.57 DS-R1-Llama-8B 27.45±0.8629.11±0.5427.59±0.71
+Qwen3-8B 63.80±0.8067.71±0.7364.35±0.28 Qwen3-8B 28.11±1.1730.35±1.3527.17±0.44
+Mistral-7B 63.59±0.7769.16±0.5761.53±0.47 Mistral-7B 29.87±1.6732.64±1.0028.85±1.02
+Mean 63.41 67.25 63.27 Mean 26.93 29.09 26.53
+Table 10: Ablation: BERTScore-F1. Table 11: Ablation: CheXbert-14 F1.
+Model Base HDB Random Model Base HDB Random
+DS-R1-Qwen-1.5B67.60±0.4869.66±0.4267.06±0.55 DS-R1-Qwen-1.5B 36.38±1.97 36.52±1.6930.04±1.32
+Gemma3-4B 65.35±0.3166.80±0.6065.43±0.31 Gemma3-4B 27.12±1.93 29.69±3.3223.12±2.55
+DS-R1-Llama-8B 67.83±0.4469.80±0.3467.91±0.55 DS-R1-Llama-8B 41.34±2.37 39.72±2.38 28.85±2.38
+Qwen3-8B 67.79±0.6770.07±0.6967.62±0.11 Qwen3-8B 37.98±3.77 39.31±1.4433.63±3.77
+Mistral-7B 67.86±0.7571.35±0.5666.50±0.57 Mistral-7B 37.34±2.22 39.25±2.7125.15±1.38
+Mean 67.29 69.54 66.91 Mean 36.03 36.90 28.16
+Table 12: Ablation: CheXbert-5 F1. Table 13: Ablation: RadGraph-F1.
+Model Base HDB Random Model Base HDB Random
+DS-R1-Qwen-1.5B 17.26±4.85 21.19±5.09 20.86±5.00 DS-R1-Qwen-1.5B26.51±1.0027.90±1.2223.57±1.14
+Gemma3-4B 17.73±1.85 20.06±2.05 18.98±5.45 Gemma3-4B 18.49±1.0720.71±1.5517.90±1.02
+DS-R1-Llama-8B 31.90±3.44 24.93±4.47 21.68±4.60 DS-R1-Llama-8B 26.08±1.1828.07±0.8024.79±1.50
+Qwen3-8B 21.97±5.39 25.02±3.51 26.82±5.30 Qwen3-8B 27.32±1.6929.28±2.0024.28±0.74
+Mistral-7B 15.89±4.30 19.13±5.79 14.84±2.02 Mistral-7B 30.21±1.7232.23±1.6023.99±1.20
+Mean 20.95 22.06 20.63 Mean 25.72 27.64 22.90
+4.3 GRPO Rewarding Results
+As we discussed in section 3.8, we compare the performance of the clustering
+based rewarding with the performance of the exact match reward for the impres-
+sion section in RL training with GRPO after SFT. Note that clustering based
+rewarding R is including the exact match reward for the impressions as well
+cl
+as the F1 score between the ground truth clusters and the generated clusters
+for the findings section. Also, we utilize HDBSCAN clustering in R . Note that
+cl
+16 I. Gulluk et al.
+the results shown in the tables are for the impression section only. This way
+we can evaluate if our method that is designed for the findings section is also
+beneficial for the impression section, which is the final conclusion of the report.
+Sothatwecantesttheinformativenessofthefindings.Inallruns,weprovidethe
+results for 5 different seeds. As we can see from Table 14, cluster based rewarding
+yields significant performance improvements over exact matching type of GRPO
+training. More details about the GRPO training results are provided in section
+A.8.
+Table 14: GRPO results comparing cluster-based reward R and exact match
+cl
+reward R on the impression section.
+exact
+COMET Sentence-BLEU-1 BERTScore-F1
+Model Rcl Rexact Rcl Rexact Rcl Rexact
+Qwen2.5-VL-3B0.6179±0.0030.5973±0.0020.2704±0.00350.2361±0.00420.7211±0.0020.6952±0.002
+Qwen3-VL-4B 0.6125±0.0030.5989±0.0030.2706±0.00440.2354±0.00340.7193±0.0030.7000±0.002
+5 Conclusion
+In this paper, we proposed a method to enrich medical datasets which consists
+of relatively independent findings that have no causal relationship or chain of
+thoughts between them. Chest X-ray reports are a good example of this kind of
+dataset which includes findings and impressions that are relatively independent.
+We proposed a method to cluster the sentences/findings in the dataset into
+semantically meaningful clusters. We also proposed a method to enrich the
+dataset by adding sentences from different clusters to the existing sentences
+in the dataset, which can be considered as a form of self-supervised learning.
+We conducted experiments on the ReXGradient-160K dataset and showed that
+our method can improve the performance of the models on the test set in SFT
+training. We also conducted an ablation study to evaluate the effectiveness of
+our method considering the some evaluation metrics can be disputable especially
+in the context of our task. Thanks to the ablation study, we can conclude that
+our method is effective.
+We also provided a way to use semantic clusters can be used in rewarding for
+GRPO training. Mainly, we reward the models if they generate sentences that
+are semantically aligned with the ground truth sentences even if they are not
+exactly the same. This method gives additional performance over exact match
+based rewards.
+References
+1. Alfarghaly,O.,Khaled,R.,Elkorany,A.,Helal,M.,Fahmy,A.:Automatedradiology
+reportgenerationusingconditionedtransformers.InformaticsinMedicineUnlocked
+24, 100557 (2021)
+SemEnrich 17
+2. Boecking,B.,Usuyama,N.,Bannur,S.,Castro,D.C.,Schwaighofer,A.,Hyland,S.,
+Wetscherek, M., Naumann, T., Nori, A., Alvarez-Valle, J., et al.: Making the most
+of text semantics to improve biomedical vision–language processing. In: European
+conference on computer vision. pp. 1–21. Springer (2022)
+3. Bron, C., Kerbosch, J.: Algorithm 457: finding all cliques of an undirected graph.
+Communications of the ACM 16(9), 575–577 (1973)
+4. Chen, X., Lai, Z., Ruan, K., Chen, S., Liu, J., Liu, Z.: R-llava: Improving med-
+vqa understanding through visual region of interest. arxiv 2024. arXiv preprint
+arXiv:2410.20327
+5. Chen, Z., Song, Y., Chang, T.H., Wan, X.: Generating radiology reports via
+memory-driven transformer. arXiv preprint arXiv:2010.16056 (2020)
+6. Deperrois, N., Matsuo, H., Ruipérez-Campillo, S., Vandenhirtz, M., Laguna, S.,
+Ryser, A., Fujimoto, K., Nishio, M., Sutter, T.M., Vogt, J.E., et al.: Radvlm:
+A multitask conversational vision-language model for radiology. arXiv preprint
+arXiv:2502.03333 (2025)
+7. Gai, X., Liu, J., Li, Y., Meng, Z., Wu, J., Liu, Z.: 3d-rad: A comprehensive 3d
+radiology med-vqa dataset with multi-temporal analysis and diverse diagnostic
+tasks. arXiv preprint arXiv:2506.11147 (2025)
+8. Irvin, J., Rajpurkar, P., Ko, M., Yu, Y., Ciurea-Ilcus, S., Chute, C., Marklund, H.,
+Haghgoo, B., Ball, R., Shpanskaya, K., et al.: Chexpert: A large chest radiograph
+datasetwithuncertaintylabelsandexpertcomparison.In:ProceedingsoftheAAAI
+conference on artificial intelligence. vol. 33, pp. 590–597 (2019)
+9. Jia, C., Yang, Y., Xia, Y., Chen, Y.T., Parekh, Z., Pham, H., Le, Q., Sung, Y.H.,
+Li, Z., Duerig, T.: Scaling up visual and vision-language representation learning
+with noisy text supervision. In: International conference on machine learning. pp.
+4904–4916. PMLR (2021)
+10. Johnson, A.E., Pollard, T.J., Berkowitz, S.J., Greenbaum, N.R., Lungren, M.P.,
+Deng, C.y., Mark, R.G., Horng, S.: Mimic-cxr, a de-identified publicly available
+database of chest radiographs with free-text reports. Scientific data 6(1), 317
+(2019)
+11. Karp, R.M.: Reducibility among combinatorial problems. In: 50 Years of Integer
+Programming1958-2008:fromtheEarlyYearstotheState-of-the-Art,pp.219–241.
+Springer (2009)
+12. Lau, J.J., Gayen, S., Ben Abacha, A., Demner-Fushman, D.: A dataset of clinically
+generatedvisualquestionsandanswersaboutradiologyimages.Scientificdata5(1),
+1–10 (2018)
+13. Li,C.,Wong,C.,Zhang,S.,Usuyama,N.,Liu,H.,Yang,J.,Naumann,T.,Poon,H.,
+Gao, J.: Llava-med: Training a large language-and-vision assistant for biomedicine
+in one day. Advances in Neural Information Processing Systems 36, 28541–28564
+(2023)
+14. Li, J., Li, D., Savarese, S., Hoi, S.: Blip-2: Bootstrapping language-image pre-
+training with frozen image encoders and large language models. In: International
+conference on machine learning. pp. 19730–19742. PMLR (2023)
+15. Lin,W.,Zhao,Z.,Zhang,X.,Wu,C.,Zhang,Y.,Wang,Y.,Xie,W.:Pmc-clip:Con-
+trastive language-image pre-training using biomedical documents. In: International
+Conference on Medical Image Computing and Computer-Assisted Intervention. pp.
+525–536. Springer (2023)
+16. Moon, J.W., Moser, L.: On cliques in graphs. Israel journal of Mathematics 3(1),
+23–28 (1965)
+18 I. Gulluk et al.
+17. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G.,
+Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from
+natural language supervision. In: International conference on machine learning. pp.
+8748–8763. PmLR (2021)
+18. Reimers, N., Gurevych, I.: Sentence-bert: Sentence embeddings using siamese
+bert-networks. arXiv preprint arXiv:1908.10084 (2019)
+19. Tanno, R., Barrett, D.G., Sellergren, A., Ghaisas, S., Dathathri, S., See, A., Welbl,
+J., Lau, C., Tu, T., Azizi, S., et al.: Collaboration between clinicians and vision–
+language models in radiology report generation. Nature Medicine 31(2), 599–608
+(2025)
+20. Tomita, E., Tanaka, A., Takahashi, H.: The worst-case time complexity for gener-
+ating all maximal cliques and computational experiments. Theoretical computer
+science 363(1), 28–42 (2006)
+21. Tsukiyama,S.,Ide,M.,Ariyoshi,H.,Shirakawa,I.:Anewalgorithmforgenerating
+all the maximal independent sets. SIAM Journal on Computing 6(3), 505–517
+(1977)
+22. Tu, T., Azizi, S., Driess, D., Schaekermann, M., Amin, M., Chang, P.C., Carroll,
+A., Lau, C., Tanno, R., Ktena, I., et al.: Towards generalist biomedical ai. Nejm Ai
+1(3), AIoa2300138 (2024)
+23. Wan,Z.,Liu,C.,Zhang,M.,Fu,J.,Wang,B.,Cheng,S.,Ma,L.,Quilodrán-Casas,
+C., Arcucci, R.: Med-unic: Unifying cross-lingual medical vision-language pre-
+training by diminishing bias. Advances in Neural Information Processing Systems
+36, 56186–56197 (2023)
+24. Wu, C., Lin, W., Zhang, X., Zhang, Y., Xie, W., Wang, Y.: Pmc-llama: toward
+buildingopen-sourcelanguagemodelsformedicine.JournaloftheAmericanMedical
+Informatics Association 31(9), 1833–1843 (2024)
+25. Xia, P., Zhu, K., Li, H., Wang, T., Shi, W., Wang, S., Zhang, L., Zou, J., Yao, H.:
+Mmed-rag: Versatile multimodal rag system for medical vision language models.
+arXiv preprint arXiv:2410.13085 (2024)
+26. Zhang, X., Acosta, J.N., Miller, J., Huang, O., Rajpurkar, P.: Rexgradient-160k: A
+large-scale publicly available dataset of chest radiographs with free-text reports.
+arXiv preprint arXiv:2505.00228 (2025)
+27. Zhang,X.,Wu,C.,Zhao,Z.,Lin,W.,Zhang,Y.,Wang,Y.,Xie,W.:Developmentof
+a large-scale medical visual question-answering dataset. Communications Medicine
+4(1), 277 (2024)
+SemEnrich 19
+A Appendix
+A.1 Cluster Examples
+More examples of semantic clusters are provided.
+Cluster 5: Pelvic Phleboliths
+“bilateral pelvic phleboliths.” / “pelvic calcifications consistent with phleboliths.” /
+“multiple pelvic phleboliths.” / “numerous pelvic phleboliths are noted.” / ...
+Cluster 6: Cerebral Infarcts
+“focal encephalomalacia within the right occipital lobe...consistent with remote in-
+farcts.” / “there is a large left middle cerebral artery territory infarct...” / “there is
+an old left periventricular frontal lobe infarct.” / ...
+Cluster 7: Sickle Cell Disease Changes
+“osseous changes of sickle cell disease are chronic and stable.” / “bony changes of
+sickle cell disease are noted.” / “biconcave vertebral body configuration is typical for
+sickle cell disease.” / ...
+A.2 Enrichment Examples
+More examples of enrichment clusters are provided. We add a random sentence
+from the expansion cluster to the current sample during the training.
+Enrichment Example 1
+Initial Findings:
+– The heart size and mediastinal contours are within normal limits.
+– Both lungs are clear.
+– The visualized skeletal structures are unremarkable.
+– Bilateral nipple rings.
+Expansion Cluster: “there is no pleural effusion or edema identified”,
+“no pleural effusions”, “no pleural effusion”, ...
+20 I. Gulluk et al.
+Enrichment Example 3
+Initial Findings:
+– Heart: Normal. Lungs: The lungs are hyperinflated.
+– There is mild scattered chronic lung changes throughout both lung
+fields, most pronounced in the right apex.
+– There is a 8 mm calcified granuloma in the left lung base. Otherwise,
+the lung fields are relatively clear.
+– Mediastinum: Normal. Pleural effusions: None.
+– There is suggestion of diffuse osteopenia. Correlate for osteoporosis.
+– There is moderate-to-marked chronic anterior wedge compression defor-
+mity of the approximately T9 vertebral body.
+Expansion Cluster: “no pneumothorax is seen”, “there is no pneumotho-
+rax”, “no definite pneumothorax is seen”, ...
+SemEnrich 21
+A.3 HDBSCAN Clustering Statistics
+Althoughwehave184,535sentencesinthetrainingdataset,asHDBSCANallows
+outliers and not to assign them to a cluster, eventuall we end up with 66,477
+sentences in the training dataset that are assigned to a cluster. This is one of the
+main difference between density based clustering and K-means.
+Statistic Value
+Total Sentences 66,477
+Total Clusters 3,216
+Average Cluster Size 20.67
+Median Cluster Size 11.0
+Min Cluster Size 5
+Max Cluster Size 1,522
+Table 15: HDBSCAN clustering statistics for finding sentences.
+(a) (b) (c)
+Fig.6: HDBSCAN clustering statistics: (a) Log histogram of cluster sizes, (b)
+Top clusters by size, (c) Percentage distribution of clusters.
+A.4 KMEANS Clustering Statistics with 5000 Clusters
+WeprovidethedetailsoftheK-meansclusteringwith5000clustersasanexample
+to illustrate the clustering difference between density based clustering methods
+and K-means.
+22 I. Gulluk et al.
+Statistic Value
+Total Sentences 184,535
+Total Clusters 184,535
+Average Cluster Size 36.91
+Median Cluster Size 31.0
+Min Cluster Size 1
+Max Cluster Size 296
+Table 16: K-means-5000 clustering statistics for finding sentences.
+(a) (b) (c)
+Fig.7: KMEANS-5000 clustering statistics: (a) Log histogram of cluster sizes, (b)
+Top clusters by size, (c) Percentage distribution of clusters.
+SemEnrich 23
+A.5 Largest Valid Enrichment Problem
+Theproblemoffindingallmaximalexpansionsinourframeworkiscloselyrelated
+to the classical maximal clique enumeration problem in graph theory. Given an
+undirectedgraphG=(V,E),aclique isasubsetofverticesinwhicheverypairis
+connectedbyanedge.Acliqueismaximal ifnoadditionalvertexcanbeincluded
+without breaking the clique property, and it is maximum if it has the largest
+cardinality among all cliques in the graph. The decision version of the maximum
+clique problem—determining whether a clique of size at least k exists—is one of
+Karp’s original 21 NP-complete problems [11]. Moon and Moser [16] established
+that a graph on n vertices can contain up to 3n/3 maximal cliques, and this
+bound is tight. Consequently, any algorithm that enumerates all maximal cliques
+requires exponential time in the worst case simply because the output itself can
+be exponentially large.
+The most widely used algorithm for maximal clique enumeration is the Bron–
+Kerbosch algorithm [3], a backtracking procedure that maintains three sets: R
+(the current clique), P (candidate vertices that can extend R), and X (vertices
+already processed that ensure maximality). With the pivoting optimization [20],
+thealgorithmachievesO(3n/3)worst-casetime,matchingtheMoon–Moserbound
+and making it output-optimal. Furthermore, Tsukiyama et al. [21] showed that
+maximal cliques can be enumerated with polynomial delay—the time between
+outputting consecutive cliques is bounded by a polynomial in n.
+In our setting, finding all largest valid enrichments for a patient with findings
+F corresponds to enumerating all maximal cliques in the subgraph induced by
+j
+N+(F ): the set of positive clusters that are addable to every cluster in F . Since
+j j
+|N+(F )| is typically much smaller than the total number of clusters |C|—due to
+j
+theintersectionofneighborhoods—theenumerationremainstractableinpractice.
+We precompute all maximal expansions for every unique finding graph before
+training, and during training we uniformly sample one expansion per instance in
+each batch.
+24 I. Gulluk et al.
+Algorithm 1 Precomputing All Maximal Valid Enrichments
+Require: Training data D = {(v ,F )}N , cluster mapping f , cluster signs h ,
+i i i=1 C S
+thresholds τ ,τ
+norm count
+Ensure: Expansion dictionary E
+1: // Stage 1: Build Co-occurrence and Addability
+2: Initialize A∈RK×K ←0 ▷ K = number of clusters
+3: for each (v ,F )∈D do
+i i
+4: G ←{f (s):s∈F }
+i C i
+5: for each pair (c ,c )∈G ×G , c ̸=c do
+a b i i a b
+6: A[c ,c ]←A[c ,c ]+1
+a b a b
+7: end for
+8: end for
+9: A˜←RowNormalize(A)
+(cid:104) (cid:105)
+10: B[i,j]←1 A˜[i,j]>τ ∧ A[i,j]>τ ∧ h (j)=+1
+norm count S
+11:
+12: // Stage 2: Enumerate Maximal Expansions
+13: for each unique finding graph G do
+14: N+(G)←(cid:84) {j :B[c,j]=1}\G ▷ Compatible positive clusters
+c∈G
+15: E[G]←Expand(G, sorted(N+(G)), 0)
+16: Remove any R ∈E[G] s.t. ∃R ∈E[G]: R ⊂R ▷ Keep only maximal
+i j i j
+17: end for
+18: return E
+19:
+20: Function Expand(R, P, s)
+21: expanded←false
+22: for i=s to |P| do
+23: if B[c, p ]=1 for all c∈R then
+i
+24: Expand(R∪{p }, P, i+1)
+i
+25: expanded←true
+26: end if
+27: end for
+28: if not expanded then
+29: emit R ▷ No candidate can extend R
+30: end if
+31: end function
+SemEnrich 25
+A.6 Semantic Enrichment Additional Results
+We provide semantic enrichment results for METEOR, ROUGE, BLEU based
+scores and BertScore with roberta-large model.
+Table 17: METEOR scores comparing baseline with clustering methods
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B26.36±0.9826.97±1.7030.13±1.18 29.90±1.27 30.94±1.53 28.63±1.20
+Gemma3-4B 20.48±0.6420.70±0.9823.52±1.1625.68±0.95 23.18±0.64 23.04±0.08
+DS-R1-Llama-8B 26.26±1.1228.10±1.2129.72±0.7930.87±1.43 30.51±1.05 30.46±1.27
+Qwen3-8B 27.21±1.4327.57±0.8931.21±1.97 29.92±1.37 31.57±1.36 30.38±0.86
+Mistral-7B 29.42±1.8327.87±1.5233.51±1.66 30.67±1.09 33.13±1.41 33.78±1.63
+Mean 25.95 26.24 29.62 29.41 29.87 29.26
+Table 18: ChrF++ scores comparing baseline with clustering methods
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B35.39±0.8136.90±1.4839.40±1.04 40.43±0.94 40.88±1.41 38.72±1.03
+Gemma3-4B 31.61±0.6632.40±0.7134.50±1.1537.03±0.75 34.91±0.57 34.34±0.09
+DS-R1-Llama-8B 35.33±0.8838.13±1.0738.99±0.7541.42±1.22 40.83±1.01 40.03±1.18
+Qwen3-8B 35.97±1.4337.66±0.6739.99±1.60 40.69±0.91 41.26±1.15 39.85±0.81
+Mistral-7B 37.48±1.6538.85±1.4142.67±1.42 41.83±0.77 43.23±1.32 43.25±1.50
+Mean 35.16 36.79 39.11 40.28 40.22 39.24
+Table 19: Corpus BLEU-1 scores comparing baseline with clustering methods
+(Pretrain).
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B25.59±0.9529.53±1.4232.44±0.9627.42±0.6731.05±0.65 31.98±0.86
+Gemma3-4B 23.67±0.6924.77±1.0527.64±0.9523.19±0.7123.72±0.74 26.93±0.49
+DS-R1-Llama-8B 26.73±1.1731.19±1.30 32.02±0.88 28.06±1.1931.86±0.8933.17±0.91
+Qwen3-8B 26.14±1.2129.93±0.87 33.06±1.37 28.45±0.6932.09±0.9033.19±0.60
+Mistral-7B 25.44±1.5129.89±1.0234.72±1.2923.76±0.5732.30±0.74 34.71±1.57
+Mean 25.51 29.06 31.97 26.18 30.21 31.99
+26 I. Gulluk et al.
+Table 20: ROUGE-1-F scores comparing baseline with clustering methods (Pre-
+train).
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B37.79±0.9936.13±1.3440.54±0.9937.53±0.7539.83±1.2038.96±0.86
+Gemma3-4B 31.59±0.8630.52±0.9634.09±1.2133.51±0.7132.43±0.4433.32±0.17
+DS-R1-Llama-8B 37.80±0.8137.80±0.8340.47±0.7938.27±1.0440.24±0.9340.39±0.85
+Qwen3-8B 38.35±1.3037.09±0.5941.40±1.5238.10±0.6940.36±0.9940.42±0.93
+Mistral-7B 39.44±1.6836.86±1.1944.12±1.1534.75±0.6240.53±0.9643.86±1.37
+Mean 37.00 35.68 40.12 36.43 38.68 39.39
+Table 21: ROUGE-2-F scores comparing baseline with clustering methods (Pre-
+train).
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B19.04±0.8617.45±1.57 19.04±1.09 15.83±1.0018.48±1.44 17.21±0.96
+Gemma3-4B 12.06±0.51 10.05±0.7512.82±0.8711.55±0.6810.55±0.68 11.87±0.41
+DS-R1-Llama-8B 18.76±0.84 18.39±1.06 18.58±0.96 16.63±1.3318.24±1.0218.96±1.04
+Qwen3-8B 20.27±1.7418.22±0.65 20.10±1.75 16.29±1.0318.99±1.38 18.74±0.99
+Mistral-7B 23.53±1.8720.96±1.57 22.56±1.53 15.82±0.8221.12±1.26 23.34±1.43
+Mean 18.73 17.01 18.62 15.22 17.48 18.02
+Table 22: ROUGE-L-F scores comparing baseline with clustering methods (Pre-
+train).
+Model Base DB HDB K-1k K-2k K-5k
+DS-R1-Qwen-1.5B30.32±0.8928.32±1.2230.49±1.0826.60±0.7229.39±1.07 28.79±0.57
+Gemma3-4B 23.64±0.5221.89±0.6624.67±0.8822.54±0.6922.27±0.55 23.85±0.42
+DS-R1-Llama-8B 29.96±0.7629.40±0.98 30.32±0.84 27.17±0.9729.48±0.7630.45±0.82
+Qwen3-8B 31.06±1.2229.22±0.6431.27±1.3326.99±0.8429.89±1.05 30.14±0.65
+Mistral-7B 33.43±1.5130.70±1.21 33.65±1.23 24.56±0.5631.30±1.0134.26±1.15
+Mean 29.68 27.91 30.08 25.57 28.47 29.50
+A.7 Ablation Study Results
+We provided additional results for the ablation study below. For some metrics,
+although we observe an improvement from the random expansion due to met-
+ric hacking, we also see that semantically guided expansion yields additional
+improvements over the random expansion.
+SemEnrich 27
+Table23:Ablationstudy:COMETcomparingBaseline,HDBSCAN,andRandom
+Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B63.68±0.4967.34±0.4163.97±0.48
+Gemma3-4B 62.05±0.5364.59±0.6561.97±0.41
+DS-R1-Llama-8B 63.95±0.4867.44±0.3164.53±0.57
+Qwen3-8B 63.80±0.8067.71±0.7364.35±0.28
+Mistral-7B 63.59±0.7769.16±0.5761.53±0.47
+Mean 63.41 67.25 63.27
+Table 24: Ablation study: Sentence BLEU-1 comparing Baseline, HDBSCAN,
+and Random Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B27.58±0.8729.51±0.8126.88±1.01
+Gemma3-4B 21.63±0.7023.83±0.9122.18±0.49
+DS-R1-Llama-8B 27.45±0.8629.11±0.5427.59±0.71
+Qwen3-8B 28.11±1.1730.35±1.3527.17±0.44
+Mistral-7B 29.87±1.6732.64±1.0028.85±1.02
+Mean 26.93 29.09 26.53
+Table 25: Ablation study: METEOR comparing Baseline, HDBSCAN, and Ran-
+dom Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B26.36±0.9830.13±1.1828.33±1.41
+Gemma3-4B 20.48±0.6423.52±1.1622.24±0.61
+DS-R1-Llama-8B 26.26±1.1229.72±0.7928.74±1.24
+Qwen3-8B 27.21±1.4331.21±1.9728.34±0.60
+Mistral-7B 29.42±1.8333.51±1.6632.33±1.72
+Mean 25.95 29.62 28.00
+28 I. Gulluk et al.
+Table 26: Ablation study: ROUGE-1-F comparing Baseline, HDBSCAN, and
+Random Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B37.79±0.9940.54±0.9936.73±1.11
+Gemma3-4B 31.59±0.8634.09±1.2131.77±0.59
+DS-R1-Llama-8B 37.80±0.8140.47±0.7937.79±0.86
+Qwen3-8B 38.35±1.3041.40±1.5237.28±0.44
+Mistral-7B 39.44±1.6844.12±1.1538.24±1.12
+Mean 37.00 40.12 36.36
+Table 27: Ablation study: ROUGE-2-F comparing Baseline, HDBSCAN, and
+Random Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B19.04±0.86 19.04±1.09 17.42±1.20
+Gemma3-4B 12.06±0.51 12.82±0.8711.95±0.81
+DS-R1-Llama-8B 18.76±0.84 18.58±0.96 18.21±1.32
+Qwen3-8B 20.27±1.74 20.10±1.75 17.82±0.45
+Mistral-7B 23.53±1.87 22.56±1.53 20.36±1.32
+Mean 18.73 18.62 17.15
+Table 28: Ablation study: ROUGE-L-F comparing Baseline, HDBSCAN, and
+Random Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B30.32±0.8930.49±1.0828.04±0.89
+Gemma3-4B 23.64±0.5224.67±0.8823.28±0.70
+DS-R1-Llama-8B 29.96±0.7630.32±0.8429.19±0.95
+Qwen3-8B 31.06±1.2231.27±1.3328.55±0.42
+Mistral-7B 33.43±1.5133.65±1.2329.57±1.08
+Mean 29.68 30.08 27.72
+SemEnrich 29
+Table29:Ablationstudy:ChrF++comparingBaseline,HDBSCAN,andRandom
+Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B35.39±0.8139.40±1.0437.56±1.25
+Gemma3-4B 31.61±0.6634.50±1.1533.39±0.73
+DS-R1-Llama-8B 35.33±0.8838.99±0.7537.80±1.38
+Qwen3-8B 35.97±1.4339.99±1.6037.63±0.49
+Mistral-7B 37.48±1.6542.67±1.4240.02±1.46
+Mean 35.16 39.11 37.28
+Table 30: Ablation study: BERTScore-F1 comparing Baseline, HDBSCAN, and
+Random Expansion.
+Model Base HDB Random
+DS-R1-Qwen-1.5B67.60±0.4869.66±0.4267.06±0.55
+Gemma3-4B 65.35±0.3166.80±0.6065.43±0.31
+DS-R1-Llama-8B 67.83±0.4469.80±0.3467.91±0.55
+Qwen3-8B 67.79±0.6770.07±0.6967.62±0.11
+Mistral-7B 67.86±0.7571.35±0.5666.50±0.57
+Mean 67.29 69.54 66.91
+A.8 GRPO Training Additional Results
+As we pointed out in the main paper, we observe significant performance im-
+provementsbyusingR intherewardcalculationofGRPOtraining.Weprovide
+cl
+results for different metrics below.
+Table 31: ROUGE-L scores, comparing R and R rewards (GRPO).
+cl exact
+Model Rcl Rexact
+Qwen2.5-VL-3B0.3204 ± 0.0040.2792±0.004
+Qwen3-VL-4B 0.3203 ± 0.0050.2818±0.005
+30 I. Gulluk et al.
+Table 32: METEOR scores, comparing R and R rewards (GRPO).
+cl exact
+Model Rcl Rexact
+Qwen2.5-VL-3B0.2621±0.00340.2335±0.0054
+Qwen3-VL-4B 0.2620±0.00480.2344±0.0032
+Table 33: Sentence-BLEU-4 scores, comparing R and R rewards (GRPO).
+cl exact
+Model Rcl Rexact
+Qwen2.5-VL-3B0.1825±0.00290.1599±0.0027
+Qwen3-VL-4B 0.1847±0.00410.1578±0.0023
+A.9 On the Dataset
+As noted in the main text, we use the ReXGradient-160K dataset for our experi-
+ments [26]. This dataset comprises 160K chest X-ray studies covering 109,487
+unique patients from 79 medical sites. Since the data originates from 79 distinct
+sites, it exhibits considerable diversity in imaging conditions, acquisition proto-
+cols, and equipment. Moreover, the reports are authored by different radiologists,
+introducing substantial variability in writing style and clinical language.
+We did not use the CheXpert dataset [8] for our experiments for two reasons.
+First, it is sourced solely from Stanford Hospital and therefore may lack the
+multi-site diversity present in ReXGradient-160K. Second, it is structured more
+as a classification benchmark than a free-text report generation dataset, which
+may not be representative of real-world clinical reporting scenarios.
+Similarly, we did not use the MIMIC-CXR dataset [10] for our experiments.
+Thisdatasetisalsocollectedfromasinglemedicalcenter,limitingitsinstitutional
+diversity compared to ReXGradient-160K. Furthermore, the reports are noisy
+in the sense that findings or impressions may be missing or poorly structured,
+which could adversely affect our enrichment method.
+More broadly, single-institution datasets limit the evaluation of a model’s
+generalization capability across diverse healthcare settings. For these reasons, we
+chosetheReXGradient-160Kdataset,whichnotonlyspans79medicalcentersbut
+also ensures that every sample contains both findings and impressions, making it
+well suited for evaluating our method.
+A.10 On the Enriched Dataset
+It is important to note that the sentences added through our enrichment method
+are not clinically verified by domain experts. Although the enrichment is con-
+strained by connectivity and sign conditions—ensuring that only positive (i.e.,
+normal) findings from co-occurring clusters are appended—the added sentences
+SemEnrich 31
+are derived algorithmically from the training corpus rather than confirmed by a
+radiologist for each individual patient.
+Asaresult,theenrichedreportsshouldnotbetreatedasground-truthclinical
+documents. Instead, the enriched dataset is intended exclusively as a training
+signal for machine learning models. The goal is to provide the model with richer
+supervisory information during training by making implicit normal findings
+explicit, thereby encouraging the model to learn a more complete understanding
+of chest X-ray images.
+Weemphasizethatthisenrichmentstrategyisadataaugmentationtechnique
+for model training and is not a substitute for expert annotation. In a clinical
+deploymentsetting,allgeneratedreportswouldstillrequirereviewandvalidation
+by qualified radiologists before any diagnostic use.

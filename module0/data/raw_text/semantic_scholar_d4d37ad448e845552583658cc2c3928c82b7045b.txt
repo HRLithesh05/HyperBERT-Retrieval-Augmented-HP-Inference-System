@@ -1,0 +1,759 @@
+Towards BERT-based Automatic ICD Coding:
+Limitations and Opportunities
+DamiánPascual SandroLuck RogerWattenhofer
+ETHZurich,Switzerland
+{dpascual,wattenhofer}@ethz.ch, sluck@student.ethz.ch
+Abstract However, automatic ICD code assignment
+proveschallengingformultiplereasons. First,there
+AutomaticICDcodingisthetaskofassigning
+existsaverylargenumberofICDcodes(17.000)
+codes from the International Classification of
+andeachclinicalreportmayhaveassociatedmore
+Diseases(ICD)tomedicalnotes. Thesecodes
+thanonecode. Todealwiththislargemulti-label
+describethestateofthepatientandhavemul-
+classificationproblem,itiscommontoreducethe
+tipleapplications,e.g.,computer-assisteddiag-
+nosis or epidemiological studies. ICD coding number of codes to those that appear most fre-
+isachallengingtaskduetothecomplexityand quently(Mullenbachetal.,2018). Second,medi-
+length of medical notes. Unlike the general caltextusuallylacksstructure,includesirrelevant
+trend in language processing, no transformer passages, as well as abbreviations, misspellings,
+model has been reported to reach high perfor-
+numbersandaveryspecificvocabulary. Ontopof
+manceonthistask. Here,weinvestigateinde-
+that,medicalnotesarelong,whichmakesitdiffi-
+tail ICD coding using PubMedBERT, a state-
+cultforautomaticcodingmodelstodrawrelations
+of-the-art transformer model for biomedical
+language understanding. We find that the dif- betweendifferentsectionsofthereports.
+ficultyoffine-tuningthemodelonlongpieces Current state-of-the-art methods for automatic
+of text is the main limitation for BERT-based
+ICDcodingfrommedicalnotesarebasedondeep
+models on ICD coding. We run extensive ex-
+learning (Wang et al., 2018b; Mullenbach et al.,
+periments and show that despite the gap with
+2018;Vuetal.,2020). Thesemethodsusedifferent
+current state-of-the-art, pretrained transform-
+configurationsofconvolutional(CNN)andrecur-
+ers can reach competitive performance using
+relatively small portions of text. We point at rent (RNN) neural networks as well as attention
+better methods to aggregate information from modules(Bahdanau et al., 2014). This stands in
+long texts as the main need for improving contrasttomostareasofnaturallanguageprocess-
+BERT-basedICDcoding. ing(NLP),wheremodelsbasedonthetransformer
+architecture (Vaswani et al., 2017) dominate the
+1 Introduction
+state-of-the-art (Wang et al., 2019). One of the
+Duringpatientstaysinmedicalinstitutions,clini- mainstrengthsoftransformermodelsistheirabil-
+ciansgeneratetextnotesthatrecordthestateofthe ity to deal with long range dependencies. This
+patientaswellasthediagnosesandthetreatments is a desirable property in ICD coding, where an
+administered. Typically, a code from the Interna- understanding of different parts of the document
+tionalClassificationofDiseases(ICD)isassigned may be necessary to assign a code. The lack of
+to these clinical notes, in order to provide stan- transformer models for ICD coding is surprising,
+dardized information about the patient condition. especially since there already exist BERT-based
+ICD codes are used for different purposes, such models (Devlin et al., 2019) (a type of bidirec-
+asbilling,computer-assisteddiagnosisorepidemi- tionaltransformer)thataretrainedonmedicaltext
+ological studies (Choi et al., 2016; Denny et al., data (Lee et al., 2020; Alsentzer et al., 2019; Gu
+2010;Avatietal.,2018). AssigningICDcodesto etal.,2020). Thesemodelshaveachievedstate-of-
+medical notes is usually done manually by clini- the-artperformanceonothertaskssuchasnamed
+cians. Thisisanerror-proneandtime-consuming entityrecognitionorquestionansweringonmedi-
+procedureandtherefore,automaticsolutionshave caldocuments(Guetal.,2020).
+been studied for over two decades (Larkey and Ontheotherhand,thecomplexityoftransform-
+Croft,1996;deLimaetal.,1998). ersscalesquadraticallywiththelengthoftheirin-
+put,whichrestrictsthemaximumnumberofwords 2018;Songetal.,2020;Prakashetal.,2017;Cao
+thattheycanprocessatonce. Thislimitationmay etal.,2020).
+becriticalinICDcoding,sinceclinicalnotesusu- Since the appearance of the Transformer
+ally exceed this maximum input length. In this model (Vaswani et al., 2017), transformer-based
+work, we investigate in detail BERT-based ICD architectures (Brown et al., 2020; Lewis et al.,
+coding, and explore different strategies to over- 2020; Raffel et al., 2019) have become state-of-
+cometheconstraintontheinputlengthbyusingan the-art in almost every area of Natural Language
+encoder-decoderarchitecture. WeusetheMIMIC- Processing (Wang et al., 2018a, 2019) thanks to
+IIIdataset(Johnsonetal.,2016),abigandwidely their ability to handle long range dependencies.
+useddatasetfortheICDcodingtask,inorderthat BERT (Devlin et al., 2019), a bidirectional trans-
+ourresultsaredirectlycomparabletootherexist- former, is of particular importance since it is the
+ingmethods(Wangetal.,2018b;Mullenbachetal., basisofmanyotherlanguageunderstandingmod-
+2018;Vuetal.,2020). Byexposingthelimitations els. Nonetheless, given the specific characteris-
+and benefits of BERT-based models on this task tics of medical text, e.g., specialized vocabulary,
+ourworksetsasolidbasisforfurtherresearchon modelspretrainedongenericlanguage,likeBERT,
+automaticICDcodingsystems. donotreachhighperformanceonbiomedicallan-
+guageunderstandingtasks. Therefore,specialized
+2 RelatedWork models, such as BioBERT (Lee et al., 2020) or
+ClinicalBERT(Alsentzeretal.,2019),pretrained
+AutomaticICDcodinghasbeenanactiveareaof
+onmedicaltexthavebeenproposed. Inparticular,
+research for over two decades. Already Larkey
+therecentPubMedBERTmodel(Guetal.,2020)is
+and Croft (1996) and de Lima et al. (1998) pro-
+thestate-of-the-artintheBLURBbenchmark(Gu
+poseddifferentstrategiestoextractfeaturesfrom
+etal.,2020),abenchmarkforbiomedicallanguage
+medical documents in order to build classifiers
+understandingwhichincludesthefollowingtasks:
+for automatically assigning ICD codes to medi-
+namedentityrecognition,questionanswering,doc-
+calnotes. Morerecently,Perotteetal.(2014)pro-
+umentclassification,relationextraction,sentence
+posedamulti-levelSupportVectorMachine(SVM)
+similarityandevidence-basedmedicalinformation
+model to predict ICD codes from the MIMIC-II
+extraction. Despiteitsprominenceinmedicallan-
+dataset (Saeed et al., 2011), the precursor of the
+guage understanding, automatic ICD coding es-
+MIMIC-IIIdataset(Johnsonetal.,2016)thatwe
+capesthesetoftaskswhereBERT-basedmodels
+considerinthiswork. Similarly,Scheurwegsetal.
+excel. To the best of our knowledge, no BERT-
+(2017)presentedamethodtoextractfeaturesfrom
+based model has been proposed yet that reaches
+structuredandunstructuredtextandevaluatediton
+competitive performance on ICD coding on the
+theMIMIC-IIIdataset.
+MIMIC-IIIdataset. Inthiswork,weinvestigatein
+Inthelastyears,thestate-of-the-artofautomatic detailBERT-basedICDcodingandidentifyexist-
+ICDcodinghasbeendominatedbydeeplearning inglimitationsandopportunities.
+models. Shietal.(2017)proposedanLSTMmodel
+thatoperatesatthecharacter-levelcombinedwith 3 Background
+an attention mechanism (Bahdanau et al., 2014).
+Wangetal.(2018b)proposedanembeddingmodel
+based on GloVE embeddings (Pennington et al., InthissectionwepresenttheBERTmodelused
+2014)thatmapstextandlabelstothesamespace, in our experiments as well as the evaluation met-
+wherepredictionsaremadeusingthecosinesimi- rics.
+larity. Mullenbachetal.(2018)proposedamodel
+3.1 PubMedBERT
+thatcombinedconvolutionswithaper-labelatten-
+tionmechanism. Thismodelwasfurtherimproved PubMedBERT (Gu et al., 2020) is a transformer
+by Xie et al. (2019) and Li and Yu (2020). Vu model with the same architecture as BERT-
+etal.(2020),proposedalabel-attentionmodelthat base(Devlinetal.,2019),i.e.,ithas12transformer
+reachedthecurrentbestperformanceforICDcod- layers,100millionparametersanditoutputsvector
+ingontheMIMIC-IIIdataset. Alloftheseworks representationsof768elements. PubMedBERTis
+representonlyaportionoftheresearchcarriedout trainedfromscratchonPubMedtext,onadataset
+in this field (Karimi et al., 2017; Baumel et al., of 3.1 billion words (21 GB). Furthermore, Pub-
+MedBERThasnotbeenpretrainedontheMIMIC narrowsdownthetasktofindingonlythe50most
+datasetsasClinicalBERT(Alsentzeretal.,2019) frequent ICD codes. We follow this strategy and
+orBlueBERT(Pengetal.,2019),andtherefore,we usethereduceddataset,sometimesreferredtoas
+canevaluateitonMIMIC-IIIwithoutinformation MIMIC-III-50. Thisdatasetconsistsofatraining
+leakage from the test set. We choose this model setof8,067samples,avalidationsetof1,574sam-
+amongtheexistingonesbecauseitiscurrentlythe plesandatestsetof1,730samples. Thisdatasplit
+state-of-the-artinbiomedicalunderstandingtasks isalignedwithpreviouswork,andthus,ourresults
+asmeasuredbytheBLURBbenchmark1. Weuse are directly comparable to those in the existing
+theimplementationfromHuggingFace(Wolfetal., literature.
+2019).
+4.1 Pre-processing
+3.2 EvaluationMetrics Wepre-processthedischargesummariesfromthe
+Followingpreviouswork(Wangetal.,2018b;Mul- MIMIC-IIIdatasetfollowingthemethodproposed
+lenbach et al., 2018; Vu et al., 2020), we report byMullenbachetal.(2018),whichisalsousedby
+the results of our experiments using macro- and otherrecentwork(Vuetal.,2020). Thisway,we
+micro-averagedAUC(AreaUndertheROCCurve). convertallthetexttolowercaseandweremoveall
+Inamulti-classclassificationproblem,themacro- numbers. However,wedonotremoveinfrequent
+average computes the metric (AUC in our case) wordsasin(Mullenbachetal.,2018)sinceBERT
+foreachclassindependentlyandthenaveragesit usesWordPiecefortokenizingandhence,itdoes
+across classes. This gives the same weight to all notsufferfromout-of-vocabularyterms.
+classes regardless of possible imbalances in the
+5 Model
+data. Micro-averaging, on the other hand, com-
+putes the average score over all samples, giving Dischargesummariesarelongerthanthemaximum
+thesameweighttoeachsampleratherthantoeach lengthacceptedbyPubMedBERTsuchthatitfits
+class. in the memory of a modern GPU and thus, we
+needtosplitthesummariesintopiecesoftext. In
+4 Dataset
+order to process more than one piece of text per
+summaryweadoptanencoder-decoderstructure,
+In this work, we use the widely-used MIMIC-III
+wheretheencoderandthedecoderaretrainedsep-
+dataset(Johnsonetal.,2016). Thisdatasetcontains
+arately. Thisway,theencoderistheBERTmodel
+medicalinformationinvariousforms,however,as
+thatmapsthedifferentpiecesoftexttovectorrep-
+in previous studies (Wang et al., 2018b; Mullen-
+resentations. Thesevectorrepresentationsarethen
+bachetal.,2018;Vuetal.,2020),weconsiderex-
+combinedanddecodedintoICDcodesbythede-
+clusivelythedischargesummariesforICDcoding.
+coder,whichcanbeanykindofmodel.
+Dischargesummariesaremedicalnotescreatedby
+doctors at the end of a stay in a medical facility
+5.1 Encoder
+andcontainalltheinformationaboutthestay. In
+WeusePubMedBERTastheencoderofourmodel,
+theMIMIC-IIIdataset,thelengthofthedischarge
+asdescribedinSection3. Werunourexperiments
+summaries after tokenization ranges from 78 to
+on TITAN RTX GPUs with 24 GB of memory,
+18,429tokenswithameanlengthof2,740tokens
+wherewecanfitPubMedBERTwithamaximum
+and a median of 2,500. Each of these discharge
+sequence length of 512 tokens.2 We devise five
+summaries has associated to it one or more ICD
+differentstrategiestosplitthetextofthedischarge
+codesfromtheICD-9taxonomy,withanaverage
+summaries:
+of13.15ICDcodespersummary. Therefore,ICD
+codingisamulti-labelclassificationtask. • Front: First512tokensofthesummary.
+The MIMIC-III dataset consists of 52,722 dis-
+chargesummarieswithatotalof8,921uniqueICD • Back: Last512tokensofthesummary.
+codes. However,mostofthecodesareveryinfre-
+• Mixed: First 256 and the last 256 tokens of
+quent, and therefore, existing work (Wang et al.,
+thesummary.
+2018b; Mullenbach et al., 2018; Vu et al., 2020)
+2Notethatevenifwecouldfitsequencesof1024or2048
+1https://microsoft.github.io/BLURB/ tokens,theywouldstillbeshorterthanthemeanandmedian
+leaderboard.html sequencelengthofthesummaries.
+0.3
+0.25
+0.2
+1 2 3 4 5 6
+#Epochs
+ssoLnoitadilaV
+validation loss decreases quickly during the first
+three epochs and then, it slowly stabilizes. How-
+Front
+ever, for paragraph and all, the validation loss
+Back
+Mixed stays constant, which indicates that the model is
+Paragr. failing to learn; in other words, the lack of align-
+All mentbetweentrainingsamplesmakesthetaskof
+ICDcodingtoochallengingforthemodeltolearn
+meaningfulrepresentationsoftheinputtext.
+5.2 Decoder
+If we consider only one part of the text at a time,
+PubMedBERT can directly make a prediction on
+Figure1:ValidationlossesforPubMED-BERTtrained
+theICDcodesforthecorrespondingsummary,as
+ondifferentpartsofthetext.
+doneduringfine-tuning. However,inordertouse
+the information from different pieces of text, we
+• All: Splitthewholedischargesummaryinto needadecodercapableofcombiningtheinforma-
+consecutivechunksof512tokens;sincesum- tionfromseveralencodings. Thisway,thedecoder
+mariesareofdifferentlength,eachsummary receivesasinputoneorseveralencodedrepresen-
+issplitinadifferentnumberofchunkswith tations(fromthesamedischargesummary)gener-
+thelastchunkbeingpossiblyshorter. atedbyPubMedBERTduringtheencodingstage
+andoutputsavectorofprobabilitiesforthe50ICD
+• Paragraph: Given that the discharge sum-
+codes. For the decoder architecture, we consider
+mariesconsistofnamedparagraphs,weselect
+alinearlayer,multi-layerperceptrons(MLPs)and
+the200mostfrequentparagraphs,i.e.,those
+transformers.
+that are present most often in the discharge
+Inallcases,thedecodersaretrainedwithbinary
+summaries, each with a maximum length of
+crossentropylosswithlogits. Weuseabatchsize
+512tokens.
+of 32, a learning rate of 1e−4 with linear decay
+PubMedBERT has been pretrained on the for 30 epochs and weight decay with λ = 1e−3.
+maskedlanguagemodelingtask,andtherefore,it Wetrainforamaximumof100epochswithearly
+can produce generic representations of the input stoppingonthevalidationset.
+text. To fine-tune this model for the ICD coding
+Linear layer Our simplest decoder consists of
+taskwithoutexceedingthememoryconstraintswe
+a linear layer that takes as input a concatenation
+can feed only one chunk of text at a time. This
+of the encoding vectors (of size 768 each); when
+way, we fine-tune five different instances of the
+onlyonechunkisconsidered,theinputisjustone
+PubMedBERT model, one per splitting strategy,
+encodingvector. Theoutputofthislinearlayeris
+using a batch size of 1 (to ensure the model fits
+theprobabilityvectorfortheICDcodes.
+in memory) and a learning rate of 5e−4. In each
+case,themodelreceivesasinputapieceoftextof MultiLayerPerceptron Weconsidertwovari-
+amaximumlengthof512tokensanditistrained antsofMLP-architectures,flatandparallel. Inthe
+topredicttheICDcodesofthecorrespondingdis- flatarchitecture,theinputistheconcatenationof
+chargesummary. Notethatwhilethetextoffront, theencodings,asforthelinearlayer. Thisvector
+back and mixed corresponds always to the same ispassedthroughtwonon-linearlayers,whichpro-
+part of the discharge summary, when fine-tuning duce intermediate representation of size 768 and
+the model on the paragraph and all splits, each 512respectively,andthentoafinallinearlayerthat
+trainingexampleconsistsofonlyoneparagraphor outputs the probabilities of the 50 ICD codes. In
+chunk, respectively. Therefore, there is no align- the parallel architecture, each of the input encod-
+mentacrosstrainingexamples(eachtrainingexam- ingsisprocessedbyadifferentdenselayer, each
+plecomesfromadifferentsectionofadischarge ofwhichproducesanoutputofsize768/n,where
+summary),whichintroducesnoisetothetraining. nisthenumberofinputencodings. Theseinterme-
+Figure 1 depicts the validation losses after 6 diaterepresentationsareconcatenatedandpassed
+epochs of training for each of the trained mod- throughtwoadditionalnon-linearlayers,withthe
+els. For front, back and mixed, we see that the samesizesasintheflatarchitecture.
+Eachofthenon-linearlayersincludeslayernor-
+malization(Baetal.,2016),PReLUactivation(He
+etal.,2015),anddropout(Srivastavaetal.,2014) 90
+withp = 0.1.
+Transformer Thisdecodertakesasinputtheen- 81.52 81.18
+80.35
+codings and treats each of them as a token of di- 80
+mensionality768. Thesetokensarepassedthrough 76.66 76.09
+74.23
+atransformerlayerwith8attentionheads. Theout-
+putofthistransformerlayerisofthesamesizeas
+70
+theinput,i.e.,asetoftokensof768elements. The
+Front Mixed Back
+tokens are then concatenated and passed through
+anMLPofthesamestructureastheflatMLPde-
+scribedabove.
+6 Results
+We pose six research questions regarding the dif-
+ferent strategies to encode and decode discharge
+summaries using a BERT-based encoder. In our
+experiments,wefixtherandomseedsothatallthe
+resultsarecomparable.
+Howmuchdoesfine-tuningtheencoderhelp
+decoding?
+Here,weconsideronlythePubMedBERTmodels
+fine-tunedonfront,backandmixeddata,sincethey
+weretheonlyonestolearnduringfine-tuning,as
+showninSection5.1. Toinvestigatetheimpactof
+thisfine-tuningstepondecodingperformance,we
+useasimplelinearlayerwhichreceivesasinputthe
+concatenationoftheencodingsofthefront, back
+and mixed chunks. Each of these pieces of text
+is encoded by the PubMedBERT model trained
+on that piece of text, i.e., we use three different
+encoders. Westudythedifferenceinperformance
+forthreedifferenttrainingpointsoftheencoders:
+notfine-tuned,fine-tunedforthreeepochsandfine-
+tuned for six epochs. The results are detailed in
+Table1.
+Epochs MacroAUC MicroAUC
+None 55.76 69.55
+3 81.47 86.00
+6 83.00 86.98
+Table 1: Performance for different number of train-
+ingepochswhencombiningthefront,back andmixed
+chunkswithalineardecoder.
+Theseresultsshowthatfine-tuningtheencoder
+significantlyimprovesthedecodingperformance
+andthatthebestperformanceisobtainedaftersix
+epochs. Infact,thedifferencebetweenfine-tuning
+%
+Linear
+MacAUC
+MicAUC
+90
+86.91 86.25
+83.73
+82.35
+81.69
+80 78.04
+70
+Front Mixed Back
+%
+MLP
+MacAUC
+MicAUC
+Figure2:Performanceofalinearlayer(top)andanon-
+linear MLP (bottom) on the front, back and mixed en-
+codings.
+for six epochs and not fine-tuning is as large as
+27.24pointsfortheMacroAUCscoreand17.43
+points for the Micro AUC score. We observed
+the same pattern in all of our experiments, and
+therefore, in the following we will only present
+resultswiththeencoderfine-tunedforsixepochs,
+unlessstatedotherwise.
+Whichofthethreepiecesoftext,front,backor
+mixed,containsthemostrelevantinformation
+forICDcoding?
+WeexperimentwithalinearandaflatMLPdecoder
+andapplythesemodelstotheencodingsofeachof
+thethreechunksoftextseparately,i.e.,front,back
+andmixed. WereporttheresultsinFigure2.
+Weseethatfront,i.e.,thefirst512tokensofthe
+discharge summary yields the best performance,
+bothwhenthedecoderisalinearlayerandanMLP.
+Although slightly inferior, the mixed chunk pro-
+ducescompetitivescoreswhilewhenusinganMLP
+the AUC scores are more than 3 points lower for
+backthanforfront. Furthermore,usingasdecoder
+an MLP improves the performance significantly
+overusingalinearlayer;withthefrontnon-linear
+modelperformingcomparablytothecombination Model AUCMac. AUCMic.
+of the three chunks with a linear decoder, as re- Flat(1.5M) 84.42 88.58
+portedintheprevioussection,Table1. FlatL(3M) 84.30 88.45
+Thisnaturallyraisesthequestionofwhetherthe FlatXL(7M) 84.30 88.47
+combinationofthechunksyieldsanimprovement. Parallel(1M) 84.45 88.65
+To study this, we use the same non-linear MLP ParallelL(2M) 84.23 88.48
+architectureasinFigure2(bottom)on1)thecon- ParallelXL(3M) 84.51 88.49
+catenationoftheencodingsoffrontandbackand Transformer(6.5M) 84.30 88.49
+2)theconcatenationofthethreeencodings,front, TransformerL(14M) 84.27 88.45
+backandmixed. WereporttheresultsinTable2. TransformerXL(18M) 84.29 88.08
+Model Mac. AUC Mic. AUC Table3:Performanceofdifferentdecoderarchitectures
+forthecombinationoffront,backandmixed,thenum-
+Front-Back 83.70 88.11
+ber of parameters of each model is specified in paren-
+Front-Back-Mixed 84.42 88.58
+thesis.
+Table2: Performanceofcombiningthefront,backand
+mixedchunksusingatwo-layerflatMLPdecoder.
+and more sophisticated decoders would perform
+better. Notwithstanding, the saturation in perfor-
+These results show that combining front and
+mancesuggeststhatalltheinformationavailable
+backimprovesperformanceincomparisontousing
+intheinputofthedecoderissuccessfullyextracted
+onlyfront. Asitmaybeexpected,addingthemixed
+byeverymodel,regardlessofitscomplexity. This
+paragraph,whichcontainsredundantinformation,
+inturnindicatesthattheperformanceofthewhole
+producesonlyasmallimprovement. Overall,the
+encoder-decodermodelislimitedbythereduced
+combination of the three chunks produces an im-
+amountoftextthatisgivenasinput(onlythebe-
+provementof2.07pointsforMacroAUCand1.67
+ginningandtheendofthedischargesummaries).
+pointsforMicroAUCoverusingonlyfront. Given
+Therefore,wenextconsiderprovidinglargerpor-
+the larger input, these models have more param-
+tionsoftextfromthedischargesummariesasinput.
+eters than the ones using only one of the chunks,
+whichcouldpartlyexplaintheimprovement,espe- Isdividingthedischargesummariesby
+ciallywhenaddingredundantinformation,i.e.,the paragraphsagoodsplittingstrategy?
+mixed chunk. Thisresultleadsustoinvestigatethe By splitting the discharge summaries into para-
+influenceofthedecoderarchitecture. graphs we take into account information from a
+largerbodyoftextthanbyusingthefrontandthe
+Howdoesthearchitectureofthedecoder
+back. The main disadvantage of this approach is
+impactperformance?
+thattheencoderfailstoconvergeduringfine-tuning.
+Here,weconsiderflatMLP,parallelMLPandtrans- Here,wetestthehypothesisofwhetherthedecoder
+formerdecodersonthecombinationoffront,back can compensate the lack of fine-tuning of the en-
+andmixed. Foreachofthesearchitectures,weeval- coderand,byleveragingthelargeramountofinfor-
+uatethreedifferentsizes: Base,LargeandX-Large, mationavailable,reachcompetitiveperformance.
+where the difference between these sizes is only Weencodethe200mostfrequentparagraphsusing
+the number of layers and the size of the internal thePubMedBERTmodelfine-tunedonparagraph
+representations. Thisway,ourexperimentsaimat data, althoughduetolackofconvergenceduring
+discerningwhetherthestructureofthedecoder,the fine-tuning,weobservedverysimilarresultswhen
+number of parameters, or both, influence the per- usingthenotfine-tunedversion.
+formanceoftheICDcodingmodel. Table3details Sincenotallthedischargesummariescontainthe
+theresultsoftheseexperiments. sameparagraphs,thereisamisalignmentbetween
+Noneofthemodelsconsideredobtainsaperfor- samples. For this reason, here we consider only
+mancesignificantlyhigherthantheothers,withthe thetransformerdecoder;theself-attentionmodules
+largest difference across Macro and Micro AUC ofthetransformershouldbeabletocopewiththe
+scoresbeingofonly0.28and0.57points,respec- misalignment better than the other architectures.
+tively. Thisresultissurprisingsince,giventhecom- Weconsiderthetransformerdecoders(Base,Large
+plexityofthetask,itcouldbeexpectedthatlarger andX-Large)fromtheprevioussection. Now,the
+100
+88.8
+84.7
+80 76.8 76.6 76.6
+68.9 68.7 68.8
+60
+40
+FBM-Par. Tranf Transf-L Transf-XL
+%
+100
+MacAUC
+88.8
+MicAUC 84.7
+80
+68.1 68.7
+64.9
+60
+50.5
+48.0
+45.3
+40
+FBM-Par. Transf Transf-L Transf-XL
+Figure 3: Comparison of front-back-mixed parallel
+(FBM-Par.) and three sizes of transformer decoders
+(Transf)onparagraphdata.
+transformer decoder receives 200 encoded repre-
+sentations, one per paragraph. Given this large
+numberofinputrepresentationsortokens,weag-
+gregatetheoutputofthetransformersbytakingthe
+meanovertherepresentationsproducedforallthe
+paragraphs3.
+In Figure 3, we compare these paragraph de-
+coderstotheParallelMLPmodelonthefront,back
+andmixed chunksfromtheprevioussection.
+We see that dividing the discharge summaries
+intoparagraphsgreatlyunder-performsincompar-
+ison to using the beginning and end of the sum-
+mariesencodedbyfine-tunedPubMedBERTmod-
+els. This result partly rejects the hypothesis that
+thedecodercanbenefitfromalargerunstructured
+input. Next,wecontinueinvestigatingthishypoth-
+esisbyfeedingthedecoderwiththecompletedis-
+chargesummariesfollowingtheallstrategy.
+Howdoessplittingthecompletesummariesin
+consecutivechunksperform?
+Wesplitthewholetextofeachdischargesummary
+into consecutive chunks of 512 tokens (the last
+chunkofeachsummarymaybesmaller). Ween-
+codethesechunksusingthePubMedBERTmodel
+fine-tunedonalldata;asbefore,weobservedvery
+similarresultswiththenotfine-tunedmodel. The
+encodings are then fed into the decoder. Again,
+the varying size of the discharge summaries pro-
+duces misalignment across examples. Therefore,
+weconsideronlythetransformerdecoders(Base,
+LargeandX-Large). Wereporttheresultsofthis
+experimentinFigure4.
+Thelargesttransformermodel(XL)performsthe
+3Weexperimentedwithotheraggregationtechniqueslike
+maxpoolingandlargeMLPsobtainingverysimilarresults.
+%
+MacAUC
+MicAUC
+Figure 4: Comparison of front-back-mixed parallel
+(FBM-Par.) and three sizes of transformer decoders
+(Transf)onalldata.
+bestofthethreemodelsonalldata. Nevertheless,
+its 50.5% Macro and 68.7% Micro AUC scores
+are much lower than the results obtained by the
+front-back-mixed. In fact, splitting the text into
+chunksofthesamesizeperformstheworstamong
+all the methods that we have investigated. These
+resultsconfirmthatthedecodercannotcompensate
+thelackofconvergenceduringthefine-tuningof
+theencoderandpointsattheencoderasthemain
+responsibleforthemodel’sperformance.
+Howdoourresultscomparetothe
+state-of-the-art?
+Finally,inTable4wecompareoneofourbestper-
+formingBERT-ICDmodels,thefront-back-mixed
+Parallel model, with the existing state-of-the art
+modelsforICDcodingontheMIMIC-IIIdataset.
+In particular, we compare against the condensed
+memory networks (C-MemNN) by Prakash et al.
+(2017),LEAMbyWangetal.(2018b),CAMLand
+DR-CAMLbyMullenbachetal.(2018),MSATT-
+KG by Xie et al. (2019) and the Label Attention
+model by Vu et al. (2020). We report the perfor-
+manceofeachmodelasprovidedinthecorrespond-
+ingoriginalwork.
+Model AUCMac. AUCMic.
+C-MemNN 83.3 -
+LEAM 88.1 91.2
+CAML 87.5 90.9
+DR-CAML 88.0 90.2
+MSATT-KG 91.4 93.6
+LabelAttention 92.1 94.6
+BERT-ICD 84.45 88.65
+Table 4: Comparison of different state-of-the-art mod-
+elsforICDcoding.
+WeseethatalthoughourBERT-basedICDcod- performance and the reason for the existing gap
+ing model is competitive with some of the state- withstate-of-the-artmodelsforICDcoding.
+of-the-art models, there is still a substantial gap Oneofthemainadvantagesoftransformermod-
+betweenthebestperformingmodelfromVuetal. elsoverCNNsandRNNsisthattheycanhandle
+(2020),andourBERT-ICDmodel. long-range dependencies. Hence, if longer text
+couldbefedatonceintoaBERTencoderitwould
+7 Discussion bepossibletofindrelationshipsandpatternsover
+longerspansoftext. Itisthereforelikelythatad-
+AutomaticICDcodingfromdischargesummaries
+vanceseitherintermsofhardware,i.e.,largerGPU
+using transformer models has proven to be chal-
+memoriesallowingforlongerpiecesoftexttobe
+lenging. Dischargesummariesareverylongdocu-
+processed at once; or in compressing BERT-like
+mentsandthus,theyneedtobedividedintochunks
+models,e.g.,distillation,willprogressivelyclose
+inordertobeentirelyprocessedbyBERT-likemod-
+thegapwiththestate-of-the-art,followingthesame
+els.Thisway,adecoderisnecessarytocombinethe
+trendofotherareasofNLP.Ontopofthat,wecon-
+representationsofeachchunk,whichareindepen-
+sider that the two most promising directions for
+dentlygeneratedbytheBERTencoder. Wehave
+futureresearchonBERT-basedICDcodingare: 1)
+shownthatfortheserepresentationstobemeaning-
+devising strategies to fine-tune the encoder over
+fultheencoderneedstobefine-tunedontheICD
+longer spans of text, e.g., building an ensemble
+coding task. It is straight-forward to fine-tune a
+of models where each of them is trained on one
+BERT encoder such as PubMedBERT using spe-
+section of the text; 2) improving the methods to
+cific parts of the summary, e.g., the beginning or
+aggregate encodings from different parts of the
+theend. However,inourexperiments,fine-tuning
+document.
+PubMedBERTonexcerptsextractedfromdifferent
+Finally, to deploy automatic ICD coding sys-
+partsofthetext,i.e.,paragraphandall,prevented
+tems in the real world, it is important that their
+convergenceduetothelackofalignmentbetween
+decisions can be explained. Explaining trans-
+samples,i.e.,duetoeachtrainingsamplecontain-
+former models is currently a field of active re-
+ing information from a different section of a dis-
+search, and although there exist important con-
+charge summary. Furthermore, our results show
+cernsabouttheinterpretabilityofattentiondistribu-
+thatthedecoder,regardlessofitsarchitecture,can-
+tionsintransformers(Brunneretal.,2019;Pruthi
+notcompensateforlackofconvergenceduringthe
+et al., 2020), methods based on gradient attribu-
+fine-tuningoftheencoder.
+tion(Pascualetal.,2020)oronattentionflow(Ab-
+On the other hand, our best BERT-ICD model
+nar and Zuidema, 2020) can provide insights on
+reachescompetitiveperformanceusingonly1,024
+their decision-making. A BERT-based ICD cod-
+tokens(frontandback),whichrepresentsasignifi-
+ing system could directly benefit from this field
+cantlysmallerportionoftextthanstate-of-the-art
+of research and eventually provide explanations
+models,basedonCNNsandRNNs. UnlikeBERT,
+togetherwithitsICDcodepredictions.
+CNN and RNN models can extract information
+from texts of any length without needing to split 8 Conclusion
+them, which allows for end-to-end training over
+longpiecesoftext. Mullenbachetal.(2018)found ContrarytowhatiscommoninmostNLPtasks,the
+that the performance oftheir convolutional atten- transformerarchitectureisnotthestate-of-the-art
+tion model benefits from longer input texts until inassigningICDcodestodischargesummaries. In
+alengthofbetween2,500and6,500words, and thiswork,wehavepresentedathoroughstudyof
+Vu et al. (2020) use up to 4,000 words as input. theperformanceofBERT-basedmodelsonthistask
+Our model combines encodings from the begin- andwehaveidentifiedthelengthofthedischarge
+ning and the end of the discharge summary, and summariesasthemainobstacleholdingbacktheir
+reachesbetterperformanceinthatcasethanwhen performance. Ourworksetsasolidfoundationfor
+it processes either of those portions of text alone. furtherresearchonICDcodingandsuggeststhat
+Thissupportsthestatementthatincludingmoretext overcomingtheexposedlimitationsofBERT-based
+improvesICDcoding. Alloftheseresultssuggest models is likely to lead to a new state-of-the-art.
+that the difficulty of fine-tuning a BERT encoder Furthermore, we believe that the interpretability
+on long pieces of text is the main bottleneck for ofICDcodingmodelsisaninterestingavenuefor
+futurework,whichcanbenefitfromalargebody Joshua C Denny, Marylyn D Ritchie, Melissa A Bas-
+ofexistingresearch. ford,JillMPulley,LisaBastarache,KristinBrown-
+Gentry, Deede Wang, Dan R Masys, Dan M Ro-
+den, andDanaCCrawford.2010. Phewas: demon-
+strating the feasibility of a phenome-wide scan to
+References
+discovergene–diseaseassociations. Bioinformatics,
+Samira Abnar and Willem Zuidema. 2020. Quantify- 26(9):1205–1210.
+ing attention flow in transformers. In Proceedings
+of the 58th Annual Meeting of the Association for Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+ComputationalLinguistics,pages4190–4197. Kristina Toutanova. 2019. Bert: Pre-training of
+deep bidirectional transformers for language under-
+Emily Alsentzer, John R Murphy, Willie Boag, Wei-
+standing. InProceedingsofthe2019Conferenceof
+HungWeng,DiJin,TristanNaumann,andMatthew
+the North American Chapter of the Association for
+McDermott. 2019. Publicly available clinical bert
+ComputationalLinguistics: HumanLanguageTech-
+embeddings. arXivpreprintarXiv:1904.03323.
+nologies, Volume1(LongandShortPapers), pages
+4171–4186.
+AnandAvati,KennethJung,StephanieHarman,Lance
+Downing, Andrew Ng, and Nigam H Shah. 2018.
+Improvingpalliativecarewithdeeplearning. BMC Yu Gu, Robert Tinn, Hao Cheng, Michael Lucas,
+medicalinformaticsanddecisionmaking,18(4):55– Naoto Usuyama, Xiaodong Liu, Tristan Naumann,
+64. Jianfeng Gao, and Hoifung Poon. 2020. Domain-
+specific language model pretraining for biomedi-
+JimmyLeiBa,JamieRyanKiros,andGeoffreyEHin- cal natural language processing. arXiv preprint
+ton. 2016. Layer normalization. arXiv preprint arXiv:2007.15779.
+arXiv:1607.06450.
+KaimingHe,XiangyuZhang,ShaoqingRen,andJian
+DzmitryBahdanau,KyunghyunCho,andYoshuaBen-
+Sun.2015. Delvingdeepintorectifiers: Surpassing
+gio. 2014. Neural machine translation by jointly
+human-levelperformanceonimagenetclassification.
+learning to align and translate. arXiv preprint
+InProceedingsoftheIEEEinternationalconference
+arXiv:1409.0473.
+oncomputervision,pages1026–1034.
+Tal Baumel, Jumana Nassour-Kassis, Raphael Co-
+hen, Michael Elhadad, and Noémie Elhadad. 2018. Alistair EW Johnson, Tom J Pollard, Lu Shen,
+Multi-label classification of patient notes: Case H Lehman Li-Wei, Mengling Feng, Moham-
+studyonicdcodeassignment. InAAAIWorkshops. mad Ghassemi, Benjamin Moody, Peter Szolovits,
+LeoAnthonyCeli,andRogerGMark.2016. Mimic-
+TomBBrown, BenjaminMann, NickRyder, Melanie iii, a freely accessible critical care database. Scien-
+Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind tificdata,3(1):1–9.
+Neelakantan,PranavShyam,GirishSastry,Amanda
+Askell, et al. 2020. Language models are few-shot
+SarvnazKarimi,XiangDai,HamedHassanzadeh,and
+learners. arXivpreprintarXiv:2005.14165.
+Anthony Nguyen. 2017. Automatic diagnosis cod-
+ingofradiologyreports:acomparisonofdeeplearn-
+Gino Brunner, Yang Liu, Damian Pascual, Oliver
+ing and conventional classification methods. In
+Richter,MassimilianoCiaramita,andRogerWatten-
+BioNLP2017,pages328–332.
+hofer. 2019. On identifiability in transformers. In
+International Conference on Learning Representa-
+tions. Leah S Larkey and W Bruce Croft. 1996. Combining
+classifiers in text categorization. In Proceedings of
+PengfeiCao,YuboChen,KangLiu,JunZhao,Sheng- the 19th annual international ACM SIGIR confer-
+ping Liu, and Weifeng Chong. 2020. Hypercore: ence on Research and development in information
+Hyperbolic and co-graph representation for auto- retrieval,pages289–297.
+matic icd coding. In Proceedings of the 58th An-
+nual Meeting of the Association for Computational
+Jinhyuk Lee, Wonjin Yoon, Sungdong Kim,
+Linguistics,pages3105–3114.
+Donghyeon Kim, Sunkyu Kim, Chan Ho So, and
+JaewooKang.2020. Biobert: apre-trainedbiomed-
+Edward Choi, Mohammad Taha Bahadori, Andy
+ical language representation model for biomedical
+Schuetz, Walter F Stewart, and Jimeng Sun. 2016.
+textmining. Bioinformatics,36(4):1234–1240.
+Doctor ai: Predicting clinical events via recurrent
+neural networks. In Machine learning for health-
+Mike Lewis, Yinhan Liu, Naman Goyal, Mar-
+careconference,pages301–318.PMLR.
+jan Ghazvininejad, Abdelrahman Mohamed, Omer
+Luciano RS de Lima, Alberto HF Laender, and Levy, Veselin Stoyanov, and Luke Zettlemoyer.
+Berthier A Ribeiro-Neto. 1998. A hierarchical ap- 2020. Bart: Denoising sequence-to-sequence pre-
+proach to the automatic categorization of medical trainingfornaturallanguagegeneration,translation,
+documents. In Proceedings of the seventh inter- andcomprehension. InProceedingsofthe58thAn-
+national conference on Information and knowledge nual Meeting of the Association for Computational
+management,pages132–139. Linguistics,pages7871–7880.
+Fei Li and Hong Yu. 2020. Icd coding from clinical Haoran Shi, Pengtao Xie, Zhiting Hu, Ming Zhang,
+text using multi-filter residual convolutional neural and Eric P Xing. 2017. Towards automated
+network. InProceedingsoftheAAAIConferenceon icd coding using deep learning. arXiv preprint
+ArtificialIntelligence. arXiv:1711.04075.
+JamesMullenbach,SarahWiegreffe,JonDuke,Jimeng Congzheng Song, Shanghang Zhang, Najmeh
+Sun, and Jacob Eisenstein. 2018. Explainable pre- Sadoughi, Pengtao Xie, and Eric P Xing. 2020.
+diction of medical codes from clinical text. In Generalized zero-shot text classification for icd
+NAACL-HLT. coding. InIJCAI.
+Damian Pascual, Gino Brunner, and Roger Watten- Nitish Srivastava, Geoffrey Hinton, Alex Krizhevsky,
+hofer. 2020. Telling bert’s full story: from lo- Ilya Sutskever, and Ruslan Salakhutdinov. 2014.
+cal attention to global aggregation. arXiv preprint Dropout: a simple way to prevent neural networks
+arXiv:2004.05916. from overfitting. The journal of machine learning
+research,15(1):1929–1958.
+Yifan Peng, Shankai Yan, and Zhiyong Lu. 2019.
+Transfer learning in biomedical natural language Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+processing: An evaluation of bert and elmo on ten Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+benchmarking datasets. In Proceedings of the 18th Kaiser, and Illia Polosukhin. 2017. Attention is all
+BioNLPWorkshopandSharedTask,pages58–65. you need. In Proceedings of the 31st International
+Conference on Neural Information Processing Sys-
+JeffreyPennington,RichardSocher,andChristopherD
+tems,pages6000–6010.
+Manning.2014. Glove:Globalvectorsforwordrep-
+resentation. In Proceedings of the 2014 conference Thanh Vu, Dat Quoc Nguyen, and Anthony Nguyen.
+on empirical methods in natural language process- 2020. A label attention model for icd coding from
+ing(EMNLP),pages1532–1543. clinicaltext. arXivpreprintarXiv:2007.06351.
+Adler Perotte, Rimma Pivovarov, Karthik Natarajan, Alex Wang, Yada Pruksachatkun, Nikita Nangia,
+NicoleWeiskopf,FrankWood,andNoémieElhadad. AmanpreetSingh, JulianMichael, FelixHill, Omer
+2014. Diagnosiscodeassignment: modelsandeval- Levy, andSamuelRBowman.2019. Superglue: A
+uationmetrics. JournaloftheAmericanMedicalIn- stickierbenchmarkforgeneral-purposelanguageun-
+formaticsAssociation,21(2):231–237. derstanding systems. Advances in Neural Informa-
+tionProcessingSystems,32.
+Aaditya Prakash, Siyuan Zhao, Sadid Hasan, Vivek
+Datla, Kathy Lee, Ashequl Qadir, Joey Liu, and Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Oladimeji Farri. 2017. Condensed memory net- Hill, Omer Levy, and Samuel R Bowman. 2018a.
+works for clinical diagnostic inferencing. In Pro- Glue:Amulti-taskbenchmarkandanalysisplatform
+ceedingsoftheAAAIConferenceonArtificialIntel- for natural language understanding. arXiv preprint
+ligence. arXiv:1804.07461.
+Danish Pruthi, Mansi Gupta, Bhuwan Dhingra, Gra- Guoyin Wang, Chunyuan Li, Wenlin Wang, Yizhe
+ham Neubig, and Zachary C Lipton. 2020. Learn- Zhang, Dinghan Shen, Xinyuan Zhang, Ricardo
+ingtodeceivewithattention-basedexplanations. In Henao, and Lawrence Carin. 2018b. Joint embed-
+Proceedingsofthe58thAnnualMeetingoftheAsso- ding of words and labels for text classification. In
+ciation for Computational Linguistics, pages 4782– Proceedings of the 56th Annual Meeting of the As-
+4793. sociation for Computational Linguistics (Volume 1:
+LongPapers),pages2321–2331.
+ColinRaffel,NoamShazeer,AdamRoberts,Katherine
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+WeiLi, andPeterJLiu.2019. Exploringthelimits Chaumond, ClementDelangue, AnthonyMoi, Pier-
+of transfer learning with a unified text-to-text trans- ric Cistac, Tim Rault, Rémi Louf, Morgan Fun-
+former. arXivpreprintarXiv:1910.10683. towicz, et al. 2019. Huggingface’s transformers:
+State-of-the-art natural language processing. arXiv
+Mohammed Saeed, Mauricio Villarroel, Andrew T
+preprintarXiv:1910.03771.
+Reisner, Gari Clifford, Li-Wei Lehman, George
+Moody, Thomas Heldt, Tin H Kyaw, Benjamin Xiancheng Xie, Yun Xiong, Philip S Yu, and Yangy-
+Moody, and Roger G Mark. 2011. Multiparameter ongZhu.2019. Ehrcodingwithmulti-scalefeature
+intelligentmonitoringinintensivecareii(mimic-ii): attention and structured knowledge graph propaga-
+apublic-accessintensivecareunitdatabase. Critical tion. InProceedingsofthe28thACMInternational
+caremedicine,39(5):952. ConferenceonInformationandKnowledgeManage-
+ment,pages649–658.
+Elyne Scheurwegs, Boris Cule, Kim Luyckx, Léon
+Luyten,andWalterDaelemans.2017. Selectingrel-
+evant features from the electronic health record for
+clinical code prediction. Journal of biomedical in-
+formatics,74:92–103.

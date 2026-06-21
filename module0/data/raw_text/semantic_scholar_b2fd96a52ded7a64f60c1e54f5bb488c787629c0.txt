@@ -1,0 +1,826 @@
+What Happens To BERT Embeddings During Fine-tuning?
+AmilMerchant1 ElaheRahimtoroghi1 ElliePavlick1,2 IanTenney1
+⇤
+1 GoogleResearch 2 BrownUniversity
+amilmerchant, elahe, epavlick, iftenney @google.com
+{ }
+Abstract et al., 2018), and unsupervised techniques (e.g.
+SaphraandLopez,2019;Voitaetal.,2019a)have
+While much recent work has examined how
+shed light on the representations from the pre-
+linguistic information is encoded in pre-
+trained models and have shown that they encode
+trained sentence representations, compara-
+a wide variety of linguistic phenomena (Tenney
+tively little is understood about how these
+models change when adapted to solve down- etal.,2019b;Liuetal.,2019).
+stream tasks. Using a suite of analy- However,inthestandardrecipeformodelssuch
+sis techniques—supervised probing, unsu- as BERT (Devlin et al., 2019), after initializing
+pervised similarity analysis, and layer-based withpre-trainedweights,theyarethentrainedfor
+ablations—we investigate how fine-tuning af-
+a few epochs on a supervised dataset. Consider-
+fects the representations of the BERT model.
+ably less is understood about what happens dur-
+We find that while fine-tuning necessarily
+ing this fine-tuning stage. Current understand-
+makes some significant changes, there is no
+ing is based largely on the models’ performance.
+catastrophic forgetting of linguistic phenom-
+ena. We instead find that fine-tuning is a While fine-tuned Transformers achieve state-of-
+conservativeprocessthatprimarilyaffectsthe the-art accuracy, they also can end up learning
+top layers of BERT, albeit with noteworthy shallow heuristics (McCoy et al., 2019b; Guru-
+variation across tasks. In particular, depen- rangan et al., 2018; Poliak et al., 2018), suggest-
+dencyparsingreconfiguresmostofthemodel,
+ing a disconnect between the richness of features
+whereas SQuAD and MNLI involve much
+learned from pre-training and those used by fine-
+shallowerprocessing.Finally,wealsofindthat
+tuned models. Thus, in this work, we seek to
+fine-tuninghasaweakereffectonrepresenta-
+tions of out-of-domain sentences, suggesting understand how the internals of the model–the
+room for improvement in model generaliza- representation space–change when fine-tuned for
+tion. downstream tasks. We focus on three widely-
+usedNLPtasks: dependencyparsing, naturallan-
+1 Introduction
+guageinference(MNLI),andreadingcomprehen-
+sion(SQuAD),andask:
+Unsupervisedpre-trainingofdeeplanguagemod-
+els has led to significant advances on many NLP What happens to the encoding of linguistic
+•
+tasks,withthepopularBERTmodel(Devlinetal., featuressuchassyntacticandsemanticroles?
+2019) and successors (e.g. Lan et al., 2019; Raf- Are these preserved, reinforced, or forgotten
+feletal.,2020)dominatingtheGLUEleaderboard astheencoderlearnsanewtask? Dodifferent
+(Wangetal.,2019)andotherbenchmarksoverthe tasks change how shallowly this information
+past year. Many recent works have attempted to isencoded? (Section4)
+better understand these models and explain what
+Where in the model are changes made?
+makes them so powerful. Particularly, behavioral •
+Are parameter updates concentrated in a
+studies (e.g. Marvin and Linzen, 2018; Goldberg,
+small number of layers or are there changes
+2019), diagnostic probing classifiers (e.g. Veld-
+throughoutthemodel? (Section5)
+hoen et al., 2016; Belinkov et al., 2017; Hupkes
+Dothesechangesgeneralizeordoesthenew
+⇤ Work done as member of the Google AI Resi- • behavioronlyapplytothespecificdomainon
+dency program https://ai.google/research/
+join-us/ai-residency/ whichfine-tuningoccurred? (Section6)
+We approach these questions with three comple- yond the existence of model activations and can
+mentary analysis techniques. Supervised prob- testforthepresenceofawidevarietyofphenom-
+ing classifiers (Tenney et al., 2019b; Hewitt and ena. Tenney et al. (2019b); Liu et al. (2019); Pe-
+Manning, 2019; Voita and Titov, 2020) provide tersetal.(2018b)introducedtasksuitesthatprobe
+a means of explicitly testing for the presence of for high-level linguistic phenomena such as part-
+pre-specified linguistic phenomena, while Repre- of-speech, entity types, and coreference, while
+sentationalSimilarityAnalysis(RSA; Kriegesko- Tenney et al. (2019a) showed that these phenom-
+rteetal.,2008)givesatask-agnosticmeasurement ena are represented in a hierarchical order within
+of the change in model activations. Finally, we the layers of BERT. Hewitt and Manning (2019)
+corroborate our results with two types of layer- used a geometrically-motivated probe to explore
+based ablations–truncation and partial freezing– syntactic structures, and Voita and Titov (2020)
+andmeasuretheireffectonend-taskperformance. and Pimentel et al. (2020) designed information-
+Taken together, we conclude that fine-tuning theoretic techniques that can measure the model
+involves primarily shallow model changes, evi- anddatacomplexity.1
+denced by three specific observations. First, lin- Whileprobingmodelsdependonlabelleddata,
+guistic features are not lost during fine-tuning but parallel work has studied the same encoders us-
+tasks can differ in how they either surface or ob- ing unsupervised techniques. Voita et al. (2019a)
+fuscate different phenomena. Second, fine-tuning usedaformofcanonicalcorrelationanalysis(PW-
+tends to affect only the top few layers of BERT, CCA; Morcos et al., 2018) to study the layer-
+albeit with variation across tasks: SQuAD and wise evolution of representations, while Saphra
+MNLI have a relatively shallow effect, while de- and Lopez (2019) explored how these representa-
+pendency parsing involves deeper changes to the tions evolve during training. Abnar et al. (2019)
+encoder. We confirm this by partial-freezing ex- used Representational Similarity Analysis (RSA;
+periments which test how many layers need to Laakso and Cottrell, 2000; Kriegeskorte et al.,
+change to do well on each task and relate this to 2008)tostudytheeffectofcontextonencoderrep-
+an estimate of task difficulty (with respect to the resentations, while Chrupała and Alishahi (2019)
+pre-training regime) via layer ablations. Finally, correlatedthemwithsyntax.
+weobservethatfine-tuninginduceslargechanges
+Fine-tuning Comparatively few analyses have
+onin-domainexamples,yetonout-of-domainsen-
+focusedon understandingthe fine-tuning process.
+tences, the representations more closely resemble
+Initial studies of fine-tuned encoders have shown
+thoseofthepre-trainedmodel.
+state-of-the-art performance on benchmark suites
+such as GLUE (Wang et al., 2019) and surprising
+2 RelatedWork
+sampleefficiency(Petersetal.,2018a). However,
+Base model Many recent papers have focused behavioral studies with challenge sets (McCoy
+on understanding sentence encoders such as et al., 2019b; Poliak et al., 2018; Ettinger et al.,
+ELMo (Peters et al., 2018a) and BERT (De- 2018; Kim et al., 2018) have shown limited abil-
+vlin et al., 2019), focusing primarily on the “in- itytogeneralizetoout-of-domaindataandacross
+nate” abilities of the pre-trained (“Base”) mod- syntactic perturbations. van Aken et al. (2019)
+els. For example, analyses of attention weights focused on question-answering models with task-
+have shown interpretable patterns (Coenen et al., specific probes. Peters et al. (2019) analyzed the
+2019;VigandBelinkov,2019;Voitaetal.,2019b; effects of fine-tuning with respect to the perfor-
+Hooveretal.,2019)andfoundstrongcorrelations manceofdiagnosticclassifiers. GauthierandLevy
+to syntax (Clark et al., 2019). Kovaleva et al. (2019)studiedfine-tuningviaRSA,findingasig-
+(2019) also saw that fine-tuning mainly changes nificantdivergencebetweentherepresentationsof
+theattentionofthelastfewlayers,consistentwith models fine-tuned on different tasks. Concurrent
+ourfindingsinSection5.1. However,otherstudies work by Tamkin et al. (2020) investigated the
+havecastdoubtonwhatconclusionscanbedrawn transferabilityofpre-trainedlanguagemodelsand
+from attention patterns (Jain and Wallace, 2019; performed an number of layer ablations. Consis-
+SerranoandSmith,2019;Brunneretal.,2019). tentwithourobservationsinSection5.2,theyfind
+Moregenerally,supervisedprobingmodelsand
+1SeeBelinkovandGlass(2019)andRogersetal.(2020)
+diagnostic classifiers make few assumptions be- forasurveyofprobingmethods.
+differencesinwhichlayersareimportantforfine- with a 10% warm-up portion, uses an Adam opti-
+tuningdifferenttasks. However, noneoftheprior mizer (Kingma and Ba, 2014), and is trained for
+provides a comprehensive analysis of what hap- 20epochs. TheLabeledAttachmentScore(LAS)
+pens to the internal representations of the BERT onthedevelopmentsetis96.3 0.1forourmodel3
+±
+model. Inourwork,wefindthatbycomparingthe
+Base to the fine-tuned models either via probing, 4 Whathappenstolinguisticfeatures?
+RSA, and layer ablations provides novel insights
+Equipped with the models trained on these down-
+aboutthisadditionalphaseoftraining.
+stream tasks, we ask how the representation of
+3 ExperimentalSetup linguistic features compare to those in the pre-
+trained model? Recent studies have shown that
+BERT We focus on the popular BERT model theserobustfeaturesarenotnecessarilyusedtoin-
+(Devlin et al., 2019), focusing on the 12-layer
+formpredictionsondownstreamtasks,withmod-
+base uncased variant.2 We denote the pre-
+elsappearingtousedatasetheuristicssuchaslex-
+trainedmodelasBaseandrefertofine-tunedver-
+ical overlap (McCoy et al., 2019b) or word pri-
+sionsbythenameofthetask.
+ors(Poliaketal.,2018),butitisanopenquestion
+whether this is because these features are forgot-
+MNLI A common benchmark for natural lan-
+tenentirelyorsimplyarenotalwaysused. Weex-
+guageunderstanding,theMNLIdataset(Williams
+plorethiswithsupervisedprobingtechniques,us-
+etal.,2018)containsover433Ksentencepairsan-
+ingedgeprobing(Tenneyetal.,2019b)andstruc-
+notated with textual entailment information. We
+tural probes (Hewitt and Manning, 2019) to ex-
+fine-tuneBERTusingthearchitectureandparam-
+plore how well linguistic information can be re-
+etersofDevlinetal.(2019),usingasoftmaxlayer
+coveredfromthefine-tunedmodel.
+on [CLS] representation to predict the output la-
+bel. Acrossthreetrials,theevaluationaccuracyof
+Edge Probing Edge probing aims to measure
+ourBERTBasemodelis83.3 0.1,slightlylower
+± howcontextualrepresentationsencodevariouslin-
+butcomparabletothepublishedscoreof84.6.
+guistic phenomena, including part-of-speech, en-
+SQuAD The SQuADv1.1 dataset (Rajpurkar titytyping,andcoreference. Weusethetasksand
+et al., 2016) contains over 100K crowd-sourced parameters of Tenney et al. (2019b), which uses
+question-answer pairs, created from a set of a two-layer MLP to predict edge and span labels
+Wikipedia articles. We fine-tune BERT using from frozen encoder representations.4 As we are
+the architecture and parameters of Devlin et al. interested in whether the linguistic knowledge is
+(2019), which uses two independent softmax lay- retained by the model overall, we utilize the mix
+erstopredictthestartandendtokensoftheanswer versionoftheedgeprobes,whichtakesasinputa
+span. OuraverageF1scoreis89.2 0.2,slightly learned scalar mixing of the representations from
+higherthanthepublished88.5. ± every layer.5 After training, we report the micro-
+averagedF1scoresonaheld-outtestset.
+Dependency Parsing We also introduce a
+BERT model fine-tuned on dependency parsing Structural Probe Complementary to the edge
+(Dep). We include this task to present a con- probes, the structural probes of Hewitt and Man-
+trasting perspective from the prior two datasets, ning (2019) analyze how well representations en-
+sincepriorresearchhassuggestedthatmuchofthe code syntactic structure. Specifically, the probe
+information needed to solve dependency parsing identifies whether the squared L2 distance of rep-
+is already present after pre-training (Hewitt and resentations under some linear transformation en-
+Manning, 2019; Goldberg, 2019; Tenney et al.,
+3 We provide additional details of the experiments and
+2019b). Our model is trained on data from the
+datasetsinAppendixCforthepurposeofreproducibility.
+CoNLL 2017 Shared Task (Zeman et al., 2017) 4The dependency labeling task is from the English Web
+and uses the features of BERT as input to a bi- Treebank (Silveira et al., 2014), SPR corresponds to SPR1
+fromTeichertetal.(2017),andrelationsisTask8fromSe-
+affine classifier, similar to Dozat and Manning
+mEval2010(Hendrickxetal.,2010). Alloftheothertasks
+(2017). Themodelusesalearningrateof3 10 5 arefromOntoNotes5.0(Weischedeletal.,2013).
+ 
+⇥ 5We also explored the effects of fine-tuning on the top
+2We use the original TensorFlow (Abadi et al., layerofBERTtoprovideadditionalinsightintowhetherthis
+2015) implementation from https://github.com/ linguisticinformationmaybelostfromthetoplayersevenif
+google-research/bert. stillpresentelsewhere.Forresults,seeAppendixA.
+ forBaselines  forFine-tunedModels
+Task BERTBase Lexical Randomized MNLI SQuAD Dep
+POS 97.5 -9.0 -13.6 -0.2 -1.5 -0.2
+Constituents 84.4 -12.9 -24.1 -2.2 0.1 4.4
+Dependencies 95.5 -15.6 -18.2 -0.5 -2.5 0.2
+Entities 96.2 -6.6 -10.0 -0.3 -0.9 -0.6
+SRL 92.9 -13.6 -15.0 -0.4 -2.9 -0.5
+Coreference 95.7 -5.8 -6.2 -0.5 -0.8 -1.2
+SPR 84.6 -6.6 -12.2 -0.7 -0.4 -1.2
+Relations 79.5 -20.7 -40.5 -0.8 -0.4 -2.5
+Table1: ComparisonofF1performanceontheedgeprobingtasksbeforeandafterfine-tuning. TheBERTBase
+performanceisconsistentwith(Tenneyetal.,2019b),andtheresultsshowthatthefine-tunedmodelsretainmostof
+thelinguisticconceptsdiscoveredduringunsupervisedpre-training. Wereportsinglenumbersforclarity,butnote
+thatvariationacrossrunsis 0.5betweenprobingruns, 0.7betweenfine-tuningrunsfromthesamecheckpoint,
+± ±
+and 1.0pointbetweendifferentpre-trainingruns.
+±
+codes the dependency parse. The two versions of cantly improved syntactic performance (+4% on
+the structural probe either attempt to predict the constituent labeling) while dropping performance
+tree depth for each word (distance from the root on the more semantically-oriented coreference,
+node) or pairwise distances for all words in the SPR,andrelationclassificationtasks. Wehypoth-
+parse tree. For both, we measure the Spearman esizethatthesechangesrelatetothesimilaritybe-
+correlationbetweenpredictedandtruevalues6 tweentasks: atasklikeconstituentlabelshelpim-
+prove dependency parsing, and is thus strength-
+4.1 Results ened, whereashigherlevelsemantictaskssuchas
+SPRcontributelessdirectlyandsuchinformation
+The results from both probing tasks demonstrate
+may be lost during fine-tuning. Nonetheless, in
+that the linguistic features from pre-training are
+most cases these effects are small: they are com-
+preserved in the fine-tuned models. This is first
+parabletothevariationbetweenrandomly-seeded
+seen in the edge probing metrics presented in Ta-
+fine-tuningruns( 0.7),andmuchsmallerthanthe
+ble 1. For the sake of comparison, we provide
+±
+difference between the full model and the Lexi-
+baseline results on the output of the embedding
+calorRandomizedbaselines,suggestingthatmost
+layer (Lexical) and a randomly initialized BERT
+linguisticinformationfromBERTisstillavailable
+architecture (Randomized). These baselines are
+withinthemodelafterfine-tuning.
+important as inspection-based analysis can often
+Next, we turn to the structural probe, with re-
+discover patterns that are not obviously present
+sultsseeninFigure1. First,thedependencypars-
+due to the high capacity of auxiliary classifiers.
+ing fine-tuned model shows improvements in the
+For example, Zhang and Bowman (2018); Hewitt
+Spearman correlation, as early as layer 5. Since
+and Liang (2019) found that expressive-enough
+the structural probes are designed and trained to
+probing methods can perform surprisingly well
+look for syntax, this result suggests that the fine-
+evenwhentrainedonrandomizedencoders.
+tuning improves the model’s internal representa-
+Across the edge probing suite, we see only
+tion of such information. This makes intuitive
+small changes in F1 score from the fine-tuned
+sense as the fine-tuning task is aligned with the
+models compared to BERT base. In most cases,
+probing task. On the MNLI and SQuAD fine-
+weobserveadropinperformanceof0.5-2%,with
+tunedmodels,weobserveminimalchangesinper-
+some variation: MNLI and SQuAD lead to drops
+formance, with small drops within the final layer.
+of 1.5-3% on syntactic tasks–constituents, and
+This artifact likely emerges from the fine-tuning
+POS, dependencies, and SRL, respectively–while
+setup where the last layer is only needed for clas-
+the dependency parsing model leads to signifi-
+sification or span prediction and therefore is un-
+6NotethatHallMaudslayetal.(2020)hasrecentlyraised likelytoalsoretainallthelinguisticinformation.7
+concern about these metrics, but we follow the original
+methodofHewittandManning(2019)forthemostcompa- 7Asimilarstoryemergeswhenrepeatingtheedgeprobing
+rableresults. modelsonthelastlayerofBERT;seeAppendixA.
+Figure 1: Comparison of the structural probe performance on BERT models before and after fine-tuning. The
+stability of the Spearman correlations between both the depths and distance probes suggest that the embeddings
+stillretainsignificantinformationaboutthesyntaxofinputtedsentences.
+This result suggests that the actual magnitude of they also can learn to ignore everything else. If
+change within the “syntactic subspace” is quite thesupervisedprobeiscloselyrelatedtothefine-
+small. This is consistent with observations by tuning task–such as for syntactic probes and de-
+GauthierandLevy(2019)andsuggeststhatinfor- pendencyparsing–we observesignificant changes
+mationaboutsyntacticstructureiswell-preserved in performance, but otherwise we see little effect.
+inmodelsondownstreamtasks. Nonetheless, we know that something must be
+Onecaveatoftheexperimentationaboveisthat changingduringfine-tuning–atminimumbecause,
+itusescomplexdiagnosticclassifiersandonlyre- as shown in Peters et al. (2019), performance de-
+ports final model performance. Instead, what if grades significantly if the encoder is completely
+thelinguisticfeaturesweresimplybecomingmore frozen. To explore this change, we turn to an
+difficulttoextractfromtherepresentations? Then, unsupervisedtechnique,RepresentationalSimilar-
+theycouldbenotasreadily“available”afterfine- ity Analysis (RSA; Laakso and Cottrell, 2000),
+tuning. We explored this hypothesis using Mini- whichissensitivetotheglobalstructureoftheem-
+mumDescriptionLengthprobes(VoitaandTitov, bedding space, and corroborate our findings with
+2020), with the results presented in Appendix B. layer-based ablations. While these techniques are
+We found minimal differences across most tasks, nottargetedtospecificlinguisticphenomena,they
+where the only significant result was that fine- doprovideapowerfulexploratorytoolthatcanil-
+tuning on dependency parsing made the corre- luminatewhichpartsofthemodelchangeandhow
+sponding edge probing task easier to learn as a theyvaryacrossdatasets.
+functionofthenumberofexamples.
+5.1 RepresentationalSimilarityAnalysis
+4.2 Conclusion
+RSA is a technique for measuring the similarity
+Overall,ourresultssuggestthatlinguisticfeatures
+between two different representation spaces for a
+arestillavailable, andthatthefine-tuningprocess
+givensetofstimuli. Originallydevelopedforneu-
+doesnotleadtocatastrophicforgetting. Nonethe-
+roscience (Kriegeskorte et al., 2008), it has be-
+less, behavioral analyses have shown that fine-
+come increasingly used to analyze similarity be-
+tunedmodelscanstillfailtoleverageevensimple
+tween neural network activations (Abnar et al.,
+syntactic knowledge in their predictions (McCoy
+2019; Chrupała and Alishahi, 2019). The method
+etal.,2019b,a;Minetal.,2020),andmayinstead
+worksbyusingacommonsetofnexamples,used
+rely on annotation artifacts (Gururangan et al.,
+tocreatetwosetsofrepresentations. Foreachset,
+2018) or pattern matching (Jia and Liang, 2017).
+akernelisusedtodefineapairwisesimilarityma-
+Thissuggeststhatthechangesfromfine-tuningare trix in Rn ⇥n. The final similarity score between
+conservative: richfeaturesarestillpresentevenif
+the two representation spaces is calculated as the
+themodelendsupfindinganaive,simplesolution.
+Pearson correlation between the flattened upper
+triangularsofthetwosimilaritymatrices.
+5 Wheredotherepresentationschange?
+In our application, we pass ordinary sentences
+The supervised probes from the previous section (Wikipedia), sentence-pairs (MNLI), or question-
+are highly targeted: as trained models, they are answer pairs (SQuAD) as inputs to the BERT
+sensitive to particular linguistic phenomena, but model,andselectarandomsample(n = 5000)of
+put. Tofirstorder,thismaybearesultofoptimiza-
+tion: vanishinggradientsresultinthemostchange
+in the layers closest to the loss. Yet we interest-
+ingly do observe significant differences between
+tasks. For dependency parsing, we observe the
+deepest changes, departing from the Base model
+asearlyaslayers4and5. Thisresultlikelyarises
+as syntactic understanding of input is maximized
+in the early layers of the model, as measured by
+theedgeprobesof(Tenneyetal.,2019a)andpre-
+sentedstructuralprobes. Performingoptimallyon
+this task would require surfacing this information
+inallsubsequentlayers,leadingtothesechanges.
+Figure 2: Comparison of the representations from
+Except for the last layer which is particularly
+BERTbaseandvariousfine-tunedmodels,whentested
+sensitivetotheformoftheoutput(span-basedfor
+on Wikipedia examples. The dependency probing
+model starts to diverge from BERT Base around layer dependencies and SQuAD, or using the [CLS]
+5, matching previous results from edge probing. For token for MNLI), we see that MNLI involves the
+the MNLI and SQuAD models, the differences from smallest changes to the model: the second-to-last
+theBasemodelariseinthetoplayersofthenetwork. attention layer still shows a very high similarity
+score of 0.84 0.02 compared to the represen-
+±
+tations of the pre-trained encoder. The SQuAD
+tokensasstimuli. Thisinputisconsistentwiththe
+model shows a slightly steeper change, behav-
+maskedlanguagemodelpre-training,variousfine-
+ing similarly to the Base model through layer 7
+tuning tasks, and diagnostic classifiers in analyz-
+butdroppingoffafterwards-suggestingthatfine-
+ingthecontextualrepresentationsforeverytoken.
+tuning on this task involves a deeper, yet still
+Weextracttheactivationsofcorrespondinglayers
+relatively shallow reconfiguration of the encoder.
+from the two models to compare (e.g. Base vs.
+SQuADlikelyshowsdeeperprocessingaschoos-
+a fine-tuned model). Following previous applica-
+ingananswerspanstillrequiressatisfyinganum-
+tionsofRSAtotextrepresentations(Abnaretal.,
+berofsyntacticconstraintsandrequiresevolution
+2019;ChrupałaandAlishahi,2019),weadoptthe
+across more than just two layers (van Aken et al.,
+cosinesimilaritykernel.
+2019),butoverall,weseethatforthesebenchmark
+While RSA does not require learning any pa-
+tasks,fine-tuningisconservativeandonlychanges
+rametersandisthusresistanttooverfitting(Abdou
+afractionofthemodel’srepresentations.
+et al., 2019), the metric can be sensitive to spu-
+rious signals in the representations that may not
+5.2 LayerAblations
+be relevant to model behavior.8 To mitigate this,
+werepeattheBERTpre-trainingprocedure(asde- Asanunsupervised,metric-basedtechnique,RSA
+scribed in Section 3 of Devlin et al., 2019) from tells us about broad changes in the representation
+scratch three times. For each pre-trained check- space, but does not in itself say if these changes
+points, wefine-tuneonthethreedownstreamtask are important for the model’s behavior–i.e. for
+andreporttheaveragefortheseindependentruns. the processing necessary to solve the downstream
+task. Tomeasureourobservationsintermsoftask
+Results Figure 2 shows the results of our RSA
+performance,weturntotwolayerablationstudies.
+analysis comparing the three task models, Dep,
+Partial Freezing can be thought of as a test
+MNLI, and SQuAD, to BERT Base at each layer.
+for how many layers need to change for a down-
+Note that in these figures, lower values imply
+stream task. We freeze the bottom k layers (and
+greater change relative to the pre-trained model.
+theembeddings)–treatingthemasfeatures–butal-
+Across all tasks, we observe that changes gener-
+low the rest to adapt. Effectively, this clamps the
+allyariseinthetoplayersofthenetwork,withlit-
+first k layers to have RSA similarity of 1 with the
+tlechangeobservedinthelayersclosesttothein-
+Basemodel. Also,weperformmodeltruncation
+asaroughestimateofdifficultyforeachtask,and
+8Wenotethatprobingtechniquesaremorerobusttothis,
+sincetheylearntofocusonrelevantfeatures. as an attempt to de-couple the results of partial
+Figure 3: Effects of freezing an increasing number of Figure 4: Effects of fine-tuning at earlier layers of
+layersduringfine-tuningonperformance(wereportthe BERT.WenotethattheMNLIevaluationaccuracyand
+evaluation accuracy for MNLI, F1 score for SQuAD, SQuADF1scoreapproachthefullmodelperformance
+and LAS for Dep). The point at -1 corresponds to bylayer6,whereasthedependencyparsingLASseems
+no frozen components. The graph shows that only a torequiremorelayers.
+fewunfrozenlayersareneededtoimprovetaskperfor-
+mance,supportingtheshallowprocessingconclusion.
+as observed with the structural probes (Figure 1)
+there is headroom available, and it appears that
+freezing from helpful features that may be avail- tocaptureitrequireschangingdeeperpartsofthe
+able in top layers of BERT Base (Tenney et al., model. We hypothesize that this effect may come
+2019a). Figure 3 (partial freezing) and Figure 4 from the hierarchical nature of parsing, which re-
+(truncation)showtheeffectontaskperformance. quires additional layers to determine the full tree
+The patterns we observe corroborate the find- structure. Fully reconciling these observations
+ingsofourRSAanalysis. OnMNLI,wefindthat wouldbeapromisingdirectionforfuturework.
+performancedoesnotdropsignificantlyunlessthe
+6 Out-of-DomainBehavior
+last two layers are frozen, while the truncated
+models are able to achieve comparable perfor- Finally, we ask whether the effects of fine-tuning
+mance with only three attention layers. This sug- are general: do they apply only to inputs that
+geststhatwhilenaturallanguageinference(Dagan look like the fine-tuning data, or do they lead to
+et al., 2006) is known to be a complex task in the broader changes in behavior? This is usually ex-
+limit, most MNLI examples can be resolved with ploredbybehavioralmethods,inwhichamodelis
+relatively shallow processing. SQuAD exhibits a trained on one domain and evaluated on another–
+similar trend: we see a significant performance forexample,themismatchedevaluationforMNLI
+dropwhen3orfewerlayersareallowedtochange (Williamsetal.,2018)–butthisanalysisislimited
+(e.g. freezing through layer 8 or higher), consis- bytheavailabilityoflabeleddata. ByusingRSA,
+tent with where RSA finds the greatest change. wecantestthisinanunsupervisedmanner.
+From our truncation experiment, we similarly see We use RSA to compare the fine-tuned model
+thatonlyfivelayersareneededtoachievecompa- toBaseandobservethedegreeofsimilaritywhen
+rableperformancetothefullmodel. inputs are drawn from different corpora. We use
+Dependency parsing performance drops even random samples from the development sets for
+morerapidly–inbothexperiments–consistentwith MNLI (as premise [SEP] hypothesis)
+the results from RSA. This is surprising, since andSQuAD(asquestion [SEP] passage)
+probing analysis (Goldberg, 2019; Marvin and as in-domain for their respective models,9 and
+Linzen, 2018) suggests that many syntactic phe- as the out-of-domain control we use random
+nomena are well-captured by the pre-trained Wikipedia sentences (which resemble the pre-
+model, and diagnostics for dependency parsing training domain). As in Section 5.1, we use the
+in particular (Tenney et al., 2019b,a; Hewitt and
+9Notethattheseareunseenduringfine-tuning, although
+Manning, 2019; Clark et al., 2019) show strong
+RSA scores do not change significantly if the MNLI or
+performance from probes on frozen models. Yet SQuADtrainingsetsareused.
+Figure5: ComparisonoftherepresentationsintheMNLI(left)andSQuAD(right)fine-tunedmodelsandthose
+of BERT Base, with the different lines corresponding to examples coming from various datasets. These graphs
+showthatfine-tuningmodelsonlyleadtoshallowchanges,consolidatedtothelastfewlayers. Also,weseethat
+fine-tuninghasamuchgreaterimpactonthetokenrepresentationsofin-domaindata.
+representationsofn = 5000tokensasourstimuli the model has the option of using stronger fea-
+foreachcomparison.10 ResultsfortheMNLIand tures,butchoosestouseheuristicsinstead.
+SQuADfine-tunedmodelsareshowninFigure5.
+Next,ourresultsusingRSAandlayerablations
+Although we see that all models diverge from
+showthatthechangesfromfine-tuningalterafrac-
+BERT Base in the top layers, there is a signifi-
+tion of the model capacity, specifically within the
+cantly larger change in the representations on in-
+topfewlayers(uptosomevariationacrosstasks).
+domain examples. This suggests that fine-tuning
+Also, although fine-tuning has a significant effect
+is specific to the target domain. For other exam-
+ontherepresentationsofin-domainsentences,the
+ples, such as the Wikipedia sentences which re-
+representationsofout-of-domainexamplesremain
+semble the pre-training data, the similarity score
+muchclosertothoseofthepre-trainedmodel.
+with BERT Base is much higher. This suggests
+Overall, these conclusions suggest that fine-
+thatfine-tuningleadsthemodeltochangeitsrep-
+tuning–as currently practiced–is a conservative
+resentationsforthenewdomainbuttocontinueto
+process: preserving linguistic features, affecting
+behave more like the Base model otherwise. This
+onlyafewlayers,andspecifictoin-domainexam-
+final result again shows that fine-tuning is con-
+ples. While the standard fine-tuning recipe unde-
+servative and suggests room for improvement in
+niablyleadstostrongperformanceonmanytasks,
+modelgeneralizationtoout-of-domainsentences.
+thereappearstoberoomforimprovement: anop-
+7 Conclusions portunitytorefinethistransferstep–potentiallyby
+utilizing more of the model capacity–to better the
+In this paper, we employ three complementary
+generalizationandtransferability.
+analysis methods to gain insight into effects of
+fine-tuning on the representations produced by Finally, in this work, we pulled from a range
+BERT.Fromsupervisedprobinganalyses,wefind of analysis techniques to understand very fine-
+thatthelinguisticstructuresdiscoveredduringpre- grained aspects of model representations (via
+trainingremainavailableafterfine-tuning,though probing classifiers) and coarse-grained ones (via
+this information is not strengthened by tuning on RSA). An important direction for future work is
+benchmark tasks such as MNLI and SQuAD. In the development of new techniques which allow
+light of prior studies (McCoy et al., 2019b; Jia formoreexplorationofthemiddleground. Given
+andLiang,2017)whichhaveshownthatend-task available techniques, we can illuminate broadly
+modelsoftenfallbackonsimpleheuristics,ourre- that models are changing and test hypotheses
+sults are especially interesting: they suggest that about specific features (with probing tasks or at-
+tentionanalyses). Newprincipledmethodsfordis-
+10Wealsotestedsingle-sentenceexamplesfromMNLIand
+coveringwhichfeatureschangewillbeinvaluable
+SQuADbyonlytakingthepremiseandquestionrespectively;
+thetrendsweresimilartoFigure5. foradeeperunderstandingofthesemodels.
+Acknowldgements Gino Brunner, Yang Liu, Damin Pascual, Oliver
+Richter,MassimilianoCiaramita,andRogerWatten-
+Wethankouranonymousreviewersfortheirhelp- hofer.2019. Onidentifiabilityintransformers.
+fulfeedback;DeepakRamachandran,KelvinGuu,
+Grzegorz Chrupała and Afra Alishahi. 2019. Corre-
+andSlavPetrovforprovidingfeedbackonanearly
+lating neural and symbolic representations of lan-
+draft of this paper; and Tim Dozat for his help guage. In Proceedings of the 57th Annual Meet-
+implementingthefine-tuningtaskfordependency ing of the Association for Computational Linguis-
+parsing. tics, pages 2952–2962, Florence, Italy. Association
+forComputationalLinguistics.
+Kevin Clark, Urvashi Khandelwal, Omer Levy, and
+References Christopher D. Manning. 2019. What does BERT
+look at? an analysis of BERT’s attention. In Pro-
+Mart´ın Abadi, Ashish Agarwal, Paul Barham, Eugene
+ceedingsofthe2019ACLWorkshopBlackboxNLP:
+Brevdo, Zhifeng Chen, Craig Citro, Greg S. Cor-
+Analyzing and Interpreting Neural Networks for
+rado, Andy Davis, Jeffrey Dean, Matthieu Devin,
+NLP, pages 276–286, Florence, Italy. Association
+Sanjay Ghemawat, Ian Goodfellow, Andrew Harp,
+forComputationalLinguistics.
+GeoffreyIrving,MichaelIsard,YangqingJia,Rafal
+Jozefowicz,LukaszKaiser,ManjunathKudlur,Josh
+Andy Coenen, Emily Reif, Ann Yuan, Been Kim,
+Levenberg, Dandelion Mane´, Rajat Monga, Sherry
+AdamPearce,FernandaB.Vie´gas,andMartinWat-
+Moore, Derek Murray, Chris Olah, Mike Schus-
+tenberg.2019. Visualizingandmeasuringthegeom-
+ter,JonathonShlens,BenoitSteiner,IlyaSutskever,
+etryofBERT. CoRR,abs/1906.02715.
+Kunal Talwar, Paul Tucker, Vincent Vanhoucke,
+Vijay Vasudevan, Fernanda Vie´gas, Oriol Vinyals, Ido Dagan, Oren Glickman, and Bernardo Magnini.
+Pete Warden, Martin Wattenberg, Martin Wicke, 2006. The pascal recognising textual entailment
+YuanYu,andXiaoqiangZheng.2015. TensorFlow: challenge. In Proceedings of the First Inter-
+Large-scalemachinelearningonheterogeneoussys- national Conference on Machine Learning Chal-
+tems. Softwareavailablefromtensorflow.org. lenges: Evaluating Predictive Uncertainty Visual
+Object Classification, and Recognizing Textual En-
+MostafaAbdou,ArturKulmizev,FelixHill,DanielM.
+tailment, MLCW’05, pages 177–190, Berlin, Hei-
+Low,andAndersSøgaard.2019. Higher-ordercom-
+delberg.Springer-Verlag.
+parisons of sentence encoder representations. In
+Proceedings of the 2019 Conference on Empirical Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Methods in Natural Language Processing and the Kristina Toutanova. 2019. BERT: Pre-training of
+9thInternationalJointConferenceonNaturalLan- deepbidirectionaltransformersforlanguageunder-
+guage Processing (EMNLP-IJCNLP), pages 5837– standing. In Proceedings of the 2019 Conference
+5844,HongKong,China.AssociationforComputa- of the North American Chapter of the Association
+tionalLinguistics. for Computational Linguistics: Human Language
+Technologies, Volume 1 (Long and Short Papers),
+Samira Abnar, Lisa Beinborn, Rochelle Choenni, and
+pages4171–4186,Minneapolis,Minnesota.Associ-
+WillemZuidema.2019. Blackboxmeetsblackbox:
+ationforComputationalLinguistics.
+Representational similarity & stability analysis of
+neurallanguagemodelsandbrains. InProceedings Timothy Dozat and Christopher D. Manning. 2017.
+ofthe2019ACLWorkshopBlackboxNLP:Analyzing Deepbiaffineattentionforneuraldependencypars-
+and Interpreting Neural Networks for NLP, pages ing. InICLR(Poster).OpenReview.net.
+191–203,Florence,Italy.AssociationforComputa-
+tionalLinguistics. AllysonEttinger,AhmedElgohary,ColinPhillips,and
+PhilipResnik.2018. Assessingcompositioninsen-
+BettyvanAken,BenjaminWinter,AlexanderLser,and tence vector representations. In Proceedings of
+Felix A. Gers. 2019. How does bert answer ques- the27thInternationalConferenceonComputational
+tions? a layer-wise analysis of transformer repre- Linguistics,pages1790–1801,SantaFe,NewMex-
+sentations. ico, USA. Association for Computational Linguis-
+tics.
+YonatanBelinkov,NadirDurrani,FahimDalvi,Hassan
+Sajjad,andJamesGlass.2017. Whatdoneuralma- JonGauthierandRogerLevy.2019. Linkingartificial
+chine translation models learn about morphology? and human neural representations of language. In
+InProceedingsofthe55thAnnualMeetingoftheAs- Proceedings of the 2019 Conference on Empirical
+sociationforComputationalLinguistics(Volume1: Methods in Natural Language Processing and the
+Long Papers), pages 861–872, Vancouver, Canada. 9thInternationalJointConferenceonNaturalLan-
+AssociationforComputationalLinguistics. guage Processing (EMNLP-IJCNLP), pages 529–
+539, Hong Kong, China. Association for Computa-
+Yonatan Belinkov and James Glass. 2019. Analysis tionalLinguistics.
+methods in neural language processing: A survey.
+Transactions of the Association for Computational YoavGoldberg.2019. Assessingbert’ssyntacticabili-
+Linguistics,7:49–72. ties. CoRR,abs/1901.05287.
+Suchin Gururangan, Swabha Swayamdipta, Omer In Proceedings of the 2017 Conference on Empiri-
+Levy,RoySchwartz,SamuelBowman,andNoahA. calMethodsinNaturalLanguageProcessing,pages
+Smith. 2018. Annotation artifacts in natural lan- 2021–2031,Copenhagen,Denmark.Associationfor
+guage inference data. In Proceedings of the 2018 ComputationalLinguistics.
+Conference of the North American Chapter of the
+AssociationforComputationalLinguistics: Human JuhoKim,ChristopherMalon,andAsimKadav.2018.
+Language Technologies, Volume 2 (Short Papers), Teaching syntax by adversarial distraction. In Pro-
+pages 107–112, New Orleans, Louisiana. Associa- ceedings of the First Workshop on Fact Extraction
+tionforComputationalLinguistics. and VERification (FEVER), pages 79–84, Brussels,
+Belgium. Association for Computational Linguis-
+RowanHallMaudslay,JosefValvoda,TiagoPimentel, tics.
+AdinaWilliams,andRyanCotterell.2020. Ataleof
+aprobeandaparser. InProceedingsofthe58thAn- Diederik Kingma and Jimmy Ba. 2014. Adam: A
+nual Meeting of the Association for Computational method for stochastic optimization. International
+Linguistics, pages 7389–7395, Online. Association ConferenceonLearningRepresentations.
+forComputationalLinguistics.
+Olga Kovaleva, Alexey Romanov, Anna Rogers, and
+Iris Hendrickx, Su Nam Kim, Zornitsa Kozareva, AnnaRumshisky.2019. Revealingthedarksecrets
+Preslav Nakov, Diarmuid O´ Se´aghdha, Sebastian ofbert. arXivpreprintarXiv:1908.08593.
+Pado´, Marco Pennacchiotti, Lorenza Romano, and
+Stan Szpakowicz. 2010. SemEval-2010 task 8: N. Kriegeskorte, M. Mur, and P. Bandettini. 2008.
+Multi-way classification of semantic relations be- Representationalsimilarityanalysis-connectingthe
+tween pairs of nominals. In Proceedings of the branches of systems neuroscience. Front Syst Neu-
+5th International Workshop on Semantic Evalua- rosci,2:4.
+tion, pages 33–38, Uppsala, Sweden. Association
+forComputationalLinguistics. Aarre Laakso and Garrison Cottrell. 2000. Content
+andclusteranalysis: assessingrepresentationalsim-
+JohnHewittandPercyLiang.2019. Designingandin- ilarityinneuralsystems. Philosophicalpsychology,
+terpretingprobeswithcontroltasks. InProceedings 13(1):47–76.
+of the 2019 Conference on Empirical Methods in
+Natural Language Processing and the 9th Interna- Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+tional Joint Conference on Natural Language Pro- Kevin Gimpel, Piyush Sharma, and Radu Soricut.
+cessing(EMNLP-IJCNLP),pages2733–2743,Hong 2019. Albert: A lite bert for self-supervised learn-
+Kong, China. Association for Computational Lin- ingoflanguagerepresentations.
+guistics.
+Nelson F. Liu, Matt Gardner, Yonatan Belinkov,
+John Hewitt and Christopher D. Manning. 2019. A
+MatthewE.Peters,andNoahA.Smith.2019. Lin-
+structural probe for finding syntax in word repre-
+guistic knowledge and transferability of contextual
+sentations. In Proceedings of the 2019 Conference representations. InProceedingsofthe2019Confer-
+of the North American Chapter of the Association
+ence of the North American Chapter of the Associ-
+for Computational Linguistics: Human Language
+ation for Computational Linguistics: Human Lan-
+Technologies, Volume 1 (Long and Short Papers),
+guageTechnologies, Volume1(LongandShortPa-
+pages4129–4138,Minneapolis,Minnesota.Associ- pers), pages 1073–1094, Minneapolis, Minnesota.
+ationforComputationalLinguistics.
+AssociationforComputationalLinguistics.
+Benjamin Hoover, Hendrik Strobelt, and Sebastian
+Rebecca Marvin and Tal Linzen. 2018. Targeted syn-
+Gehrmann. 2019. exbert: A visual analysis tool
+tactic evaluation of language models. In Proceed-
+to explore learned representations in transformers
+ings of the 2018 Conference on Empirical Methods
+models. arXivpreprintarXiv:1910.05276.
+inNaturalLanguageProcessing,pages1192–1202,
+Brussels, Belgium. Association for Computational
+Dieuwke Hupkes, Sara Veldhoen, and Willem
+Linguistics.
+Zuidema.2018. Visualisationand’diagnosticclassi-
+fiers’revealhowrecurrentandrecursiveneuralnet-
+R Thomas McCoy, Junghyun Min, and Tal Linzen.
+worksprocesshierarchicalstructure. JournalofAr-
+2019a. Berts of a feather do not generalize to-
+tificialIntelligenceResearch,61:907–926.
+gether: Large variability in generalization across
+SarthakJainandByronC.Wallace.2019. Attentionis models with similar test set performance. arXiv
+not Explanation. In Proceedings of the 2019 Con- preprintarXiv:1911.02969.
+ferenceoftheNorthAmericanChapteroftheAsso-
+ciationforComputationalLinguistics: HumanLan- Tom McCoy, Ellie Pavlick, and Tal Linzen. 2019b.
+guageTechnologies, Volume1(LongandShortPa- Right for the wrong reasons: Diagnosing syntactic
+pers), pages 3543–3556, Minneapolis, Minnesota. heuristicsinnaturallanguageinference. InProceed-
+ings of the 57th Annual Meeting of the Association
+AssociationforComputationalLinguistics.
+for Computational Linguistics, pages 3428–3448,
+Robin Jia and Percy Liang. 2017. Adversarial exam- Florence, Italy.AssociationforComputationalLin-
+plesforevaluatingreadingcomprehensionsystems. guistics.
+Junghyun Min, R Thomas McCoy, Dipanjan Das, PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+Emily Pitler, and Tal Linzen. 2020. Syntactic PercyLiang.2016. SQuAD:100,000+questionsfor
+dataaugmentationincreasesrobustnesstoinference machine comprehension of text. In Proceedings of
+heuristics. arXivpreprintarXiv:2004.11999. the2016ConferenceonEmpiricalMethodsinNatu-
+ralLanguageProcessing,pages2383–2392,Austin,
+AriMorcos, MaithraRaghu, andSamyBengio.2018. Texas.AssociationforComputationalLinguistics.
+Insightsonrepresentationalsimilarityinneuralnet-
+J.Rissanen.1984. Universalcoding,information,pre-
+works with canonical correlation. In S. Bengio,
+diction, and estimation. IEEE Transactions on In-
+H. Wallach, H. Larochelle, K. Grauman, N. Cesa-
+formationTheory,30(4):629–636.
+Bianchi, and R. Garnett, editors, Advances in Neu-
+ralInformationProcessingSystems31,pages5727–
+Anna Rogers, Olga Kovaleva, and Anna Rumshisky.
+5736.CurranAssociates,Inc.
+2020. Aprimerinbertology: Whatweknowabout
+howbertworks. arXivpreprintarXiv:2002.12327.
+Matthew Peters, Mark Neumann, Mohit Iyyer, Matt
+Gardner, Christopher Clark, Kenton Lee, and Luke Naomi Saphra and Adam Lopez. 2019. Understand-
+Zettlemoyer.2018a. Deepcontextualizedwordrep- ing learning dynamics of language models with
+resentations. In Proceedings of the 2018 Confer- SVCCA. In Proceedings of the 2019 Conference
+ence of the North American Chapter of the Associ- of the North American Chapter of the Association
+ation for Computational Linguistics: Human Lan- for Computational Linguistics: Human Language
+guageTechnologies,Volume1(LongPapers),pages Technologies, Volume 1 (Long and Short Papers),
+2227–2237, New Orleans, Louisiana. Association pages3257–3267,Minneapolis,Minnesota.Associ-
+forComputationalLinguistics. ationforComputationalLinguistics.
+Matthew Peters, Mark Neumann, Luke Zettlemoyer, Sofia Serrano and Noah A. Smith. 2019. Is attention
+and Wen-tau Yih. 2018b. Dissecting contextual interpretable? In Proceedings of the 57th Annual
+wordembeddings: Architectureandrepresentation. Meeting of the Association for Computational Lin-
+In Proceedings of the 2018 Conference on Em- guistics,pages2931–2951,Florence,Italy.Associa-
+pirical Methods in Natural Language Processing, tionforComputationalLinguistics.
+pages 1499–1509, Brussels, Belgium. Association
+Natalia Silveira, Timothy Dozat, Marie-Catherine
+forComputationalLinguistics.
+de Marneffe, Samuel Bowman, Miriam Connor,
+John Bauer, and Christopher D. Manning. 2014. A
+Matthew E. Peters, Sebastian Ruder, and Noah A.
+gold standard dependency corpus for English. In
+Smith.2019. Totuneornottotune? adaptingpre-
+Proceedings of the Ninth International Conference
+trainedrepresentationstodiversetasks. InProceed-
+on Language Resources and Evaluation (LREC-
+ings of the 4th Workshop on Representation Learn-
+2014).
+ing for NLP (RepL4NLP-2019), pages 7–14, Flo-
+rence,Italy.AssociationforComputationalLinguis- Alex Tamkin, Trisha Singh, Davide Giovanardi, and
+tics. Noah Goodman. 2020. Investigating transferabil-
+ity in pretrained language models. arXiv preprint
+TiagoPimentel,JosefValvoda,RowanHallMaudslay, arXiv:2004.14975.
+RanZmigrod, AdinaWilliams, andRyanCotterell.
+2020. Information-theoretic probing for linguistic Adam Teichert, Adam Poliak, Benjamin Van Durme,
+structure. arXivpreprintarXiv:2004.03061. andMatthewRGormley.2017. Semanticproto-role
+labeling. InThirty-FirstAAAIConferenceonArtifi-
+Adam Poliak, Jason Naradowsky, Aparajita Haldar, cialIntelligence(AAAI-17).
+Rachel Rudinger, and Benjamin Van Durme. 2018.
+Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019a.
+Hypothesis only baselines in natural language in-
+BERT rediscovers the classical NLP pipeline. In
+ference. In Proceedings of the Seventh Joint Con-
+Proceedingsofthe57thAnnualMeetingoftheAsso-
+ference on Lexical and Computational Semantics,
+ciationforComputationalLinguistics,pages4593–
+pages 180–191, New Orleans, Louisiana. Associa-
+4601, Florence, Italy. Association for Computa-
+tionforComputationalLinguistics.
+tionalLinguistics.
+Yada Pruksachatkun, Phil Yeres, Haokun Liu, Jason
+Ian Tenney, Patrick Xia, Berlin Chen, Alex Wang,
+Phang,PhuMonHtut,AlexWang,IanTenney,and
+Adam Poliak, R Thomas McCoy, Najoung Kim,
+SamuelRBowman.2020. jiant: Asoftwaretoolkit
+BenjaminVanDurme,SamBowman,DipanjanDas,
+for research on general-purpose text understanding
+and Ellie Pavlick. 2019b. What do you learn from
+models. arXivpreprintarXiv:2003.02249.
+context? probingforsentencestructureincontextu-
+alized word representations. In International Con-
+ColinRaffel,NoamShazeer,AdamRoberts,Katherine
+ferenceonLearningRepresentations.
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou,
+WeiLi,andPeterJLiu.2020. Exploringthelimits SaraVeldhoen,DieuwkeHupkes,WillemHZuidema,
+oftransferlearningwithaunifiedtext-to-texttrans- et al. 2016. Diagnostic classifiers revealing how
+former. Journal of Machine Learning Research, neural networks process hierarchical structure. In
+21(140):1–67. CoCo@NIPS,pages69–77.
+Jesse Vig and Yonatan Belinkov. 2019. Analyzing Siva Reddy, Dima Taji, Nizar Habash, Herman Le-
+the structure of attention in a transformer language ung, Marie-Catherine de Marneffe, Manuela San-
+model. In Proceedings of the 2019 ACL Workshop guinetti,MariaSimi,HiroshiKanayama,Valeriade-
+BlackboxNLP: Analyzing and Interpreting Neural Paiva, Kira Droganova, He´ctor Mart´ınez Alonso,
+NetworksforNLP,pages63–76,Florence,Italy.As- C¸ag˘r C¸o¨ltekin, Umut Sulubacak, Hans Uszkor-
+sociationforComputationalLinguistics. eit, Vivien Macketanz, Aljoscha Burchardt, Kim
+Harris, Katrin Marheinecke, Georg Rehm, Tolga
+ElenaVoita,RicoSennrich,andIvanTitov.2019a. The Kayadelen,MohammedAttia,AliElkahky,Zhuoran
+bottom-upevolutionofrepresentationsinthetrans- Yu, Emily Pitler, Saran Lertpradit, Michael Mandl,
+former: A study with machine translation and lan- JesseKirchner,HectorFernandezAlcalde,JanaStr-
+guage modeling objectives. In Proceedings of the nadova´, Esha Banerjee, Ruli Manurung, Antonio
+2019 Conference on Empirical Methods in Natu-
+Stella,AtsukoShimada,SookyoungKwak,Gustavo
+ral Language Processing and the 9th International
+Mendonca, Tatiana Lando, Rattima Nitisaroj, and
+Joint Conference on Natural Language Processing
+JosieLi.2017. Conll2017sharedtask:Multilingual
+(EMNLP-IJCNLP), pages 4395–4405, Hong Kong, parsingfromrawtexttouniversaldependencies. In
+China.AssociationforComputationalLinguistics. ProceedingsoftheCoNLL2017SharedTask:Multi-
+lingualParsingfromRawTexttoUniversalDepen-
+Elena Voita, David Talbot, Fedor Moiseev, Rico Sen-
+dencies, pages 1–19, Vancouver, Canada. Associa-
+nrich,andIvanTitov.2019b. Analyzingmulti-head
+tionforComputationalLinguistics.
+self-attention: Specialized heads do the heavy lift-
+ing, the rest can be pruned. In Proceedings of the
+Kelly Zhang and Samuel Bowman. 2018. Language
+57th Annual Meeting of the Association for Com-
+modeling teaches you more than translation does:
+putational Linguistics, pages 5797–5808, Florence,
+Lessons learned through auxiliary syntactic task
+Italy.AssociationforComputationalLinguistics.
+analysis. In Proceedings of the 2018 EMNLP
+Workshop BlackboxNLP: Analyzing and Interpret-
+Elena Voita and Ivan Titov. 2020. Information-
+ingNeuralNetworksforNLP,pages359–361.
+theoreticprobingwithminimumdescriptionlength.
+arXivpreprintarXiv:2003.12298.
+Y. Zhu, R. Kiros, R. Zemel, R. Salakhutdinov, R. Ur-
+tasun, A. Torralba, and S. Fidler. 2015. Aligning
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+booksandmovies: Towardsstory-likevisualexpla-
+Hill, Omer Levy, and Samuel R. Bowman. 2019.
+nations by watching movies and reading books. In
+GLUE: A multi-task benchmark and analysis plat-
+2015 IEEE International Conference on Computer
+form for natural language understanding. In Inter-
+Vision(ICCV),pages19–27.
+nationalConferenceonLearningRepresentations.
+Ralph Weischedel, Martha Palmer, Mitchell Marcus,
+Eduard Hovy, Sameer Pradhan, Lance Ramshaw,
+NianwenXue,AnnTaylor,JeffKaufman,Michelle
+Franchini, et al. 2013. Ontonotes release 5.0
+ldc2013t19. LinguisticDataConsortium,Philadel-
+phia,PA,23.
+AdinaWilliams,NikitaNangia,andSamuelBowman.
+2018. A broad-coverage challenge corpus for sen-
+tenceunderstandingthroughinference. InProceed-
+ingsofthe2018ConferenceoftheNorthAmerican
+Chapter of the Association for Computational Lin-
+guistics: HumanLanguageTechnologies, Volume1
+(Long Papers), pages 1112–1122. Association for
+ComputationalLinguistics.
+DaniYogatama,CypriendeMassond’Autume,Jerome
+Connor, Tomas Kocisky, Mike Chrzanowski, Ling-
+peng Kong, Angeliki Lazaridou, Wang Ling, Lei
+Yu, Chris Dyer, et al. 2019. Learning and evalu-
+ating general linguistic intelligence. arXiv preprint
+arXiv:1901.11373.
+Daniel Zeman, Martin Popel, Milan Straka, Jan Ha-
+jic, Joakim Nivre, Filip Ginter, Juhani Luotolahti,
+SampoPyysalo,SlavPetrov,MartinPotthast,Fran-
+cis Tyers, Elena Badmaeva, Memduh Gokirmak,
+Anna Nedoluzhko, Silvie Cinkova, Jan Hajic jr.,
+Jaroslava Hlavacova, Va´clava Kettnerova´, Zdenka
+Uresova, Jenna Kanerva, Stina Ojala, Anna Mis-
+sila¨, Christopher D. Manning, Sebastian Schuster,

@@ -1,0 +1,786 @@
+Knowledge Neurons in Pretrained Transformers
+DamaiDai†‡,∗ LiDong‡, YaruHao‡, ZhifangSui†, BaobaoChang†, FuruWei‡
+†MOEKeyLabofComputationalLinguistics,PekingUniversity
+‡MicrosoftResearch
+{daidamai,szf,chbb}@pku.edu.cn
+{lidong1,yaruhao,fuwei}@microsoft.com
+Abstract Factual Knowledge
+Q27 P36 Q1761
+Large-scale pretrained language models are Ireland capital Dublin
+surprisingly good at recalling factual knowl-
+…
+Knowledge
+edgepresentedinthetrainingcorpus(Petroni
+Attribution
+et al., 2019; Jiang et al., 2020b). In this pa-
+Feed-Forward
+per,wepresentpreliminarystudiesonhowfac-
+Network
+tual knowledge is stored in pretrained Trans-
+formers by introducing the concept of knowl-
+edge neurons. Specifically, we examine the
+fill-in-the-blank cloze task for BERT. Given
+a relational fact, we propose a knowledge at-
+tribution method to identify the neurons that Knowledge
+Hidden State
+express the fact. We find that the activation Neurons
+of such knowledge neurons is positively cor-
+related to the expression of their correspond-
+ing facts. In our case studies, we attempt to Self-Attention Layer
+leverage knowledge neurons to edit (such as
+…
+update, and erase) specific factual knowledge
+without fine-tuning. Our results shed light Figure 1: Through knowledge attribution, we identify
+on understanding the storage of knowledge knowledgeneuronsthatexpressarelationalfact.
+within pretrained Transformers. The code
+is available at https://github.com/
+Hunter-DDM/knowledge-neurons.
+text-formknowledgeprediction. Inthispaper,we
+attempttolookdeeperintopretrainedTransformers
+1 Introduction
+andinvestigatehowfactualknowledgeisstored.
+Large-scalepretrainedTransformers(Devlinetal., As shown in Figure 1, we propose a knowl-
+2019; Liu et al., 2019; Dong et al., 2019; Clark edge attribution method to identify the neurons
+et al., 2020; Bao et al., 2020) are usually learned thatexpressarelationalfact,wheresuchneurons
+withalanguagemodelingobjectiveonlarge-scale are named knowledge neurons. Specifically, we
+corpora, such as Wikipedia, where exists oceans viewfeed-forwardnetwork(i.e.,two-layerpercep-
+offactualknowledge. Pretrainedlanguagemodels tron)modulesinTransformeraskey-valuememo-
+naturallyplayasafree-textknowledgebasebypre- ries(Gevaetal.,2020). FortheexampleinFigure1,
+dictingtexts(Bosselutetal.,2019). Petronietal. the hidden state is fed into the first linear layer
+(2019)andJiangetal.(2020b)probefactualknowl- andactivatesknowledgeneurons;then,thesecond
+edgestoredinpretrainedlanguagemodelsbyfill- linearlayerintegratesthecorrespondingmemory
+in-the-blankclozequeries. Theevaluationshows vectors. Thekey-value-memorynature(Gevaetal.,
+thatpretrainedTransformershaveastrongability 2020)inspiresustoproposetheknowledgeattribu-
+torecallfactualknowledgewithoutanyfine-tuning. tionmethod,whichidentifiesknowledgeneurons
+Robertsetal.(2020)useclosed-bookquestionan- infeed-forwardnetworksbycomputingthecontri-
+sweringtoshowthatthelargeramodelis,themore butionofeachneurontotheknowledgeprediction.
+knowledge it can store. However, most previous
+Extensiveanalysisshowsthattheactivationof
+workfocusesonevaluatingtheoverallaccuracyof
+theidentifiedknowledgeneuronsispositivelycor-
+∗ContributionduringinternshipatMicrosoftResearch. relatedtotheknowledgeexpression,whichshows
+8493
+Proceedingsofthe60thAnnualMeetingoftheAssociationforComputationalLinguistics
+Volume1:LongPapers,pages8493-8502
+May22-27,2022(cid:13)c2022AssociationforComputationalLinguistics
+FFN Output
+Dublin
+Feed-Forward … …
+Network weighted sum
+FFN(val)
+Feed-Forward Network
+𝐿×
+Activation … …
+Self-Attention Layer Knowledge
+Neurons
+FFN(key)
+inner product
+The capital of Ireland is [MASK] … …
+Hidden State
+Figure2:IllustrationofhowanFFNmoduleinaTransformerblockworksasakey-valuememory. Thefirstlinear
+layer FFN(key) computes intermediate neurons through inner product. Taking the activation of these neurons as
+weights, the second linear layer FFN(val) integrates value vectors through weighted sum. We hypothesize that
+knowledgeneuronsintheFFNmoduleareresponsibleforexpressingfactualknowledge.
+the effectiveness of the proposed knowledge at- inTransformers,evenwithoutanyfine-tuning.
+tribution method. First, suppressing and ampli-
+2 Background: Transformer
+fying knowledge neurons notably affects the ex-
+pressionofthecorrespondingknowledge. Second,
+Transformer (Vaswani et al., 2017) is one of the
+we find that knowledge neurons of a fact tend to
+most popular and effective NLP architectures. A
+be activated more by corresponding knowledge-
+Transformer encoder is stacked with L identical
+expressing prompts. Third, given the knowledge
+blocks. Each Transformer block mainly contains
+neurons of a fact, the top activating prompts re-
+twomodules: aself-attentionmodule,andafeed-
+trieved from open-domain texts usually express
+forwardnetwork(abbreviatedasFFN)module. Let
+thecorrespondingfact,whilethebottomactivating X ∈ Rn×d denotetheinputmatrix,twomodules
+promptsdonotexpressthecorrectrelation.
+canbeformulatedasfollows:
+In our case studies, we try to leverage knowl-
+edgeneuronstoexplicitlyeditfactualknowledge Q = XWQ,K = XWK,V = XWV, (1)
+h h h h h h
+inpretrainedTransformerswithoutanyfine-tuning.
+Self-Att (X) =
+softmax(cid:0)
+Q
+KT(cid:1)
+V , (2)
+h h h h
+Wepresenttwopreliminarystudies: updatingfacts,
+FFN(H) = gelu(HW )W , (3)
+anderasingrelations. Afteridentifyingtheknowl- 1 2
+edge neurons, we perform a knowledge surgery whereWQ,WK,WV,W ,W areparameterma-
+for pretrained Transformers by directly modify- h h h 1 2
+trices; Self-Att (X) computes a single attention
+h
+ingthecorrespondingparametersinfeed-forward
+head; H, the hidden state, is given by projecting
+networks. Such surgery shows promising results,
+the concatenation of all heads; gelu denotes the
+keepingamoderateinfluenceonotherknowledge.
+GELUactivationfunction(HendrycksandGimpel,
+Ourcontributionsaresummarizedasfollows:
+2016). Forsimplicity,weomitthescalingfactorin
+self-attentionandthebiasterms.
+• Weintroducetheconceptofknowledgeneu-
+rons and propose a knowledge attribution
+Connections Between Self-Attention and FFN
+methodtoidentifytheknowledgeneuronsthat
+ComparingEquation(2)andEquation(3),weno-
+expressspecificfactualknowledgeinthefill-
+ticethattheformulaofFFN(·)isquitesimilarto
+in-the-blankclozetask.
+Self-Att(·),excepttheactivationfunctiongeluin
+FFNandsoftmaxinself-attention. Thus,similar
+• Weconductbothqualitativeandquantitative
+tothequery-key-valuemechanisminself-attention,
+analysistoshowthatknowledgeneuronsare
+itisreasonabletoregardtheinputoftheFFNasa
+positivelycorrelatedtoknowledgeexpression.
+queryvector,andtwolinearlayersoftheFFNas
+• Wepresentpreliminarystudiesofleveraging keysandvalues,respectively. Similarobservations
+knowledgeneuronstoeditfactualknowledge arealsodescribedin(Gevaetal.,2020).
+8494
+3 IdentifyingKnowledgeNeurons
+where
+∂Px(αw i(l))
+calculates the gradient of the
+∂w(l)
+i
+Similar to (Geva et al., 2020), we view FFNs in (l)
+model output with regard to w . Intuitively, as
+i
+Transformeraskey-valuememoriesasillustrated
+α changes from 0 to 1, by integrating the gradi-
+in Figure 2. We hypothesize that factual knowl- (l)
+ents,Attr(w )accumulatestheoutputprobability
+edgeisstoredinFFNmemoriesandexpressedby i
+(l)
+changecausedbythechangeofw . Iftheneuron
+knowledgeneurons. Inthissection,weproposea i
+has a great influence on the expression of a fact,
+knowledgeattributionmethodandarefiningstrat-
+thegradientwillbesalient,whichinturnhaslarge
+egytoidentifytheseknowledgeneurons.
+integrationvalues. Therefore,theattributionscore
+3.1 KnowledgeAssessingTask canmeasurethecontributionoftheneuronw(l) to
+i
+Weemploythefill-in-the-blankclozetasktoassess thefactualexpressions.
+whetherapretrainedmodelknowsafact. Follow- Directly calculating continuous integrals is in-
+ingPetronietal.(2019),eachrelationalfactisin tractable. We instead use Riemann approxima-
+theformofatriplet(cid:104)h,r,t(cid:105),wherehistheheaden-
+tion
+A˜ttr(w(l)
+) =
+w( il) (cid:80)m ∂Px( mkw i(l))
+, where
+tity,tisthetailentity,andristherelationbetween i m k=1 ∂w(l)
+i
+them. Givenafact,pretrainedmodelsanswerthe m = 20 is the number of approximation steps.
+cloze query x that expresses the fact but leaves With the attribution algorithm, we can identify a
+the tail entity as a blank. For example, given the coarsesetofknowledgeneuronswhoseattribution
+fact (cid:104)Ireland, capital, Dublin(cid:105), a pos- scoresaregreaterthanathresholdt.
+sible query is “The capital of Ireland is ”. We
+alsocallthequeryaknowledge-expressingprompt.
+3.3 KnowledgeNeuronRefining
+Petronietal.(2019)describethatamodelknows
+a fact if it can predict the correct answer. In this
+Inordertoidentifyknowledgeneuronsmoreaccu-
+paper, rather than just examining the model out-
+rately,wefurtherproposearefiningstrategy. Be-
+puts, weidentifythespecificknowledgeneurons
+sides “true-positive” knowledge neurons that ex-
+thatexpressfactualknowledge.
+pressfactualknowledge, thecoarsesetofknowl-
+3.2 KnowledgeAttribution edgeneuronsmaycontain“false-positive”knowl-
+edgeneuronsthatexpressotherinformation(e.g.,
+InspiredbyHaoetal.(2021),weproposeaknowl-
+syntacticorlexicalinformation). Therefiningstrat-
+edgeattributionmethodbasedonintegratedgradi-
+egyaimstofilteroutthese“false-positive”neurons.
+ents(Sundararajanetal.,2017). Ourmethodcan
+evaluatethecontributionofeachneurontoknowl- Fordifferentpromptscorrespondingtothesame
+edgepredictions. Inthispaper,weexamineFFN fact, we hypothesize that they share the same set
+intermediateneuronsforthemaskedtoken,where of “true-positive” knowledge neurons, since they
+theanswerispredicted. expressthesamefactualknowledge. Meanwhile,
+Given an input prompt x, we first define the we hypothesize that they do not share the “false-
+(l)
+model output P (wˆ ) as the probability of the positive”knowledgeneuronsaslongastheprompts
+x i
+correctanswerpredictedbyapretrainedmodel: are diverse enough. Therefore, given multiple
+diverse prompts, we can refine the coarse set of
+P x(wˆ i(l) ) = p(y∗|x,w i(l) = wˆ i(l) ), (4) knowledgeneuronsbyretainingonlyneuronsthat
+arewidelysharedamongtheseprompts.
+wherey∗ denotesthecorrectanswer;w(l) denotes
+i Specifically,givenarelationalfact,thecomplete
+(l)
+thei-thintermediateneuroninthel-thFFN;wˆ
+i process to identify its knowledge neurons is de-
+(l)
+isagivenconstantthatw i isassignedto. scribedasfollows: (1)producendiverseprompts;
+Inordertocalculatetheattributionscoreofaneu- (2) for each prompt, calculate the knowledge at-
+(l) (l)
+ronAttr(w
+i
+),wegraduallychangew
+i
+from0to
+tribution scores of neurons; (3) for each prompt,
+(l)
+itsoriginalvaluew calculatedbythepretrained retain the neurons with attribution scores greater
+i
+model,andmeanwhileintegratethegradients: thantheattributionthresholdt,obtainingthecoarse
+setofknowledgeneurons;(4)consideringallthe
+Attr(w(l)
+) =
+w(l)(cid:90) 1 ∂P x(αw( il) )
+dα, (5)
+coarsesetstogether,retaintheknowledgeneurons
+i i
+α=0
+∂w(l) sharedbymorethanp%prompts.
+i
+8495
+Relations Template#1 Template#2 Template#3
+P176(manufacturer) [X]isproducedby[Y] [X]isaproductof[Y] [Y]anditsproduct[X]
+P463(member_of) [X]isamemberof[Y][X]belongstotheorganizationof[Y][X]isaffiliatedwith[Y]
+P407(language_of_work)[X]waswrittenin[Y] Thelanguageof[X]is[Y] [X]wasa[Y]-languagework
+Table1: ExampleprompttemplatesofthreerelationsinPARAREL. [X]and[Y]aretheplaceholdersforthehead
+andtailentities, respectively. Owingtothepagewidth, weshowonlythreetemplatesforeachrelation. Prompt
+templatesinPARARELproduce253,448knowledge-expressingpromptsintotalfor27,738relationalfacts.
+4 Experiments
+40%
+30%
+20%
+4.1 ExperimentalSettings 10%
+0%
+10%
+WeconductexperimentsforBERT-base-cased(De- 20%
+30%
+vlinetal.,2019),oneofthemostwidely-usedpre- 40%
+1 2 3 4 5 6 7 8 9 10 11 12
+trainedmodels. Itcontains12Transformerblocks, Layer
+where the hidden size is 768 and the FFN inner
+hidden size is 3,072. Notice that our method is
+not limited to BERT and can be easily general-
+izedtootherpretrainedmodels. Foreachprompt,
+we set the attribution threshold t to 0.2 times the
+maximumattributionscore. Foreachrelation,we
+initialize the refining threshold p% (Section 3.3)
+as 0.7. Then, we increase or decrease it by 0.05
+at a time until the average number of knowledge
+neuronsliesin[2,5]. Werunourexperimentson
+NVIDIA TeslaV100 GPUs. On average, it costs
+13.3secondstoidentifyknowledgeneuronsfora
+relationalfactwith9prompts.
+4.2 Dataset
+We examine knowledge neurons through the fill-
+in-the-blank cloze task based on the PARAREL
+dataset(Elazaretal.,2021). PARARELiscurated
+by experts, containing various prompt templates
+for 38 relations from the T-REx dataset (ElSahar
+et al., 2018). We show some example templates
+in Table 1. For each relational fact, we fill in the
+headentityinprompttemplatesandleavethetail
+entityasablanktopredict. Inordertoguarantee
+thetemplatediversity,wefilteroutrelationswith
+fewer than 4 prompt templates and finally keep
+34 relations, where each relation has 8.63 differ-
+ent prompt templates on average. These prompt
+templatesproduce253,448knowledge-expressing
+promptsintotalfor27,738relationalfacts.
+4.3 AttributionBaseline
+Our baseline method takes the neuron activation
+(l)
+valueastheattributionscore,i.e.,Attr (w ) = base i
+(l)
+w , which measures how sensitive a neuron is
+i
+to the input. After computing attribution scores,
+wefollowthesamepipelinetoobtaintherefined
+egatnecreP
+Figure 3: Percentage of knowledge neurons identified
+byourmethodineachTransformerlayer.
+TypeofNeurons Ours Baseline
+Knowledgeneurons 4.13 3.96
+(cid:84)
+ofintra-rel. factpairs 1.23 2.85
+(cid:84)
+ofinter-rel. factpairs 0.09 1.92
+(cid:84)
+Table 2: Statistics of knowledge neurons. denotes
+the intersection of knowledge neurons of fact pairs.
+“rel.” is the shorthand of relation. Our method iden-
+tifiesmoreexclusiveknowledgeneurons.
+knowledge neurons. For a fair comparison, we
+employ the same method to choose the hyper-
+parameters t and p% for the baseline to ensure
+theaveragenumberofknowledgeneuronsforeach
+relationliesin[2,5].
+Themethodbasedonneuronactivationisarea-
+sonablebaseline. ItismotivatedbyFFNs’sanalogy
+withtheself-attentionmechanism(asdescribedin
+Section 2), because self-attention scores are usu-
+allyusedasastrongattributionbaseline(Kovaleva
+etal.,2019;Voitaetal.,2019;Haoetal.,2021).
+4.4 StatisticsofKnowledgeNeurons
+Figure 3 presents the layer distribution of knowl-
+edge neurons identified by our knowledge attri-
+bution method. We notice that most fact-related
+neuronsaredistributedinthetopmostlayersofpre-
+trainedTransformers. Thefindingalsoagreeswith
+Tenneyetal.(2019)andGevaetal.(2020).
+Table2showsstatisticsofknowledgeneurons.
+Onaverage,weidentify4.13knowledgeneurons
+foreachrelationalfactusingourknowledgeattri-
+butionmethod,and3.96usingthebaselinemethod.
+8496
+P101 P103 P106 P108 P127 P1303 P136 P1376 P138 P140 P1412 P159 P176 P178 P19 P190 P20 P264 P27 P279 P30 P36 P364 P37 P39 P407 P413 P449 P463 P47 P495 P530 P740 P937
+20%
+10%
+0%
+-10%
+-20%
+-30%
+-40%
+-50%
+-60%
+oitaR
+egnahC
+ytilibaborP
+tcerroC
+Ours
+Baseline
+Figure 4: Results of suppressing knowledge neurons for various relations. Suppressing knowledge neurons de-
+creasesthecorrectprobabilityby29.03%onaverage. Forthebaseline,thedecreasingratiois1.47%onaverage.
+80%
+70%
+60%
+50%
+40%
+30%
+20%
+10%
+0%
+-10%
+P101 P103 P106 P108 P127 P1303 P136 P1376 P138 P140 P1412 P159 P176 P178 P19 P190 P20 P264 P27 P279 P30 P36 P364 P37 P39 P407 P413 P449 P463 P47 P495 P530 P740 P937
+oitaR
+egnahC
+ytilibaborP
+tcerroC
+Ours
+Baseline
+Figure5:Resultsofamplifyingknowledgeneuronsforvariousrelations.Amplifyingknowledgeneuronsincreases
+thecorrectprobabilityby31.17%onaverage. Forthebaseline,thecorrectprobabilityevendecreasesby1.27%.
+Theirsameorderofmagnitudeguaranteesthefair- Forcomparison,wealsoplottheresultsofmanipu-
+nessofthesubsequentcomparisonsinthepaper. latingbaseline-identifiedknowledgeneurons.
+We also compute the knowledge neuron inter-
+Figure 4 shows that suppressing knowledge
+sectionofdifferentrelationalfacts. Table2shows
+neurons identified by our knowledge attribution
+the average number of pair-wise knowledge neu-
+methodleadstoaconsistentdecrease(29.03%on
+ron intersections. For our proposed method, (1)
+average)inthecorrectprobability. Bycontrast,for
+factpairswiththesamerelation(intra-relationfact
+baseline-identifiedneurons,thesuppressingoper-
+pairs)share1.23knowledgeneuronsonaverage;
+ation has a negligible influence (1.47% decrease
+(2)factpairswithdifferentrelations(inter-relation
+onaverage)onthecorrectprobability. Notably,for
+factpairs)sharealmostnoknowledgeneurons. In
+therelationP178(developer),thecorrectprob-
+contrast,forthebaseline,(3)mostidentifiedneu-
+abilityabnormallyincreasesbyusingthebaseline.
+ronsaresharedbyintra-relationfactpairs;(4)even
+a substantial portion of neurons are common for AsshowninFigure5,wehavesimilarobserva-
+inter-relation factpairs. The differencein knowl- tionsforamplifyingtheknowledgeneuronsiden-
+edgeneuronintersectionssuggeststhatourmethod tifiedbyourknowledgeattribution. Weseeacon-
+canidentifymoreexclusiveknowledgeneurons. sistent increase (31.17% on average) in the cor-
+rectprobability. Bycontrast,thebaselineevende-
+4.5 KnowledgeNeuronsAffectKnowledge creasestheaveragecorrectprobabilityby1.27%.
+Expression
+In summary, the knowledge neurons identified
+Weinvestigatehowmuchknowledgeneuronscan by our knowledge attribution method tend to no-
+affect knowledge expression in Figure 4 and Fig- tablyaffectknowledgeexpression. Noticethatthe
+ure 5. Given a relational fact, we manipulate its aboveassessmentisaffectedbythedistributionof
+knowledgeneuronsintwoways: (1)suppressing knowledgeneurons. Forexample,iftheknowledge
+knowledgeneuronsbysettingtheiractivationsto neuronsforarelationaredistributedmorewidely,
+0;(2)amplifyingknowledgeneuronsbydoubling weneedtomanipulatemoretop-k neuronsforbet-
+theiractivations. Then,foreachrelation,weplot ter control. We use the above experiments as a
+theaveragechangeratiooftheprobabilityforthe proofofconceptwhileleavingprecisecontrolfor
+correctanswer,correspondingtothemanipulation. futurework.
+8497
+RelationalFacts Neurons Top-2andBottom-2ActivatingPrompts(AverageActivation)
+Ourtrip...inDublin,thecapitalandlargestcityofIreland...(6.36)
+Top
+(cid:104)Ireland, DublinisthecapitalandlargestcityofIreland.(5.77)
+capital, w(9) ,w(10)
+2141 1122 DublinjustmightbethemosticonicdestinationinallofIreland.(1.27)
+Dublin(cid:105) Bottom
+...inIreland’sfamedcity,youcanenjoy...Dublinexperience...(-0.30)
+CaoYundingwasborninShanghaiinNovember1989.(3.58)
+Top
+(cid:104)Cao_Yunding, w(10),w(10), Fullname:CaoYunding...Placeofbirth:Shanghai,China...(2.73)
+place_of_birth, 739 1885
+Shanghai(cid:105) w 2(1 81 7) 6 Bottom ...CaoYunding(ShanghaiShenhua)isshowntheredcard...(-0.30)
+ShanghaiShenhuamidfielderCaoYunding...(-0.31)
+KuwaitisthusoneofthesmallestcountriesinAsia...(6.63)
+Top
+(cid:104)Kuwait, w(6),w(9), KuwaitisacountryinWesternAsia...(6.27)
+continent, 147 866
+Asia(cid:105) w 1(9 4) 61,w 1(1 10 6) 9 Bottom ThispagedisplaysallAsiaSocietycontentonKuwait...(-0.48)
+NoorAsiais...distributioncompaniesinKuwait...(-0.59)
+Table3:Examplerelationalfactsalongwiththeirknowledgeneurons,theirtop-2andbottom-2activatingprompts,
+and the corresponding neuron activation. w(l) denotes the i-th intermediate neuron at the l-th FFN. We fill the
+i
+blankineachpromptwiththecorrectanswerforbetterreadability. Owingtothepagewidth, weshowonlykey
+partsforoverlongprompts. Thetop-2activatingpromptsexpressexactlytherelation,butthebottom-2donot.
+PromptTypes Ours Baseline typeoftexts,formingacontrolgroup(T 2). More-
+over, we employ randomly sampled prompts as
+Containingheadandtail(T ) 0.485 2.472
+1 anothercontrolgroup(T ).
+3
+Containingonlyhead(T ) 0.019 2.312
+2
+Randomlysampled(T ) -0.018 2.244 Results As shown in Table 4, for our method,
+3
+theidentifiedknowledgeneuronsaremoresignifi-
+Table 4: Average activation of knowledge neurons for cantlyactivatedbyknowledge-expressingprompts
+threetypesofprompts. Theactivationofneuronsiden- (T = 0.485), compared with the control groups
+1
+tified by our method can distinguish the knowledge-
+(T = 0.019 and T = −0.018). By contrast, for
+2 3
+expressingprompts(T )clearly.
+1 the baseline, the activation of identified neurons
+cannot distinguish three types of prompts. In ad-
+dition,sinceourcomparisonisbasedontheweb-
+4.6 KnowledgeNeuronsareActivatedby
+Knowledge-ExpressingPrompts
+crawledBINGRELdataset,wevalidatethegeneral-
+izationofknowledgeneuronstoopen-domaintexts
+Inordertostudywhatpromptscanactivateknowl-
+thatareunseenin PARAREL.
+edgeneurons,wecomparetheaverageactivationof
+knowledgeneuronsfordifferenttypesofprompts. ExamplePrompts InTable3,wepresentexam-
+ple prompts that activate knowledge neurons the
+BINGRELDataset WebuildanewdatasetBIN- mostandtheleast,respectively. Givenafact,we
+GRELbycrawlingtheBingsearchenginetocollect firstidentifyitsknowledgeneuronswithourknowl-
+newprompts,foramoreextensivecomparisonbe- edge attribution method. Then, we calculate the
+yondthePARARELdataset. Foreachofthe27,738 averageactivationofknowledgeneuronsforeach
+factsinPARAREL,wecrawltwotypesoftexts: (1) crawledpromptthatcontainsboththeheadandthe
+uptotentextscontainingboththeheadandthetail tailentitiesin BINGREL. Finally,wedemonstrate
+entities(210,217textscrawledintotal);(2)upto two prompts with the highest average activation
+ten texts containing only the head entity without valuesandtwowiththelowest(denotedastop-2
+restricting tail entities (266,020 texts crawled in andbottom-2activatingprompts,respectively).
+total). Following the distant supervision assump- As shown in Table 3, the top-2 activating
+tion(Mintzetal.,2009),thefirsttypeoftextstends prompts express exactly the corresponding rela-
+toexpressthewholerelationalfact,whilethesec- tional fact. In contrast, despite containing the
+ond type does not. We mask tail entities for the sameheadandtailentities,thebottom-2activating
+firsttypeoftextstoobtainknowledge-expressing prompts do not express the correct relation. For
+prompts(T ). Inordertoconductacontrolledex- example,althoughthebottom-2activatingprompts
+1
+periment, wemaskrandomwordsforthesecond for (cid:104)Ireland, capital, Dublin(cid:105) express
+8498
+Perplexity(ErasedRelation) Perplexity(OtherRelations)
+ErasedRelations
+BeforeErasing AfterErasing BeforeErasing AfterErasing
+P19(place_of_birth) 1450.0 2996.0(+106.6%) 120.3 121.6(+1.1%)
+P27(country_of_citizenship) 28.0 38.3(+36.7%) 143.6 149.5(+4.2%)
+P106(occupation) 2279.0 5202.0(+128.2%) 120.1 125.3(+4.3%)
+P937(work_location) 58.0 140.0(+141.2%) 138.0 151.9(+10.1%)
+Table5: Casestudiesoferasingrelations. Theinfluenceonknowledgeexpressionismeasuredbytheperplexity
+change.Theknowledgeerasingoperationsignificantlyaffectstheerasedrelation,andhasjustamoderateinfluence
+ontheexpressionofotherknowledge.
+Metric KnowledgeNeuronsRandomNeurons Setup We conduct experiments on PARAREL.
+For each relation, we randomly sample ten facts
+Changerate↑ 48.5% 4.7%
+Successrate↑ 34.4% 0.0% learned by the pretrained model. For each fact
+∆Intra-rel.PPL↓ 8.4 10.1 (cid:104)h,r,t(cid:105), werandomlychooseadifferententityt(cid:48)
+∆Inter-rel.PPL↓ 7.2 4.3 withthesametypeast(e.g.,bothtandt(cid:48) belong
+to city), and then update t(cid:48) as the target entity.
+Table 6: Case studies of updating facts. ↑ means the
+Weonlymanipulateaboutfourtopknowledgeneu-
+higher the better, and ↓ means the lower the better.
+ronsasinSection4.4. Forreferencepurposes,we
+“rel.” is the shorthand of relation. Keeping a moder-
+alsoperformthesameupdateprocessonthesame
+ateinfluenceonotherknowledge,thesurgeryofknowl-
+edgeneuronsachievesanontrivialsuccessrate. numberofrandomneurons.
+Evaluation Metrics We report two metrics to
+informationlike“DublinisacityinIreland”,they evaluate the fact updating: (1) change rate, the
+donotreflectthecapitalrelation. Theexamples ratio that the original prediction t is modified to
+supportagainthatknowledgeneuronsareactivated another;(2)successrate,theratiothatt(cid:48) becomes
+bycorrespondingknowledge-expressingprompts. the top prediction. In addition, we measure the
+influenceonotherknowledgebythefollowingtwo
+metrics: (1) ∆intra-relation PPL, the increase of
+5 CaseStudies
+perplexityonthepromptswiththesamerelationr;
+Wepresenttwopreliminarystudiestodemonstrate (2)∆inter-relationPPL,theincreaseofperplexity
+the potential applications of knowledge neurons. onthepromptswithdifferentrelations.
+Weusethecasestudiesasaproofofconceptwhile
+Results As shown in Table 6, the surgery of
+leavingprecisefacteditingforfuturework.
+knowledge neurons achieves a nontrivial success
+rateforupdatingfacts,whilerandomneuronsare
+5.1 UpdatingFacts
+insufficient. Moreover,wefindthatsuchmanipu-
+By leveraging knowledge neurons in pretrained lationhaslittlenegativeinfluenceonotherknowl-
+models,wetrytoupdatealearnedrelationalfact edge predictions. It is promising that we can
+from(cid:104)h,r,t(cid:105)to(cid:104)h,r,t(cid:48)(cid:105).
+changeveryfew(i.e.,aboutfourintheaboveexper-
+iments)neuronstoaffectcertainfactsinpretrained
+Methods First, we identify the knowledge neu-
+Transformers. Wecanfurtherimprovethesuccess
+rons of (cid:104)h,r,t(cid:105). Then, we retain the knowledge
+ratebyincludingmoretopknowledgeneuronsin
+neuronsthataresharedbylessthan10%ofintra-
+theupdateprocess.
+relation facts, to reduce the influence on other
+facts with the same relation. Finally, we directly 5.2 ErasingRelations
+modifythecorrespondingvalueslotsinFFN(val)
+We explore how to leverage knowledge neurons
+(i.e., the second linear layer of FFNs; see Fig-
+to erase specific relations in pretrained Trans-
+ure2): FFN( ival) = FFN( ival) −λ 1t+λ 2t(cid:48),where formers. Specifically, we take four relations in
+FFN(val) denotes the value slot corresponding to PARARELasexamples,i.e.,place_of_birth,
+i
+the i-th knowledge neuron; t and t(cid:48) are the word country_of_citizenship, occupation,
+embeddingsoftandt(cid:48),respectively;λ andλ are work_location, that typically express sensi-
+1 2
+setto1and8inourexperiments. tivepersonalinformation.
+8499
+Methods Given a relation r, we first identify jan et al. (2017) propose the integrated gradient
+knowledge neurons for all relational facts with r. method. Ourknowledgeattributionmethodisbuilt
+Then,weretain20knowledgeneuronsthatappear uponintegratedgradients.
+most frequently among these facts. Finally, we
+Analysis of Transformer As one of the most
+set the value slots in FFN(val) (see Figure 2) cor-
+popular and effective NLP architectures, Trans-
+respondingtotheseknowledgeneuronsto0, i.e.,
+former (Vaswani et al., 2017) has attracted ex-
+zerovectors.
+tensive studies. Most previous work focuses on
+Results As shown in Table 5, we report model theself-attentionmodule(Voitaetal.,2019;Clark
+perplexity before and after knowledge erasing. et al., 2019; Vig and Belinkov, 2019; Hao et al.,
+Withtheerasingoperation,theperplexityofthere- 2021). Recently,Wuetal.(2019)andDongetal.
+movedknowledgeincreasesasexpected. Moreover, (2021)havepointedoutthatthefeed-forwardnet-
+themodelperplexityofotherrelationsremainssim- work module also matters to Transformer. Geva
+ilar. We argue that knowledge neurons provide a etal.(2020)attempttoconnectfeed-forwardnet-
+promisingwaytoeraseundesiredknowledgewith workswithkey-valuememoriesbyqualitativeanal-
+minimalefforts. ysis. Inthispaper,weidentifyandanalyzeknowl-
+edgeneuronsinfeed-forwardnetworksforgiven
+6 RelatedWork factualknowledge. Moreover,wepresenthowto
+leverageknowledgeneuronstoexplicitlyeditfac-
+Probing Knowledge in Pretrained Models
+tualknowledgestoredinpretrainedTransformers.
+Many pieces of previous work aim to measure
+knowledge stored in pretrained models. Petroni 7 ConclusionandFutureDirections
+etal.(2019)proposetoretrieveknowledgeinpre-
+Weproposeanattributionmethodtoidentifyknowl-
+trainedmodels(suchasBERT)usingclozequeries.
+edgeneuronsthatexpressfactualknowledgeinpre-
+Their experiments show that BERT has a strong
+trainedTransformers. Wefindthatsuppressingor
+abilitytorecallfactualknowledgewithoutanyfine-
+amplifying the activation of knowledge neurons
+tuning. Jiang et al. (2020b) improve the cloze
+canaccordinglyaffect thestrengthofknowledge
+querieswithmining-basedandparaphrasing-based
+expression. Moreover,quantitativeandqualitative
+methods. Robertsetal.(2020)proposetheclosed-
+analysis on open-domain texts shows that knowl-
+book question answering to measure how much
+edge neurons tend to be activated by the corre-
+knowledgeapretrainedmodelhasstoredinitspa-
+spondingknowledge-expressingprompts. Inaddi-
+rameters. Elazaretal.(2021)measureandimprove
+tion,wepresenttwopreliminarycasestudiesthat
+theconsistencyofpretrainedmodelswithrespect
+attempttoutilizeknowledgeneuronstoupdateor
+tofactualknowledgeprediction. Ratherthanexam-
+eraseknowledgeinpretrainedTransformers.
+iningonlythemodeloutputs,weprovideanopen-
+Despitetheeffectivenessofidentifyingknowl-
+the-black-boxanalysisfortheknowledgeneurons
+edgeneurons,ourcurrentstudiesstillhavelimita-
+inpretrainedTransformers.
+tions. First,weexamineknowledgeneuronsbased
+AttributionMethods Inordertoopentheblack on the fill-in-the-blank cloze task, while knowl-
+boxes of deep learning models, attribution meth- edgecanbeexpressedinamoreimplicitway. Itis
+odsaimtoattributethemodeloutputtoinputfea- anopenquestionwhetherTransformercanutilize
+tures using different measures. The product of storedknowledgeinageneralizedway,suchasfor
+the gradients (of the output with respect to input reasoning. The interactions between knowledge
+features) and feature values is a reasonable base- neuronsalsoremainunderexplored. Second, we
+line(Baehrensetal.,2010;Simonyanetal.,2014). focusonfactualknowledgeforeaseofevaluation,
+Besides, a set of attribution methods (Shrikumar eventhoughourmethodisalsoapplicableforother
+etal.,2017;Binderetal.,2016;ZeilerandFergus, typesofknowledge. Third,weusethesingle-word
+2014; Springenberg et al., 2015) back-propagate blankinclozequeriesforsimplicity,whichrequires
+the final output to input features. However, as multi-word extensions (Jiang et al., 2020a). Be-
+statedbySundararajanetal.(2017),noneofthese sides,aninterestingfuturedirectionistofigureout
+methodscansimultaneouslysatisfysensitivityand howknowledgeneuronsworkinmultilingualpre-
+implementation invariance, two fundamental ax- trainedTransformers(ConneauandLample,2019;
+ioms. Takingtheaxiomsasguidance,Sundarara- Conneauetal.,2020;Chietal.,2021).
+8500
+8 Acknowledgement generators. In 8th International Conference on
+Learning Representations, ICLR 2020. OpenRe-
+Damai Dai, Zhifang Sui, and Baobao Chang are view.net.
+supported by the National Key Research and De-
+AlexisConneau, KartikayKhandelwal, NamanGoyal,
+velopment Program of China 2020AAA0106701
+Vishrav Chaudhary, Guillaume Wenzek, Francisco
+andNSFCprojectU19A2065. Guzmán, Edouard Grave, Myle Ott, Luke Zettle-
+moyer, and Veselin Stoyanov. 2020. Unsupervised
+cross-lingual representation learning at scale. In
+References Proceedings of the 58th Annual Meeting of the As-
+sociationforComputationalLinguistics,ACL2020,
+David Baehrens, Timon Schroeter, Stefan Harmel- pages 8440–8451. Association for Computational
+ing, Motoaki Kawanabe, Katja Hansen, and Klaus- Linguistics.
+RobertMüller.2010. Howtoexplainindividualclas-
+Alexis Conneau and Guillaume Lample. 2019. Cross-
+sificationdecisions. J.Mach.Learn.Res.,11:1803–
+linguallanguagemodelpretraining. InAdvancesin
+1831.
+NeuralInformationProcessingSystems32: Annual
+Hangbo Bao, Li Dong, Furu Wei, Wenhui Wang, Nan Conference on Neural Information Processing Sys-
+Yang,XiaodongLiu,YuWang,JianfengGao,Song- tems2019,NeurIPS2019,pages7057–7067.
+hao Piao, Ming Zhou, and Hsiao-Wuen Hon. 2020.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Unilmv2: Pseudo-maskedlanguagemodelsforuni-
+Kristina Toutanova. 2019. BERT: pre-training of
+fied language model pre-training. In Proceedings
+deep bidirectional transformers for language under-
+of the 37th International Conference on Machine
+standing. In Proceedings of the 2019 Conference
+Learning, ICML 2020, volume 119 of Proceed-
+of the North American Chapter of the Association
+ingsofMachineLearningResearch,pages642–652.
+for Computational Linguistics: Human Language
+PMLR.
+Technologies, NAACL-HLT 2019, Volume 1 (Long
+and Short Papers), pages 4171–4186. Association
+Alexander Binder, Grégoire Montavon, Sebastian
+forComputationalLinguistics.
+Lapuschkin, Klaus-Robert Müller, and Wojciech
+Samek.2016. Layer-wiserelevancepropagationfor Li Dong, Nan Yang, Wenhui Wang, Furu Wei, Xi-
+neural networks with local renormalization layers. aodong Liu, Yu Wang, Jianfeng Gao, Ming Zhou,
+InProceedingsofthe25thInternationalConference and Hsiao-Wuen Hon. 2019. Unified language
+onArtificialNeuralNetworks,ICANN2016,volume modelpre-trainingfornaturallanguageunderstand-
+9887 of Lecture Notes in Computer Science, pages ing and generation. In Advances in Neural Infor-
+63–71.Springer. mation Processing Systems 32: Annual Conference
+on Neural Information Processing Systems 2019,
+AntoineBosselut,HannahRashkin,MaartenSap,Chai-
+NeurIPS2019,pages13042–13054.
+tanya Malaviya, Asli Celikyilmaz, and Yejin Choi.
+2019. COMET: commonsense transformers for au- Yihe Dong, Jean-Baptiste Cordonnier, and Andreas
+tomaticknowledgegraphconstruction. InProceed- Loukas. 2021. Attention is not all you need: Pure
+ings of the 57th Conference of the Association for attentionlosesrankdoublyexponentiallywithdepth.
+ComputationalLinguistics, ACL2019, pages4762– CoRR,abs/2103.03404.
+4779.AssociationforComputationalLinguistics.
+Yanai Elazar, Nora Kassner, Shauli Ravfogel, Ab-
+Zewen Chi, Li Dong, Furu Wei, Nan Yang, Saksham hilasha Ravichander, Eduard H. Hovy, Hinrich
+Singhal, Wenhui Wang, Xia Song, Xian-Ling Mao, Schütze,andYoavGoldberg.2021. Measuringand
+HeyanHuang,andMingZhou.2021. InfoXLM:An improving consistency in pretrained language mod-
+information-theoretic framework for cross-lingual els. CoRR,abs/2102.01017.
+languagemodelpre-training. InProceedingsofthe
+Hady ElSahar, Pavlos Vougiouklis, Arslen Remaci,
+2021ConferenceoftheNorthAmericanChapterof
+Christophe Gravier, Jonathon S. Hare, Frédérique
+the Association for Computational Linguistics: Hu-
+Laforest, and Elena Simperl. 2018. T-rex: A large
+manLanguageTechnologies,pages3576–3588,On-
+scalealignmentofnaturallanguagewithknowledge
+line.AssociationforComputationalLinguistics.
+basetriples. InProceedingsoftheEleventhInterna-
+tionalConferenceonLanguageResourcesandEval-
+Kevin Clark, Urvashi Khandelwal, Omer Levy, and
+uation,LREC2018.EuropeanLanguageResources
+Christopher D. Manning. 2019. What does BERT
+Association(ELRA).
+look at? an analysis of BERT’s attention. In Pro-
+ceedings of the 2019 ACL Workshop BlackboxNLP: Mor Geva, Roei Schuster, Jonathan Berant, and Omer
+Analyzing and Interpreting Neural Networks for Levy. 2020. Transformer feed-forward layers are
+NLP, pages 276–286, Florence, Italy. Association key-valuememories. CoRR,abs/2012.14913.
+forComputationalLinguistics.
+YaruHao,LiDong,FuruWei,andKeXu.2021. Self-
+Kevin Clark, Minh-Thang Luong, Quoc V. Le, and attention attribution: Interpreting information inter-
+Christopher D. Manning. 2020. ELECTRA: pre- actionsinsidetransformer. InTheThirty-FifthAAAI
+training text encoders as discriminators rather than ConferenceonArtificialIntelligence.AAAIPress.
+8501
+DanHendrycksandKevinGimpel.2016. Gaussianer- KarenSimonyan,AndreaVedaldi,andAndrewZisser-
+rorlinearunits(gelus). man.2014. Deepinsideconvolutionalnetworks: Vi-
+sualising image classification models and saliency
+ZhengbaoJiang, AntoniosAnastasopoulos, JunAraki, maps. In2ndInternationalConferenceonLearning
+Haibo Ding, and Graham Neubig. 2020a. X- Representations,ICLR2014.
+FACTR: multilingual factual knowledge retrieval
+from pretrained language models. In Proceedings JostTobiasSpringenberg,AlexeyDosovitskiy,Thomas
+of the 2020 Conference on Empirical Methods in Brox, and Martin A. Riedmiller. 2015. Striving for
+NaturalLanguageProcessing,EMNLP2020,pages simplicity: The all convolutional net. In 3rd Inter-
+5943–5959.AssociationforComputationalLinguis- national Conference on Learning Representations,
+tics. ICLR2015.
+ZhengbaoJiang, FrankF.Xu, JunAraki, andGraham Mukund Sundararajan, Ankur Taly, and Qiqi Yan.
+Neubig. 2020b. How can we know what language 2017. Axiomatic attribution for deep networks. In
+models know? Transactions of the Association for Proceedings of the 34th International Conference
+ComputationalLinguistics,8:423–438. on Machine Learning, ICML 2017, volume 70 of
+Proceedings of Machine Learning Research, pages
+Olga Kovaleva, Alexey Romanov, Anna Rogers, and 3319–3328.PMLR.
+AnnaRumshisky.2019. Revealingthedarksecrets
+ofBERT. InProceedingsofthe2019Conferenceon Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019.
+EmpiricalMethodsinNaturalLanguageProcessing BERT rediscovers the classical NLP pipeline. In
+andthe9thInternationalJointConferenceonNatu- Proceedingsofthe57thAnnualMeetingoftheAsso-
+ralLanguageProcessing(EMNLP-IJCNLP),pages ciation for Computational Linguistics, pages 4593–
+4365–4374, Hong Kong, China. Association for 4601,Florence,Italy.AssociationforComputational
+ComputationalLinguistics. Linguistics.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+Luke Zettlemoyer, and Veselin Stoyanov. 2019. Kaiser, and Illia Polosukhin. 2017. Attention is all
+Roberta:ArobustlyoptimizedBERTpretrainingap- you need. In Advances in Neural Information Pro-
+proach. CoRR,abs/1907.11692. cessing Systems 30: Annual Conference on Neural
+Information Processing Systems 2017, pages 5998–
+Mike Mintz, Steven Bills, Rion Snow, and Daniel Ju- 6008.
+rafsky.2009. Distantsupervisionforrelationextrac-
+tionwithoutlabeleddata. InACL2009,Proceedings Jesse Vig and Yonatan Belinkov. 2019. Analyzing
+of the 47th Annual Meeting of the Association for the structure of attention in a transformer language
+ComputationalLinguisticsandthe4thInternational model. In Proceedings of the 2019 ACL Workshop
+Joint Conference on Natural Language Processing BlackboxNLP: Analyzing and Interpreting Neural
+of the AFNLP, pages 1003–1011. The Association NetworksforNLP,pages63–76,Florence,Italy.As-
+forComputerLinguistics. sociationforComputationalLinguistics.
+Fabio Petroni, Tim Rocktäschel, Sebastian Riedel, Elena Voita, David Talbot, Fedor Moiseev, Rico Sen-
+Patrick S. H. Lewis, Anton Bakhtin, Yuxiang Wu, nrich, and Ivan Titov. 2019. Analyzing multi-head
+and Alexander H. Miller. 2019. Language mod- self-attention: Specialized heads do the heavy lift-
+els as knowledge bases? In Proceedings of the ing, the rest can be pruned. In Proceedings of the
+2019 Conference on Empirical Methods in Natu- 57th Conference of the Association for Computa-
+ral Language Processing and the 9th International tionalLinguistics,ACL2019,pages5797–5808.As-
+Joint Conference on Natural Language Processing, sociationforComputationalLinguistics.
+EMNLP-IJCNLP 2019, pages 2463–2473. Associa-
+Felix Wu, Angela Fan, Alexei Baevski, Yann N.
+tionforComputationalLinguistics.
+Dauphin, and Michael Auli. 2019. Pay less atten-
+tionwithlightweightanddynamicconvolutions. In
+AdamRoberts,ColinRaffel,andNoamShazeer.2020.
+7thInternationalConferenceonLearningRepresen-
+Howmuchknowledgecanyoupackintotheparam-
+tations,ICLR2019.OpenReview.net.
+eters of a language model? In Proceedings of the
+2020 Conference on Empirical Methods in Natural
+Matthew D. Zeiler and Rob Fergus. 2014. Visualiz-
+Language Processing, EMNLP 2020, pages 5418–
+ing and understanding convolutional networks. In
+5426.AssociationforComputationalLinguistics.
+Proceedings of the 13th European Conference on
+ComputerVision,ECCV2014,volume8689ofLec-
+AvantiShrikumar,PeytonGreenside,andAnshulKun-
+ture Notes in Computer Science, pages 818–833.
+daje. 2017. Learning important features through
+Springer.
+propagating activation differences. In Proceedings
+of the 34th International Conference on Machine
+Learning, ICML 2017, volume 70 of Proceedings
+of Machine Learning Research, pages 3145–3153.
+PMLR.
+8502

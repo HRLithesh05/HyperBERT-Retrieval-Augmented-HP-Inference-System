@@ -1,0 +1,590 @@
+NOBLE: Accelerating Transformers with
+Nonlinear Low-Rank Branches
+EthanSmith
+CanvaResearch
+ethansmith@canva.com
+Abstract
+WeintroduceNOBLE(NonlinearlOw-rankBranchforLinearEnhancement),an
+architecturalaugmentationthataddsnonlinearlow-rankbranchestotransformer
+linearlayers. UnlikeLoRAandotherparameter-efficientfine-tuning(PEFT)meth-
+ods,NOBLEisdesignedforpretrainingfromscratch. Thebranchisapermanent
+partofthearchitectureasopposedtoanadapterforfinetuningontopoffrozen
+weights. Thebranchcomputesσ(xW )W whereσisalearnablenonlinearity.
+down up
+WeevaluateseveralactivationfunctionsandfindthatCosNet,atwo-layercosine
+nonlinearitywithlearnablefrequencyandphasewithalinearprojectioninbetween
+theminthebottleneckspace,performsbest. NOBLEachievessubstantialimprove-
+mentswithminimaloverhead: upto1.47×stepspeeduptoreachbaselineeval
+loss(upto32%fewertrainingsteps),withaslowas4%additionalparametersand
+7%steptimeoverhead,resultinginupto1.22×netwallclockspeedup. Experi-
+mentsonLLMs(250Mand1.5Bparameters),BERT,autoregressiveimagetoken
+modeling,andViTconsistentlyshowimprovedtrainingefficiency. Weidentifyone
+caveat:Mixup/CutMixaugmentationinterfereswithNOBLE’sbenefitsinImagenet
+classificationalongwithotherstochasticaugmentations,butwhendisabled,ViT
+alsoimproves. Thisdiscrepancyispossiblyexplainedbyregularizationtechniques
+thatencouragesmootherfitstothetargetfunctionwhileNOBLEmayspecialize
+moreinsharperaspectsofthetargetfunction.
+Figure1: Evallosscurvesfor1.5BLLMpretrainingonOpenWebText. NOBLE(solid)reaches
+baseline’sbestloss(2.51)in143–154kstepsvs196k(1.34–1.37×faster). First20%oftraining
+truncated.
+Preprint.
+6202
+raM
+6
+]GL.sc[
+1v29460.3062:viXra
+1 Introduction
+Transformershavebecomethedominantarchitectureforbothnaturallanguageprocessing[Vaswani
+etal.,2017,Brownetal.,2020]andcomputervision[Dosovitskiyetal.,2020]. Despitetheirsuccess,
+thelinearprojectionsthatmakeupthebulkoftransformerparameters,thoseinattentionlayersand
+feedforwardnetworks,arefundamentallylimitedtocomputingaffinetransformationswithineach
+layer. Whilenonlinearitiesinfeedforwardblocksprovideexpressivity,theattentionmechanism’s
+query,key,andvalueprojectionsremainpurelylinear.
+Low-RankAdaptation(LoRA)[Huetal.,2021]demonstratedthatfine-tuninglargemodelscanbe
+achievedbylearninglow-rankadditiveupdatestofrozenweights. However,naivelyapplyinglinear
+LoRAtopretrainingofferslimitedbenefit: thelow-rankmatricesBAcanbefusedintothemain
+weightmatrixW +BA,collapsingtoastandardlinearlayerwithslightlydifferentinitialization.
+Withoutanonlinearity,the“bypass”maynotfunctionasaseparatecomputationalbranchbutinstead
+closertoadeltatothemainweights. Thisraisesanaturalquestion: canwedesignlow-rankbranches
+withtruearchitecturalbenefitsduringpretraining,notjustparameter-efficientfine-tuning?
+WeintroduceNOBLE(NonlinearlOw-rankBranchforLinearEnhancement),asimplemodifica-
+tionthataugmentslinearlayerswithanonlinearlow-rankbranch. Crucially,unlikeLoRAand
+the broader family of Parameter-Efficient Fine-Tuning (PEFT) methods, NOBLE is not a
+fine-tuningtechnique. Itisafundamentalarchitecturalaugmentationdesignedforpretrain-
+ingfromscratch. Thelow-rankbranchbecomesapermanentpartofthemodelarchitecture,trained
+jointlywithallotherparametersfrominitialization.
+The key insight is that a small bottleneck with a well-chosen nonlinearity can capture function
+variationsthatcomplementthemainlinearpathway. Weevaluateseveralactivationfunctionsand
+findthatcosine-basedactivationsperformbest,withourrecommendedvariantCosNet,twocosine
+nonlinearitieswithlearnablefrequencyandphasealongwithalinearprojectioninbetweenthemin
+thebottleneckspace,achievingthestrongestresults. OurapproachdiffersfromstandardLoRAin
+threeimportantways:
+1. Architecturalaugmentation,notPEFT:Thebranchisapermanentpartofthearchitecture
+trainedfromscratch,notanadapteraddedtofrozenweightsforfine-tuning[Houlsbyetal.,
+2019].
+2. Nonlinearactivation: WeevaluateseveralactivationsandrecommendCosNet: twocosine
+nonlinearitieswithlearnablefrequencyandphase,connectedbyasmallmixingmatrix.
+3. Learningratescaling: WeapplyelevatedlearningratestoW andM basedontheratio
+up
+(dim/r)γ,roughlyfollowinginsightsfromµP[Yangetal.,2022].
+Mainresult: upto1.47×trainingspeeduponlanguagemodels. Ourexperimentsdemonstrate
+thatNOBLEdramaticallyimprovestrainingefficiencyforlanguagemodels:
+• 21–32%fewersteps: Modelsreachbaselineevallossinupto1.47×fewertrainingsteps
+(e.g.,169kvs249kstepsforrank256).
+• Modestoverhead: 4–24%additionalparametersand7–21%longersteptimes.
+• Netwallclocksavings: Despitetheper-stepoverhead,thereducedstepcountyields1.17–
+1.22×wallclockspeedup.
+• Betterfinalloss: Atconvergence,NOBLEachieves0.02–0.07lowerevallossthanbaseline
+intheexperimentsweconducted.
+We validate these results across LLM autoregressive training at two scales (250M and 1.5B pa-
+rameters),110MBERT-stylemaskedlanguagemodeling,ViT-SmallImageNetclassification,and
+autoregressiveimagetokenmodelingonImageNet,withablationsonrank(64,128,256).
+Contributions
+• WeproposeNOBLE,afamilyofnonlinearlow-rankbranchesforlinearlayerenhancement,
+achievingupto1.47×stepspeedupand1.17–1.22×wallclockspeeduponautoregressive
+pretrainingwithminimaloverhead.
+2
+• WeevaluateseveralactivationfunctionsandidentifyCosNet,asandwichofalearnable
+cosineactivation,alinearprojection,andthenanotherlearnablecosineactivation,asthe
+best-performingvariant.
+• We introduce key design choices: near-zero initialization and scaled learning rates for
+low-rankcomponents.
+• WeprovideextensiveexperimentsonLLMs(twoscales),BERT,ViT,andautoregressive
+image token modeling, demonstrating broad effectiveness across tasks, with a note that
+aggressiveaugmentation(Mixup/CutMix)caninterferewithNOBLE’sbenefits.
+2 RelatedWork
+Low-Rank Adaptation and PEFT. LoRA [Hu et al., 2021] introduced low-rank updates for
+parameter-efficientfine-tuning(PEFT),spawningalargefamilyofmethods. LoRA+[Hayouetal.,
+2024]showedthatusingdifferentlearningratesforthedownandupprojectionmatricesimproves
+fine-tuningefficiency,weadoptasimilarasymmetriclearningratestrategyforNOBLE.DoRA[Liu
+et al., 2024] decomposes weights into magnitude and direction components. AdaLoRA [Zhang
+et al., 2023] learns adaptive ranks, and QLoRA [Dettmers et al., 2023] enables fine-tuning with
+quantizedweights. MoSLoRA[Wuetal.,2024]introducesmixture-of-subspacestoimproveLoRA’s
+expressiveness. These methods share a common paradigm: freeze pretrained weights and learn
+low-rankcorrectionsfordownstreamtasks. NOBLEtakesafundamentallydifferentapproach,rather
+thanafine-tuningadapter,weproposeapermanentarchitecturalaugmentationtrainedfromscratch
+duringpretraining.
+NonlinearExtensionsofLoRA. Severalconcurrentworkshaveexploredaddingnonlinearityto
+LoRAforfine-tuning(seeFigure2forarchitecturalcomparison). NEAT[Zhongetal.,2024]learnsa
+nonlineartransformationofpretrainedweightstoapproximatecumulativeupdates. AuroRA[Dong
+etal.,2024]incorporatesanAdaptiveNonlinearLayerbetweenlinearprojectorstocapturefixedand
+learnablenonlinearities. ThesemethodstargetthePEFTsetting(fine-tuningfrozenmodels),whereas
+NOBLEisdesignedforpretrainingfromscratch(althoughgiventhesimilarityinarchitectureto
+relatedworks,itmayalsobeusedforfine-tuningaswell,orpossiblycontinuedpretrainingforfurther
+reductioninloss). Additionally,ourworkidentifiesthatcosineactivationsareparticularlyeffective
+inlow-rankbottlenecksduetotheirsymmetryandnon-saturatingproperties.
+NonlinearProjectionsinAttention. Severalworkshaveexploredaddingnonlinearitytoattention
+mechanisms [Choromanski et al., 2020, Katharopoulos et al., 2020]. So et al. [2021] searched
+forarchitecturalimprovementsincludingactivationfunctions. Ourapproachisorthogonal,adding
+nonlinearityviabypassbranchesratherthanmodifyingthemaincomputation.
+MixtureofExperts. MoElayers[Shazeeretal.,2017,Fedusetal.,2022]addcapacitythrough
+conditionalcomputation. NOBLEprovidesasimpler,densealternativethataddscapacitythrough
+low-ranknonlinearbrancheswithoutroutingoverhead.
+Periodic Activations. Sinusoidal representations have proven effective in neural radiance
+fields [Mildenhall et al., 2020] and implicit neural representations [Sitzmann et al., 2020]. We
+adoptlearnablecosineactivationsinourbypass.
+3
+3 Method
+Figure2:Comparisonoflow-rankadaptationarchitectures. (a)NOBLEwithCosNet:asandwich
+of cosine activations with learnable frequency/phase, connected by a mixing projection, before
+projectingbacktofulldimensions. Keydifferences: trainedfromscratchaspartofthearchitecture
+(notfine-tuning), cosineactivationissymmetricandnon-saturating. (b)MosLoRAaddsalinear
+projection between low-rank matrices BMA, similar structure but without nonlinear activations.
+(c–d)Recentnonlinearvariants(AuroRA,NoLoRA)introduceactivationsintheLoRAbottleneck
+forfine-tuning. (e)StandardLoRAaddsalinearlow-rankbypassBA.
+3.1 NOBLEArchitecture
+Given a standard linear layer f(x) = xW +b with W ∈ Rdin×dout, NOBLE augments it with a
+low-ranknonlinearbranch:
+f (x)=xW +b+σ(xW )W (1)
+NOBLE down up
+whereW
+down
+∈Rdin×r,W
+up
+∈Rr×dout,r ≪min(d in,d out)isthebottleneckrank,andσisanonlinear
+activationfunction. Weevaluatedseveralchoicesforσandfindthatcosine-basedactivationsperform
+best(seeSection4).
+3.2 CosNet: RecommendedNonlinearity
+Amongseveralactivationfunctionsweevaluate(seeSection4),werecommendCosNet,atwo-layer
+cosinenonlinearityoperatinginthebottleneckspace:
+σ (h)=cos(ω ⊙(M ·cos(ω ⊙h+ϕ ))+ϕ ) (2)
+cos 2 1 1 2
+where h ∈ Rr is the bottleneck representation, M ∈ Rr×r is a learned mixing matrix, and each
+dimensionihaslearnablefrequencyω andphaseϕ parameters.
+i i
+Thecosineactivationcos(ω⊙x+ϕ)hasseveralpropertieswetheorizemaybedesirable:
+• Boundedoutput: UnlikeReLUorGELU,cosineoutputsareboundedin[−1,1],providing
+naturalregularization.
+• Smoothandperiodic: Enablesmodelingofperiodicpatternsandsmoothinterpolations.
+• Learnablefrequency:Thefrequencyparametersωcontrolthesensitivitytoinputvariations,
+adaptingtothedatadistribution.
+• Learnablephase: Thephaseparametersϕallowshiftingthenonlinearity’soperatingpoint.
+3.3 KeyDesignChoices
+√
+Near-Zero Initialization of W . We initialize W with small standard deviation α/ r with
+up up
+α = 0.01,ensuringthebranchcontributesnegligiblyatinitialization. Thisallowsthemainlinear
+layertodominateearlytrainingwhilethebranchgraduallylearnscomplementaryfeatures.
+Redu √cedMainWeightInitialization. WeinitializethemainlinearlayerW withstandarddeviation
+0.5/ d ,halfthetypicalKaimingscale. Thisslightlyreducesthemainpathway’sinitialmagnitude,
+in
+leavingmoreroomforthebranchtocontributeastrainingprogresses.
+4
+Learning Rate Scaling. The low-rank structure necessitates careful learning rate treatment.
+RoughlyfollowingµP[Yangetal.,2022],weapplyelevatedlearningratestoW andtheCosNet
+up
+mixingmatrixM,whileW usesthebaselearningrate. Specifically:
+down
+(cid:18)
+min(d ,d
+)(cid:19)2γ
+lr =lr · in out (3)
+Wup base r
+(cid:18)
+min(d ,d
+)(cid:19)γM
+lr =lr · in out (4)
+M base r
+where γ = 0.3 is the base learning rate multiplier power (so W uses exponent 2γ = 0.6), and
+up
+γ =0.45forthemixingmatrix.
+M
+CosNetInitialization. Weinitializethelearnablefrequencymultipliersbysamplinguniformly
+from [ω ,ω ] (default: [0.8,1.2]). Phases are initialized from N(0,σ2) with σ = 0.1. The
+min max ϕ ϕ
+mixingmatrixM usesXavierinitialization.
+3.4 ComputationalOverhead
+Fortypicalsettings(d =d =d,r =64–128),NOBLEadds:
+in out
+• Parameters: 4–12%additional(low-rankmatrices+CosNetparameters)
+• Step time: 7–12% longer (measured on H100 GPUs using with bf16 mixed precision,
+torch.compileusingreduce-overheadmodeandfullgraph=True)
+Thesepercentagesarerelativetomodelsize: thesamerankonalargermodelyieldsproportionally
+smalleroverhead. Forexample,rank64adds5.7%parameterstoour250Mbasemodelbutonly
+4.0%toour1.5Blargemodel(seeTable1). Critically,despitethisper-stepoverhead,the21–32%
+reductionintrainingstepsyieldsnetwallclockspeedupsof1.17–1.22×.
+4 Experiments
+WeevaluateNOBLEacrossfiveexperimentsspanninglanguageandvisiontasks. Ourcentralfinding
+isthatNOBLEprovidesconsistentandsignificantbenefitsforautoregressivetokenprediction(LLM,
+imagetokens)andmaskedlanguagemodeling(BERT),butdoesnotimproveViTimageclassification
+whencertainaugmentationsareenabledintraining.
+4.1 LanguageModelExperiments
+4.1.1 AutoregressiveLLMPretraining
+Setup. WetrainLLMtransformersonOpenWebText[GokaslanandCohen,2019]. Thearchitecture
+usesGeGLUfeedforwardblocks[Shazeer,2020]withhiddendimension 8d(alignedto64),RoPE
+3
+positionalencodings[Suetal.,2024], andRMSNorm[ZhangandSennrich,2019]. Wetesttwo
+configurations:
+• Base: depth12,width1024,8attentionheads,batch64,lr3×10−4,250ksteps
+• Large: depth24,width2048,16attentionheads,batch128,lr2.5×10−4,200ksteps
+Bothuseweightdecay0.01,β =0.9,β =0.98,sequencelength1024.
+1 2
+NOBLEisappliedtoalllinearprojections(Q,K,V,outputprojection,andbothFFNlayers,weleave
+ablationsonselectingwhichlayerstoapplyNOBLEtoforfuturework). Weablateacrossranks64,
+128,and256.
+Results. Table1showsthatNOBLEconsistentlyachieveslowerfinallossthanthebaseline. We
+reportstepspeedup(ratioofbaselinestepstostepsneededtoreachbaseline’sfinalloss)andwallclock
+speedup(accountingforper-stepoverhead). Figure3showsthetrainingcurves.
+Computationaloverhead. OntheBasemodel,absolutesteptimesare309ms(baseline),332ms
+(r64),344ms(r128),and373ms(r256),measuredon8×H100withbatch64. Despite7–21%longer
+5
+Table1: AutoregressivelanguagemodelingresultsonOpenWebText. NOBLEreachesbaselineloss
+significantlyfasterdespiteper-stepoverhead,yieldingnetwallclocksavings.
+Model Configuration Rank Params+ StepTime+ EvalLoss ∆Loss StepSpeedup WallclockSpeedup
+Baseline – – – 2.850 – 1.00× 1.00×
+Base250M NOBLE+CosNet 64 +5.7% +7.6% 2.810 –0.040 1.26× 1.17×
+(12L,1024d) NOBLE+CosNet 128 +11.6% +11.5% 2.798 –0.052 1.35× 1.21×
+NOBLE+CosNet 256 +24.1% +20.8% 2.780 –0.070 1.47× 1.22×
+Baseline – – – 2.513 – 1.00× 1.00×
+Large1.5B NOBLE+CosNet 64 +4.0% +6.8% 2.476 –0.037 1.27× 1.19×
+(24L,2048d) NOBLE+CosNet 128 +8.2% +11.3% 2.468 –0.045 1.34× 1.20×
+NOBLE+CosNet 256 +16.6% +14.7% 2.463 –0.050 1.37× 1.19×
+Figure3: Evallosscurvesforautoregressivelanguagemodeling. Left: LLMBase250M.Right:
+LLM Large 1.5B. NOBLE configurations (solid) consistently achieve lower loss than baseline
+(dashed) throughout training. Higher ranks provide greater improvement. First 20% of training
+truncatedforclarity.
+steptimes,the21–32%reductioninstepstoreachbaselinelossyields1.17–1.22×netwallclock
+speedup.
+4.1.2 BERT-StyleMaskedLanguageModeling
+Setup.WetrainaBERT-styletransformerwithbidirectionalattentiononOpenWebTextusingmasked
+languagemodeling(15%maskingprobability, standard80/10/10mask/random/unchangedsplit).
+Architecture: depth12,width768,12attentionheads. Training: batch64,lr3×10−4,100ksteps,
+β =0.9,β =0.98,weightdecay0.01. WeuseRoPEpositionalencodings(unlikestandardBERT)
+1 2
+tomatchourLLMsetup.
+Results. Table2showsNOBLEalsoimprovesBERTpretraining,thoughwithmoremodestspeedups
+thanthoseobservedwithourLLMexperiments.
+4.2 ImageModelExperiments
+4.2.1 ViT-SImageNetClassification
+Setup. WetrainViT-Small(22Mparameters)onImageNet-1kfor90epochswithbatchsize1024,
+imagesize224,RandAugment,learningrate3×10−4,β =0.9,β =0.98,weightdecay0.05,and
+1 2
+cosineannealingwith5warmupepochs.WecompareconfigurationswithandwithoutMixup/CutMix
+augmentation.
+Results. Table3andFigure4revealaninterestinginteractionbetweenNOBLEandaugmentation.
+WithstandardMixup/CutMixaugmentation,NOBLEprovidesamodestimprovement(1.6%lower
+train loss). However, without Mixup/CutMix, NOBLE’s benefit is more pronounced (5.0%
+lowertrainloss),suggestingthattheaggressivelabelsmoothingfromtheseaugmentationspartially
+interfereswithNOBLE’sfittingcapabilities.
+6
+Table2: BERT-styleMLMresultsonOpenWebText(100ksteps).
+Configuration Rank EvalLoss ∆Loss StepSpeedup
+Baseline – 1.414 – 1.00×
+NOBLE+CosNet 64 1.393 –0.021 1.10×
+NOBLE+CosNet 128 1.371 –0.044 1.17×
+NOBLE+CosNet 256 1.351 –0.064 1.26×
+Table3: ViT-SImageNet-1kclassificationresults. NOBLEbenefitstrainingwhenMixup/CutMix
+augmentationisdisabled.
+Configuration Mixup/CutMix TrainLoss Top-1Acc.
+Baseline ✓ 2.462 74.40%
+NOBLE+CosNet(r=64) ✓ 2.423 74.51%
+Baseline × 0.622 67.17%
+NOBLE+CosNet(r=64) × 0.591 67.31%
+4.2.2 AutoregressiveImageTokenModeling
+Setup. Wetrainanautoregressivetransformerondiscreteimagetokens,analogoustoLLMtraining
+ontexttokens. ImagesarefirstencodedintodiscretetokensusingapretrainedVQGAN[Esseretal.,
+2021],thenwetrainacausaltransformertopredicttokensautoregressively(next-tokenprediction):
+• Architecture: depth12,width1024,8heads(identicaltobaseLLM)
+• Tokenizer: amused-512VQGANwith8192codebook,1024tokensper512×512image
+(32×32grid)
+• Positionalencoding: 2DRoPE(analogousto1DRoPEfortext)
+• Attention: Causal(raster-scantokenorder)
+• Training: batch64,lr3×10−4,β =0.9,β =0.98,weightdecay0.01,250ksteps
+1 2
+• Regularization: None(nodropout,noaugmentation)
+• Classconditioning: Prependedclassembedding
+Results. Table4showsthatNOBLEimprovesautoregressiveimagetokenmodeling,achievinglower
+evallossthanbaseline. ThissetupisstructurallyidenticaltoLLMpretraining(next-tokenprediction
+withcross-entropyloss),differingonlyinthetokenvocabulary(discreteimagecodesvs. textBPE
+tokens). CombinedwithourViTresults(whichshowimprovementwhenMixup/CutMixisdisabled),
+thisdemonstratesthatNOBLEbenefitsbothlanguageandimagetokenpredictionwhenaggressive
+augmentationisnotused.
+4.3 Summary
+Thepatternthatemergesisclear:NOBLEimprovestraininginlownoisegenerativeandclassifica-
+tiontasks. TheonlyconfigurationwhereNOBLEshowsnoimprovementisViTwithMixup/CutMix
+enabled. Whenwedisabletheseaugmentations,ViTalsobenefitsfromNOBLEintrainloss,though
+worsensevallossasitcontributestooverfitting.
+4.4 AblationStudies
+Weconductablationsonthebaselanguagemodel(depth12,width1024,batch32)trainedfor150k
+steps.
+ActivationFunctionandDepthComparison. Table5andFigure5comparedifferentbottleneck
+activations,bothassingleactivationsandwithamiddlemixingprojectionM (2-layer).
+ReLU-likeactivations(LeakyReLU,GELU)providemoderateimprovement. Tanhshowsminimal
+benefitasasingleactivationbutimproveswiththemiddleprojection. Cosineconsistentlyachieves
+7
+Figure4:ViT-StraininglossandvalidationaccuracyonImageNet-1k(secondhalfoftrainingshown).
+Left: Trainingloss. WithoutMixup/CutMix,NOBLEachieves5%lowertrainingloss. Meanwhile
+whentrainingwithMixup/CutMix,itisnotclearthatNOBLEprovidesanybenefit.Right:Validation
+accuracy. Mixup/CutMixsignificantlyboostsaccuracy(67%→74%),NOBLEdoesnotprovide
+muchimprovementineithercondition.
+Table4:AutoregressiveimagetokenmodelingonImageNet.NOBLEimprovesnext-tokenprediction
+ondiscreteimagetokens,matchingthepatternobservedforlanguagemodels.
+Configuration Rank EvalLoss ∆Loss
+Baseline – 6.723 –
+NOBLE+CosNet 64 6.699 –0.024
+NOBLE+CosNet 128 6.690 –0.033
+NOBLE+CosNet 256 6.682 –0.041
+thebestresultsacrossbothconfigurations. The2-layerCosNet(withM)providesthebestoverall
+performance,whileextendingto3layersyieldsnoadditionalimprovement.
+Table5: Ablationonbottleneckactivationfunction(rank64,baseLLM,150ksteps).
+Activation Symmetric SingleLayer 2-Layer(withM) ∆fromBaseline
+Baseline – 2.971 – –
+Tanh ✓ 2.968 2.957 –0.003/–0.014
+LeakyReLU × 2.949 2.942 –0.022/–0.029
+GELU × 2.948 2.944 –0.023/–0.027
+Cosine ✓ 2.943 2.926 –0.028/–0.045
+Cosine(3-layer) ✓ – 2.927 –0.044
+5 Discussion
+WhyCosineActivations? Weevaluatedseveralactivationfunctionsbeforesettlingoncosine(see
+Table5). ReLU-likeactivations(ReLU,GELU)showedlowermagnitudesofimprovement. We
+hypothesizethisrelatestosymmetryandthelow-ranksetting: ReLU-likesareasymmetricaround
+zero, which may be problematic when projecting to smaller dimensions. In standard MLPs, we
+projecttohigherdimensionsbeforeapplyingReLU,whichactsasaselectivegate,blockingcertain
+activationsand“deleting”informationbycollapsingittozero. Thisfilteringisoftendesirablefor
+compression. In a low-rank bottleneck, this gating behavior may be counterproductive since we
+cannotaffordto“waste”dimensions.
+Symmetricactivationsliketanhaddresstheasymmetryissuebutsufferfromsaturation: muchof
+the input range collapses to values near ±1, losing gradient signal. Cosine is symmetric around
+8
+Figure5: Activationfunctioncomparison. Evallosscurvesfordifferentbottleneckactivations
+(rank64,150ksteps). CosNet(2-layercosine,red)achievesthelowestloss,followedbysinglecosine
+and3-layerCosNet. ReLU-likeactivations(GELU,LeakyReLU)providemoderateimprovement,
+whiletanhshowsminimalbenefit. First20%oftrainingtruncatedforclarity.
+zero,bounded(avoidingexplodingactivations),andcruciallynon-saturating. Itsderivative−sin(x)
+oscillatesratherthanvanishingforlargeinputs.
+Notably, periodic activations like sine and cosine are among the most nonlinear options avail-
+able, capable of aggressively fitting complex functions. This property underlies their success in
+SIREN[Sitzmannetal.,2020]andNeRF[Mildenhalletal.,2020],wherethegoalistooverfitneural
+networkstospecificsignalsorscenes. Empiricalexperimentsonlearningspace-fillingcurves[Smith,
+2024] further demonstrate that sinusoidal activations yield the strongest ability to densely cover
+output spaces. By pairing the main dense linear layer with a cosine-based bypass, we provide a
+branchthatismaximallyantitheticaltothelinearpathway,potentiallyofferingauniquenonlinear
+deltathatcannotbeachievedbyanymodificationtothelinearweightsalone. Inotherwords,the
+linearlayerapproximatesthedominant,smootherlow-frequencycomponents,whilethecosine-based
+bypasscapturesresidualhigh-frequencyvariationswithsmalleramplitudes.
+CosNetArchitectureEvolution. Ourinitialexperimentsusedasinglecosineactivationwithout
+the middle projection M. Even in this simple form, cosine outperformed other activations. We
+thenexploredwhetheraddingdepthtothebottleneckcouldfurtherimproveperformance. Adding
+the mixing matrix M ∈ Rr×r between two cosine activations (the CosNet architecture) yielded
+additionalgains(seeTable5). Extendingtothreeormorelayersprovidednofurtherimprovement
+butalsodidnothurt,suggestingtwolayerscapturetheusefulcomplexityforthissetting.
+FunctionSmoothnessandRegularization TounderstandNOBLE’sinteractionwithaugmentation,
+ithelpstoformalizewhatsmoothnessmeansforalearnedfunction. Afunctionf isL-Lipschitzif
+∥f(x)−f(y)∥≤L∥x−y∥forallx,y,boundinghowrapidlyoutputscanchangewithrespectto
+inputs. TherelatednotionofL-smoothgradientsrequires∥∇f(x)−∇f(y)∥≤L∥x−y∥[Nesterov,
+2004],boundingtherateofchangeofthegradientitself,i.e.,constrainingcurvature. Afunctionwith
+asmallgradientLipschitzconstantcannotexhibitsharpbendsorrapiddirectionalchanges. Inthe
+frequencydomain,thiscorrespondstoenergyconcentratedinlow-frequencyFouriercomponents,
+whilehigh-frequencycomponentsencoderapidoscillations,sharptransitions,andfine-grainedlocal
+structure[Rahamanetal.,2019].
+Manystandardregularizationtechniquesimplicitlyorexplicitlyencouragesuchsmoothness. Weight
+decaypenalizeslargeweights,limitingeachlayer’sLipschitzconstantandthusthecomposedfunc-
+tion’scapacityforrapidvariation. Dropoutaveragesoveranimplicitensembleofsub-networks,
+producingpredictionssmootherthananyindividualmember. Labelsmoothing[Szegedyetal.,2016]
+9
+softenstargets,discouragingsharpdecisionboundaries. Spectralnormalization[Miyatoetal.,2018]
+directlyboundslayer-wiseLipschitzconstants. GaussiannoiseinjectionisequivalenttoTikhonov
+regularization[Bishop,1995,Seghouaneetal.,2004], explicitlypenalizinghigh-frequencycom-
+ponents[Camutoetal.,2020]. Mixup[Zhangetal.,2018]andCutMixenforcethatthenetwork
+interpolateslinearlybetweentrainingpoints,imposingadirectsmoothnessconstraint. Thesetech-
+niques are effective in part because neural networks exhibit a spectral bias: they naturally learn
+low-frequencycomponentsfirstandfithigh-frequencydetailsonlylaterintraining,ifatall[Rahaman
+etal.,2019]. Smoothnessregularizationamplifiesthisinductivebiastoimprovegeneralization.
+NOBLEasaHigh-FrequencyResidualLearner Thetargetfunctiongenerallycontainsboth
+smooth,low-frequencycomponents,thecoarseglobaltrend,andnon-smooth,high-frequencycom-
+ponents: fine-grainedvariationscharacterizedbylargehigher-orderderivatives,sharpbends,and
+rapid local changes. We hypothesize that NOBLE provides a division of labor: the main linear
+pathwayxW capturesthedominantsmoothcomponent,whilethecosinebypassspecializesinthe
+highfrequencyresidualthatisnotwell-approximatedbyasmoothfunction. Cosineactivationsare
+naturally suited to this role because their learnable frequency parameters ω allow representation
+of arbitrary frequencies, and periodic activations are among the most aggressive function fitters
+available[Sitzmannetal.,2020].
+ThisframingexplainswhyMixupandCutMixspecificallyinterferewithNOBLE.Theseaugmenta-
+tionsdonotmerelyencouragesmoothnessasaregularizeronthemodel. Theymodifythetrain-time
+targetfunctionitselfbyblendinginputsandlabels,makingitinherentlysmoother[Zhangetal.,2018].
+The high frequency residual that NOBLE’s cosine branch is designed to capture is attenuated or
+removed. ItisnotthatNOBLEfails,butthattheaugmentationeliminatestheverystructureNOBLE
+isdesignedtoexploit. ThisisconsistentwithourobservationthatNOBLEimprovestrainingloss
+oneverytaskexceptViTImageNetclassificationwithMixup/CutMixenabled,andeventhen,ViT
+image,doesbenefitwhentheseaugmentationsareremoved.
+Morebroadly,practitionersshouldbeawarethatanyregularizationstrategythataggressivelyencour-
+agessmoothfitsmayreduceNOBLE’sbenefitsbysuppressingthehighfrequencysignalthecosine
+branchlearns. Tasksandtrainingregimesthatpreservefine-grainedstructureinthetargetfunction
+arewhereNOBLEprovidesthegreatestadvantage.
+Relationship to Standard LoRA and PEFT Despite the structural similarity, NOBLE serves
+a fundamentally different purpose than LoRA and other PEFT methods. LoRA was designed to
+efficiently adapt frozen pretrained models to downstream tasks by learning low-rank corrections.
+NOBLE,incontrast,isanarchitecturalaugmentationforpretraining. Thebranchisapermanentpart
+ofthemodeltrainedfromscratch,notanadapterattachedtofrozenweights. WhereLoRAlearns
+corrections,NOBLElearnscomplementaryfeaturesthatthemainlinearlayercannotrepresent.
+ComputationalTradeoffs Atrank64–128,NOBLEadds4–12%parametersand7–12%steptime
+overhead,butprovides1.26–1.35×stepspeedup,yielding1.17–1.21×netwallclockspeedup. This
+representsafavorabletradeoff: practitionerscanreachtargetperformancesignificantlyfasterdespite
+theper-stepcost.
+Future Directions We hope this work inspires further exploration into nonlinear branches for
+neuralnetworkarchitectures. Theprincipleofcombiningalinearbackbonewithnonlinearresidual
+branchesformoregranularfittingmayextendbeyondlow-rankadaptationstootherhybridfunction
+parameterizations.Understandingwhenandwhydifferentnonlinearitiescomplementlinearpathways
+remainsanopenandpromisingresearchdirection.
+6 Limitations
+• Inferenceoverhead: Unlikeadaptermethodsthatcanbemergedpost-training,NOBLE
+addspermanentinferencecost(6–12%FLOPs). Thismaybeundesirableforinference-
+constraineddeployments.
+• Augmentationinteraction: WeidentifythatMixup/CutMixinterfereswithNOBLE,butdo
+notfullycharacterizewhichaugmentationstrategiesarecompatible.
+10
+• Limitedvisioncoverage: WetestonlyViTclassificationandautoregressiveimagetoken
+modeling. Othervisiontasks(detection,segmentation)mightbehavedifferently.
+• Scale: Ourlargestmodelis1.5Bparameters. Theobservedeffectsmightchangeatlarger
+scales.
+• Tokenizerdependence: OurimagetokenresultsdependonthespecificVQGANtokenizer
+(amused-512). Othervisualtokenizersmightyielddifferentresults.
+7 Conclusion
+WeintroducedNOBLE(NonlinearlOw-rankBranchforLinearEnhancement),afamilyofnonlinear
+low-rankbranchesfortransformerlinearlayers. Amongseveralactivationfunctions,wefindCosNet,
+atwo-layercosinenonlinearity,performsbest,achievingupto1.47×stepspeedup. With4–24%
+additionalparametersand7–21%per-stepoverhead,NOBLEreducesstepstoreachbaselineloss
+by21–32%,yieldingnetwallclockspeedupsof1.17–1.22×. Thismakesitapracticalmethodto
+acceleratepretrainingwithminimaladdedcomplexity.
+Our experiments demonstrate that NOBLE benefits a broad range of tasks: LLM autoregressive
+modeling,BERTmaskedlanguagemodeling,autoregressiveimagetokenmodeling,andViTimage
+classification. The one caveat is an interaction with Mixup/CutMix augmentation: when these
+aggressiveaugmentationsareused,NOBLE’sbenefitsarereduced. Whendisabled,ViTalsobenefits
+from NOBLE, suggesting the conflict is with the augmentation strategy rather than the task or
+modality.
+References
+ChrisMBishop. Trainingwithnoiseisequivalenttotikhonovregularization. NeuralComputation,7
+(1):108–116,1995.
+TomBrown,BenjaminMann,NickRyder,MelanieSubbiah,JaredDKaplan,PrafullaDhariwal,
+ArvindNeelakantan,PranavShyam,GirishSastry,AmandaAskell,etal. Languagemodelsare
+few-shotlearners. Advancesinneuralinformationprocessingsystems,33:1877–1901,2020.
+Alexander Camuto, Matthew Willetts, Umut Sherwin, Stephen J Roberts, and Chris C Holmes.
+Explicitregularisationingaussiannoiseinjections. InAdvancesinNeuralInformationProcessing
+Systems,volume33,pages16603–16614,2020.
+KrzysztofChoromanski,ValeriiLikhosherstov,DavidDohan,XingyouSong,AndreeaGane,Tamas
+Sarlos,PeterHawkins,JaredDavis,AfrozMohiuddin,LukaszKaiser,etal. Rethinkingattention
+withperformers. InInternationalConferenceonLearningRepresentations,2020.
+TimDettmers,ArtidoroPagnoni,AriHoltzman,andLukeZettlemoyer. Qlora: Efficientfinetuning
+ofquantizedllms. arXivpreprintarXiv:2305.14314,2023.
+HaonanDong,WenhaoZhu,GuojieSong,andLiangWang. Aurora: Breakinglow-rankbottleneck
+oflorawithnonlinearmapping. OpenReview(underreview),2024. PaperID:2hgHyoyVWj.
+AlexeyDosovitskiy,LucasBeyer,AlexanderKolesnikov,DirkWeissenborn,XiaohuaZhai,Thomas
+Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al. An
+image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint
+arXiv:2010.11929,2020.
+Patrick Esser, Robin Rombach, and Björn Ommer. Taming transformers for high-resolution im-
+age synthesis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition,pages12873–12883,2021.
+WilliamFedus,BarretZoph,andNoamShazeer. Switchtransformers: Scalingtotrillionparameter
+models with simple and efficient sparsity. The Journal of Machine Learning Research, 23(1):
+5232–5270,2022.
+Aaron Gokaslan and Vanya Cohen. Openwebtext corpus. http://Skylion007.github.io/
+OpenWebTextCorpus,2019.
+11
+SoufianeHayou,NikhilGhosh,andBinYu. Lora+: Efficientlowrankadaptationoflargemodels.
+arXivpreprintarXiv:2402.12354,2024.
+Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski, Bruna Morrone, Quentin De Laroussilhe,
+AndreaGesmundo,MonaAttariyan,andSylvainGelly. Parameter-efficienttransferlearningfor
+nlp. InInternationalConferenceonMachineLearning,pages2790–2799.PMLR,2019.
+EdwardJHu,YelongShen,PhillipWallis,ZeyuanAllen-Zhu,YuanzhiLi,SheanWang,LuWang,
+and Weizhu Chen. Lora: Low-rank adaptation of large language models. arXiv preprint
+arXiv:2106.09685,2021.
+AngelosKatharopoulos,ApoorvVyas,NikolaosPappas,andFrançoisFleuret. Transformersarernns:
+Fastautoregressivetransformerswithlinearattention. InInternationalconferenceonmachine
+learning,pages5156–5165.PMLR,2020.
+Shih-YangLiu,Chien-YiWang,HongxuYin,PavloMolchanov,Yu-ChiangFrankWang,Kwang-
+TingCheng,andMin-HungChen. Dora: Weight-decomposedlow-rankadaptation. arXivpreprint
+arXiv:2402.09353,2024.
+BenMildenhall,PratulPSrinivasan,MatthewTancik,JonathanTBarron,RaviRamamoorthi,and
+RenNg. Nerf: Representingscenesasneuralradiancefieldsforviewsynthesis. InEuropean
+conferenceoncomputervision,pages405–421.Springer,2020.
+TakeruMiyato,ToshikiKataoka,MasanoriKoyama,andYuichiYoshida. Spectralnormalizationfor
+generativeadversarialnetworks. InInternationalConferenceonLearningRepresentations,2018.
+YuriiNesterov.IntroductoryLecturesonConvexOptimization:ABasicCourse,volume87ofApplied
+Optimization. Springer,2004.
+NasimRahaman,AristideBaratin,DevanshArpit,FelixDraxler,MinLin,FredHamprecht,Yoshua
+Bengio,andAaronCourville. Onthespectralbiasofneuralnetworks. InInternationalConference
+onMachineLearning,pages5301–5310.PMLR,2019.
+Abd-KrimSeghouane,YassirMoudden,andGillesFleury. Regularizingtheeffectofinputnoise
+injectioninfeedforwardneuralnetworkstraining. NeuralComputingandApplications,13(3):
+248–254,2004.
+NoamShazeer. Gluvariantsimprovetransformer. arXivpreprintarXiv:2002.05202,2020.
+NoamShazeer,AzaliaMirhoseini,KrzysztofMaziarz,AndyDavis,QuocLe,GeoffreyHinton,and
+JeffDean. Outrageouslylargeneuralnetworks: Thesparsely-gatedmixture-of-expertslayer. arXiv
+preprintarXiv:1701.06538,2017.
+VincentSitzmann,JulienMartel,AlexanderBergman,DavidLindell,andGordonWetzstein. Implicit
+neural representations with periodic activation functions. In Advances in Neural Information
+ProcessingSystems,volume33,pages7462–7473,2020.
+EthanSmith.Learningspacefillingcurveswithautoencoders.https://sweet-hall-e72.notion.
+site/Learning-Space-Filling-Curves-with-Autoencoders-e39e41ce75894c3a8fecfee0f3bbfb23,
+2024.
+David So, Wojciech Man´ke, Hanxiao Liu, Zihang Dai, Noam Shazeer, and Quoc V Le. Primer:
+Searching for efficient transformers for language modeling. Advances in Neural Information
+ProcessingSystems,34:11881–11895,2021.
+JianlinSu,MurtadhaAhmed,YuLu,ShengfengPan,WenBo,andYunfengLiu.Roformer:Enhanced
+transformerwithrotarypositionembedding. Neurocomputing,568:127063,2024.
+ChristianSzegedy,VincentVanhoucke,SergeyIoffe,JonShlens,andZbigniewWojna.Rethinkingthe
+inceptionarchitectureforcomputervision. InProceedingsoftheIEEEConferenceonComputer
+VisionandPatternRecognition,pages2818–2826,2016.
+AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,AidanNGomez,Łukasz
+Kaiser,andIlliaPolosukhin. Attentionisallyouneed. Advancesinneuralinformationprocessing
+systems,30,2017.
+12
+TaiqiangWu,JiahaoWang,ZheZhao,andNgaiWong. Mixture-of-subspacesinlow-rankadaptation.
+arXivpreprintarXiv:2406.11909,2024.
+GregYang,EdwardJHu,IgorBabuschkin,SzymonSidor,XiaodongLiu,DavidFarhi,NickRyder,
+JakubPachocki,WeizhuChen,andJianfengGao.Tensorprogramsv:Tuninglargeneuralnetworks
+viazero-shothyperparametertransfer. InAdvancesinNeuralInformationProcessingSystems,
+volume35,pages17084–17097,2022.
+Biao Zhang and Rico Sennrich. Root mean square layer normalization. Advances in Neural
+InformationProcessingSystems,32,2019.
+HongyiZhang,MoustaphaCisse,YannNDauphin,andDavidLopez-Paz. mixup: Beyondempirical
+riskminimization. InInternationalConferenceonLearningRepresentations,2018.
+QingruZhang,MinshuoChen,AlexanderBukharin,PengchengHe,YuCheng,WeizhuChen,and
+TuoZhao. Adalora: Adaptivebudgetallocationforparameter-efficientfine-tuning. arXivpreprint
+arXiv:2303.10512,2023.
+YiboZhong,HaoxiangJiang,LincanLi,RyumeiNakada,TianciLiu,LinjunZhang,HuaxiuYao,
+andHaoyuWang. Neat: Nonlinearparameter-efficientadaptationofpre-trainedmodels. arXiv
+preprintarXiv:2410.01870,2024.
+A ImplementationDetails
+CosNetArchitecture. ThefullCosNetnonlinearityappliestwocosineactivationswithalinear
+mixinglayer:
+h =cos(ω ⊙x+ϕ ) (5)
+1 1 1
+h =Mh (6)
+2 1
+CosNet(x)=cos(ω ⊙h +ϕ ) (7)
+2 2 2
+whereM ∈Rr×r isinitializedwithXavierinitializationandusesanelevatedlearningrate(scaled
+bythenetlrmultpower,default0.45).
+FrequencyInitialization. Frequenciesaresampleduniformlyfrom[ω ,ω ]=[0.8,1.2].Mean-
+min max
+whilephasesaresampledfromanormaldistributionwithmean0andstandarddeviation0.1. Initial-
+izationswithlargerrangesandvariancesunderperformed.
+HyperparameterDefaults.
+• LoRArank: 64–256
+• Learningratemultiplierpowerγ: 0.3(W uses2γ =0.6)
+up
+• W initializationscaleα: 0.01
+up
+√
+• MainlinearW initializationscale: 0.5/ d (halftypicalKaiming)
+in
+• Frequencylearningratemultiplier: 3.0
+• Phaselearningratemultiplier: 5.0
+• Phaseinitializationstd: 0.1
+• CosNetinternalfclrmultpower: 0.45
+B ExperimentalSetupDetails
+LLMTraining. OpenWebTextdataset,BPEtokenizer(50257vocab),sequencelength1024,linear
+warmupfor2000steps,lineardecay.
+BERT Training. Same dataset, BERT tokenizer (30522 vocab), sequence length 1024, linear
+warmupfor1000steps,lineardecay.
+13
+ViTTraining. ImageNet-1k,224×224images,ViT-S/16architecture(patchsize16),RandAug-
+ment(n=2,m=9),Mixup(α=0.8),CutMix(α=1.0),linearwarmupfor5epochsfollowedbylinear
+decay.
+Image Token Modeling. ImageNet-1k images encoded to 1024 discrete tokens (32×32 grid)
+usingpretrainedamused-512VQGAN(8192codebook). Autoregressivetransformertrainedwith
+next-tokenprediction(cross-entropyloss),class-conditionalwithprependedclassembedding,2D
+RoPEpositionalencoding,raster-scantokenorder.
+14

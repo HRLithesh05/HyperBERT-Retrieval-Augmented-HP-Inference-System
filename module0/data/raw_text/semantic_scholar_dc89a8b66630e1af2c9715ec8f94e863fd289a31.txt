@@ -1,0 +1,378 @@
+Jointly Fine-Tuning “BERT-like” Self Supervised Models to Improve
+Multimodal Speech Emotion Recognition
+ShamaneSiriwardhana1,AndrewReis1,RivinduWeerasekera1,SurangaNanayakkara1
+1 AugmentedHumanLab,AucklandBioengineeringInstitute,TheUniversityofAuckland
+shamane@ahlab.org,andrew@ahlab.org,rivindu@ahlab.org,suranga@ahlab.org
+Abstract tangledrepresentationsfromVAEwhennoinductivebiasonthe
+modelorthedatasetexists.Intermsoffusingmultiplemodali-
+Multimodal emotion recognition from speech is an important
+ties,recentworkhasexploredarchitectureslikeattention[2,7],
+area in affective computing. Fusing multiple data modali-
+graphneuralnetworks[19]andtransformers[8]. Multimodal
+ties and learning representations with limited amounts of la-
+fusionmechanisms,especiallythosethatfusedeeprepresenta-
+beled data is a challenging task. In this paper, we explore
+tions,usuallyresultinarchitecturallycomplexmodels[20].
+the use of modality specific“BERT-like” pretrained Self Su-
+Inrepresentationlearning, aclassoftechniquesknownas
+pervisedLearning(SSL)architecturestorepresentbothspeech
+SSLhasachievedSOTAperformanceinmanyareasofNatual
+andtextmodalitiesforthetaskofmultimodalspeechemotion
+LanguageProcessing(NLP)[21,22],ComputerVision[23,24]
+recognition.Byconductingexperimentsonthreepubliclyavail-
+(CV) and speech recognition [25, 26, 27]. SSL enables us to
+abledatasets(IEMOCAP,CMU-MOSEI,andCMU-MOSI),we
+usealargeunlabelleddatasettotrainmodelsthatcanbelater
+show that jointly fine-tuning “BERT-like” SSL architectures
+usedtoextractrepresentationsandfine-tuneforspecificprob-
+achieve state-of-the-art (SOTA) results. We also evaluate two
+lems that may have limited amounts of training data. Prior
+methodsoffusingspeechandtextmodalitiesandshowthata
+works[21,23]havehighlightedtheeffectivenessoffine-tuning
+simple fusion mechanism can outperform more complex ones
+pre-trained SSL models for specific tasks in contrast to using
+whenusingSSLmodelsthathavesimilararchitecturalproper-
+themonlyasfrozenfeatureextractors. Asignificanttransition
+tiestoBERT.
+happenedinthefieldofNLPwiththeintroductionofSSLmod-
+Index Terms: speech emotion recognition, self supervised
+elsliketheDeepBidirectionalTransformers[21](BERT)and
+learning,Transformers,BERT,multimodaldeeplearning
+itssuccessors[22]. Byaddingasingletask-specificlayertoa
+pre-trainedSSLmodellikeBERT,onecansolvemultipledown-
+1. Introduction
+streamtasks. BERT-likemodelsalsoconsistoffavourablear-
+Emotionrecognitionplaysasignificantroleinmanyintelligent chitecturalfeaturessuchastheCLStoken,whichcanbeused
+interfaces[1].EvenwiththerecentadvancesinDeepLearning asarepresentationfortheentiresequence. Anotherimportant
+(DL),thisisstillachallengingtask.Themainreasonbeingthat factoristheextensiveavailabilityofpre-trainedmodelsinthe
+most publicly available annotated datasets in this domain are open-sourcecommunity,whichleadstobothcostandtimesav-
+small in scale, which makes DL models prone to over-fitting. ingssincethesemodelstendtobeverycomputationallyexpen-
+Anotherimportantfeatureofemotionrecognitionistheinher- sivetotrainfromscratch.
+entmulti-modalityinthewayweexpressemotions[2]. Emo- EventhoughseveralSSLmodelshavebeenintroducedfor
+tional information can be captured by studying many modali- speechrecognitionrelatedtaskslikespeech-to-text[26,27]and
+ties,includingfacialexpressions,bodypostures,andEEG[3]. speechemotionrecognition[25],priorworkhasnotlookedat
+Of these, arguably, speech is the most accessible. In addition combiningmultipleseparateSSLmodels,eachspecializingin
+to accessibility, speech signals contain many other emotional one modality. This may be due to the architectural complex-
+cues[4]. Althoughspeechsignalscontainsubstantialamounts ity of such models brought on by the fact that usually, these
+ofinformation,itcanbeunrewardingtodropthelinguisticcom- SSLnetworkshavealargenumberofparameters. Combining
+ponentthatcoexistswithit,especiallygiventhatthetextcom- multipledrasticallydifferenthighdimensionalrepresentations
+ponentcanbeeasilytranscribedinrealworldapplicationswith isalsonotasimpletaskandmayincreasetheparametercount
+theconsiderablesuccessesinthedomainofspeech-to-textwith even further. If, however, the modality specific SSL architec-
+severalcommercial-scaleAPIsbeingavailable[5]. turessharesimilarproperties,thenwemaybeabletousesim-
+Inmultimodalemotionrecognition,representationlearning pler fusion mechanisms to extract information for the desired
+andfusionofmodalitiescanbeidentifiedasamajorresearch task. Ourworkwasheavilyinspiredbyrecentwork[27,28],
+area[6,7,8]. Recentworkhasexploredtheuseofdeeprep- whichexploredtheeffectivenessofselfsupervisedpre-training
+resentationsincontrasttolowlevelrepresentations[9]suchas with discretized speech representations for the task of Auto-
+MFCC,COVAREP[10]orGloVeembeddings[11].Suchdeep maticSpeechRecognition(ASR).
+representation techniques can mainly be categorised into two For the first time in the literature, we jointly fine-
+main categories: 1) transfer learning techniques that use pre- tunedmodality-specific“BERT-like”SSLmodelsthatrepresent
+trained networks to extract features [12, 13, 14] or fine-tune speech[28,27]andtext[24]onthetaskofmultimodalemotion
+models [15]; and 2) unsupervised embeddings learning tech- recognition. Wefurtherevaluatehowsimplefusionmethods,-
+niqueswhichincludevariationalauto-encoders(VAE)[16]and whichaddminimaladditionaltrainableparameters,performed
+adversarial auto-encoders (AE) [17]. It is also important to whencomparedwithmorecomplexfusionmechanismssuchas
+highlight that performance usually degrades in transfer learn- Co-Attentional[24]fusion.Wealsoconductedaseriesofabla-
+ingtechniquesduetothemismatchofsourceandtargettasks. tionstudiestoexplorewhichfactorsaffecttheperformanceof
+Recentwork[18]explainstheproblemsrelatedtolearndisen- thesemodels.PleasereferthePytorchimplementation.
+0202
+guA
+51
+]SA.ssee[
+1v28660.8002:viXra
+2. Pre-TrainedSSLmodels
+Fully Connected Layer + Softmax
+WesummarisethethreepretrainedSSLmodelsthatwereused
+toprocessspeechandtextsignalsintheproposedframeworkin
+Concatenation
+thefollowingsections. Weusepretrainedmodelsavailablein
+theFairseqtoolkit[29].
+CLSspeech CLStext
+2.1. VQ-Wav2Vec
+CLSspeech Es2 Es3 .. .. Esn CLStext Et2 Et3 .. .. Etn
+VQ-Wav2Vec[27]isanextensionofWav2Vec[26],whichfo-
+cusesonmovingcontinuousspeechrepresentationsintothedis-
+Pre-trained Speech-BERT Pre-trained Roberta
+cretedomain.Wav2Vec[26]learnsrepresentationsfromspeech
+signalsbasedonContrastivePredictiveCoding[30](CPC).The
+major difference in VQ-Wav2Vec [27] from Wav2Vec [26] is s1 s2 s3 .. .. sn t1 t2 t3 .. .. tm
+the application of Vector Quantization [31] methods to gen-
+erate discretized speech representations. In our experiments,
+weusedapretrainedVQ-Wav2Vec[27]modelthattrainedon pre (tt ora ki en Q ne id u z n inV a gQ t iz s-W e pr ea ev c2 hV )ec G (toP kT e- n2 i zto ink ge n teiz xe t)r
+Librispeech-960[32]torepresentspeechsignalsasasequence
+oftokens,similartothetokenizationstepforasentenceinNLP.
+raw speech signal raw text transcript
+2.2. Speech-BERT
+Figure 1: Overview of the proposed framework with Shallow-
+ThetermSpeech-BERT isusedinourworktodefineaBERT- Fusion
+like Transformer architecture trained on a set of discretized
+speechtokens,wherethespeechsignalwasdiscretizedandtok-
+enizedbyapretrainedVQ-Wav2Vecasmentionedintheabove
+texttranscriptistokenizedwiththeGPT-2tokenizer[36].Once
+section. Wewereheavilymotivatedbyrecentwork[28],which
+speechandtextmodalitiesaretokenized,wesendthemthrough
+illustratedtheeffectivenessofBERT-likemodelsinthedomain
+pre-trained Speech-BERT and RoBERTa models, where the
+ofASR.WeusedapretrainedSpeech-BERT,whichwastrained
+outputshaveembeddingsizes768and1024andmaximumse-
+onthediscretizedLibrispeech-960[32]datasetwiththepretext
+quence lengths of 2048 and 512 respectively. The next step
+task of mask token prediction. The Speech-BERT model ar-
+isfusingtheseembeddingspriortothepredictionhead,which
+chitectureissimilartoBERT-base[21]thatconsistsof12lay-
+consistsofasinglefullyconnectedlayer. Inthispaperweex-
+ers and an embedding dimension of 768. During our exper-
+ploretwopossiblemechanisms,whichwewilldiscussinSec-
+iments, we fine-tune the Speech-BERT model for the task of
+tion3.2. Finally,wefine-tunetheentireframework,including
+multimodalemotionrecognition.
+bothSpeech-BERTandRobertaSSLmodels(thecomponents
+insidethebluedottedboxinFigure1).
+2.3. RoBERTamodel
+RoBERTa[22]isanextensionoftheBERT[21]modelwhich 3.2. FusionofSSLmodeloutputs
+doesnotusethenextsentencepredictiontask[22]duringtrain-
+Thefusionmechanismplaysanessentialroleinanymultimodal
+ing. TheRoBERTa[22]architectureconsistsof24layersand
+speechemotionrecognitionframework. Inthiswork,weanal-
+anembeddingdimensionof1024.SimilartoSpeech-BERT,we
+ysehowthefollowingdifferentfusionmechanismsaffectper-
+fine-tunetheRoBERTA[22]modelforthetaskofmultimodal
+formance.
+emotionrecognition.
+3.2.1. ShallowFusion
+3. Methodology
+ThesuccessofBERTinsentenceclassificationtasks[21]high-
+WeexploretheuseofSpeech-BERTandRoBERTaSSLmod- lightstheeffectiveuseoftheCLStokenasarepresentationof
+elsforthetaskofmultimodalspeechemotionrecognition. As theentiresentence. CLS standsfortheclassificationanditis
+the first step, we evaluate two possible fusion mechanisms to thefirsttokenofeveryinputsequencetotheBERT.Motivated
+combinethetwoSSLmodels.Theperformanceofthefinalpro- byrecentworkinthedomainofNLP[21,22],weconcatenate
+posedmodelwasthencomparedwithpublishedSOTAresults thetwoCLStokenscomputedrespectivelyfromspeech-BERT
+onIEMOCAP[33],CMU-MOSEI[34],andCMU-MOSI[35] andRoBERTamodelsasdescribedinFigure1.Finallywesend
+datasets. Finally,weconductanextensivesetofablationstud- theconcatenatedembeddingthroughaclassificationheadthat
+ieswiththeIEMOCAPdataset[33]tounderstandthebehaviour includesafullyconnectedlayerthatoutputslogitsfollowedby
+ofourproposedframeworkunderdifferentsettings. Weinves- asoftmaxfunction. Duetothesimplicityofthefusion,wede-
+tigate the effects of fine-tuning and frozen states for Speech- scribethismechanismasShallow-Fusion.WealsouseShallow-
+BERT, RoBERTa, as well as the effects of different fusion Fusionasthestandardfusionmechanismintheablationstudies
+mechanisms. sinceitachievedsuperiorperformancesinourexperiments.
+3.1. ModelPipeline 3.2.2. Co-AttentionalFusion
+Figure1givesanoverviewoftheproposedframework.Boththe In order to provide an opportunity for an embedding level in-
+speech signal and text transcripts are simultaneously fed into teraction between the two modalities, we propose to use a
+the model via two different pipelines. The speech signal gets Co-Attentional layer [24]. Co-Attention is a variant of Self-
+discretized by a pre-trained VQ-Wav2Vec [27] model and the Attention [37] that has been used in visual-linguistic Trans-
+Fully Connected Layer + Softmax 4.1.2. CMU-MOSEIandCMU-MOSIExperiments
+CMU-MOSEI[34]isthecurrentlargestdatasetformultimodal
+Concatanation
+emotionrecognitionthatconsistsof22,000examplescreated
+by extracting review videos from YouTube. Each example
+CLScross-speech CLScross-text
+is annotated with an integer score between -3 to +3. CMU-
+MOSI[35]alsohassimilarpropertiestoCMU-MOSEI[34]but
+Speech To Text Co-Attention Text To Speech Co-Attention only with 2000 examples. To compare our model with both
+datasets, we follow the latest prior work that has used these
+Add Add datasets [8, 39]. For both, we used 7-class accuracy, Mean-
+Average-Error(MAE),2-classaccuracy(binary),andF1-score.
+Multi-Head Attention Multi-Head Attention Table 2 and Table 3 describe the evaluation results on CMU-
+MOSEI[34]andCMU-MOSI[35]datasetsrespectively.
+Q K V Q K V
+WQ WK WV WQ WK WV 5. Ablationstudies
+FcQ FcK FcV FcQ FcK FcV
+WeconductedfourablationstudiesusingtheIEMOCAP[33]
+datasettounderstandthebehaviouroftheproposedframework.
+Modality 1 Modality 2 Modality 1 Modality 2 WeuseBinary-AccuracyandF1scoreforeachemotionasthe
+CLSspeech CLStext evaluation metric. In order to have a fair setting in our abla-
+tionexperiments,weusethefirstthreesessionsoftheIEMO-
+CAP [33] dataset as training, the fourth session as validation
+andfifthsessionasthetestset. Table1illustratestheresultsof
+CLSspeech Es2 Es3 .. .. Esn CLStext Et2 Et3 .. .. Etn
+ourfourablationstudiesdiscussedinthefollowingsections.
+Figure2:Co-Attentionallayerandfusionmechanism
+5.1. ComparisonbetweentwofusionmechanismsinFine-
+Tunestate
+formerslikeVilBERT[24]. IncontrasttoSelf-Attention, Co- Inthefirstablationstudy,Table1(5.1),wecomparetheperfor-
+AttentioniscomputedbyinterchangingKey-Valuevectorpairs manceofeachfusionmechanismwhenfine-tuningSpeech-Bert
+fromonemodalitywiththeQueryvectorfromanothermodal- and Roberta for the downstream task of multimodal-emotion
+ity. Since the CLS token from each modality already aggre- recognition. Shallow-Fusionshowsaslightimprovementwith
+gates the sequential information [21], we calculate the Query respecttobinaryaccuracyandF1-scoresforeachemotionover
+vectorfromeachmortality’sCLStokenandletitattendtothe Co-Attentional fusion. This illustrates how a simple fusion
+entire sequence of the other modality embeddings. After the mechanismfollowedbyaclassificationheadworkremarkably
+Co-Attentionallayer,weconcatenatethemodifiedCLStokens well with finetuned “Bert-Like”” pretrained SSL models even
+fromeachmodalityandsendthesethroughapredictionhead. inamultimodalsetting.
+Figure2givesadetailedillustrationoftheCo-Attentionallayer
+andthefusionmechanism. 5.2. ComparisonbetweenUnimodalinputs
+Table 1 (5.2) illustrates the performance comparison between
+uni-modalinputs.Inthisexperiment,weusetheCLStokenof
+4. ExperimentalSetup
+Speech-BERT and Roberta as the sequence representation for
+speechandtext. Astheresultssuggest,text-onlyperformsbet-
+WeimplementedourmodelusingPytorchandtheFairseq[29] terthanspeech-only.Apossiblereasonmightbetheavailability
+toolkit. Allmodelsweretrainedunderdistributedsettings,us- ofhighemotionalcluesinthelinguisticstructure.However,we
+ing two Tesla v100 32GB GPUs with an effective batch-size canstillseeaclearimprovementwhencomparingtext-onlyre-
+of16. TheAdamoptimiserwasusedintheoptimizationwith sultswithourbestperformingmultimodalmodel,whichhigh-
+warm-upupdatesandthepolynomialdecaylearning-ratesched- lightstheimportanceofmulti-modality.
+uler. Theinitiallearningrateanddropoutweresetto1e−5and
+0.1. 5.3. Comparison between fine-tuning and frozen SSL ar-
+chitectures
+4.1. PerformanceComparisonwithSOTA Table1(5.3)looksattheeffectoffinetuningvshavingfrozen
+Speech-BERT and RoBERTa models. Unsurprisingly, fine-
+4.1.1. IEMOCAPExperiments tuningthetwoSSLmodelswithShallow-Fusionforthedown-
+streamtaskleadstobetterperformance.
+The IEMOCAP [33] dataset contains conversation data of 10
+male and female actors. Similar to prior work [38, 2], we 5.4. Comparisonbetweenthetwofusionmechanismswhen
+selected the most commonly used four emotion categories of keepingSSLmodelsfrozen
+Happy(&Excitement),Sad,Anger,andNeutral. Wefollowed Finally, we compare how the two fusion mechanism behave
+theexperimentalprocedureandevaluationmetricsofprevious when we keep Speech-BERT and RoBERTa in a frozen state
+studies[8,39].Table4providesacomparisonofmodelperfor- -using them only as feature extractors. Table 1 (5.4) shows
+mancewithotherSOTAmodelsonBinaryAccuracy(BA)and whentheSSLnetworksarefrozen,Co-Attentionalfusionper-
+theF1-score[39,8]. Table5illustratestheperformancecom- formsbetter. Wehighlightthattheincreasednumberofinter-
+parisonw.r.t4-classunweightedaccuracymetricfollowingthe actionspriortothepredictionlayersenablesCo-Attentionalfu-
+recentworkdonebyLietal[2]. siontoadaptbetterthanShallow-Fusion. Co-Attentioalfusion
+Ablation Studies Happy Sad Angry Neutral
+Algorithm Metric Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h)
+(5.1) Shallow-Fusion VS Co-Attentional Fusion (SSL models in get finetuned on the task)
+Co-Attentional-Fusion 83.64 83.07 90.12 90.13 92.56 93.01 81.06 79.97
+Shallow-Fusion (Best Performaing Model) 84.13 83.75 90.894 90.7 93.56 93.62 81.55 81.05
+(5.2) Uni-Modal Comparison
+Speech - Speech-BERT only 71.15 66.87 85.657 85.01 87.67 87.73 71.78 68.9
+Text - Roberta Only 81.02 81.62 87.67 87.1 91.02 91.21 78.72 78.85 Algorithm Metric Acc (7 classes) Acc (2 classes) f1 score MAE
+(5.3) Fine-Tune VS Frozen (using Shallow-Fusion) Multimodal Transformer (Tsai et al - 2019) 50.7 81.6 81.6 0.691
+Frozen SSL 69.22 62.98 85.57 83.92 89.68 89.5 75.34 72.95 ICCN (Sun et al - 2019) 51.58 84.4 84.36 0.713
+Fine-Tune SSL (same as best performing model) 84.13 83.75 90.894 90.7 93.56 93.62 81.55 81.05 Shallow-Fusion of SSL models (Ours) 55.971 88.04 88.08 0.491
+Ablation St(u5d.i4e)s Shallow-FuHsaiopnp yVS Co-Attentional FusSioadn (SSL models in frozenA sntgartye) Neutral
+CAo-lgAotrtietnhtmio n a l - F u s i o n ( f r o z e n S S L ) Metric A7c6c.5(h5) F715(.3h2) A8c6c.8(h6) F815(.h7)2 Ac9c0(h) F910(h.2) A7c7c.(0h4) F716(.h6)5
+Shallow-Fusion (frozen SSL) (5.1) Shallow-Fu6si9o.2n2 VS Co-A6t2te.9n8tional Fu8si5o.n5 7 (SSL mo8d3e.l9s2 in get fin8e9t.u6n8ed on the8 t9a.s5k) 75.34 72.95
+Co-AttentioTnaabl-lFeu1si:onEvaluationresultsofth83e.6a4blations8t3u.0d7iesonIE9M0.1O2CAPda9t0a.1s3etwithB9i2n.a56ryAccur9a3c.0y1(BA)an8d1.F061score 79.97
+Shallow-Fusion (Best Performaing Model) 84.13 83.75 90.894 90.7 93.56 93.62 81.55 81.05 Algorithm Metric Acc (7 classes) Acc (2 classes) f1 score MAE
+Algorithm Metr(i5c.2) UAncic- M(7o cdlaasl sCeso)mparisoAncc (2 classes) f1 score MAE Multimodal Transformer (Tsai et al - 2019) 39.1 81.1 81 0.686
+MSpueleticmh o- dSapl eTercahn-sBfoErRmTe ro n (lTysai et al - 2019) 71.15 66.87 508.57.657 85.01 81.6 87.67 878.17.36 71.78 0.69168.9 ICCN (Sun et al - 2019) 39.01 83.07 83.02 0.862
+ITCeCxtN - ( RSuonb eertt aa lO -n 2l0y19) 81.02 81.62 51.8578.67 87.1 84.4 91.02 9814.2.316 78.72 0.71738.85 Shallow-Fusion of SSL models (Ours) 52.187 88.87 88.57 0.577
+Shallow-Fusion of SSL models (Ours) (5.3) Fine-Tune VS F5r5o.9z7en1 (using Shallow-8F8u.0s4ion) 88.08 0.491
+Ablation Studies Happy Sad Angry Neutral TFarbolzeen2 S:SRLesultsformultimodalemotions69a.2n2alysison62C.9M8U-MOS85E.5I7withSev8e3n.92Classac8c9u.6r8acy,BA(8b9i.5naryacc7u5r.a3c4y)F1sc7o2.r9e5,and
+Algorithm Metric Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h) MFiAnEe-.TPuneer fSoSrLm (asanmcee a’ss beosft ptehreforomtihnge mromdeol)dels8a4r.e13takenfro8m3.7I5CCCN(9200.81994)[39]M90U.7LT(20199)3.[586] 93.62 81.55 81.05
+(5.1) Shallow-Fusion VS Co-Attentional Fusion (SSL models in get finetuned on the task) (5.4) Shallow-Fusion VS Co-Attentional Fusion (SSL models in forzen state)
+Algorithm Metric Acc (7 classes) Acc (2 classes) f1 score MAE
+Co-Attentional-Fusion 83.64 83.07 90.12 90.13 92.56 93.01 81.06 79.97 Co-Attentional-Fusion 76.55 75.32 86.86 85.72 90 90.2 77.04 76.65
+Multimodal Transformer (Tsai et al - 2019) 39.1 81.1 81 0.686
+Shallow-Fusion (Best Performaing Model) 84.13 83.75 90.894 90.7 93.56 93.62 81.55 81.05 Shallow-FusiAonlgorithm 6 9 . 2 2 Metr6i2c.98 Acc (7 8cl5a.s5s7es) 83A.9c2c (2 classe8s9).68 f819 s.c5ore 75.34 MAE72.95
+ICCN (Sun et al - 2019) 39.01 83.07 83.02 0.862
+(5.2) Uni-Modal Comparison Multimodal Transformer (Tsai et al - 2019) 39.1 81.1 81 0.686
+Shallow-Fusion of SSL models (Ours) 48.927 88.275 88.57 0.577
+Speech - Speech-BERT only 71.15 66.87 85.657 85.01 87.67 87.73 71.78 68.9 ICCN (Sun et al - 2019) 39.01 83.07 83.02 0.862
+Table3:ResultsformultimodalemotionsanalysisonCMU-MOSI.PerformanceoftheothermodelsaretakenfromICCCN(2019)[39]
+Text - Roberta Only 81.02 81.62 87.67 87.1 91.02 91.21 78.72 78.85 Shallow-Fusion of SSL models (Ours) 52.187 88.87 88.57 0.577
+MULT(2019)[8]
+(5.3) Fine-Tune VS Frozen (using Shallow-Fusion)
+Frozen SSL 69.22 62.98 85.57 83.92 89.68 89.5 75.34 72.95 Task Happy Sad Angry Neutral
+Fine-Tune SSL (same as best performing model) 84.13 83.75 90.894 90.7 93.56 93.62 81.55 81.05 Algorithm Metric Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h)
+(5.4) Shallow-Fusion VS Co-Attentional Fusion (SSL models in forzen state) MulT (Tsai et al., 2019) 84.4 81.9 77.7 74.1 73.9 70.2 62.5 59.7
+Co-Attentional-Fusion 76.55 75.32 86.86 85.72 90 90.2 77.04 76.65 ICCN (Sun et al - 2019) 87.41 84.72 86.26 85.93 88.62 88.02 69.73 68.47
+Shallow-Fusion 69.22 62.98 85.57 83.92 89.68 89.5 75.34 72.95 Shallow-Fusion of SSL models (Ours) 89.71 88.34 89.48 89.2 93.82 93.9 80.93 81.01
+Table4: ResultsformultimodalemotionsanalysisonIEMOCAPwithBinaryAccuracy(BA)adF1score. Performanceoftheother
+modelsaretakenfromICCCN(2019)[39]MULT(2019)[8]
+Task Happy Sad Angry Neutral Unweighted Accuracy
+Task Happy Sad Angry Neutral Algorithm Metric Acc(h) Acc(h) Acc(h) Acc(h) Acc(h)
+Algorithm Metric Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h) Acc(h) F1(h) PAaANLC (Li et al., 2019) 71.9 73.2 76.9 59.2 70.3
+MulT (Tsai et al., 2019) 84.4 81.9 77.7 74.1 73.9 70.2 62.5 59.7 Shallow-Fusion of SSL models (Ours) 77.06 78.414 81.88 64.748 75.458
+ICCN (Sun et al - 2019) 87.41 84.72 86.26 85.93 88.62 88.02 69.73 68.47 Table5:ResultsformultimodalemotionsanalysisonIEMOCAPwith4classunweightedaccuracy.Performanceoftheothermodelis
+takenfromPAaAN(2019)[2]
+Shallow-Fusion of SSL models (Ours) 89.71 88.34 89.48 89.2 93.82 93.9 80.93 81.01
+requires a much larger number of new trainable parameters. to improve the performance of multimodal tasks like emotion
+WhiletheCo-Attentionallayeraddsnearly6millionnewpa- recognition. Havingstructurallysimilar“BERT-like”architec-
+rameters,Shallow-Fusiononlyaddsclosetofourteenthousand turestorepresentbothspeechandtextallowsustofusemodal-
+parameters. itiesinastraightforwardwayandquicklyadaptstandardprac-
+ticesintheNLPdomain.
+6. Conclusion
+In future work, we hope to visualize and further explore
+Inthiswork,weusetwopretrained“BERT-like”architectures thebehaviorofSSLmodelsforthetaskofmultimodalemotion
+tosolvethedownstreamtaskofmultimodalemotionrecogni- recognition. ExploringtheuseofBERT-likemodelstorepre-
+tion. Asperourknowledge,thisisthefirsttimethattwoSSL sentspeechcouldenableadvancesinNLPtobeeasilyusedin
+algorithmsthatrepresentspeechandtextsarefine-tunedforthe thedomainofspeech.
+task of multimodal speech emotion recognition. By conduct-
+ingseveralexperiments,weshowhowasimplefusionmecha- 7. Acknowledgements
+nism(Shallow-Fusion)makestheoverallframeworksimpleand
+straightforward and improve on more complex fusion mecha- ThisworkissupportedbytheAssistiveAugmentationresearch
+nisms. WealsohighlighttheimportanceofintroducingBERT- grant under the Entrepreneurial Universities (EU) initiative of
+likemodelstoprocessspeechsignals,whichcaneasilybeused NewZealand.
+8. References
+[20] C. Zhang, Z. Yang, X. He, and L. Deng, “Multimodal intelli-
+gence: Representationlearning,informationfusion,andapplica-
+[1] R.W.Picard,Affectivecomputing. MITpress,2000.
+tions,”arXivpreprintarXiv:1911.03977,2019.
+[2] J.-L. Li and C.-C. Lee, “Attentive to individual: A multimodal
+[21] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,“Bert: Pre-
+emotionrecognitionnetworkwithpersonalizedattentionprofile,”
+training of deep bidirectional transformers for language under-
+Proc.Interspeech2019,pp.211–215,2019.
+standing,”arXivpreprintarXiv:1810.04805,2018.
+[3] N.Sebe,I.Cohen,T.Gevers,andT.S.Huang,“Multimodalap-
+[22] Y. Liu, M. Ott, N. Goyal, J. Du, M. Joshi, D. Chen, O. Levy,
+proachesforemotionrecognition: asurvey,”inInternetImaging
+M. Lewis, L. Zettlemoyer, and V. Stoyanov, “Roberta: A
+VI,vol.5670. InternationalSocietyforOpticsandPhotonics,
+robustly optimized bert pretraining approach,” arXiv preprint
+2005,pp.56–67.
+arXiv:1907.11692,2019.
+[4] J. Kim and R. A. Saurous, “Emotion recognition from human
+[23] A.Kolesnikov,X.Zhai,andL.Beyer,“Revisitingself-supervised
+speechusingtemporalinformationanddeeplearning.”inInter-
+visualrepresentationlearning,”inProceedingsoftheIEEEcon-
+speech,2018,pp.937–940.
+ferenceonComputerVisionandPatternRecognition,2019,pp.
+[5] A.Singh,V.Kadyan,M.Kumar,andN.Bassan,“Asroil:acom- 1920–1929.
+prehensivesurveyforautomaticspeechrecognitionofindianlan- [24] J.Lu,D.Batra,D.Parikh,andS.Lee,“Vilbert:Pretrainingtask-
+guages,”ArtificialIntelligenceReview,pp.1–32,2019.
+agnostic visiolinguistic representations for vision-and-language
+[6] Y.-H. H. Tsai, P. P. Liang, A. Zadeh, L.-P. Morency, and tasks,” in Advances in Neural Information Processing Systems,
+R. Salakhutdinov, “Learning factorized multimodal representa- 2019,pp.13–23.
+tions,”arXivpreprintarXiv:1806.06176,2018. [25] S.Pascual,M.Ravanelli,J.Serra`,A.Bonafonte,andY.Bengio,
+[7] A. Zadeh, P. P. Liang, S. Poria, P. Vij, E. Cambria, and L.-P. “Learningproblem-agnosticspeechrepresentationsfrommultiple
+Morency,“Multi-attentionrecurrentnetworkforhumancommu- self-supervisedtasks,”arXivpreprintarXiv:1904.03416,2019.
+nicationcomprehension,”inThirty-SecondAAAIConferenceon [26] S.Schneider,A.Baevski,R.Collobert,andM.Auli,“wav2vec:
+ArtificialIntelligence,2018. Unsupervisedpre-trainingforspeechrecognition,”arXivpreprint
+[8] Y.-H.H.Tsai,S.Bai,P.P.Liang,J.Z.Kolter,L.-P.Morency,and arXiv:1904.05862,2019.
+R. Salakhutdinov, “Multimodal transformer for unaligned mul- [27] A. Baevski, S. Schneider, and M. Auli, “vq-wav2vec: Self-
+timodallanguagesequences,” arXivpreprintarXiv:1906.00295, supervised learning of discrete speech representations,” arXiv
+2019. preprintarXiv:1910.05453,2019.
+[9] M.Swain,A.Routray,andP.Kabisatpathy,“Databases,features [28] A.Baevski, M.Auli, andA.Mohamed, “Effectivenessofself-
+andclassifiersforspeechemotionrecognition:areview,”Interna- supervised pre-training for speech recognition,” arXiv preprint
+tionalJournalofSpeechTechnology,vol.21,no.1,pp.93–120, arXiv:1911.03912,2019.
+2018. [29] M.Ott,S.Edunov,A.Baevski,A.Fan,S.Gross,N.Ng,D.Grang-
+[10] G.Degottex,J.Kane,T.Drugman,T.Raitio,andS.Scherer,“Co- ier,andM.Auli,“fairseq: Afast,extensibletoolkitforsequence
+varepa collaborative voice analysis repository for speech tech- modeling,”arXivpreprintarXiv:1904.01038,2019.
+nologies,” in 2014 ieee international conference on acoustics, [30] A.v.d.Oord,Y.Li,andO.Vinyals,“Representationlearningwith
+speechandsignalprocessing(icassp). IEEE,2014, pp.960– contrastivepredictivecoding,”arXivpreprintarXiv:1807.03748,
+964. 2018.
+[11] J. Pennington, R. Socher, and C. D. Manning, “Glove: Global [31] A.vandenOord,O.Vinyalsetal.,“Neuraldiscreterepresentation
+vectorsforwordrepresentation,”inProceedingsofthe2014con- learning,”inAdvancesinNeuralInformationProcessingSystems,
+ference on empirical methods in natural language processing 2017,pp.6306–6315.
+(EMNLP),2014,pp.1532–1543.
+[32] V. Panayotov, G. Chen, D. Povey, and S. Khudanpur, “Lib-
+[12] Z.Han,H.Zhao,andR.Wang,“Transferlearningforspeechemo- rispeech: an asr corpus based on public domain audio books,”
+tionrecognition,”in2019IEEE5thIntlConferenceonBigData in2015IEEEInternationalConferenceonAcoustics,Speechand
+Security on Cloud (BigDataSecurity), IEEE Intl Conference on SignalProcessing(ICASSP). IEEE,2015,pp.5206–5210.
+HighPerformanceandSmartComputing,(HPSC)andIEEEIntl
+[33] C. Busso, M. Bulut, C.-C. Lee, A. Kazemzadeh, E. Mower,
+ConferenceonIntelligentDataandSecurity(IDS). IEEE,2019, S. Kim, J. N. Chang, S. Lee, and S. S. Narayanan, “Iemocap:
+pp.96–99. Interactiveemotionaldyadicmotioncapturedatabase,”Language
+[13] S.Parthasarathy, V.Rozgic, M.Sun, andC.Wang, “Improving resourcesandevaluation,vol.42,no.4,p.335,2008.
+emotionclassificationthroughvariationalinferenceoflatentvari- [34] A.B.Zadeh,P.P.Liang,S.Poria,E.Cambria,andL.-P.Morency,
+ables,”inICASSP2019-2019IEEEInternationalConferenceon “Multimodallanguageanalysisinthewild: Cmu-moseidataset
+Acoustics,SpeechandSignalProcessing(ICASSP). IEEE,2019, and interpretable dynamic fusion graph,” in Proceedings of the
+pp.7410–7414. 56thAnnualMeetingoftheAssociationforComputationalLin-
+[14] K. Feng and T. Chaspari, “A review of generalizable transfer guistics(Volume1:LongPapers),2018,pp.2236–2246.
+learning in automatic emotion recognition,” Frontiers in Com- [35] A.Zadeh,R.Zellers,E.Pincus,andL.-P.Morency,“Mosi:mul-
+puterScience,vol.2,p.9,2020. timodalcorpusofsentimentintensityandsubjectivityanalysisin
+[15] Z.Lu,L.Cao,Y.Zhang,C.-C.Chiu,andJ.Fan,“Speechsenti- onlineopinionvideos,”arXivpreprintarXiv:1606.06259,2016.
+mentanalysisviapre-trainedfeaturesfromend-to-endasrmod- [36] A. Radford, J. Wu, R. Child, D. Luan, D. Amodei, and
+els,”arXivpreprintarXiv:1911.09762,2019. I.Sutskever,“Languagemodelsareunsupervisedmultitasklearn-
+[16] S.Latif,R.Rana,J.Qadir,andJ.Epps,“Variationalautoencoders ers,”OpenAIBlog,vol.1,no.8,p.9,2019.
+forlearninglatentrepresentationsofspeechemotion: Aprelimi- [37] A.Vaswani,N.Shazeer,N.Parmar,J.Uszkoreit,L.Jones,A.N.
+narystudy,”arXivpreprintarXiv:1712.08708,2017. Gomez,Ł.Kaiser,andI.Polosukhin,“Attentionisallyouneed,”
+[17] S.Sahu,R.Gupta,G.Sivaraman,W.AbdAlmageed,andC.Espy- inAdvancesinneuralinformationprocessingsystems,2017,pp.
+Wilson, “Adversarial auto-encoders for speech based emotion 5998–6008.
+recognition,”arXivpreprintarXiv:1806.02146,2018. [38] S.Poria,E.Cambria,D.Hazarika,N.Majumder,A.Zadeh,and
+[18] F. Locatello, S. Bauer, M. Lucic, G. Ra¨tsch, S. Gelly, L.-P. Morency, “Context-dependent sentiment analysis in user-
+B. Scho¨lkopf, and O. Bachem, “Challenging common assump- generatedvideos,”inProceedingsofthe55thannualmeetingof
+tions in the unsupervised learning of disentangled representa- theassociationforcomputationallinguistics(volume1:Longpa-
+tions,”arXivpreprintarXiv:1811.12359,2018. pers),2017,pp.873–883.
+[19] D.Ghosal,N.Majumder,S.Poria,N.Chhaya,andA.Gelbukh, [39] Z. Sun, P. Sarma, W. Sethares, and Y. Liang, “Learning re-
+“Dialoguegcn:Agraphconvolutionalneuralnetworkforemotion lationships between text, audio, and video via deep canonical
+recognition in conversation,” arXiv preprint arXiv:1908.11540, correlation for multimodal language analysis,” arXiv preprint
+2019. arXiv:1911.05544,2019.

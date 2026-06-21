@@ -1,0 +1,916 @@
+Recall and Learn: Fine-tuning Deep Pretrained Language Models with
+Less Forgetting
+SanyuanChen1,YutaiHou1,YimingCui1,2,WanxiangChe1,TingLiu1,XiangzhanYu1
+1SchoolofComputerScienceandTechnology,HarbinInstituteofTechnology,China
+2JointLaboratoryofHITandiFLYTEKResearch(HFL),Beijing,China
+{sychen, ythou, ymcui, car, tliu}@ir.hit.edu.cn,yxz@hit.edu.cn
+Abstract Despite the great success, sequential transfer
+learning of deep pretrained LMs tends to suffer
+Deep pretrained language models have
+fromcatastrophicforgettingduringtheadaptation
+achieved great success in the way of pretrain-
+step. Catastrophic forgetting is a common prob-
+ing first and then fine-tuning. But such a
+sequential transfer learning paradigm often lemforsequentialtransferlearning,andithappens
+confronts the catastrophic forgetting problem when a model forgets previously learned knowl-
+and leads to sub-optimal performance. To edge and overfits to target domains (McCloskey
+fine-tune with less forgetting, we propose a
+andCohen,1989;Kirkpatricketal.,2017). Torem-
+recall and learn mechanism, which adopts
+edythecatastrophicforgettingintransferringdeep
+the idea of multi-task learning and jointly
+pretrained LMs, existing efforts mainly explore
+learns pretraining tasks and downstream
+fine-tuningtrickstoforgetless. ULMFiT(Howard
+tasks. Specifically, we propose a Pretrain-
+ing Simulation mechanism to recall the and Ruder, 2018) introduced discriminative fine-
+knowledge from pretraining tasks without tuning,slantedtriangularlearningrates,andgrad-
+data, and an Objective Shifting mechanism ual unfreezing for LMs fine-tuning. Lee et al.
+to focus the learning on downstream tasks (2019)reducedforgettinginBERTfine-tuningby
+gradually. Experimentsshowthatourmethod
+randomlymixingpretrainedparameterstoadown-
+achieves state-of-the-art performance on the
+streammodelinadropout-style.
+GLUE benchmark. Our method also enables
+Insteadoflearningpretrainingtasksanddown-
+BERT-basetoachievebetterperformancethan
+directly fine-tuning of BERT-large. Further, stream tasks in sequence, Multi-task Learning
+we provide the open-source RECADAM learns both of them simultaneously, thus can in-
+optimizer, which integrates the proposed herently avoid the catastrophic forgetting prob-
+mechanisms into Adam optimizer, to facility lem. Xue et al. (2019) tackled forgetting in au-
+theNLPcommunity.1
+tomaticspeechrecognitionbyjointlytrainingthe
+1 Introduction modelwithpreviousandtargettasks. Kirkpatrick
+etal.(2017)proposedElasticWeightConsolidation
+Deep Pretrained Language Models (LMs), such
+(EWC)toovercomecatastrophicforgettingwhen
+asELMo(Petersetal.,2018)andBERT(Devlin
+continuouslearningmultipletasksbyadoptingthe
+et al., 2019), have significantly altered the land-
+multi-task learning paradigm. EWC regularizes
+scapeofNaturalLanguageProcessing(NLP)and
+new task training by constraining the parameters
+awiderangeofNLPtaskshasbeenpromotedby
+which are important for previous tasks and adapt
+thesepretrainedlanguagemodels. Thesesuccesses
+more aggressively on other parameters. Thanks
+are mainly achieved through Sequential Transfer
+totheappealingeffectsoncatastrophicforgetting,
+Learning(Ruder,2019): pretrainalanguagemodel
+EWChasbeenwidelyappliedinvariousdomains,
+onlarge-scaleunlabeleddataandthenadaptitto
+suchasgameplaying(Ribeiroetal.,2019),neural
+downstreamtasks. Theadaptationstepisusually
+machine translation (Thompson et al., 2019) and
+conducted in two manners: fine-tuning or freez-
+readingcomprehension(Xuetal.,2019).
+ingpretrainedweights. Inpractice,fine-tuningis
+However,thesemulti-tasklearningmethodscan-
+adoptedmorewidelyduetoitsflexibility(Phang
+notbedirectlyappliedtothesequentialtransferring
+etal.,2018;Lanetal.,2019;Petersetal.,2019).
+regimeofdeeppretrainedLMs. Firstly,multi-task
+1https://github.com/Sanyuan-Chen/RecAdam learning methods require to use data of pretrain-
+0202
+rpA
+72
+]LC.sc[
+1v15621.4002:viXra
+ing tasks during adaptation, but pretraining data providetheopen-source RECADAM optimizerto
+of LMs is often inaccessible or too large for the facilitatedeeppretrainedLMsfine-tuningwithless
+adaptation. Secondly,weonlycareabouttheper- forgetting.
+formanceofthedownstreamtask,whilemulti-task
+2 Background
+learningalsoaimstopromoteperformanceonpre-
+trainingtasks.
+Inthissection,weintroducetwotransferlearning
+In this paper, we propose a recall and learn settings: sequentialtransferlearningandmulti-task
+mechanism to cope with the forgetting problem learning. They both aim to improve the learning
+offine-tuningthedeeppretrainedLMs. Toachieve performancebytransferringknowledgeacrossmul-
+this, we take advantage of multi-task learning by tipletasks,butapplytodifferentscenarios.
+adoptingLMspretrainingasanauxiliarylearning
+2.1 SequentialTransferLearning
+task during fine-tuning. Specifically, we propose
+twomechanismsforthetwochallengesmentioned Sequentialtransferlearninglearnssourcetasksand
+above, respectively. As for the challenge of data targettasksinsequence,andtransfersknowledge
+obstacles,weproposethePretrainingSimulation from source tasks to improve the models’ perfor-
+to achieve multi-task learning without accessing manceontargettasks.
+to pretraining data. It helps the model to recall It typically consists of two stages: pretraining
+previously learned knowledge by simulating the and adaptation. During pretraining, the model
+pretrainingobjectiveusingonlypretrainedparam- is trained on source tasks with the loss function
+eters. As for the challenge of learning objective Loss . Duringadaptation,thepretrainedmodelis
+S
+difference,weproposetheObjectiveShiftingtobal- further trained on target tasks with the loss func-
+ancenewtasklearningandpretrainedknowledge tionLoss . Thestandardadaptationmethodsin-
+T
+recalling. It allows the model to focus gradually cludes fine-tuning and feature extraction. Fine-
+onthenewtaskbyshiftingthemulti-tasklearning tuningupdatesalltheparametersofthepretrained
+objectivetothenewtasklearning. model, while feature extraction regards the pre-
+trained model as a feature extractor and keeps it
+WealsoprovideRecallAdam(RECADAM)op-
+fixedduringtheadaptationphase.
+timizertointegratetherecallandlearnmechanism
+Sequential transfer learning has been widely
+intoAdamoptimizer(KingmaandBa,2015). We
+used recently, and the released deep pretrained
+release the source code of the RECADAM opti-
+LMshaveachievedgreatsuccessesonvariousNLP
+mizerimplementedinPytorch. Itiseasytouseand
+tasks(Petersetal.,2018;Devlinetal.,2019;Lan
+can facilitate the NLP community for better fine-
+etal.,2019). Whiletheadaptationofthedeeppre-
+tuning of deep pretrained LMs. Experiments on
+trainedLMsisveryefficient,ittendstosufferfrom
+GLUEbenchmarkwiththeBERT-basemodelshow
+catastrophic forgetting, where the model forgets
+thattheproposedmethodcansignificantlyoutper-
+previously learned knowledge from source tasks
+formthevanillafine-tuningmethod. Ourmethod
+whenlearningnewknowledgefromtargettasks.
+with the BERT-base model can even achieve bet-
+terresultsthandirectlyfine-tuningtheBERT-large
+2.2 Multi-taskLearning
+model. In addition, thanks to the effectiveness
+Multi-taskLearninglearnsmultipletaskssimulta-
+ofpretrainedknowledgerecalling,wegainbetter
+neously, and improves the models’ performance
+performancebyinitializingmodelwithrandompa-
+onallofthembysharingknowledgeacrossthese
+rametersratherthanpretrainedparameters. Finally,
+tasks(Caruana,1997;Ruder,2017).
+weachievestate-of-the-artperformanceonGLUE
+Under the multi-task learning paradigm, the
+benchmarkwiththeALBERT-xxlargemodel.
+model is trained on both source tasks and target
+Ourcontributionscanbesummarizedasfollows:
+taskswiththelossfunction:
+(1)Weproposetotacklethecatastrophicforgetting
+problemoffine-tuningthedeeppretrainedLMsby Loss =λLoss +(1−λ)Loss (1)
+M T S
+adoptingtheideaofmulti-tasklearningandobtain
+state-of-the-art results on GLUE benchmark. (2) where λ ∈ (0,1) is a hyperparameter balancing
+WeproposePretrainingSimulationandObjective thesetwotasks. Itcaninherentlyavoidcatastrophic
+Shifting mechanisms to achieve multi-task fine- forgettingproblembecausethelossonsourcetasks
+tuning without data of pretraining tasks. (3) We Loss isalwayspartoftheoptimizationobjective.
+S
+To overcome catastrophic forgetting problem Duetotheintractability,theoptimizationobjec-
+(discussedin§2.1),canweapplytheideaofmulti- tive −logp(θ|D ) is locally approximated with
+S
+task learning to the adaptation of the deep pre- theLaplacesMethod(MacKay,2003):
+trainedLMs? Therearetwochallengesinpractice:
+−logp(θ|D )≈−logp(θ∗|D )
+S S
+1
+1) Wecannotgetaccesstothepretrainingdatato + (θ−θ∗)(cid:62)H(θ∗)(θ−θ∗)
+2
+calculateLoss duringadaptation.
+S
+where H(θ∗) is the Hessian matrix of the opti-
+2) The optimization objective of adaptation is mization objective w.r.t. θ and evaluated at θ∗.
+Loss , while multi-task learning aims to op- −logp(θ∗|D ) is a constant term w.r.t. θ, and
+T S
+timizeLoss ,i.e.,theweightedsumofLoss itcanbeignoredduringoptimization.
+M T
+andLoss . Sincethepretrainedmodelconvergencesonthe
+S
+source tasks, H(θ∗) can be approximated with
+3 Methodology the empirical Fisher information matrix F(θ∗)
+(Martens,2014):
+Inthissection,weintroducePretrainingSimulation
+(§3.1)andObjectiveShifting(§3.2)toovercome F(θ∗)=E [∇ logp (x)∇ logp (x)(cid:62)| ]
+x∼DS θ θ θ θ θ=θ∗
+thetwochallenges(discussedin§2.2)respectively.
+Pretraining Simulation allows the model to learn
+H(θ∗)≈NF(θ∗)+H (θ∗)
+source tasks without pretraining data, and Objec- prior
+tive Shifting allows the model to focus on target whereN isthenumberofi. i. d. observationsin
+tasksgradually. WealsointroducetheRECADAM D S,H prior(θ∗)istheHessianmatrixofthenega-
+optimizer(§3.3)tointegratethesetwomechanisms tivelogpriorprobability−logp(θ).
+intothecommon-usedAdamoptimizer. Because of the computational intractability,
+EWC approximate H(θ∗) by using the diagonal
+3.1 PretrainingSimulation of F(θ∗) and ignoring the prior Hessian matrix
+H (θ∗):
+As for the first challenge that pretraining data is prior
+unavailable,weintroducePretrainingSimulation (θ−θ∗)(cid:62)H(θ∗)(θ−θ∗)≈N(cid:80) F (θ −θ∗)2
+i i i i
+toapproximatetheoptimizationobjectiveofsource
+whereF isthecorrespondingdiagonalFisherin-
+tasksasaquadraticpenalty,whichkeepsthemodel i
+formationvalueofthemodelparameterθ .
+parametersclosetothepretrainedparameters. i
+Sincethepretrainingdataisunavailable,wefur-
+FollowingElasticWeightConsolidation(EWC;
+ther approximate H(θ∗) with a stronger assump-
+Kirkpatricketal.2017;Husza´r2017),weapprox-
+tionthateachdiagonalFisherinformationvalueF
+imate the optimization objective of source tasks i
+isindependentofthecorrespondingparameterθ :
+withLaplacesMethodandindependentassumption i
+amongthemodelparameters. SinceEWCrequires (θ−θ∗)(cid:62)H(θ∗)(θ−θ∗)≈NF (cid:80) (θ −θ∗)2
+i i i
+pretraining data, we further introduce a stronger
+The final approximated optimization objective
+independent assumption and derive a quadratic
+ofthesourcetasksisthequadraticpenaltybetween
+penalty,whichisindependentwiththepretraining
+the model parameters and the pretrained parame-
+data. Weintroducethedetailedderivationprocess
+ters:
+asfollows.
+Fromtheprobabilisticperspective,thelearning Loss S =−logp(θ|D S)
+objectiveonthesourcetasksLoss S wouldbeopti- ≈ 1 (θ−θ∗)(cid:62)H(θ∗)(θ−θ∗)
+2
+mizingthenegativelogposteriorprobabilityofthe
+1
+modelparametersθ givendataofsourcetasksD S: ≈ 2(θ−θ∗)(cid:62)(NF(θ∗)+H prior(θ∗))(θ−θ∗)
+1 (cid:88)
+≈ N F(θ −θ∗)2
+Loss =−logp(θ|D ) 2 i i i
+S S i
+1 (cid:88)
+The pretrained parameters θ∗ can be assumed ≈ 2NF (θ i−θ i∗)2
+asalocalminimumoftheparameterspace,andit i
+1 (cid:88)
+satisfiestheequation: = 2γ (θ i−θ i∗)2
+i
+θ∗ =argmin {−logp(θ|D )} where 1γ isthecoefficientofthequadraticpenalty.
+θ S 2
+1.0
+0.5
+0.0
+t0
+Timestep
+)t(
+k → ∞,ourmethodcanberegardedasfine-tuning.
+The model firstly gets pretrained on source tasks
+0<k< with the Loss , then learns the target tasks with k S
+k 0 theLoss T. Whenk → 0,λ(t)isaconstantfunc-
+tion,thenourmethodcanberegardedasthemulti-
+tasklearning. Themodellearnssourcetasksand
+targettaskssimultaneouslywiththelossfunction
+1(Loss +Loss ).
+2 T S
+3.3 RecAdamOptimizer
+Adam optimizer (Kingma and Ba, 2015) is com-
+monly used for fine-tuning the deep pretrained
+LMs. We introduce Recall Adam (RECADAM)
+Figure1:ObjectiveShifting:wereplacethecoefficient
+optimizertointegratethequadraticpenaltyandthe
+λ with the annealing function λ(t). Fine-tuning and
+annealingcoefficient,whicharethecorefactorsof
+multi-tasklearningcanberegardedasthespecialcases
+the Pretraining Simulation (§ 3.1) and Objective
+(k →∞andk →0)ofourmethod.
+Shifting (§ 3.2) mechanisms respectively, by de-
+couplingthemfromthegradientupdatesinAdam
+3.2 ObjectiveShifting
+optimizer.
+Asforthesecondchallengethattheoptimization LoshchilovandHutter(2019)observedthatL2
+objectiveofmulti-tasklearningisinconsistentwith regularization and weight decay are not identical
+adaptation,weintroduceObjectiveShiftingtoal- foradaptivegradientalgorithmssuchasAdam,and
+low the objective function to gradually shift to confirmedtheproposedAdamWoptimizerbased
+Loss T withtheannealingcoefficient. ondecoupledweightdecaycouldsubstantiallyim-
+Wereplacethecoefficientλintheoptimization proveAdam’sperformanceinboththeoreticaland
+objectiveofmulti-tasklearning(asshowninEq.1) empiricalway.
+withtheannealingfunctionλ(t),wheretrefersto Similarly, it is necessary to decouple the
+theupdatetimestepsduringfine-tuning. Theloss quadratic penalty and the annealing coefficient
+functionofourmethodissettomulti-tasklearning when fine-tuning the pretrained LMs with Adam
+withannealingcoefficient: optimizer. Otherwise, both the quadratic penalty
+andannealingcoefficientwouldbeadaptedbythe
+Loss = λ(t)Loss +(1−λ(t))Loss
+T S gradientupdaterules,resultingindifferentmagni-
+tudesofthequadraticpenaltyamongthemodel’s
+Specifically, to better balance the multi-task
+weights.
+learningandfine-tuning,λ(t)iscalculatedasthe
+sigmoidannealingfunction(Bowmanetal.,2016): The comparison between Adam and
+RECADAM are shown in Algorithm 1, where
+1
+SetScheduleMultiplier(t) (Line 11) refers to the
+λ(t) =
+1+exp(−k·(t−t 0)) procedure (e.g. warm-up technique) to get the
+wherekandt arethehyperparameterscontrolling scalingfactorofthestepsize.
+0
+theannealingrateandtimesteps. Line6ofAlgorithm1showshowweimplement
+As shown in Figure 1, at the beginning of the thequadraticpenaltyandannealingcoefficientwith
+training process, the model mainly learns gen- the vanilla Adam optimizer. The weighted sum
+eral knowledge by focusing more on pretraining of the gradient of target task objective function
+tasks. Astrainingprogress,themodelgraduallyfo- ∇f(θ) and the gradient of the quadratic penalty
+cusesontargettasksandlearnsmoretarget-specific γ(θ−θ∗)getadaptedbythegradientupdaterules,
+knowledge while recalling the knowledge of pre- which derives to inequivalent magnitudes of the
+training tasks. At the end of the training process, quadraticpenaltyamongthemodel’sweights,e.g.
+themodelcompletelyfocusesontargettasks,and theweightsthattendtohavelargergradients∇f(θ)
+thefinaloptimizationobjectiveisLoss . would have the larger second moment v and be
+T
+Fine-tuning and multi-task learning can be re- penalized by the relatively smaller amount than
+garded as special cases of our method. When otherweights.
+Algorithm1 Adam and RecAdam
+1: given initial learning rate α ∈ R, momentum factors β = 0.9,β = 0.999,(cid:15) = 10−8, pretrained parameter vector
+1 2
+θ∗ ∈Rn,coefficientofquadraticpenaltyγ ∈R,annealingcoefficientinobjectivefunctionλ(t)=1/(1+exp(−k·(t−
+t )),k∈R,t ∈N
+0 0
+2: initializetimestept←0,parametervectorθ ∈Rn,firstmomentvectorm ←0,secondmomentvectorv ←0,
+t=0 t=0 t=0
+schedulemultiplierη ∈R
+t=0
+3: repeat
+4: t←t+1
+5: ∇f (θ )←SelectBatch(θ ) (cid:46) selectbatchandreturnthecorrespondinggradient
+t t−1 t−1
+6: g ← λ(t)∇f (θ ) +(1−λ(t))γ(θ −θ∗)
+t t t−1 t−1
+7: m ←β m +(1−β )g (cid:46) hereandbelowalloperationsareelement-wise
+t 1 t−1 1 t
+8: v ←β v +(1−β )g2
+t 2 t−1 2 t
+9: mˆ ←m /(1−βt) (cid:46) β istakentothepoweroft
+t t 1 1
+10: vˆ ←v /(1−βt) (cid:46) β istakentothepoweroft
+t t 2 2
+11: η ←SetScheduleMultiplier(t) (cid:46) canbefixed,decay,oralsobeusedforwarmrestarts
+t (cid:16) √ (cid:17)
+12: θ ←θ −η λ(t)αmˆ /( vˆ +(cid:15))+(1−λ(t))γ(θ −θ∗)
+t t−1 t t t t−1
+13: until stoppingcriterionismet
+14: return optimizedparametersθ
+t
+WithRECADAMoptimizer,wedecouplethegra- xxlargemodelwith12layers,64attentionheads,
+dientofthequadraticpenaltyγ(θ−θ∗)andthean- 128embeddingdimensionand4,096hiddendimen-
+nealingcoefficientλ(t)inLine12ofAlgorithm1. sionsisthecurrentstate-of-the-artmodelreleased
+Inthisway,onlythegradientoftargettaskobjec- byLanetal.(2019).
+tive function ∇f(θ) get adapted during the opti-
+Data We evaluate our methods on the Gen-
+mizationsteps,andalltheweightsofthetraining
+eralLanguageUnderstandingEvaluation(GLUE)
+model would be more effectively penalized with
+benchmark(Wangetal.,2019).
+thesamerate(1−λ(t))γ.
+GLUEisawell-knownbenchmarkfocusedon
+Sincethe RECADAMoptimizerisonlyoneline
+evaluatingmodelcapabilitiesfornaturallanguage
+modificationfromAdamoptimizer,itcanbeeas-
+understanding. It includes 9 tasks: Corpus of
+ily used by feeding the additional parameters, in-
+Linguistic Acceptability (CoLA; Warstadt et al.
+cluding the pretrained parameters and a few hy-
+2019),StanfordSentimentTreebank(SST;Socher
+perparameters of the Pretraining Simulation and
+etal.2013),MicrosoftResearchParaphraseCorpus
+ObjectiveShiftingmechanisms.
+(MRPC;DolanandBrockett2005),SemanticTex-
+4 Experiments tualSimilarityBenchmark(STS;Ceretal.2017),
+Quora Question Pairs (QQP; Shankar Iyer and
+4.1 Setup Csernai.January2017),Multi-GenreNLI(MNLI;
+Model We conduct the experiments with the Williams et al. 2018), Question NLI (QNLI; Ra-
+deep pretrained language model BERT-base (De- jpurkar et al. 2016), Recognizing Textual Entail-
+vlinetal.,2019)andALBERT-xxlarge(Lanetal., ment (RTE; Dagan et al. 2005; Roy Bar-Haim
+2019). andSzpektor.2006;Giampiccoloetal.2007;Ben-
+tivogli et al. 2009) and Winograd NLI (WNLI;
+BERTisadeepbi-directionalpretrainedmodel
+Levesqueetal.2012).
+based on multi-layer Transformer encoders. It is
+pretrainedonthelarge-scalecorpuswithtwounsu- Followingpreviousworks(Yangetal.,2019;Liu
+pervisedtasks: MaskedLMandNextSentencePre- etal.,2019;Lanetal.,2019),wereportoursingle-
+diction,andhasachievedsignificantimprovements tasksingle-modelresultsonthedevsetof8GLUE
+onawiderangeofNLPtasks. WeusetheBERT- tasks, excluding the problematic WNLI dataset.2
+basemodelwith12layers,12attentionheadsand WereportPearsoncorrelationsforSTS,Matthew’s
+768hiddendimensions. correlationsforCoLA,thematchcondition(MNLI-
+m)forMNLI,andaccuracyscoresforothertasks.
+ALBERTisthelatestdeeppretrainedLMthat
+achievesthestate-of-the-artperformanceonseveral
+Implementation As discussed in § 3.3, we im-
+benchmarks. ItimprovesBERTbytheparameter
+plementthePretrainingSimulationandObjective
+reduction techniques and self-supervised loss for
+sentence-order prediction (SOP). The ALBERT- 2https://gluebenchmark.com/faq
+Shiftingtechniqueswiththeproposed RECADAM CoLA, +0.4% on SST, +0.1% on QQP) and bet-
+optimizer. Ourmethodsuserandominitialization teraverageresults(+0.2%)ofalltheGLUEtasks.
+becauseofthepretrainedknowledgerecallingim- Thankstothelesscatastrophicforgettingrealized
+plementation,whilevanillafine-tuninginitializes by RECADAM,wecangetcomparableoverallper-
+thefine-tuningmodelwithpretrainedparameters. formancewithmuchfewerparametersofthepre-
+Wefine-tuneBERT-baseandALBERT-xxlarge trainedmodel.
+model with the same hyperparameters following
+Results with ALBERT-xxlarge With the state-
+Devlinetal.(2019)andLanetal.(2019),except
+of-the-artmodelALBERT-xxlarge,weoutperform
+for the maximum sequence length which we set
+thevanillafine-tuningmethodon5outof8tasks
+to128ratherthan512. FortheBERT-basemodel,
+oftheGLUEbenchmarkandachievethestate-of-
+wesetthelearningrateto2e-5andselectthetrain-
+the-art single-task single-model average median
+ing step to make sure the convergence of vanilla
+performance90.2%ondevsetoftheGLUEbench-
+fine-tuning on each target task. We note that we
+mark.
+fine-tuneforRTE,STS,andMRPCdirectlyusing
+SimilartotheresultswiththeBERT-basemodel,
+the pretrained LM while the previous works are
+Wefindthatourimprovementsmostlycomefrom
+usinganMNLIcheckpointforfurtherperformance
+thetaskswithsmallertrainingdata(<10k),andwe
+improvement. As for the hyperparameters of our
+canimprovetheALBERT-xxlargemodel’smedian
+methods,wesetγ inthequadraticpenaltyto5,000,
+performanceonthesetasksby+1.5%onaverage.
+and select the best t and k in {100, 250, 500,
+0
+Also,comparedtothereportedresultsbyLanetal.
+1,000}and{0.05,0.1,0.2,0.5,1}respectivelyfor
+(2019), we can achieve similar or better median
+theannealingcoefficientλ(t). Followingprevious
+resultsonRTE(+0.1%),STS(-0.1%),andMRPC
+works(Yangetal.,2019;Liuetal.,2019;Lanetal.,
+(+1.0%)taskswithoutpretrainingonMNLItask.
+2019),wereportthescoreof5differently-seeded
+Overall,weoutperformtheaveragemedianre-
+runsforeachresult.
+sults of the baseline with the ALBERT-xxlarge
+4.2 ResultsonGLUE modelby0.7%,whichislowerthantheimprove-
+mentwegainwiththeBERT-basemodel(+1.1%).
+Table1showsthesingle-tasksingle-modelresults
+Withadvancedmodeldesignandpretrainingtech-
+ofourRECADAM fine-tuningmethodcomparing
+niques, ALBERT-xxlarge achieves significantly
+tothevanillafine-tuningmethodwithBERT-base
+better performance on GLUE benchmark, which
+andALBERT-xxlargemodelonthedevsetofthe
+wouldbehardertobefurtherimproved.
+GLUEbenchmark.
+4.3 Analysis
+Results with BERT-base With the BERT-base
+model, we outperform the vanilla fine-tuning Model Initialization With our RECADAM
+methodon7outof8tasksoftheGLUEbenchmark method based on Pretraining Simulation and
+andachieve1.1%improvementsontheaverageme- Objective Shifting, the model can be initialized
+dianperformance. with random values, and recall the knowledge of
+Especially for the tasks with smaller training pretrainingtaskswhilelearningthenewtasks.
+data (<10k), our method can achieve significant Itisinterestingtoseewhetherthechoiceofini-
+improvements (+1.7% on average) compared to tializationstrategieswouldhaveanimpactonthe
+thevanillafine-tuningmethod. Becauseofthedata performance of our RECADAM method. Table 2
+scarcity,vanillafine-tuningonthesetasksarepoten- showstheperformancecomparisonofdifferentini-
+tiallybrittle,andrelyonthepretrainedparameters tialization strategies for RECADAM obtained by
+to be reasonably close to an ideal setting for the the BERT-base model. It shows that RECADAM,
+targettask(Phangetal.,2018). Withtheproposed withbothinitializationstrategies,canoutperform
+RECADAMmethod,wesuccessfullyachievebetter thevanillafine-tuningmethodonallthefourtasks.
+fine-tuningbylearningtargettaskswhilerecalling ForthetargettaskSTS,themodelwithpretrained
+theknowledgeofpretrainingtasks. initialization can achieve the same result as ran-
+Itisinterestingtofindthatcomparedtotheme- dominitialization. Fortheothertasks(e.g.,CoLA,
+dianresultswithBERT-largemodel, wecanalso MRPC,RTE),Randominitializethemodelwould
+achievebetterresultsonmorethanhalfofthetasks beourbestchoice. Itisbecausethemodelwould
+(e.g., +4.0% on RTE, +0.4% on STS, +1.8% on benefitfromalargerparametersearchspacewith
+MNLI QQP QNLI SST Avg CoLA STS MRPC RTE Avg
+Model Avg
+392k 363k 108k 67k >10k 8.5k 5.7k 3.5k 2.5k <10k
+BERT-base(Devlinetal.,2019) 84.4 - 88.4 92.7 - - - 86.7 - - -
+BERT-base(rerun) 84.8 91.4 88.6 93.0 89.5 60.6 89.8 86.5 71.1 77.0 83.2
+Median
+BERT-base+RecAdam 85.3 91.4 89.1 93.6 89.9 62.4 90.4 87.7 74.4 78.7 84.3
+Median
+BERT-base(rerun) 85.2 91.4 89.0 93.3 89.7 61.6 89.9 88.7 71.5 77.9 83.8
+Max
+BERT-base+RecAdam 85.4 91.6 89.4 94.0 90.1 62.6 90.6 88.7 77.3 79.8 85.0
+Max
+BERT-large(Devlinetal.,2019) 86.6 91.3 92.3 93.2 90.9 60.6 90.0 88.0 70.4 77.3 84.1
+XLNet-large(Yangetal.,2019) 89.8 91.8 93.9 95.6 92.8 63.6 91.8 89.2 83.8 82.1 87.4
+RoBERTa-large(Liuetal.,2019) 90.2 92.2 94.7 96.4 93.4 68.0 92.4 90.9 86.6 84.5 88.9
+ALBERT-xxlarge(Lanetal.,2019) 90.8 92.2 95.3 96.9 93.8 71.4 93.0 90.9 89.2 86.1 90.0
+ALBERT-xxlarge(rerun) 90.6 92.2 95.4 96.7 93.7 69.5 93.0 91.2 87.4 85.3 89.5
+Median
+ALBERT-xxlarge+RecAdam 90.5 92.3 95.3 96.8 93.7 72.9 92.9 91.9 89.3 86.8 90.2
+Median
+ALBERT-xxlarge(rerun) 90.7 92.2 95.4 96.8 93.8 72.1 93.2 91.4 89.9 86.7 90.2
+Max
+ALBERT-xxlarge+RecAdam 90.6 92.4 95.5 97.0 93.9 75.1 93.0 93.1 91.7 88.2 91.1
+Max
+Table 1: State-of-the-art single-task single-model results on the dev set of the GLUE benchmark. The number
+below each task refers to the number of training data. The average scores of the tasks with large training data
+(>10k),thetaskswithsmalltrainingdata(<10k),andallthetasksarereportedseparately. Wererunthebaseline
+ofvanillafine-tuningwithoutfurtherpretrainingonMNLI.Wereportmedianandmaximumover5runs.
+Method CoLA STS MRPC RTE Avg getting during the fine-tuning process. We mea-
+sure the pretrained knowledge forgetting by the
+vanillafine-tuning 60.6 89.8 86.5 71.1 77.0
+RecAdam+PI 62.0 90.4 87.3 73.6 78.3 Euclideandistancebetweentheweightsofthefine-
+RecAdam+RI 62.4 90.4 87.7 74.4 78.7
+tuning model and the pretrained model. At the
+veryearlytimesteps,theEuclideandistancedrops
+Table 2: Comparison of different model initialization
+sharply because of the random initialization and
+strategies: pretrained initialization (PI) and Random
+Initialization(RI).Wereportmedianover5runs. pretrained knowledge recalling. Then the curve
+riseswiththegrowthrateslowingdownbecauseof
+thetargettasklearning. Astheobjectiveshifting
+randominitialization. Incontrast,withpretrained ratekdecreases,wefindthatthemodelcanachieve
+initialization,thesearchspacewouldbelimitedto lessforgettingfromthepretrainedmodelattheend
+aroundthepretrainingmodel,makingitharderfor ofthefine-tuning.
+themodeltolearnthenewtasks.
+Overall,ourmethodsprovideabridgebetween
+fine-tuningandmulti-tasklearning. Withsmaller
+ForgettingAnalysis Asintroducedin§3.2,we
+k, the model achieves less knowledge forgetting
+realize multi-task fine-tuning with the Objective
+fromthesourcetasksbutrisksnotconvergingcom-
+Shiftingtechnique,whichallowsthemodel’slearn-
+pletely on the target task. With a good balance
+ingobjectivetoshiftfromthesourcetaskstothe
+between the pretrained knowledge recalling and
+targettasksgradually. Thehyperparameterk con-
+new task learning, our methods can consistently
+trolstherateoftheobjectiveshifting.
+outperformthevanillafine-tuningbynotonlycon-
+Figure2showsthelearningcurvesofourfine-
+vergingontargettasksbutalsolessforgettingfrom
+tuningmethodswithdifferentk valueobtainedby
+sourcetasks.
+BERT-basemodeltrainedonCoLAdataset. Asdis-
+cussedin§3.2,Fine-tuningandmulti-tasklearning
+5 RelatedWorks
+canberegardedasthespecialcases(k → ∞and
+k → 0)ofourmethod. Catastrophic forgetting has been observed as a
+AsshowninFigure2a,withthelargershifting great challenge issue in sequential transfer learn-
+ratek,themodelcanconvergequicklyonthetarget ing,especiallyinthecontinuouslearningparadigm
+task. Ask decreases,ittakesalongertimeforthe (McCloskeyandCohen,1989;French,1999;Good-
+model to converge on the target task because of fellowetal.,2013;Langeetal.,2019). Manymeth-
+theslowershiftingfromthepretrainedknowledge odshavebeenproposedtoavoidcatastrophicfor-
+recallingtotargettasklearning. getting. Replay-basedmethodsalleviateforgetting
+Figure2bshowsthepretrainedknowledgefor- byrelayingthesamplesoftheprevioustaskswhile
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0.0
+0 2 4 6 8 10 12 14
+Timestep (1e3)
+ssol
+tegraT
+12
+10
+8
+k = 0 6
+k = 1e-4
+k = 5e-4
+k = 1e-3 4
+k = 5e-3
+k = 1e-2
+k = 5e-2 2
+k = 1e-1
+k = 5e-1
+k = 1 0
+k = 0 2 4 6 8 10 12 14
+Timestep (1e3)
+(a)Traininglossonthetargettask
+ecnatsid
+naedilcuE
+(b)Knowledgeforgettingfromthesourcetasks
+Figure2: LearningcurvesobtainedbyBERT-basemodeltrainedwithdifferentobjectiveshiftingratekonCoLA
+task. We measure the knowledge forgetting by the Euclidean distance between the weights of the fine-tuning
+model and the pretrained model. With smaller k, the model achieves less knowledge forgetting from the source
+taskswhileittakesmoretimestepstoconvergeonthetargettask.
+learning the new task (Rebuffi et al., 2017; Shin etal.,2018),don’tdirectlyaccesstothepretrain-
+etal.,2017;Lopez-PazandRanzato,2017;Aljundi ing data, they need some pretraining knowledge
+et al., 2019). Parameter isolation-based methods (e.g.,Fisherinformationmatrixofthesourcetasks),
+avoid forgetting by updating a set of parameters whichisnotavailableinoursetting. Therefore,we
+for each task and freezing them for the new task furtherapproximatetoaquadraticpenaltywhich
+(Mallya and Lazebnik, 2018; Serra` et al., 2018; isindependentwiththepretrainingdatagiventhe
+Rusuetal.,2016;XuandZhu,2018;Rosenfeldand pretrainedparameters.
+Tsotsos,2020). Regularization-basedmethodspro- Catastrophic forgetting in NLP has raised in-
+posetorecallthepreviousknowledgewithanextra creasedattentionrecently(Mouetal.,2016;Arora
+regularizationterm(Kirkpatricketal.,2017;Zenke etal.,2019;Chronopoulouetal.,2019). Manyap-
+etal.,2017;Leeetal.,2017;Lietal.,2018;Aljundi proacheshavebeenproposedtoovercomethefor-
+etal.,2018;Liuetal.,2018;LiandHoiem,2018; gettingprobleminvariousdomains,suchasneural
+Jung et al., 2016; Triki et al., 2017; Zhang et al., machinetranslation(Baroneetal.,2017;Thomp-
+2019b). Wefocusonregularization-basedmethods sonetal.,2019)andreadingcomprehension(Xu
+inthispaper,becausetheydon’trequirethestorage etal.,2019). Assequentialtransferlearningwidely
+ofthepretrainingdata,andmoreflexiblecompared usedforNLPtasks(HowardandRuder,2018;De-
+totheparameterisolation-basedmethods. vlinetal.,2019;Liuetal.,2019;Lanetal.,2019;
+Regularization-basedmethodscanbefurtherdi- Hou et al., 2019), previous works explore many
+vided into data-focused and prior-focused meth- fine-tuningtrickstoreducecatastrophicforgetting
+ods. Data-focusedmethodsregularizethenewtask foradaptationofthedeeppretrainedLMs(Howard
+learning by knowledge distillation from the pre- andRuder,2018;Sunetal.,2019;Leeetal.,2019;
+trainedmodel(Hintonetal.,2015;LiandHoiem, Zhangetal.,2019a;Felboetal.,2017). Inthispa-
+2018; Jung et al., 2016; Triki et al., 2017; Zhang per,webringtheideaofmulti-tasklearningwhich
+etal.,2019b). Prior-focusedmethodsregardthedis- caninherentlyavoidcatastrophicforgetting,apply
+tributionofthepretrainedparametersaspriorwhen ittothefine-tuningprocesswithPretrainingSim-
+learning the new task (Kirkpatrick et al., 2017; ulation and Objective Shifting mechanisms, and
+Zenkeetal.,2017;Leeetal.,2017;Lietal.,2018; achieveconsistentimprovementwithonlythedeep
+Aljundietal.,2018;Liuetal.,2018). Weadopted pretrainedLMsavailable.
+theideaofprior-focusedmethodsbecausetheyen-
+6 Conclusion
+able the model to learn more general knowledge
+from the pretrained model’s parameters more ef- Inthispaper,wesolvethecatastrophicforgetting
+ficiently. While the prior-focused methods, such intransferringdeeppretrainedlanguagemodelsby
+asEWC(Kirkpatricketal.,2017)anditsvariants bridgingtwotransferlearningparadigm: sequen-
+(Schwarzetal.,2018;Chaudhryetal.,2018;Liu tial fine-tuning and multi-task learning. To cope
+withtheabsenceofpretrainingdataduringthejoint RichCaruana.1997. Multitasklearning. Mach.Learn.,
+learningofpretrainingtask,weproposeaPretrain- 28(1):41–75.
+ingSimulationmechanismtolearnthepretraining
+Daniel M. Cer, Mona T. Diab, Eneko Agirre, In˜igo
+taskwithoutdata. ThenweproposetheObjective
+Lopez-Gazpio, and Lucia Specia. 2017. Semeval-
+Shiftingmechanismtobetterbalancethelearning 2017 task 1: Semantic textual similarity multilin-
+of the pretraining and downstream task. Experi- gual and crosslingual focused evaluation. In Pro-
+mentsdemonstratethesuperiorityofourmethodin ceedings of the 11th International Workshop on Se-
+manticEvaluation,SemEval@ACL2017,Vancouver,
+thetransferringofdeeppretrainedlanguagemod-
+Canada,August3-4,2017,pages1–14.Association
+els, and we provide the open-source RECADAM
+forComputationalLinguistics.
+optimizerbyintegratingtheproposedmechanisms
+intoAdamoptimizertofacilitatethebetterusage Arslan Chaudhry, Puneet Kumar Dokania, Tha-
+laiyasingam Ajanthan, and Philip H. S. Torr. 2018.
+ofdeeppretrainedlanguagemodels.
+Riemannian walk for incremental learning: Under-
+standingforgettingandintransigence. InComputer
+Vision - ECCV 2018 - 15th European Conference,
+References
+Munich, Germany, September 8-14, 2018, Proceed-
+ings, Part XI, volume 11215 of Lecture Notes in
+Rahaf Aljundi, Francesca Babiloni, Mohamed Elho-
+ComputerScience,pages556–572.Springer.
+seiny, Marcus Rohrbach, and Tinne Tuytelaars.
+2018. Memoryawaresynapses:Learningwhat(not)
+Alexandra Chronopoulou, Christos Baziotis, and
+to forget. In Computer Vision - ECCV 2018 - 15th
+Alexandros Potamianos. 2019. An embarrassingly
+European Conference, Munich, Germany, Septem-
+simple approach for transfer learning from pre-
+ber8-14,2018,Proceedings,PartIII,volume11207
+trained language models. In Proceedings of the
+of Lecture Notes in Computer Science, pages 144–
+2019 Conference of the North American Chapter
+161.Springer.
+of the Association for Computational Linguistics:
+HumanLanguageTechnologies, NAACL-HLT2019,
+RahafAljundi,MinLin,BaptisteGoujaud,andYoshua
+Minneapolis, MN, USA, June 2-7, 2019, Volume 1
+Bengio. 2019. Online continual learning with no
+(LongandShortPapers),pages2089–2095.Associ-
+taskboundaries. CoRR,abs/1903.08671.
+ationforComputationalLinguistics.
+Gaurav Arora, Afshin Rahimi, and Timothy Baldwin.
+Ido Dagan, Oren Glickman, and Bernardo Magnini.
+2019. Does an LSTM forget more than a cnn? an
+2005. The pascal recognising textual entailment
+empirical study of catastrophic forgetting in NLP.
+challenge. In Machine Learning Challenges Work-
+In Proceedings of the The 17th Annual Workshop
+shop,pages177–190.Springer.
+of the Australasian Language Technology Associa-
+tion, ALTA 2019, Sydney, Australia, December 4-6,
+2019,pages77–86.AustralasianLanguageTechnol- Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+ogyAssociation. Kristina Toutanova. 2019. BERT: pre-training of
+deep bidirectional transformers for language under-
+AntonioValerioMiceliBarone,BarryHaddow,Ulrich standing. In Proceedings of the 2019 Conference
+Germann,andRicoSennrich.2017. Regularization of the North American Chapter of the Association
+techniques for fine-tuning in neural machine trans- for Computational Linguistics: Human Language
+lation. In Proceedings of the 2017 Conference on Technologies,NAACL-HLT2019,Minneapolis,MN,
+EmpiricalMethodsinNaturalLanguageProcessing, USA,June2-7,2019,Volume1(LongandShortPa-
+EMNLP2017,Copenhagen,Denmark,September9- pers), pages 4171–4186. Association for Computa-
+11,2017,pages1489–1494.AssociationforCompu- tionalLinguistics.
+tationalLinguistics.
+WilliamB.DolanandChrisBrockett.2005. Automati-
+Luisa Bentivogli, Bernardo Magnini, Ido Dagan, callyconstructingacorpusofsententialparaphrases.
+Hoa Trang Dang, and Danilo Giampiccolo. 2009. InProceedingsoftheThirdInternationalWorkshop
+The fifth PASCAL recognizing textual entailment on Paraphrasing, IWP@IJCNLP 2005, Jeju Island,
+challenge. InProceedingsoftheSecondTextAnaly- Korea, October 2005, 2005. Asian Federation of
+sisConference,TAC2009,Gaithersburg,Maryland, NaturalLanguageProcessing.
+USA,November16-17,2009.NIST.
+Bjarke Felbo, Alan Mislove, Anders Søgaard, Iyad
+Samuel R. Bowman, Luke Vilnis, Oriol Vinyals, An- Rahwan,andSuneLehmann.2017. Usingmillions
+drew M. Dai, Rafal Jo´zefowicz, and Samy Ben- of emoji occurrences to learn any-domain represen-
+gio.2016. Generatingsentencesfromacontinuous tationsfordetectingsentiment,emotionandsarcasm.
+space. In Proceedings of the 20th SIGNLL Confer- In Proceedings of the 2017 Conference on Empiri-
+enceonComputationalNaturalLanguageLearning, calMethodsinNaturalLanguageProcessing,pages
+CoNLL2016,Berlin,Germany,August11-12,2016, 1615–1625,Copenhagen,Denmark.Associationfor
+pages10–21.ACL. ComputationalLinguistics.
+Robert M. French. 1999. Catastrophic forgetting in CheolhyoungLee,KyunghyunCho,andWanmoKang.
+connectionist networks. Trends in Cognitive Sci- 2019. Mixout: Effective regularization to fine-
+ences,3(4):128–135. tune large-scale pretrained language models. arXiv
+preprintarXiv:1909.11299.
+Danilo Giampiccolo, Bernardo Magnini, Ido Dagan,
+Sang-Woo Lee, Jin-Hwa Kim, Jaehyun Jun, Jung-
+andBillDolan.2007. Thethirdpascalrecognizing
+textualentailmentchallenge. InProceedingsofthe Woo Ha, and Byoung-Tak Zhang. 2017. Overcom-
+ACL-PASCAL workshop on textual entailment and ing catastrophic forgetting by incremental moment
+paraphrasing,pages1–9.AssociationforComputa- matching. In Advances in Neural Information Pro-
+cessing Systems 30: Annual Conference on Neural
+tionalLinguistics.
+Information Processing Systems 2017, 4-9 Decem-
+ber2017,LongBeach,CA,USA,pages4652–4662.
+Ian J Goodfellow, Mehdi Mirza, Da Xiao, Aaron
+Courville, and Yoshua Bengio. 2013. An em-
+Hector J. Levesque, Ernest Davis, and Leora Morgen-
+pirical investigation of catastrophic forgetting in
+stern. 2012. The winograd schema challenge. In
+gradient-based neural networks. arXiv preprint
+Principles of Knowledge Representation and Rea-
+arXiv:1312.6211.
+soning: ProceedingsoftheThirteenthInternational
+Conference,KR2012,Rome,Italy,June10-14,2012.
+Geoffrey E. Hinton, Oriol Vinyals, and Jeffrey Dean.
+AAAIPress.
+2015. Distillingtheknowledgeinaneuralnetwork.
+CoRR,abs/1503.02531. Xuhong Li, Yves Grandvalet, and Franck Davoine.
+2018. Explicit inductive bias for transfer learn-
+YutaiHou,ZhihanZhou,YijiaLiu,NingWang,Wanx- ing with convolutional networks. arXiv preprint
+iang Che, Han Liu, and Ting Liu. 2019. Few-shot arXiv:1802.01483.
+sequence labeling with label dependency transfer.
+arXivpreprintarXiv:1906.08711. Zhizhong Li and Derek Hoiem. 2018. Learning with-
+outforgetting. IEEETrans.PatternAnal.Mach.In-
+Jeremy Howard and Sebastian Ruder. 2018. Univer- tell.,40(12):2935–2947.
+sallanguagemodelfine-tuningfortextclassification.
+Xialei Liu, Marc Masana, Luis Herranz, Joost van de
+arXivpreprintarXiv:1801.06146.
+Weijer, Antonio M. Lo´pez, and Andrew D. Bag-
+danov. 2018. Rotate your networks: Better weight
+Ferenc Husza´r. 2017. On quadratic penalties in
+consolidation and less catastrophic forgetting. In
+elastic weight consolidation. arXiv preprint
+24th International Conference on Pattern Recog-
+arXiv:1712.03847.
+nition, ICPR 2018, Beijing, China, August 20-24,
+2018,pages2262–2268.IEEEComputerSociety.
+Heechul Jung, Jeongwoo Ju, Minju Jung, and Junmo
+Kim.2016. Less-forgettinglearningindeepneural YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+networks. CoRR,abs/1607.00122. dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Diederik P. Kingma and Jimmy Ba. 2015. Adam: A Roberta:ArobustlyoptimizedBERTpretrainingap-
+method for stochastic optimization. In 3rd Inter- proach. CoRR,abs/1907.11692.
+national Conference on Learning Representations,
+ICLR 2015, San Diego, CA, USA, May 7-9, 2015, David Lopez-Paz and Marc’Aurelio Ranzato. 2017.
+ConferenceTrackProceedings. Gradientepisodicmemoryforcontinuallearning. In
+AdvancesinNeuralInformationProcessingSystems
+James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, 30: AnnualConferenceonNeuralInformationPro-
+JoelVeness,GuillaumeDesjardins,AndreiARusu, cessing Systems 2017, 4-9 December 2017, Long
+Kieran Milan, John Quan, Tiago Ramalho, Ag- Beach,CA,USA,pages6467–6476.
+nieszka Grabska-Barwinska, et al. 2017. Over-
+Ilya Loshchilov and Frank Hutter. 2019. Decou-
+coming catastrophic forgetting in neural networks.
+pled weight decay regularization. In 7th Inter-
+Proceedings of the national academy of sciences,
+national Conference on Learning Representations,
+114(13):3521–3526.
+ICLR2019,NewOrleans,LA,USA,May6-9,2019.
+OpenReview.net.
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+Kevin Gimpel, Piyush Sharma, and Radu Sori- David J. C. MacKay. 2003. Information theory, infer-
+cut. 2019. ALBERT: A lite BERT for self- ence, and learning algorithms. Cambridge Univer-
+supervised learning of language representations.
+sityPress.
+CoRR,abs/1909.11942.
+Arun Mallya and Svetlana Lazebnik. 2018. Packnet:
+Matthias De Lange, Rahaf Aljundi, Marc Masana, Adding multiple tasks to a single network by iter-
+Sarah Parisot, Xu Jia, Ales Leonardis, Gregory G. ative pruning. In 2018 IEEE Conference on Com-
+Slabaugh, and Tinne Tuytelaars. 2019. Continual puter Vision and Pattern Recognition, CVPR 2018,
+learning:Acomparativestudyonhowtodefyforget- Salt Lake City, UT, USA, June 18-22, 2018, pages
+tinginclassificationtasks. CoRR,abs/1909.08383. 7765–7773.IEEEComputerSociety.
+JamesMartens.2014. Newperspectivesonthenatural Sebastian Ruder. 2017. An overview of multi-
+gradientmethod. CoRR,abs/1412.1193. task learning in deep neural networks. CoRR,
+abs/1706.05098.
+Michael McCloskey and Neal J Cohen. 1989. Catas-
+trophicinterferenceinconnectionistnetworks: The Sebastian Ruder. 2019. Neural transfer learning for
+sequentiallearningproblem. InPsychologyoflearn- naturallanguageprocessing. Ph.D.thesis,NUIGal-
+ing and motivation, volume 24, pages 109–165. El- way.
+sevier.
+Andrei A. Rusu, Neil C. Rabinowitz, Guillaume
+Lili Mou, Zhao Meng, Rui Yan, Ge Li, Yan Xu, Desjardins, Hubert Soyer, James Kirkpatrick, Ko-
+Lu Zhang, and Zhi Jin. 2016. How transferable ray Kavukcuoglu, Razvan Pascanu, and Raia Had-
+are neural networks in NLP applications? In Pro- sell. 2016. Progressive neural networks. CoRR,
+ceedingsofthe2016ConferenceonEmpiricalMeth- abs/1606.04671.
+odsinNaturalLanguageProcessing,EMNLP2016,
+Austin,Texas,USA,November1-4,2016,pages479– Jonathan Schwarz, Wojciech Czarnecki, Je-
+489.TheAssociationforComputationalLinguistics. lena Luketina, Agnieszka Grabska-Barwinska,
+Yee Whye Teh, Razvan Pascanu, and Raia Hadsell.
+MatthewEPeters, MarkNeumann, MohitIyyer, Matt 2018. Progress&compress: Ascalableframework
+Gardner, Christopher Clark, Kenton Lee, and Luke for continual learning. In Proceedings of the 35th
+Zettlemoyer.2018. Deepcontextualizedwordrepre- International Conference on Machine Learning,
+sentations. arXivpreprintarXiv:1802.05365. ICML 2018, Stockholmsma¨ssan, Stockholm, Swe-
+den, July 10-15, 2018, volume 80 of Proceedings
+Matthew E. Peters, Sebastian Ruder, and Noah A.
+of Machine Learning Research, pages 4535–4544.
+Smith. 2019. To tune or not to tune? adapting pre-
+PMLR.
+trainedrepresentationstodiversetasks. InProceed-
+ings of the 4th Workshop on Representation Learn-
+Joan Serra`, Didac Suris, Marius Miron, and Alexan-
+ingforNLP,RepL4NLP@ACL2019,Florence,Italy,
+dros Karatzoglou. 2018. Overcoming catastrophic
+August2,2019,pages7–14.AssociationforCompu-
+forgetting with hard attention to the task. In Pro-
+tationalLinguistics.
+ceedings of the 35th International Conference on
+MachineLearning, ICML2018, Stockholmsma¨ssan,
+Jason Phang, Thibault Fe´vry, and Samuel R Bowman.
+Stockholm,Sweden,July10-15,2018,volume80of
+2018. Sentence encoders on stilts: Supplementary
+Proceedings of Machine Learning Research, pages
+training on intermediate labeled-data tasks. arXiv
+4555–4564.PMLR.
+preprintarXiv:1811.01088.
+Nikhil Dandekar Shankar Iyer and Kornl Csernai.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+January2017. Firstquoradatasetrelease: Question
+PercyLiang.2016. Squad: 100,000+questionsfor
+pairs. https://www.quora.com/q/quoradata/
+machine comprehension of text. In Proceedings of
+First-Quora-Dataset-Release-Question-Pairs.
+the 2016 Conference on Empirical Methods in Nat-
+ural Language Processing, EMNLP 2016, Austin,
+HanulShin,JungKwonLee,JaehongKim,andJiwon
+Texas,USA,November1-4,2016,pages2383–2392.
+Kim.2017. Continuallearningwithdeepgenerative
+TheAssociationforComputationalLinguistics.
+replay. InAdvancesinNeuralInformationProcess-
+ing Systems 30: Annual Conference on Neural In-
+Sylvestre-Alvise Rebuffi, Alexander Kolesnikov,
+formation Processing Systems 2017, 4-9 December
+GeorgSperl,andChristophH.Lampert.2017. icarl:
+Incremental classifier and representation learning.
+2017,LongBeach,CA,USA,pages2990–2999.
+In 2017 IEEE Conference on Computer Vision and
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Pattern Recognition, CVPR 2017, Honolulu, HI,
+Chuang, Christopher D. Manning, Andrew Y. Ng,
+USA, July 21-26, 2017, pages 5533–5542. IEEE
+and Christopher Potts. 2013. Recursive deep mod-
+ComputerSociety.
+els for semantic compositionality over a sentiment
+Joao Ribeiro, Francisco S Melo, and Joao Dias. 2019. treebank. In Proceedings of the 2013 Conference
+Multi-task learning and catastrophic forgetting in onEmpiricalMethodsinNaturalLanguageProcess-
+continual reinforcement learning. arXiv preprint ing,EMNLP2013,18-21October2013,GrandHy-
+arXiv:1909.10008. att Seattle, Seattle, Washington, USA, A meeting of
+SIGDAT,aSpecialInterestGroupoftheACL,pages
+AmirRosenfeldandJohnK.Tsotsos.2020. Incremen- 1631–1642.ACL.
+tal learning through deep adaptation. IEEE Trans.
+PatternAnal.Mach.Intell.,42(3):651–663. Chi Sun, Xipeng Qiu, Yige Xu, and Xuanjing Huang.
+2019. How to fine-tune bert for text classification?
+Bill Dolan Lisa Ferro Danilo Giampiccolo InChinaNationalConferenceonChineseComputa-
+Bernardo Magnini Roy Bar-Haim, Ido Dagan tionalLinguistics,pages194–206.Springer.
+and Idan Szpektor. 2006. The second pascal recog-
+nisingtextualentailmentchallenge. InProceedings Brian Thompson, Jeremy Gwinnup, Huda Khayrallah,
+of the second PASCAL challenges workshop on KevinDuh, andPhilippKoehn.2019. Overcoming
+recognisingtextualentailment,page64. catastrophicforgettingduringdomainadaptationof
+neural machine translation. In Proceedings of the NSW, Australia, 6-11 August 2017, volume 70 of
+2019ConferenceoftheNorthAmericanChapterof Proceedings of Machine Learning Research, pages
+the Association for Computational Linguistics: Hu- 3987–3995.PMLR.
+man Language Technologies, Volume 1 (Long and
+ShortPapers),pages2062–2068. Jeffrey O. Zhang, Alexander Sax, Amir Roshan Za-
+mir,LeonidasJ.Guibas,andJitendraMalik.2019a.
+Amal Rannen Triki, Rahaf Aljundi, Matthew B. Side-tuning: Network adaptation via additive side
+Blaschko, and Tinne Tuytelaars. 2017. Encoder networks. CoRR,abs/1912.13503.
+basedlifelonglearning. InIEEEInternationalCon-
+ference on Computer Vision, ICCV 2017, Venice, Junting Zhang, Jie Zhang, Shalini Ghosh, Dawei Li,
+Italy,October22-29,2017,pages1329–1337.IEEE Serafettin Tasci, Larry P. Heck, Heming Zhang,
+ComputerSociety. and C.-C. Jay Kuo. 2019b. Class-incremental
+learning via deep model consolidation. CoRR,
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+abs/1903.07864.
+Hill, Omer Levy, and Samuel R. Bowman. 2019.
+GLUE: A multi-task benchmark and analysis plat-
+form for natural language understanding. In 7th
+International Conference on Learning Representa-
+tions,ICLR2019,NewOrleans,LA,USA,May6-9,
+2019.OpenReview.net.
+AlexWarstadt,AmanpreetSingh,andSamuelR.Bow-
+man.2019. Neuralnetworkacceptabilityjudgments.
+TACL,7:625–641.
+Adina Williams, Nikita Nangia, and Samuel R. Bow-
+man. 2018. A broad-coverage challenge corpus
+for sentence understanding through inference. In
+Proceedings of the 2018 Conference of the North
+American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies,
+NAACL-HLT 2018, New Orleans, Louisiana, USA,
+June 1-6, 2018, Volume 1 (Long Papers), pages
+1112–1122.AssociationforComputationalLinguis-
+tics.
+Ju Xu and Zhanxing Zhu. 2018. Reinforced contin-
+ual learning. In Advances in Neural Information
+ProcessingSystems31: AnnualConferenceonNeu-
+ral Information Processing Systems 2018, NeurIPS
+2018,3-8December2018,Montre´al,Canada,pages
+907–916.
+YingXu, XuZhong, AntonioJoseJimenoYepes, and
+JeyHanLau.2019. Forgetmenot: Reducingcatas-
+trophic forgetting for domain adaptation in reading
+comprehension. arXivpreprintarXiv:1911.00202.
+Jiabin Xue, Jiqing Han, Tieran Zheng, Xiang Gao,
+and Jiaxing Guo. 2019. A multi-task learning
+framework for overcoming the catastrophic forget-
+tinginautomaticspeechrecognition. arXivpreprint
+arXiv:1904.08039.
+ZhilinYang, ZihangDai, YimingYang, JaimeG.Car-
+bonell,RuslanSalakhutdinov,andQuocV.Le.2019.
+Xlnet: Generalized autoregressive pretraining for
+language understanding. In Advances in Neural
+Information Processing Systems 32: Annual Con-
+ference on Neural Information Processing Systems
+2019,NeurIPS2019,8-14December2019,Vancou-
+ver,BC,Canada,pages5754–5764.
+Friedemann Zenke, Ben Poole, and Surya Ganguli.
+2017. Continual learning through synaptic intelli-
+gence. InProceedingsofthe34thInternationalCon-
+ference on Machine Learning, ICML 2017, Sydney,

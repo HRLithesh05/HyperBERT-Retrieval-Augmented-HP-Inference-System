@@ -1,0 +1,844 @@
+Cluster & Tune: Boost Cold Start Performance in Text Classification
+EyalShnarch∗,ArielGera∗,AlonHalfon∗,LenaDankin,LeshemChoshen,RanitAharonov,
+NoamSlonim
+IBMResearch
+{eyals,alonhal,lenad,leshem.choshen,noams}@il.ibm.com,
+ariel.gera1@ibm.com,ranitah1@gmail.com
+Abstract usingthelabeleddataavailableforthistask. Thus,
+pretrained models serve as general sentence en-
+In real-world scenarios, a text classification
+coderswhichcanbeadaptedtoavarietyoftarget
+task often begins with a cold start, when la-
+tasks(Lacroixetal.,2019;Wangetal.,2020a).
+beled data is scarce. In such cases, the com-
+Ourworkfocusesonachallengingyetcommon
+mon practice of fine-tuning pre-trained mod-
+els, such as BERT, for a target classification scenario,whereunlabeleddataisavailablebutla-
+task, is prone to produce poor performance. beled data is scarce. In many real-world scenar-
+Wesuggestamethodtoboosttheperformance ios,obtainingevenacoupleofhundredoflabeled
+ofsuchmodelsbyaddinganintermediateun- examples per class is challenging. Commonly, a
+supervisedclassificationtask,betweenthepre-
+targetclasshasarelativelylowpriorintheexam-
+training and fine-tuning phases. As such an
+ined data, making it a formidable goal to collect
+intermediate task, we perform clustering and
+enough positive examples for it (Japkowicz and
+train the pre-trained model on predicting the
+cluster labels. We test this hypothesis on var- Stephen,2002). Moreover,sometimesdatacannot
+ious data sets, and show that this additional belabeledviacrowd-annotationplatformsdueto
+classification phase can significantly improve its confidentiality (be it for data privacy reasons
+performance, mainly for topical classification orforprotectingintellectualproperty)orsincethe
+tasks, when the number of labeled instances
+labelingtaskrequiresspecialexpertise. Ontopof
+available for fine-tuning is only a couple of
+this, often the number of categories to be consid-
+dozentoafewhundred.
+eredisrelativelylarge,e.g.,50,thusmakingevena
+1 Introduction modestdemandof200labeledexamplesperclass
+a task of labeling 10K instances, which is inap-
+Thestandardparadigmfortextclassificationrelies plicable in many practical cases (for an extreme
+onsupervisedlearning,whereitiswellknownthat example,cf. Partalasetal.,2015).
+thesizeandqualityofthelabeleddatastronglyim-
+Insuchlimitedreal-worldsettings,fine-tuninga
+pacttheperformance(Raffeletal.,2019). Hence,
+largepretrainedmodeloftenyieldsfarfromopti-
+developingatextclassifierinpracticetypicallyre-
+malperformance. Toovercomethis,onemaytake
+quiresmakingthemostofarelativelysmallsetof
+a gradual approach composed of various phases.
+annotatedexamples.
+Onepossibilityistofurtherpretrainthemodelwith
+Theemergenceoftransformer-basedpre-trained
+theself-supervised MLMtaskoverunlabeleddata
+language models such as BERT (Devlin et al.,
+taken from the target task domain (Whang et al.,
+2018) has reshaped the NLP landscape, leading
+2019). Alternatively,onecantrainthepretrained
+to significant advances in the performance of
+modelusingasupervised intermediatetaskwhich
+mostNLPtasks,textclassificationincluded(e.g.,
+isdifferentinnaturefromthetarget-task,andfor
+Nogueira and Cho, 2019; Ein-Dor et al., 2020).
+whichlabeleddataismorereadilyavailable(Pruk-
+These models typically rely on pretraining with
+sachatkunetal.,2020;Wangetal.,2019a;Phang
+massive and heterogeneous corpora on a general
+et al., 2018). Each of these steps is expected to
+MaskedLanguageModeling(MLM)task,i.e.,pre-
+provide a better starting point for the final fine-
+dicting a word that is masked in the original text.
+tuning phase, performed over the scarce labeled
+Later on, the obtained model is fine-tuned to the
+dataavailableforthetargettask,aimingtoendup
+actualtaskofinterest,termedherethetargettask,
+withimprovedperformance.
+∗Theseauthorscontributedequallytothiswork. Following these lines, here we propose a strat-
+2202
+raM
+02
+]LC.sc[
+1v18501.3022:viXra
+egythatexploitsunsupervisedtextclusteringasthe or adaptive pre-training (e.g., Gururangan et al.,
+intermediatetasktowardsfine-tuningapretrained 2020). ThisflowisrepresentedviaPath-2inFig.
+modelfortextclassification. Ourworkisinspired 1,andtheresultingmodelisdenotedBERT ,
+IT:MLM
+bytheuseofclusteringtoobtainlabelsincomputer standingforIntermediateTask: MLM.
+vision(Gidarisetal.,2018;Kolesnikovetal.,2019).
+Specifically, we use an efficient clustering tech- Akeycontributionofthispaperistoproposea
+nique,thatreliesonsimpleBagOfWords(BOW) new type ofintermediate task, which is designed
+representations,topartitiontheunlabeledtraining tobealignedwithatextclassificationtargettask,
+data into relatively homogeneous clusters of text and is straightforward to use in practice. The un-
+instances. Next,wetreattheseclustersaslabeled derlying intuition is that inter-training the model
+dataforanintermediatetextclassificationtask,and overarelatedtextclassificationtaskwouldbemore
+train the pre-trained model – with or without ad- beneficialcomparedtoMLMinter-training,which
+ditional MLM pretraining – with respect to this focuses on different textual entities, namely pre-
+multi-classproblem,priortothefinalfine-tuning dictingtheidentityofasingletoken.
+overtheactualtarget-tasklabels. Extensiveexper-
+imentalresultsdemonstratethepracticalvalueof Specifically,wesuggestunsupervised clustering
+this strategy on a variety of benchmark data. We forgeneratingpseudo-labelsforinter-training. As
+further analyze the results to gain insights as to theclusteringpartitionpresumablycapturesinfor-
+whyandwhenthisapproachwouldbemostvalu- mationaboutsalientfeaturesinthecorpus,feeding
+able,andconcludethatitismostprominentlywhen thisinformationintothemodelcouldleadtorep-
+thetrainingdataavailableforthetargettaskisrela- resentations that are better geared to perform the
+tivelysmallandtheclassificationtaskisofatopical targettask. Thesepseudo-labelscanbeviewedas
+nature. Finally,weproposefuturedirections. weaklabels,butimportantlytheyarenottailored
+Wereleasecodeforreproducingourmethod.1 norrequireaspecificdesignpertargettask. Instead,
+we suggest generating pseudo-labels in a way in-
+2 IntermediateTrainingusing dependent of the target classification task. The
+UnsupervisedClustering respectiveflowisrepresentedviaPath-3inFig. 1.
+Inthisflow,wefirstclustertopartitionthetraining
+Apre-trainedmodelistypicallydevelopedincon-
+datainton clusters. Next,weusetheobtainedpar-
+c
+secutivephases. Henceforth,wewillrefertoBERT
+titionas‘labeled’datainatextclassificationtask,
+as the canonical example of such models. First,
+where the classes are defined via the n clusters,
+c
+themodelispretrained overmassivegeneralcor-
+andintertrainBERTtopredicttheclusterlabel. In
+porawiththeMLMtask.2 Wedenotetheobtained
+linewithMLM,inter-trainingincludesaclassifier
+modelsimplyasBERT.Second,BERTisfinetuned
+layer on top of BERT, which is discarded before
+inasupervisedmannerwiththeavailablelabeled
+the fine-tuning stage. The resulting inter-trained
+examplesforthetargettaskathand. Thisstandard
+modelisdenotedBERT .
+IT:CLUST
+flowisrepresentedviaPath-1inFig. 1.
+Anadditionalphasecanbeaddedbetweenthese
+Finally,Path-4inFig. 1representsasequential
+two, referred to next as intermediate training, or
+compositionofPaths2and3. Inthisflow,wefirst
+inter-training in short. In this phase, the model
+intertrainBERTwiththeMLMtask. Next,theob-
+is exposed to the corpus of the target task, or a
+tainedmodelisfurtherintertrainedtopredictthen
+c
+corpusofthesamedomain,butstillhasnoaccess
+clusters,asinPath-3. Themodelresultingfromthis
+tolabeledexamplesforthistask.
+hybridapproachisdenotedBERT .
+IT:MLM+CLUST
+A common example of such an intermediate
+phaseistocontinuetointertrainBERTusingthe
+Importantly,followingPath-3orPath-4requires
+self-supervisedMLMtaskoverthecorpusorthe noadditionallabeleddata,andinvolvesana-priori
+domainofinterest,sometimesreferredtoasfurther
+clusteringoftraininginstancesthatnaturallygives
+risetoanalternativeoranadditionalinter-training
+1https://github.com/IBM/
+intermediate-training-using-clustering task. Asweshowinthefollowingsections,despite
+2BERTwasoriginallyalsopretrainedover"nextsentence its simplicity, this strategy provides a significant
+prediction";however,laterworks(Yangetal.,2019;Liuetal.,
+boostinperformance,especiallywhenlabeleddata
+2019b)havequestionedthecontributionofthisadditionaltask
+andfocusedonMLM. forthefinalfine-tuningisinshortsupply.
+Pre-training Inter-training Fine-tuning
+1
+2 intertrain
+using BERT
+IT:MLM
+MLM
+pretrain finetune
+on general BERT on target
+domain task
+3 intertrain
+using BERT
+IT:CLUST
+clustering
+4 intertrain intertrain
+using using BERT
+IT:MLM+CLUST
+MLM clustering
+Figure 1: Phases of a pre-trained model (BERT in this figure) - circles are training steps which produce models,
+representedasrectangles. Inthepre-trainingphase,onlygeneralcorporaareavailable. Theinter-trainingphaseis
+exposedtotargetdomaindata,butnottoitslabeledinstances. Thoseareonlyavailableatthefine-tuningphase.
+3 Experiments example,"no"coulddistinguishbetweensentences
+withnegativeandpositivesentiment.
+3.1 TasksandDatasets
+When no split is provided we apply a
+We evaluate over 6 topical datasets and 3 non- 70%/10%/20%train-dev-testsplit,respectively.3
+topicalones(seeTable1),whichcoveravarietyof
+To reduce the computational cost over the larger
+classificationtasksanddomains: Yahoo! Answers
+datasets(DBpedia,AG’sNews,Yahoo! Answers
+(Zhangetal.,2015),whichseparatesanswersand
+and CFPB) we trim the train/test sets of these
+questions to types; DBpedia (Zhang et al., 2015, datasetsto15K/3K instancesrespectively,byran-
+CC-BY-SA) which differentiates entity types by domly sampling from each set.4 All runs and all
+theirWikipediaarticles;AG’sNews(Zhangetal.,
+methodsuseonlythetrimmedversions.
+2015)whichcategorizenewsarticles;CFPB,which
+classifies consumer complaints; 20 newsgroups
+3.2 ExperimentalSetup
+(Lang, 1995), which classifies 20 Usenet discus-
+sion groups; ISEAR (Shao et al., 2015, CC BY- In our main set of experiments, we compare the
+NC-SA3.0),whichconsiderspersonalreportsfor performance of fine-tuning BERT-based models
+emotion;SMSspam(Almeidaetal.,2011),which over a target task, for different settings of inter-
+identifiesspammessages;Polarity(PangandLee, mediate training. We consider four BERT-based
+2005),whichincludessentimentanalysisonmovie settings, as described in Section 2 and in Figure
+reviews, and Subjectivity (Pang and Lee, 2004), 1. Two baselines – (i) BERT, without intermedi-
+whichcategorizesmoviesnippetsassubjectiveor ate training, and (ii) BERT intertrained on
+IT:MLM
+objective. MLM;andtwosettingsthatrelyonclustering–(i)
+Atopicaldatasetsplitssentencesbyahigh-level BERT IT:CLUST, where predicting cluster labels is
+distinction related to what the sentence is about usedforinter-training,and(ii)BERT IT:MLM+CLUST,
+(e.g.,sportsvs. economics). Non-topicaldatasets whichcombinesthetwointermediatetasks.
+lookforfinerstylisticdistinctionsthatmaydepend
+onthewaythesentenceiswrittenoronfinedetails
+3Thedevsetisnotbeingusedbyanymethod.
+4Weverifiedthatrelyingonthefulldatasetprovidesno
+ratherthanonthecentralmeaningitdiscusses. It
+significant performance improvements to BERT and
+IT:MLM
+may also separate almost identical sentences; for BERT .Theresultsareomittedforbrevity.
+IT:CLUST
+Training samples: For each setting, the final Train Test #classes
+fine-tuning for the target task is performed, per
+Yahoo!answers 15K 3K 10
+dataset, for training budgets varying between 64 DBpedia 15K 3K 14
+and1024labeledexamples. Foreachdatasizex, CFPB 15K 3K 15
+20newsgroups 10.2K 7.5K 20
+theexperimentisrepeated5times;eachrepetition
+AG’snews 15K 3K 4
+representingadifferentsamplingofxlabeledex- ISEAR 5.4K 1.5K 7
+amplesfromthetrainset. Thesamplingsoftraining SMSspam 3.9K 1.1K 2
+examplesaresharedbetweenallsettings. Thatis, Subjectivity 7K 2K 2
+Polarity 7.5K 2.1K 2
+foragivendatasetandtrainsizethefinaltraining
+forallsettingsisdonewithrespecttothesame5
+Table1: Datasetdetails. Topicaldatasetsareatthetop.
+samplesoflabeledexamples.
+Inter-training: Intermediate training, when
+done, was performed over the unlabeled train set BERThyper-parameters: Thestartingpointof
+for each dataset (ignoring instances’ labels). We all settings is the BERT model (110M pa-
+BASE
+studied two implementations for the clustering rameters). BERT inter-training and fine-tuning
+task: K-means (Lloyd, 1982) and sequential runswereallperformedusingtheAdamoptimizer
+Information Bottleneck (sIB) which is known to (KingmaandBa,2015)withastandardsettingcon-
+obtain better results in practice (Slonim et al., sistingofalearningrateof3×10−5,batchsize64,
+2002) and in theory (Slonim et al., 2013). Based andmaximalsequencelength128.
+oninitialexperiments,andpreviousinsightsfrom Inapracticalsettingwithalimitedannotations
+works in the computer vision domain (Yan et al., budgetonecannotassumethatalabeleddevsetis
+2020) we opted for a relatively large number of available,thusinallsettingswedidnotusethedev
+clusters, and rather than optimizing the number set,andfine-tuningwasarbitrarilysettobeover10
+of clusters per dataset, set it to 50 for all cases.5 epochs,alwaysselectingthelastepoch. Forinter-
+K-means was run over GloVe (Pennington et al., trainingovertheclusteringresultsweusedasingle
+2014) representations following word stemming. epoch, for two reasons. First, loosely speaking,
+We used a publicly available implementation of additionaltrainingovertheclustersmaydriftthe
+sIB6 withitsdefaultconfiguration(i.e.,10restarts
+model too far towards learning the partition into
+and a maximum of 15 iterations for every single clusters,whichisanauxiliarytaskinourcontext,
+run). For sIB clustering, we used Bag of Words andnottherealtargettask. Second,fromtheper-
+(BOW) representations on a stemmed text with spectiveofapractitioner,singleepochtrainingis
+the default vocabulary size (which is defined as preferredsinceitistheleastdemandingintermsof
+the10Kmostfrequentwordsinthedataset). Our runtime. ForBERT weused30epochswith
+IT:MLM
+results indicate that inter-training with respect to a replication rate of 5, and followed the masking
+sIBclustersconsistentlyledtobetterresultsinthe strategyfromDevlinetal.(2018).7
+finalperformanceonthetargettask,comparedto
+inter-trainingwithrespecttotheclustersobtained Computational budget: Overall we report the
+withK-means(seeSection5.1fordetails). Wealso results of 1440 BERT fine-tuning runs (4 experi-
+considered inter-training only on representative
+mentalsettings×9datasets×8labelingbudgets×
+examples of clustering results – filtering a given 5repetitions). Inaddition,weperformed288inter-
+amount of outlier examples – but obtained no
+trainingepochsoverthefulldatasets(9datasets×
+significantgain(datanotshown). (30BERT IT:MLMepochs+1BERT IT:CLUSTepoch+
+Note that the run time of the clustering algo- 1BERT IT:MLM+CLUST epoch)). Intotal,thiswould
+rithmsisonlyafewseconds. Theruntimeofthe equate to about 60 hours on a single Tesla V100-
+fine-tuningstepoftheinter-trainingtasktakesfive PCIE-16GBGPU.
+and a half minutes for the largest train set (15K
+4 Results
+instances)onaTeslaV100-PCIE-16GBGPU.
+5Settingthenumberofclusterstobeequaltothenumber Table 2 depicts the results over all datasets, fo-
+ofclassesresultedininferioraccuracy.Inaddition,onemay cusingonthepracticalusecaseofabudgetof64
+not know how many classes truly exist in the data, so this
+parameterisnotnecessarilyknowninreal-worldapplications. 7Inpreliminaryexperimentswefoundthistobethebest
+6https://github.com/IBM/sib configurationforthisbaseline.
+Figure 2: Classification accuracy (±SEM, standard error of the mean) on all datasets vs. the number of labeled
+samplesusedforfine-tuning(logscale).Eachpointistheaverageof5repetitions(for20newsgroupsandabudget
+of64,all5repetitionsdidnotcoverallclassesandhencethisdatapointisnotpresented).
+samplesforfine-tuning(128for20newsgroup,see
+explanationinFig.2). Asshowninthetable,the
+performancegainsofBERT aremainlyre-
+IT:CLUST
+flectedinthe6topicaldatasets. Forthesedatasets, Dataset
+BERT BERTIT:CLUST
+Gain
+Error
+accuracy accuracy reduction
+BERT confersasignificantbenefitinaccu-
+IT:CLUST Yahoo!Answers 21.2 45.9 117% 31%
+racy(110%accuracygain,33%errorreduction). DBpedia 31.2 67.0 115% 52%
+CFPB 15.0 27.5 83% 15%
+Figure2depictstheclassificationaccuracyfor
+20newsgroup 13.0 47.2 263% 39%
+the different settings for varying labeling bud- AG’sNews 61.9 80.7 30% 49%
+ISEAR 19.0 29.0 53% 12%
+gets,usingsIBforclustering-basedinter-training.
+avg.topical 26.9 49.6 110% 33%
+Over the topical datasets, BERT and
+IT:CLUST SMSspam 91.0 98.2 8% 80%
+BERT clearlyoutperformBERTand Subjectivity 90.1 91.0 1% 9%
+IT:MLM+CLUST
+Polarity 66.8 67.0 0% 1%
+BERT in the small labeled data regime,
+IT:MLM
+avg.non-topical 82.6 85.4 3% 30%
+where the gain is most prominent for the small-
+estlabeleddataexamined–whenonly64labeled Table 2: BERT outperforms BERT in topical
+IT:CLUST
+examplesareavailable–andgraduallydiminishes datasets. Comparing 64 samples, the smallest amount
+asmorelabeledsamplesareadded. forfine-tuning. Theaccuracygainandtheerrorreduc-
+tion(1-accuracy)arerelativetoBERT’saccuracy/error.
+We performed paired t-tests to compare
+BERT withBERTandBERT ,pool-
+IT:CLUST IT:MLM
+ingtogetheralldatasetsandrepetitionsforagiven
+labelingbudget. AscanbeseeninTab. 3,theper-
+Trainsize 64 128 192 256 384 512 >512
+vs. BERT 1×10−6 1×10−6 6×10−7 2×10−5 2×10−3 9×10−3 –
+vs. BERT 8×10−5 3×10−3 4×10−2 – – – –
+IT:MLM
+Table3: Pairedt-testp-values(afterBonferronicorrection)ofclassificationaccuracyforBERT compared
+IT:CLUST
+toBERTandtoBERT (insignificantresults,p≥0.05,aredenotedby–).
+IT:MLM
+formancegain,overalldatasets,ofBERT sentationtotwootherclusteringconfigurations;K-
+IT:CLUST
+overBERTisstatisticallysignificantforabudget meansoverGloVerepresentationsandHartigan’s
+upto512. K-means (Slonim et al., 2013) over GloVe. For
+BERT isnotassuccessfulinthe3non- mostdatasets,inter-trainingovertheresultsofsIB
+IT:CLUST
+topicaldatasets(cf. Tab.2andFig.2). Apossible over BOW representations achieved the best re-
+reason for the lack of success of inter-training in sults.
+thesethreedatasetsisthattheirclassificationtask
+is different in nature than the tasks in the other 5.2 ComparisontoBOW-basedmethods
+sixdatasets. Identifyingspammessages,determin-
+Our inter-training method relies on BOW-based
+ing whether a text is subjective or objective, or
+clustering. Sinceknowledgeoftheinputwordsis
+analyzingthesentiment(polarity)oftexts,canbe
+potentiallyquitepowerfulforsometextclassifica-
+basedonstylisticdistinctionsthatmaydependon
+tiontasks,weexaminetheperformanceofseveral
+thewaythesentenceiswrittenratherthanonthe
+BOW-basedmethods. Weusedthesametraining
+centraltopicitdiscusses. Inter-trainingoverBOW
+samplestotrainmultinomialNaiveBayes(NB)and
+clustering seems to be less beneficial when such
+SupportVectorMachine(SVM)classifiers,using
+considerationsareneeded. Wefurtheranalyzethis
+either Bag of Words (BOW) or GloVe (Penning-
+in Section 5.4. Nevertheless, it is safe to apply
+tonetal.,2014)representations. ForGloVe,atext
+BERT eveninthesedatasets,asresultsare
+IT:CLUST is represented as the average GloVe embeddings
+typically comparable to the baseline algorithms,
+ofitstokens. Thisyieldedfourreferencesettings:
+neitherbetternorworse.
+NB ,NB ,SVM andSVM . Over-
+BOW GloVe BOW GloVe
+Both BERT and BERT expose
+IT:MLM IT:CLUST all,allfourmethodswereinferiortoBERT ,
+IT:CLUST
+the model to the target corpus. The performance
+as shown in App. B. Thus, the success of our
+gainsofBERT overBERT suggest
+IT:CLUST IT:MLM method cannot simply be attributed to the infor-
+that inter-training on top of the clustering carries
+mationintheBOWrepresentations.
+an additional benefit. In addition, these inter-
+Next, we inspect the contribution of inter-
+training approaches are complementary - as seen
+trainingtoBERT’ssentencerepresentations.
+in Fig. 2, BERT outperforms both
+IT:MLM+CLUST
+BERT and BERT (at the cost of
+IT:CLUST IT:MLM 5.3 EffectonSentenceEmbeddings
+someaddedruntime).
+Takentogether,ourresultssuggestthatintopical TheembeddingsafterBERT IT:CLUST showpoten-
+datasets,wherelabeleddataisscarce,thepseudo- tialasabetterstartingpointforfine-tuning. Figure
+labels generated via clustering can be leveraged 3depictst-SNE(vanderMaatenandHinton,2008)
+toprovideabetterstartingpointforapre-trained 2D visualizations of the output embeddings over
+modeltowardsitsfine-tuningforthetargettask. thefulltrainsetofseveraldatasets,comparingthe
+[CLS]embeddingsbeforeandafterinter-training.
+5 Analysis Manifestly, for topical datasets, the
+BERT embeddings, obtained after
+IT:CLUST
+5.1 AdditionalClusteringTechniques
+inter-trainingwithrespecttosIBclusters,inducea
+In the literature (Slonim et al., 2002) and on our muchclearerseparationbetweenthetargetclasses,
+initial trials, sIB showed better clustering perfor- eventhoughnolabeleddatawasusedtoobtainthis
+mance,andthereforewaschosenoverotherclus- model. Moreover, and perhaps not surprisingly,
+teringmethods. Next, weanalyzewhethersIBis the apparent visual separation resulting from
+alsothebestfitforinter-training. inter-training is aligned with the performance
+Wecompare(seeApp.C)sIBoverBOWrepre- gain obtained later on in the fine-tuning phase
+Figure 3: t-SNE visualizations of model embeddings over the train set, using BERT (top) vs. BERT
+IT:CLUST
+(bottom). Thecolorsrepresentthegoldlabelsforthetargettask(e.g.,fourclassesinAG’sNewsdataset).
+over the target task (as seen, for instance, in the permutedEDs:
+visualizationsofPolarityversusDBpediadata).
+ED(l,e)
+Inadditiontothequalitativeresultsofthevisu- NED(l,e) =
+E ED(τ(l),e)
+alization,wepursueamorequantitativepath. We
+τ∈Sn
+assesswhetherexamplesofthesameclassaremore Whereτ ∈ S n isapermutationoutofS n thesetof
+closelyrepresentedafterinter-training. Formally, allpermutations.
+given a set of instances’ embeddings e ,...,e Comparing the Normalized Embeddings’ Dis-
+1 n
+andtheircorrespondingclasslabelsl ,...,l ∈ L tance (NED) before and after inter-training, we
+1 n
+we compute for each class l ∈ L a centroid c find that in all datasets the normalized distance
+l
+whichistheaverageembeddingofthisclass. We is smaller after inter-training. In other words,
+thencomputetheaverageEuclideanEmbeddings’ BERT IT:CLUST brings same-class representations
+Distance(ED)fromthecorrespondingcentroids:8 closerincomparisontoBERT.
+5.4 AreClustersIndicativeofTargetLabels?
+ED(l,e) = En (cid:107)e −c (cid:107)
+i=0 i i 2 Anaturalexplanationforthecontributionofinter-
+trainingtoBERT’sperformanceisthatthepseudo-
+Asasanitycheck,weapplyasignificancetestto
+labels, obtained via the clustering partition, are
+theEDstatistic,confirmingthatrepresentationsof
+informative with regards to target task labels. To
+same-classexamplesareclosetoeachother. Specif-
+quantify this intuition, in Figure 4 we depict the
+ically,weapplyapermutationtest(Fisher,1971),
+Normalized Mutual Information (NMI) between
+with 1000 repetitions, comparing the class labels
+sIB labels and the target task labels, calculated
+torandomlabels. WefindthatEDsforbothBERT
+overtheentiretrainingset,versusthegainofusing
+andBERT aresignificantlydifferentfrom
+IT:CLUST BERT ,reflectedasthereductioninclassifi-
+IT:CLUST
+random(p < 0.001). Thisimpliesthatbothbefore
+cationerrorratebetweenBERTandBERT ,
+IT:CLUST
+andafterinter-training,same-classrepresentations
+attheextremecaseof64fine-tuningsamples. Evi-
+are close. Next, we compare the representations
+dently,indatasetswheretheNMIisaroundzero,
+beforeandafterinter-training. Wefindthattheran-
+BERT doesnotconferaclearbenefit;con-
+IT:CLUST
+domly permuted EDs of BERT are about
+IT:CLUST versely,wheretheNMIisrelativelyhigh,theper-
+3timeslargerthanBERT’s,despitesimilarnorm
+formancegainsarepronouncedaswell. Notably,
+values. Thismeansthatthepostinter-trainingrep-
+the three datasets with the lowest NMI are those
+resentationsaremoredispersed. Hence,toproperly
+forwhichinter-trainingwasnotbeneficial,asdis-
+compare,wenormalizeEDbytheaverageofthe
+cussedinSection4.
+Sincethepartitionobtainedviaclusteringisof-
+8Macroaverageresultsweresimilar,wehencereportonly
+teninformativeforthetargetclasslabels,weexam-
+microaverageresults. ResultswithCosinesimilaritywere
+alsosimilar,henceomitted. inewhetheritcanbeutilizeddirectly,asopposed
+to as pseudo-labels for BERT inter-training. To Pretrained models improved state-of-the-art in
+that end, we applied a simple heuristic. Given a manydownstreamtasks(NogueiraandCho,2019;
+labelingbudgetx,wedivideitacrossclusters,rel- Ein-Doretal.,2020)andtheyareespeciallyneeded
+ativetotheirsize,whileensuringthatatleastone andusefulinlowresourceandlimitedlabeleddata
+instance within each of the 50 clusters is labeled. settings(Lacroixetal.,2019;Wangetal.,2020a;
+Weusethebudgetperclustertorevealthelabelsof Chauetal.,2020). Therearemanysuggestionsto
+arandomsampleofexamplesinthatcluster,and improvesuchmodels,includinglargermodels(Raf-
+identifyeachclusterwithitsmostdominantlabel. feletal.,2019),changesinthepretrainingtasksand
+Next,givenanewtestexample,weassignitwith architecture (Yang et al., 2019), augmenting pre-
+thelabelassociatedwithitsnearestcluster. Results training(Gevaetal.,2020),orimprovingthetrans-
+(seeApp.B)showedthatthisrudimentaryclassi- feritself(Valipouretal.,2019;Wangetal.,2019b;
+fierisgenerallynotonparwithBERT ,yet Sun et al., 2019; Xu et al., 2020). Two findings
+IT:CLUST
+it can be surprisingly effective where the NMI is onpretrainingsupportourhypothesisontheinter-
+highandthelabelingbudgetissmall. mediatetask,namelythatclassificationsurpasses
+MLM.Somepretrainingtasksarebetterthanothers
+(Lanetal.,2020;Raffeletal.,2019)andsupervised
+classification as additional pre-training improves
+performance(Lvetal.,2020;Wangetal.,2019a;
+Pruksachatkunetal.,2020). Alltheseworksaim
+toimprovetheperformanceupontransfer,making
+it more suitable for any new domain. In contrast,
+wefocusonimprovementgiventhedomain.
+With a transferred model, one can further im-
+proveperformancewithdomain-specificinforma-
+tion. For example, utilizing metadata (Melamud
+et al., 2019), training on weakly-supervised data
+(RaisiandHuang,2018;Mengetal.,2020)ormul-
+Figure 4: Improvement by BERT vs Normal- titaskingonrelatedtasksconcurrently(Liuetal.,
+IT:CLUST
+ized Mutual Information (NMI) per dataset. x-axis: 2019a). Givennodomain-specificinformation,it
+NMI between the cluster and class labels, over the wassuggestedtofurtherpretrainonunlabeleddata
+train set. y-axis: The error reduction (percentage) by
+from the domain (Whang et al., 2019; Xu et al.,
+BERT ,whenfine-tuningover64samples.
+IT:CLUST 2019;Sungetal.,2019;Rietzleretal.,2020;Lee
+etal.,2020;Gururanganetal.,2020). This,how-
+ever,issometimesunhelpfulorevenhurtsresults
+6 RelatedWork
+(Pan,2019).
+In our work, we transfer a pretrained model to a Transferringamodelandretrainingwithpaucity
+newdomainwithlittledata. Transferlearningstud- of labels is often termed few-shot learning. Few
+ieshowtotransfermodelsacrossdomains. Itsug- shot learning is used for many language-related
+gestsmethodssuchaspivoting(ZiserandReichart, taskssuchasnamedentityrecognition(Wangetal.,
+2018), weak supervision (Shnarch et al., 2018), 2020b), relation classification (Hui et al., 2020),
+dataaugmentation(Anaby-Tavoretal.,2020)and andparsing(Schusteretal.,2019). Therehavealso
+adversarialtransfer(Caoetal.,2018). beensuggestionsotherthanfine-tuningthemodel.
+InComputerVision,pretrainedmodelsareoften Koch(2015)suggestsrankingexamples’similarity
+learntbyimageclustering(Caronetal.,2018). In withSiamesenetworks. Vinyalsetal.(2016)rely
+NLP,however,clusteringwasmainlyusedfornon- onmemoryandattentiontofindneighboringexam-
+transferscenarios. Ball(2019)reliesonpretrained ples and Snell et al. (2017) search for prototypes
+embeddingstoclusterlabeledandunlabeleddata. to compare to. Ravi and Larochelle (2017) don’t
+Then, they fill the missing labels to augment the define in advance how to compare the examples.
+training data. Clustering itself was improved by Instead,theymeta-learnhowtotrainthefewshot
+combiningsmallamountsofdata(TorresandVaca, learner. These works addressed the image classi-
+2019;Wangetal.,2016). ficationdomain,buttheysupplygeneralmethods
+whichareused,improvedandadaptedonlanguage In principle, inter-training BERT over clustering
+domains(Gengetal.,2019;Yuetal.,2018). resultsmaybevaluableforadditionaldownstream
+In conclusion, separate successful practices targettasks,thataresimilarinspirittostandardtext
+foreshadow our findings: Clustering drives pre- classification. ExamplesincludeKey-PointAnaly-
+trainingonimages;supervisedclassificationaids sis(Bar-Haimetal.,2020)andTextualEntailment
+pre-training;andtrainingonunlabeleddomainex- (Dagan et al., 2013). The potential value of our
+amplesishelpfulwithMLM. approachinsuchcasesisleftforfuturework.
+Acknowledgements
+7 Conclusions
+WethankAssafToledoforprovidinghelpfuladvice
+Wepresentedasimpleapproachforimprovingpre-
+ontheclusteringimplementations.
+trainedmodelsfortextclassification. Specifically,
+we show that inter-training BERT over pseudo-
+labelsgeneratedviaunsupervisedclusteringcreates
+abetterstartingpointforthefinalfine-tuningover
+the target task. Our analyses suggest that BERT
+canleveragethesepseudo-labels,namelythatthere
+existsabeneficialinterplaybetweentheproposed
+inter-trainingandthelaterfine-tuningstage. Our
+resultsshowthatthisapproachyieldsasignificant
+boost in accuracy, mainly over topical data and
+whenlabeleddataisscarce. Notethatthemethod
+doesrequiretheexistenceofanunlabeledcorpus,
+intheorderofseveralthousandexamples.
+We opted here for a practically oriented ap-
+proach, which we do not claim to be optimal.
+Rather,thesuccessofthisapproachsuggestsvar-
+ious directions for future work. In particular,
+several theoretical questions arise, such as what
+else determines the success of the approach in a
+given dataset; understanding the potential syner-
+gistic effect of BOW-based clustering for inter-
+training;couldmoresuitablepartitionsbeacquired
+by exploiting additional embedding space and/or
+moreclusteringtechniques;co-training(Blumand
+Mitchell,1998)methods,andmore.
+Onthepracticalside,whileinthisworkwefixed
+the inter-training to be over 50 clusters and for a
+singleepoch,futureworkcanimproveperformance
+bytuningsuchhyper-parameters. Inaddition,one
+mayconsiderusingthelabeleddataavailablefor
+fine-tuningasanchorsfortheintermediatecluster-
+ingstep,whichwehavenotexploredhere.
+Another point to consider is the nature of the
+inter-training task. Here, we examined a multi-
+class setup where BERT is trained to predict one
+out of n cluster labels. Alternatively, one may
+c
+considerabinaryinter-trainingtask,whereBERT
+is trained to determine whether two samples are
+drawnfromthesameclusterornot.
+Finally,thefocusofthepresentworkwasonim-
+provingBERTperformancefortextclassification.
+References Ruiying Geng, Binhua Li, Yongbin Li, Xiaodan Zhu,
+Ping Jian, and Jian Sun. 2019. Induction networks
+Tiago A. Almeida, José María Gómez Hidalgo, and for few-shot text classification. In Proceedings of
+AkeboYamakami.2011. Contributionstothestudy the 2019 Conference on Empirical Methods in Nat-
+ofsmsspamfiltering: newcollectionandresults. In uralLanguageProcessingandthe9thInternational
+ACM Symposium on Document Engineering, pages Joint Conference on Natural Language Processing
+259–262.ACM. (EMNLP-IJCNLP), pages 3904–3913, Hong Kong,
+China.AssociationforComputationalLinguistics.
+AteretAnaby-Tavor,BoazCarmeli,EstherGoldbraich,
+AmirKantor,GeorgeKour,SegevShlomov,N.Tep- Mor Geva, Ankit Gupta, and Jonathan Berant. 2020.
+per, and Naama Zwerdling. 2020. Do not have Injecting numerical reasoning skills into language
+enoughdata? Deeplearningtotherescue! InAAAI. models. In Proceedings of the 58th Annual Meet-
+ing of the Association for Computational Linguis-
+Michael Ball. 2019. RIPPED: Recursive intent tics, pages 946–958, Online. Association for Com-
+propagation using pretrained embedding distances. putationalLinguistics.
+BrownUniversity.
+Spyros Gidaris, Praveer Singh, and Nikos Komodakis.
+Roy Bar-Haim, Lilach Eden, Roni Friedman, Yoav 2018. Unsupervisedrepresentationlearningbypre-
+Kantor,DanLahav,andNoamSlonim.2020. From dictingimagerotations. arXiv:1803.07728.
+arguments to key points: Towards automatic argu-
+mentsummarization. InProceedingsofthe58thAn- Suchin Gururangan, Ana Marasovic´, Swabha
+nual Meeting of the Association for Computational Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey,
+Linguistics(ACL). and Noah A. Smith. 2020. Don’t stop pretraining:
+Adapt language models to domains and tasks.
+Avrim Blum and Tom Mitchell. 1998. Combining arXiv:2004.10964.
+labeled and unlabeled data with co-training. In
+Proceedings of the Eleventh Annual Conference on Bei Hui, Liang Liu, Jia Chen, Xue Zhou, and Yuhui
+Computational Learning Theory, COLT’ 98, pages Nian. 2020. Few-shot relation classification by
+92–100,NewYork,NY,USA.ACM. context attention-based prototypical networks with
+BERT. EURASIPJournalonWirelessCommunica-
+Pengfei Cao, Yubo Chen, Kang Liu, Jun Zhao, and tionsandNetworking,2020:1–17.
+Shengping Liu. 2018. Adversarial transfer learn-
+ing for Chinese named entity recognition with self- Nathalie Japkowicz and Shaju Stephen. 2002. The
+attention mechanism. In Proceedings of the 2018 class imbalance problem: A systematic study. In-
+Conference on Empirical Methods in Natural Lan- telligentdataanalysis,6(5):429–449.
+guage Processing, pages 182–192, Brussels, Bel-
+gium.AssociationforComputationalLinguistics. Diederik P. Kingma and Jimmy Ba. 2015.
+Adam: A method for stochastic optimization.
+MathildeCaron,PiotrBojanowski,ArmandJoulin,and arXiv:1412.6980.
+MatthijsDouze.2018. Deepclusteringforunsuper-
+visedlearningofvisualfeatures. InECCV. Gregory R. Koch. 2015. Siamese neural networks for
+one-shotimagerecognition.
+EthanC.Chau,LucyH.Lin,andNoahA.Smith.2020.
+ParsingwithmultilingualBERT,asmallcorpus,and AlexanderKolesnikov,XiaohuaZhai,andLucasBeyer.
+asmalltreebank. arXiv:2009.14124. 2019. Revisiting self-supervised visual representa-
+tionlearning. 2019IEEE/CVFConferenceonCom-
+IdoDagan,DanRoth,MarkSammons,andFabioMas- puterVisionandPatternRecognition(CVPR),pages
+simo Zanzotto. 2013. Recognizing textual entail- 1920–1929.
+ment: Models and applications. Synthesis Lectures
+onHumanLanguageTechnologies,6(4):1–220. Ophélie Lacroix, Simon Flachs, and Anders Søgaard.
+2019. Noisy channel for low resource grammatical
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and error correction. In Proceedings of the Fourteenth
+Kristina Toutanova. 2018. BERT: Pre-training of WorkshoponInnovativeUseofNLPforBuildingEd-
+deep bidirectional transformers for language under- ucationalApplications.
+standing. arXiv:1810.04805.
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+Liat Ein-Dor, Eyal Shnarch, Lena Dankin, Alon Hal- Kevin Gimpel, Piyush Sharma, and Radu Soricut.
+fon, Benjamin Sznajder, Ariel Gera, Carlos Alzate, 2020. ALBERT: A lite BERT for self-supervised
+MartinGleize,LeshemChoshen,YufangHou,etal. learning of language representations. In Interna-
+2020. Corpuswideargumentmining-aworkingso- tionalConferenceonLearningRepresentations.
+lution. InAAAI,pages7683–7691.
+Ken Lang. 1995. Newsweeder: Learning to filter net-
+Ronald. A. Fisher. 1971. Statistical methods for re- news. In Proceedings of the Twelfth International
+searchworkers. Biometrics,27:1106. ConferenceonMachineLearning,pages331–339.
+Jinhyuk Lee, Wonjin Yoon, Sungdong Kim, D. Kim, Jeffrey Pennington, Richard Socher, and Christopher
+SunkyuKim,ChanHoSo,andJaewooKang.2020. Manning. 2014. GloVe: Global vectors for word
+BioBERT:apre-trainedbiomedicallanguagerepre- representation. In Proceedings of the 2014 Confer-
+sentation model for biomedical text mining. Bioin- ence on Empirical Methods in Natural Language
+formatics. Processing (EMNLP), pages 1532–1543, Doha,
+Qatar.AssociationforComputationalLinguistics.
+Xiaodong Liu, Pengcheng He, W. Chen, and Jianfeng
+Gao. 2019a. Multi-task deep neural networks for Jason Phang, Thibault Févry, and Samuel R Bow-
+naturallanguageunderstanding. arXiv:1901.11504. man. 2018. Sentence encoders on stilts: Supple-
+mentarytrainingonintermediatelabeled-datatasks.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+arXiv:1811.01088.
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019b.
+Yada Pruksachatkun, Jason Phang, Haokun Liu, Phu
+RoBERTa: ArobustlyoptimizedBERTpretraining
+Mon Htut, Xiaoyi Zhang, Richard Yuanzhe Pang,
+approach. arXiv:1907.11692.
+Clara Vania, Katharina Kann, and Samuel R
+Bowman. 2020. Intermediate-task transfer learn-
+Stuart Lloyd. 1982. Least squares quantization in
+ing with pretrained models for natural language
+PCM. IEEE transactions on information theory,
+understanding: When and why does it work?
+28(2):129–137.
+arXiv:2005.00628.
+ShangwenLv,YuechenWang,DayaGuo,DuyuTang,
+N. Duan, F. Zhu, Ming Gong, Linjun Shou, Ryan ColinRaffel,NoamShazeer,AdamRoberts,Katherine
+Ma, Daxin Jiang, G. Cao, M. Zhou, and Songlin Lee, Sharan Narang, Michael Matena, Yanqi Zhou,
+Hu.2020. Pre-trainingtextrepresentationsasmeta W. Li, and Peter J. Liu. 2019. Exploring the limits
+learning. arXiv:2004.05568. of transfer learning with a unified text-to-text trans-
+former. arXiv:1910.10683.
+Oren Melamud, Mihaela Bornea, and Ken Barker.
+2019. Combiningunsupervisedpre-trainingandan- Elaheh Raisi and Bert Huang. 2018. Weakly su-
+notator rationales to improve low-shot text classifi- pervised cyberbullying detection with participant-
+cation. In Proceedings of the 2019 Conference on vocabulary consistency. Social Network Analysis
+EmpiricalMethodsinNaturalLanguageProcessing andMining,8:1–17.
+andthe9thInternationalJointConferenceonNatu-
+ralLanguageProcessing(EMNLP-IJCNLP),pages SachinRaviandHugoLarochelle.2017. Optimization
+3884–3893, Hong Kong, China. Association for asamodelforfew-shotlearning. InICLR.
+ComputationalLinguistics.
+Alexander Rietzler, Sebastian Stabinger, Paul Opitz,
+YuMeng,YunyiZhang,JiaxinHuang,ChenyanXiong, and Stefan Engl. 2020. Adapt or get left behind:
+Heng Ji, Chao Zhang, and Jiawei Han. 2020. Text Domain adaptation through BERT language model
+classification using label names only: A language finetuning for aspect-target sentiment classification.
+modelself-trainingapproach. arXiv:2010.07245. arXiv:1908.11860.
+RodrigoNogueiraandKyunghyunCho.2019. Passage Tal Schuster, Ori Ram, Regina Barzilay, and Amir
+re-rankingwithBERT. arXiv:1901.04085. Globerson. 2019. Cross-lingual alignment of con-
+textualwordembeddings,withapplicationstozero-
+Chenchen Pan. 2019. Analyzing BERT with pre-train
+shot dependency parsing. In Proceedings of the
+onSQuAD2.0. InStanfordArchive.
+2019ConferenceoftheNorthAmericanChapterof
+the Association for Computational Linguistics: Hu-
+Bo Pang and Lillian Lee. 2004. A sentimental edu-
+man Language Technologies, Volume 1 (Long and
+cation: Sentiment analysis using subjectivity sum-
+ShortPapers),pages1599–1613,Minneapolis,Min-
+marization based on minimum cuts. In Proceed-
+nesota.AssociationforComputationalLinguistics.
+ingsofthe42ndAnnualMeetingoftheAssociation
+forComputationalLinguistics(ACL-04),pages271–
+Bo Shao, Lorna Doucet, and David R. Caruso. 2015.
+278,Barcelona,Spain.
+Universalityversusculturalspecificityofthreeemo-
+Bo Pang and Lillian Lee. 2005. Seeing stars: Ex- tion domains: Some evidence based on the cascad-
+ploitingclassrelationshipsforsentimentcategoriza- ing model of emotional intelligence. Journal of
+tion with respect to rating scales. In Proceed- Cross-CulturalPsychology,46(2):229–251.
+ings of the 43rd Annual Meeting of the Association
+forComputationalLinguistics(ACL’05),pages115– Eyal Shnarch, Carlos Alzate, Lena Dankin, Mar-
+tin Gleize, Yufang Hou, Leshem Choshen, Ranit
+124,AnnArbor,Michigan.AssociationforCompu-
+Aharonov, and Noam Slonim. 2018. Will it blend?
+tationalLinguistics.
+blending weak and strong labeled data in a neu-
+IoannisPartalas,ArisKosmopoulos,NicolasBaskiotis, ral network for argumentation mining. In Proceed-
+Thierry Artieres, George Paliouras, Eric Gaussier, ings of the 56th Annual Meeting of the Association
+Ion Androutsopoulos, Massih-Reza Amini, and forComputationalLinguistics(Volume2: ShortPa-
+Patrick Galinari. 2015. LSHTC: A benchmark for pers), pages 599–605, Melbourne, Australia. Asso-
+large-scaletextclassification. arXiv:1503.08581. ciationforComputationalLinguistics.
+Noam Slonim, Ehud Aharoni, and Koby Crammer. SinongWang,MadianKhabsa,andHaoMa.2020a. To
+2013. Hartigan’s K-means vs. Lloyd’s K-means – pretrainornottopretrain:Examiningthebenefitsof
+isittimeforachange? InProceedingsofthe23rd pretrainng on resource rich tasks. In Proceedings
+International Joint Conference on Artificial Intelli- of the 58th Annual Meeting of the Association for
+gence(IJCAI). Computational Linguistics, pages 2209–2213, On-
+line.AssociationforComputationalLinguistics.
+NoamSlonim,NirFriedman,andNaftaliTishby.2002.
+Unsuperviseddocumentclassificationusingsequen- Yaqing Wang, Subhabrata Mukherjee, H. Chu,
+tial information maximization. In Proceedings of Yuancheng Tu, Miaonan Wu, Jing Gao, and
+the 25th Annual International ACM SIGIR Confer- Ahmed Hassan Awadallah. 2020b. Adaptive self-
+ence on Research and Development in Information training for few-shot neural sequence labeling.
+Retrieval,SIGIR’02,page129–136. arXiv:2010.03680.
+Jake Snell, Kevin Swersky, and Richard Zemel. 2017. Zhiguo Wang, Haitao Mi, and Abraham Ittycheriah.
+Prototypicalnetworksforfew-shotlearning. InAd- 2016. Semi-supervised clustering for short text via
+vances in Neural Information Processing Systems, deeprepresentationlearning. InProceedingsofThe
+volume30.CurranAssociates,Inc. 20thSIGNLLConferenceonComputationalNatural
+LanguageLearning,pages31–39.
+Chi Sun, Xipeng Qiu, Yige Xu, and Xuanjing Huang.
+2019. Howtofine-tuneBERTfortextclassification? Taesun Whang, Dongyub Lee, Chanhee Lee, Kisu
+arXiv:1905.05583. Yang, Dongsuk Oh, and Heuiseok Lim. 2019. Do-
+mainadaptivetrainingBERTforresponseselection.
+Chul Sung, Tejas Dhamecha, Swarnadeep Saha, arXiv:1908.04812.
+Tengfei Ma, Vinay Reddy, and Rishi Arora. 2019.
+Pre-training BERT on domain resources for short HuXu,BingLiu,LeiShu,andPhilipYu.2019. BERT
+answer grading. In Proceedings of the 2019 Con- Post-Training for Review Reading Comprehension
+ferenceonEmpiricalMethodsinNaturalLanguage and Aspect-based Sentiment Analysis. In Proceed-
+Processing and the 9th International Joint Confer- ingsofthe2019ConferenceoftheNorthAmerican
+ence on Natural Language Processing (EMNLP- Chapter of the Association for Computational Lin-
+IJCNLP),pages6071–6075,HongKong,China.As- guistics: Human Language Technologies, Volume 1
+sociationforComputationalLinguistics. (Long and Short Papers), pages 2324–2335, Min-
+neapolis,Minnesota.AssociationforComputational
+Johnny Torres and Carmen Vaca. 2019. Cl-aff deep Linguistics.
+semisupervisedclustering. InAffCon@AAAI.
+Yige Xu, Xipeng Qiu, L. Zhou, and X. Huang. 2020.
+Mehrdad Valipour, En-Shiun Annie Lee, Jaime R. Ja- ImprovingBERTfine-tuningviaself-ensembleand
+macaro, and Carolina Bessega. 2019. Unsuper- self-distillation. arXiv:2002.10345.
+vised transfer learning via BERT neuron selection.
+arXiv:1912.05308. Xueting Yan, Ishan Misra, Abhinav Gupta, Deepti
+Ghadiyaram, and Dhruv Mahajan. 2020. Cluster-
+Laurens van der Maaten and Geoffrey Hinton. 2008. fit: Improving generalization of visual representa-
+Visualizing data using t-SNE. Journal of Machine tions. 2020IEEE/CVFConferenceonComputerVi-
+LearningResearch,9(86):2579–2605. sion and Pattern Recognition (CVPR), pages 6508–
+6517.
+OriolVinyals,CharlesBlundell,TimothyLillicrap,ko-
+raykavukcuoglu, andDaanWierstra.2016. Match- Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+ingnetworksfor oneshotlearning. In Advancesin bonell,RussRSalakhutdinov,andQuocVLe.2019.
+NeuralInformationProcessingSystems,volume29. XLNet: Generalized autoregressive pretraining for
+CurranAssociates,Inc. language understanding. In Advances in Neural In-
+formationProcessingSystems,volume32.
+Alex Wang, Jan Hula, Patrick Xia, Raghavendra Pap-
+pagari, R. Thomas McCoy, Roma Patel, Najoung MoYu,XiaoxiaoGuo,JinfengYi,ShiyuChang,Saloni
+Kim, Ian Tenney, Yinghui Huang, Katherin Yu, Potdar, Yu Cheng, Gerald Tesauro, Haoyu Wang,
+Shuning Jin, Berlin Chen, Benjamin Van Durme, andBowenZhou.2018. Diversefew-shottextclas-
+Edouard Grave, Ellie Pavlick, and Samuel R. Bow- sification with multiple metrics. In Proceedings of
+man.2019a. Canyoutellmehowtogetpastsesame the 2018 Conference of the North American Chap-
+street? sentence-level pretraining beyond language teroftheAssociationforComputationalLinguistics:
+modeling. InProceedingsofthe57thAnnualMeet- HumanLanguageTechnologies,Volume1(LongPa-
+ingoftheAssociationforComputationalLinguistics, pers), pages 1206–1215, New Orleans, Louisiana.
+pages 4465–4476, Florence, Italy. Association for AssociationforComputationalLinguistics.
+ComputationalLinguistics.
+Xiang Zhang, Junbo Zhao, and Yann LeCun. 2015.
+Ran Wang, Haibo Su, Chunye Wang, Kailin Ji, and Character-levelconvolutionalnetworksfortextclas-
+Jupeng Ding. 2019b. To tune or not to tune? how sification. In Advances in neural information pro-
+aboutthebestofbothworlds? arXiv:1907.05338. cessingsystems,volume28,pages649–657.
+Yftah Ziser and Roi Reichart. 2018. Pivot based lan- C Additionalclusteringtechniques
+guagemodelingforimprovedneuraldomainadapta-
+tion. In Proceedings of the 2018 Conference of the Fig.6depictsthecomparisonofthesIBoverBOW
+NorthAmericanChapteroftheAssociationforCom- representation,denotedBERT ,totwoother
+IT:CLUST
+putationalLinguistics: HumanLanguageTechnolo-
+configurationsfortheclusteringintermediatetask:
+gies, Volume 1 (Long Papers), pages 1241–1251,
+K-means over GloVe representations and Harti-
+New Orleans, Louisiana. Association for Computa-
+tionalLinguistics. gan’s K-means (Slonim et al., 2013) over GloVe.
+The GloVe representation for each text is an av-
+A Datasets
+erageofGloVerepresentationsfortheindividual
+Linksfordownloadingthedatasets: tokens. Thecomparisonrevealsthatinmostcases
+sIB over BOW outperforms the other clustering
+Polarity: http://www.cs.
+configurations.
+cornell.edu/people/pabo/
+movie-review-data/.
+Subjectivity: http://www.cs.
+cornell.edu/people/pabo/
+movie-review-data/.
+CFPB: https://www.consumerfinance.
+gov/data-research/
+consumer-complaints/.
+20newsgroups: http://qwone.com/
+~jason/20Newsgroups/
+We used the version provided by scikit:
+https://scikit-learn.org/0.
+15/datasets/twenty_newsgroups.
+html.
+AG’sNews,DBpediaandYahoo! answers:
+We used the version from:
+https://pathmind.com/wiki/
+open-datasets (look for the link Text
+ClassificationDatasets).
+SMSspam: http://www.dt.
+fee.unicamp.br/~tiago/
+smsspamcollection/
+ISEAR: https://www.unige.
+ch/cisa/research/
+materials-and-online-research/
+research-material/.
+B Additionalreferencemethods
+The results of NB , NB , SVM and
+BoW GloVe BoW
+SVM areshowninFigure5.
+GloVe
+sIB-based classifier As mentioned in §5.4, we
+experimented with building a rudimentary classi-
+fierthatutilizesonlythesIBclusteringresultsand
+the labeling budget. Results for this setting are
+depictedinFig.5inorange. Comparingthesere-
+sults to the BERT-based approaches reveals that
+clusteringaloneisnotsufficient.
+Figure5: ComparingBOWmethodsandtheBERT setting. Eachpointistheaverageoffiverepetitions(±
+IT:CLUST
+SEM).Xaxisdenotesthebudgetfortraininginlogscale,andYaccuracyofeachmodel.
+Figure 6: Comparison of clustering configurations for the intermediate task (hk-means stands for Hartigan’s K-
+means). Theresultswithnointer-training(BERT)arealsopresentedforcomparison. Eachpointistheaverageof
+fiverepetitions(±SEM).Xaxisdenotesthenumberoflabelinginstancesusedforfine-tuning(inlogscale).

@@ -1,0 +1,990 @@
+Towards Fair and Efficient De-identification: Quantifying the Efficiency
+and Generalizability of De-identification Approaches
+NoopurZambare1 KianaAghakasiri1 CarissaLin1
+CarrieYe2,4 J.RossMitchell1,2,3 MohamedAbdalla1,2,3
+1DepartmentofComputingScience,UniversityofAlberta
+2DepartmentofMedicine,UniversityofAlberta
+3AlbertaMachineIntelligenceInstitute(Amii)
+4ArthritisResearchCanada
+zambare, kaghakas, carissa1, cye, jmitche2, mabdall2@ualberta.ca
+Abstract
+Large language models (LLMs) have
+shown strong performance on clinical de-
+identification,thetaskofidentifyingsensitive
+identifiers to protect privacy. However,
+previous work has not examined their gen-
+eralizability between formats, cultures, and
+genders. In this work, we systematically
+evaluatefine-tunedtransformermodels(BERT,
+ClinicalBERT, ModernBERT), small LLMs
+(Llama1-8B,Qwen1.5-7B),andlargeLLMs
+(Llama-70B, Qwen-72B) at de-identification.
+Figure 1: Inference time computation of different
+Weshowthatsmallermodelsachievecompara-
+de-identification models. The y-axis shows words
+bleperformancewhilesubstantiallyreducing
+processed per second, and the x-axis shows recall.
+inference cost, making them more practical
+Results are grouped by model type: BERT vari-
+for deployment. Moreover, we demonstrate
+ants,smallerQwen(1.5-7B)/Llama(1-8B)models,large
+that smaller models can be fine-tuned with
+Qwen-72B/Llama-70Bmodels,andrule-basedmodels.
+limited data to outperform larger models
+in de-identifying identifiers drawn from
+Mandarin, Hindi, Spanish, French, Bengali,
+care research, where clinical texts often contain
+andregionalvariationsofEnglish,inaddition
+sensitivedetailssuchaspatientnames,addresses,
+to gendered names. To improve robustness
+in multi-cultural contexts, we introduce and contact information, and other identifiers. Reg-
+publiclyreleaseBERT-MultiCulture-DEID,a ulationsliketheHealthInsurancePortabilityand
+setofde-identificationmodelsbasedonBERT, AccountabilityAct(HIPAA)(CentersforMedicare
+ClinicalBERT, and ModernBERT, fine-tuned &MedicaidServices,1996)andtheGeneralData
+on MIMIC with identifiers from multiple
+ProtectionRegulation(GDPR)(EuropeanUnion,
+language variants. Our findings provide the
+2016) require the de-identification of such clini-
+first comprehensive quantification of the
+calnotesbeforesharing. However,protectingthis
+efficiency-generalizability trade-off in de-
+sensitiveinformationischallenging,leadinghealth-
+identificationandestablishpracticalpathways
+forfairandefficientclinicalde-identification. careorganizationstorestrictsharingsuchdata.
+Details on accessing the models are avail- Traditionally, de-identification was performed
+ableat: https://doi.org/10.5281/zenodo. usingdictionaryorrule-basedsystems,whichrely
+18342291 on predefined patterns or lists of dictionaries to
+identify PII. Although these methods are compu-
+1 Introduction
+tationally inexpensive, they often fail to general-
+De-identificationistheprocessofremovingperson- izebetweennoteformatsorvariationsinidentifier
+allyidentifiableinformation(PII)fromdatatopro- style, particularly when dealing with identifiers
+tectindividualprivacy. Thisstepiscrucialinhealth- fromdifferentculturalcontextsorinstitutions(Fer-
+1
+6202
+naJ
+72
+]LC.sc[
+1v96851.2062:viXra
+rándezetal.,2012). basedde-identificationmodelsabletogeneralize
+To improve the generalizability of de- across healthcare institutions, genders and lan-
+identification, researchers have adopted guage/culturalvariationsinidentifiers?
+transformer-based models such as BERT Toaddressthesequestions,ourworkmakesthe
+(Devlinetal.,2019)andClinicalBERT(Alsentzer followingcontributions:
+et al., 2019). These models have demonstrated
+substantial improvements in de-identification • Efficient De-identification: We conduct a
+performance. Usingcontextualembeddings,these systematicanalysisofinferenceefficiencyand
+models can detect sensitive tokens with high performanceacrossfine-tunedBERTmodels
+precision and recall, even in complex narrative (BERT,ClinicalBERT,ModernBERT)aswell
+structures. However, models like BERT require as smaller Llama (1B, 3B, 8B) and Qwen
+fine-tuningforeachtypeofidentifier(e.g.,names, (1.5B,3B,7B)models. Wedemonstrateper-
+addresses, phone numbers), and this process formancecomparabletolargemodels(Llama
+requireslabeleddata. 3.3-70BandQwen2.5-72B)withsubstantially
+To minimize the need for training data (gener- lowercomputerequirementsandfasterinfer-
+atedbythedataownerslookingtode-identifytheir encetime.
+data),researchershavemorerecentlyexperimented
+• Generalizability: Weevaluatemodelrobust-
+withusingLLMssuchasLlama(Grattafiorietal.,
+nessacrossformats,genderedidentifiers,and
+2024),Qwen(Baietal.,2023;Team,2024),Mix-
+culturallydiverseidentifiersdrawnfromMan-
+tral (Jiang et al., 2024), and ChatGPT (Radford
+darin, Hindi, Spanish, French, and English
+etal.,2018). Recentworksuggeststhatthesemod-
+namingtraditions. Ourgoalistotestwhether
+els perform well if not better than BERT-based
+Englishmodelsremainreliablewhentheiden-
+models (Altalla’ et al., 2025; Wiest et al., 2025;
+tifiers reflect the cultural diversity seen in
+Pissarraetal.,2024).
+large urban anglophone cities. Our results
+Although LLM-based de-identification has
+highlightthelimitationsofallmodelsinadapt-
+demonstrated high performance, certain critical
+ingtodiversereal-worldcontexts.
+challenges limit its adoption by healthcare insti-
+tutions. First, most academic research on LLM-
+• Multi-Cultural Deid: To address substan-
+basedde-identificationexperimentwithverylarge
+tialperformancedegradationinmulticultural
+models, which are difficult to deploy locally for
+identifiers, we fine-tuned BERT, Clinical-
+manyinstitutions. Furthermore,evenifinstitutions
+BERT,andModernBERT,developingBERT-
+hadthecomputationalabilitytorunthesemodels,
+MultiCulture-DEID,asetofmodelsthatex-
+inferencewithlargemodelsremainscomputation-
+hibitimprovedmulti-culturalgeneralization.
+allyintensiveandslow,makingthemimpractical
+forclinicaldeployment(thoughthishasnotbeen
+2 RelatedWork
+formallyquantifiedinanypreviouswork). Given
+the constraints of real-world clinical settings, un- De-identification has been an active field of re-
+derstandingthistrade-offiscrucial. search for over 30 years (Sweeney, 1998). Dur-
+At the same time, while some studies have ing this time, the field has continuously adopted
+examined cross-format or cross-lingual perfor- themostadvancedmethods,fromregularexpres-
+mance,comprehensiveevaluationsofLLM-based sions(Neamatullahetal.,2008)totraditionalma-
+de-identificationmodelsacrossculturallydiverse chine learning algorithms (Liu et al., 2017), and
+identifiers, different formats, and gendered iden- transformer-based models (e.g., BERT and Clin-
+tifiersarelacking,limitingunderstandingoftheir icalBERT) (Johnson et al., 2020). Consequently,
+robustnessandreal-worldapplicability. theperformanceofautomatedde-identificationsys-
+Taken together, these gaps raise two criti- temshascontinuedtoimprovewithperformance
+cal questions: 1) How (in-)efficient is LLM- metrics(e.g.,precisionandrecall)nearingperfec-
+based de-identification and can smaller LLM de- tion (Johnson et al., 2020; Moore et al., 2023).
+identification models achieve performance com- Mostrecently,LLMs(e.g.,Llama,Qwen,Mixtral)
+parable to very LLMs (e.g. 70B parameters) have been adopted for de-identification (Pissarra
+whilesubstantiallyreducingcomputationalrequire- etal.,2024;Altalla’etal.,2025;Wiestetal.,2025)
+ments and inference time?, and 2) Are LLM- andhavedemonstratednear-perfectrecallwithout
+2
+requiring(much)labeledtrainingdata,demonstrat- ciencyofLLMswithothercompetingmodels.
+ingimpressivezero-shotandfew-shotgeneraliza-
+tion(Brownetal.,2020). 2.2 GeneralizationandRobustness
+2.1 EfficiencyinClinicalDe-identification Recentadvancesinpre-trainedtransformer-based
+models,suchasvariantsofBERTandGPT,Llama,
+De-identification is a time-consuming task for
+etc., (Radford et al., 2018) have demonstrated
+humans. Dorr et al. (2006) measured that de-
+stronggeneralizationcapabilitiesinvariousNLP
+identifyingaclinicalnoterequired87.3±61sec-
+tasks (Budnikov et al., 2025). BERT-based mod-
+onds, while Douglass et al. (2004) found that hu-
+els typically excel in domain-specific fine-tuning
+manswereabletode-identifybetween250and350
+duetotheirbidirectionalcontextualrepresentations,
+wordsperminute.
+whereasGPT-stylemodelsbenefitfromautoregres-
+Heider et al. (2020) conducted a comparative
+sivepre-trainingthatallowseffectivefew-shotand
+evaluation of de-identification systems (Amazon
+zero-shotgeneralization(Brownetal.,2020).
+Comprehend Medical PHId (Amazon Web Ser-
+Recognizing potential concerns about robust-
+vices,2018),Clinacuity(Meystreetal.,2023),and
+ness,researchershaveexploredthegeneralizability
+theNationalLibraryofMedicine’s(NLM)Scrub-
+of clinical de-identification models. Xiao et al.
+ber(NationalLibraryofMedicine,2019)andcon-
+(2023) identified significant performance dispar-
+cluded that none of the systems simultaneously
+ities in most de-identification approaches they
+achieved optimal performance in both speed and
+evaluated,withbiasesevidentindemographicdi-
+accuracy. NLMScrubberachievedarecallof0.47
+mensions such as gender and race. Chen et al.
+andprocessed4.09notes/sec,CliniDeIDachieved
+(2024) analyzed pre-trained transformer models
+arecallof0.99at0.29notes/sec,andAmazonCom-
+in discharge summaries and nursing notes, dis-
+prehendMedicalPHIdachievedarecallof0.80at
+covering significant accuracy declines due to dif-
+1.75notes/sec.
+ferences in structure and PII entity distributions.
+Asde-identificationmodelshavegrownmorein-
+Kimetal.(2024)observedthatstate-of-the-artde-
+tricate,theirinferencetimehasalsoincreased. To
+identificationmodelsshowpoorgeneralizationon
+addressincreasesincomputetime,Sundrelingam
+new datasets, mainly due to challenges in main-
+etal.(2025)introducedpyDeidforrapid,general-
+tainingtrainingcorpora,aswellasvariationsinla-
+izablerule-basedde-identification,showingcom-
+belingstandardsandpatientrecordformatsacross
+petitivespeedwithanaverageruntimeof0.48sec-
+institutions. They also suggested that GPT mod-
+onds/notewithabestrecallof0.95,outperforming
+els (and large LLMs more generally) could help
+traditionaltoolssuchasDeid(0.93seconds/note,
+addressthesechallenges,anassumptionwhichour
+recall: 0.87;(Neamatullahetal.,2008))andPhilter
+analysisshowsisincorrect.
+(6.38 seconds/note, recall: 0.92; (Norgeot et al.,
+2020)). Otherresearchershavesoughttoenhance Unfortunately,currentresearchhasseverallimi-
+theefficiencyofLLMsbyfine-tuningsmallermod- tations. First,assessmentsarefrequentlyconfined
+els. Dorémusetal.(2025)demonstratedthatsmall to smaller models, as illustrated by Chen et al.
+LLMs(e.g.,7B)canbefine-tunedtoachievehigh (2024), who restricted their evaluation to BERT-
+de-identificationperformance(F1score: 0.97and basedmodels. Second,previousstudiesoftenlimit
+recall: 0.93), although they did not specifically theirevaluationstoparticulartypesofPII.Forex-
+measure inference time. Chen et al. (2025) and ample, Xiao et al. (2023) focused solely on the
+Naguibetal.(2024)evaluatedpretrainedmodels robustness of the models with respect to patient
+onbiomedicalNLPtasks(performanceandcost) names. However,inpractice,otheridentifiers,such
+andNER(performanceandcarbonemissions),re- asaddresses(includingpostalcodesandstreetpat-
+spectively. terns), institution or hospital names, phone num-
+Currentliteratureexhibitsseveralshortcomings. bers,andotherentities,alsovaryacrossdifferent
+First,existingefficiencyassessmentsusedifferent contexts.
+datasets,whichhindersdirectcomparability. Sec- Finally,whilethesestudiesperformfine-tuning
+ond,theseevaluationslackuniformityinmetrics; oftransformer-basedmodelsforde-identification,
+measuringtimeper notecomplicatesfuturecom- theydonotanalyzehowfine-tuningimpactsrobust-
+parisonsduetovariabilityinnotelength. Finally, nessinsmallermodelsacrossformats,genders,and
+therehavebeennodirectcomparisonsoftheeffi- identifiersdrawnfromdifferentlanguagevariants.
+3
+3 Datasets exposed. Replacement was performed using the
+Python-based Faker library (Faraglia and Other
+We performed experiments using two English-
+Contributors,2014). Thislibraryprovidesawide
+language clinical datasets: the publicly available
+variety of synthetic identifiers, including names,
+MIMIC-III dataset (Johnson et al., 2016) and a
+addresses,phonenumbers,emailaddresses,orga-
+smaller proprietary dataset consisting of rheuma-
+nizationnames,dates,andotheridentifierssuchas
+tologyreferralletters. Inthiswork,wedefinePII
+medicalrecordnumbersandaccountnumbers. For
+as any token belonging to one of the following
+all experiments, except where specified, we used
+categories: name, phone/fax, hospital, city, state,
+thedefaultsettings(e.g.,usingtheUS-locale).
+address,country,company,university,date,email,
+andother(MRN,accountnumber,etc.). Appendix
+4 Models
+Table4presentssomedescriptivestatisticsofthe
+two datasets, and Figure 5 shows the statistics of Wetestedmultiplemodels: pretrainedmodelsin-
+identifiersinthetestdata. cluding Llama 3.1-8b, Llama 3.2-1B, Llama 3.2-
+All datasets, codes and models utilized in this 3B,Llama3.3-70B,andQwen2.5(1.5B,3B,7B,
+studywerecollectedandusedincompliancewith and 72B), BERT, ClinicalBERT, ModernBERT,
+theirrespectivelicensesandaccessrequirements. andthreeopensourcetoolkits(obi-deid-bert(OBI
+Organization,2022),pyDeid(Sundrelingametal.,
+3.1 MIMIC-III
+2025),andPresidio(Microsoft,2018)).
+We targeted PII identified in the Health Insur-
+4.1 BERT,ClinicalBERTandModernBERT
+ancePortabilityandAccountabilityAct(HIPAA)
+forMIMIC-III.Theseincludepatientnames,tele- BERTisatransformer-basedlanguagemodelpre-
+phonenumbers,addresses,anddates. Wesampled trainedonlargecorporausingamaskedlanguage
+4,000 discharge summaries from the MIMIC-III modelingobjective,enablingittocapturerichcon-
+dataset. Ofthese,2,000wereusedforfine-tuning textualrepresentationsoftext(Devlinetal.,2019).
+with varying subset sizes (250, 500, 1,000, and ClinicalBERTisavariantofBERTthatisfurther
+2,000notes),1,000wereusedforvalidation,and pre-trained on clinical notes and discharge sum-
+1,000weresequesteredfortesting. mariesfromtheMIMICIIIdataset(Huangetal.,
+2019). This improves ClinicalBERT’s ability to
+3.2 PrivateClinicalDataset(PCD)-Alberta
+identify medical terminology and context. Mod-
+HealthServices
+ernBERT (Warner et al., 2024) is a more recent
+This dataset consists of 204 referral letters from adaptationofBERT,offeringbetterperformance,
+physicians to rheumatologists, covering a wide efficiency,andlongersequencehandlingcompared
+range of clinical scenarios. All notes were saved tostandardBERTmodels.
+inPDFformatandconsistedofacombinationof In the experiments below, we fine-tuned vari-
+digitallytypeddocuments,scannedfiles,andhand- ousBERT,ClinicalBERT,andModernBERTmod-
+writtenletters. WeextractedtextfromthesePDFs els as comparators. In this section, we describe
+usingopticalcharacterrecognition(OCR)withthe generalized fine-tuning information used for all
+Doctrlibrary(Mindee,2021). Authorsthenman- varieties. The specifics for each variation are de-
+uallyremovedallsensitiveinformation,including scribed in their respective sections. The models
+patientnames,providernames,phonenumbers,ad- werefine-tunedtoperformbinarytokenclassifica-
+dresses,medicalrecordnumbers,accountnumbers, tionormulticlasstokenclassification. Forbinary
+otheridentifiers,dates,andanyadditionalperson- classification, each token was classified as PII or
+ally identifiable information. The collection and non-PII. For multiclass classification, each token
+useofthisdatasetwasapprovedbytheUniversity was classified as non-PII or as a member of a set
+ofAlberta’sREB(#Pro00141020). with multiple PII types. We focus on the results
+of binary PII prediction, with multiclass results
+3.3 Faker
+presentedinAppendixD.
+Wesubstitutedthede-identifiedmasksintheorigi- To ensure a fair comparison across different
+nalnoteswithrealisticsurrogatedata,preserving datasetsizes(250,500,1000,and2000samples),
+the structure and readability of the clinical text thenumberoftrainingepochswaskeptthesame
+whileensuringthatnorealpatientinformationwas forallmodels. Weselected10epochsbecauseof
+4
+stabilizationinvalidationlossatthisnumber. Model P R CIRE Time(s) STD(s) Words/sec
+BERT 0.99 0.99 0.99 67 2.0 2048
+We also included obi-deid-bert(OBI Organiza- ModernBERT 0.99 0.99 0.99 90 3.1 1528
+ClinicalBERT 0.99 0.99 0.99 56 1.8 2446
+tion, 2022), a publicly available de-identification Qwen-1.5B 0.96 0.94 0.99 122 2.5 1121
+Qwen-3B 0.96 0.95 0.99 182 2.8 751
+model based on ClinicalBERT (pre-trained on Qwen-7B 0.96 0.95 0.99 308 4.4 443
+Llama-1b 0.97 0.96 0.99 108 3 1271
+MIMIC-III and fine-tuned on i2b2/n2c2 (Stubbs Llama-3b 0.97 0.97 0.99 176 5.4 776
+Llama-8b 0.97 0.97 0.99 322 6.2 423
+andUzuner,2015)),asabaseline. Llama-70B* 0.75 0.97 0.98 12870 - 10
+Qwen-72B* 0.80 0.97 0.98 16315 - 8
+pyDeid 0.67 0.68 0.99 31 0.2 4490
+4.2 LLMs(LlamaandQwen) obi-deid-bert 0.91 0.94 0.99 41 1.4 3333
+Presidio 0.61 0.91 0.89 28 0.1 4931
+LLMsaretransformer-basedmodelspretrainedus-
+Table1: Experiment1: PerformanceandGPU-based
+ingthenext-tokenpredictionobjective,givingrise
+inferencetimeforvariousde-identificationmodels. We
+togenerativecapabilities. Llama(Grattafiorietal., reportthewords-per-secondrate,alongwiththetime
+2024)andQwen(Baietal.,2023)arefamiliesof requiredtoprocess100notesandthestandarddeviation
+open-weightlanguagemodels. across10runstode-identify100notes.*Evaluatedonly
+Wefine-tunedtheLlama(1B,3B,8B)andQwen onceduetocomputecost. P:Precision,R:Recall
+(1.5B,3B,7B)modelsfortokenclassification. In
+thiswork,weusedthemexclusivelyfortoken-level 5.2 ClinicalInformationRetention
+classification. Aclassificationheadwasappended
+Recentwork(Aghakasirietal.,2025)hasdemon-
+tothefinaltransformerlayer,andfine-tuningwas
+strated thatstandard classificationmetrics do not
+restrictedtoLow-RankAdaptation(LoRA)andthe
+provideacompletepictureofmodelperformance.
+classificationhead. Smallmodels(1B/1.5B)were
+Specifically, when a false positive occurs, clini-
+fine-tunedfor5epochs,medium-sizedmodels(3B)
+callyrelevantinformationmayberemoved. This
+for5epochs,andlargemodels(7Band8B)for3
+reduces the utility of notes and thus negates the
+epochs. Detailedexperimentalsetupisexplained
+pointofde-identification. Balancingthepreserva-
+intheAppendixC.
+tionofclinicalutilitywithdatasensitivityiscritical.
+Therefore, in this work, we use the CIRE metric
+4.3 Prompt-tuning
+proposedbyAghakasirietal.(2025),whichuses
+Weprompt-tunedthelargestvariants,Llama-70B
+anLLMtomeasureretentionofclinicalinforma-
+and Qwen-72B, using one-shot prompting on a
+tionbycalculatingtheproportionofsentencesthat
+small subset of five MIMIC-III notes, using the
+havechangedclinicallyrelevantinformation(CIRE
+promptmentionedinAppendixFigure7,detalied
+promptispresentedinAppendixFigure9).
+inAppendixSectionE.
+5.3 InferenceEfficiency
+4.4 Presidio
+We also report the number of words/second. We
+Microsoft Presidio (Microsoft, 2018), an open
+prioritizethismetricoverthecommonlyreferences
+sourceframework,detectsPIIusingnamedentity
+seconds/note, as the latter depends on the note
+recognition(NER)techniques.
+length,whichvaries.
+4.5 PyDeid 6 ExperimentsandResults
+WeevaluatedPyDeid(Sundrelingametal.,2025),
+6.1 Experiment1: LLM-based
+arule-basedsystemthatusesregularexpressions
+de-identification
+and fixed inclusion/exclusion lists to de-identify
+Inference performance was measured on an
+free-textclinicaldata.
+NVIDIAA100-SXM4-80GBGPU.Allmodels(ex-
+5 Metrics ceptLlama-70BandQwen-72B)werefine-tuned
+on1,000MIMIC-IIIdischargesummaries. Llama-
+5.1 StandardClassificationMetrics
+70BandQwen-72Bwereprompt-tunedratherthan
+For the majority of our analyses, we present pre- fine-tuned on five discharge notes. For all fine-
+cisionandrecall–standardclassificationmetrics tunedmodels,inferencetimewascomputedona
+used in de-identification. Precision is the propor- testsetof100dischargenotes,repeated10times.
+tion of tokens predicted as PII that are actually Theinferencecomputetimeofprompt-tunedmod-
+PII.RecallistheproportionofPIIinanotethatis elswasmeasuredonlyonceduetothehighinfer-
+correctlyflaggedasPII. encetime.
+5
+Figure2: Setupofgeneralizationtesting. (Ex. 2.1)Cross-formattesting: Modelswerefine-tunedonMIMIC
+andtestedonbothMIMICandPCD,andviceversa,fine-tunedonPCDandtestedonbothdatasets. (Ex. 2.2)
+Multi-culturaltesting: Modelsfine-tunedonMIMICnoteswithUSEnglishidentifiersweretestedonnoteswith
+identifiersfromdifferentlanguagevariants. (Ex. 2.3)Performancedisparityacrossgenderednames: Noteswith
+identifiersfromdifferentlanguagevariantswereused,andrecallwasevaluatedspecificallyfornameidentifiers.
+Table 1 highlights clear trade-offs between Train-Test PCD-PCD PCD–M M–M M–PCD
+Model P R P R P R P R
+model size, performance, and computational ef- BERT 0.99 0.99 0.99 0.98 0.99 0.99 0.99 0.98
+Qwen-7b 0.95 0.90 0.71 0.64 0.96 0.95 0.93 0.90
+ficiency. BERT,ModernBERTandClinicalBERT Llama-8b 0.98 0.97 0.93 0.85 0.98 0.97 0.96 0.94
+Llama-70b* 0.92 0.98 0.70 0.97 0.72 0.97 0.93 0.97
+achieved near-perfect precision and recall (0.99
+Table 2: Experiment 2.1 - Cross-format Evalua-
+each) with relatively low inference times rang-
+tion: Models fine-tuned on Private Clinical Dataset
+ing from 1528 to 2446 words/sec. For LLMs,
+andMIMIC-IIIseparatelyandtestedonbothdatasets.
+the smaller variants (1B–8B) achieved high pre-
+*Prompt-tuned. P:Precision,R:Recall,M:MIMIC
+cisionandrecall(0.96–0.97)withinferencerang-
+ing from 423 to 1271 words/sec. In contrast,
+Llama-70B and Qwen-72B processed 100 notes 6.2 Experiment2: Generalization
+inmorethan12,000seconds(morethan3hours),
+We conducted three experiments (cross-format,
+achieving only 8 to 10 words/sec, even when us-
+multi-cultural and performance disparity across
+ing two GPUs. Although they achieved high re-
+gendered names) to evaluate the robustness and
+call, their precision was not competitive, under-
+generalization of de-identification models, illus-
+scoringthelimitedpracticalityoflargeLLMsfor
+tratedinFigure2.
+de-identification. Forsubsequentexperiments,we
+dropped Qwen2.5-72B, as its performance was Experiment2.1: Cross-FormatGeneralization
+comparabletoLlama3.3-70Bbutwasmuchslower To evaluate cross-format generalization, we fine-
+duringinference. tunedthebestperformingmodelsfromTable1on
+1,000MIMIC-IIIdischargesummariesandtested
+Rule-based systems exhibited the fastest run- themonaseparatecollectionof1,000MIMIC-III
+times,butattheexpenseofperformance. Presidio dischargenotes(theMIMIC-testset)and20%of
+achievedthefastestruntime(4931words/sec)but theprivatedatasetofreferralnotes. Incontrast,we
+hadpoorprecision(0.61). Similarly,pyDeidwas alsofine-tunedthemodelsusing80%oftheprivate
+efficient(4490words/sec),butunderperformedin dataset then tested them on the MIMIC-test set
+precision and recall (0.67 and 0.68). In contrast, and20%oftheprivatedataset. Thissetupallowed
+obi-deid-bert(fine-tunedoni2b2)offeredamore us to assess robustness across different types of
+balancedtrade-off, withmoderateinferencetime clinical notes and narrative styles. The results of
+(3333words/sec)andhigherrecall(0.94). Allmod- thisevaluationareshowninTable2.
+elsperformedwellintheCIREscorewithnomean- BERTachievedconsistentlyhighperformance
+ingfuldifferencesbetweenmodelclasses(except acrossalltrain–testcombinations,withprecision
+Presidio,whichwasabout 0.10lowerthanallother andrecallnear0.99,indicatingstronggeneraliza-
+models). tionacrossformats. Llama-8Balsodemonstrated
+6
+Model Mandarin Spanish Hindi French Bengali
+BERT 0.80 0.77 0.80 0.83 0.75
+ModernBERT 0.75 0.83 0.92 0.90 0.81
+ClinicalBERT 0.87 0.84 0.97 0.87 0.97
+Qwen-1.5B 0.80 0.86 0.91 0.89 0.80
+Qwen-3B 0.65 0.82 0.90 0.89 0.89
+Qwen-7B 0.71 0.85 0.89 0.89 0.76
+Llama-1b 0.83 0.80 0.90 0.87 0.77
+Llama-3b 0.71 0.82 0.88 0.87 0.76
+Llama-8b 0.76 0.85 0.91 0.90 0.78
+Llama70 0.96 0.95 0.97 0.97 0.96
+pyDeid 0.58 0.64 0.62 0.66 0.59
+obi-deid-bert 0.94 0.84 0.92 0.90 0.93
+Presidio 0.94 0.90 0.87 0.92 0.85
+Figure4: Relativedifferenceinrecallofthesamemodel
+Figure3: Experiment2.2.1: Recallofde-identification tested on US identifiers versus other languages. The
+modelsfine-tunedon1000MIMIC-IIIandtestedon500 modelsisfine-tunedon1,000sampleswithUSEnglish
+samplesfromfivelanguages. P:Precision,R:Recall. identifiers and evaluated on 500 samples for each lan-
+FullresultsinAppendixH. guage.
+robustperformance,thoughslightlylowerincross- full results presented in Appendix Table 7. We
+formattesting(PCD-M).Thisdeclineappearstobe foundsubstantialrecalldropsforallmodelsexcept
+drivenbyvariationsinthenarrativestylebetween forLlama-70B.Morespecifically,BERT,Modern-
+institutions. Surprisingly,Qwen-7Bexperienceda BERT and ClinicalBERT maintained high preci-
+substantialdropinperformance,nearlya30-point sion,andClinicalBERTachievedthehighestrecall
+dropevaluatingon(PCD-M).Llama-70B,which forseverallanguagevariants(HindiandBengali).
+was prompt tuned (with prompts for MIMIC-III Llama-1B and Llama-8B achieved strong recall,
+andPCDprovidedinFigure7andFigure8,respec- while prompt-tuned Llama-70B maintained very
+tively),maintainedhighrecallacrossdatasets,but highrecallbutexhibitedovermasking,leadingto
+tendedtoover-mask,resultinginreducedprecision reducedprecision.
+insomecross-datasetscenarios.
+Rule-basedsystemssuchasPyDeidandPresidio
+Experiment2.2: Multi-CulturalGeneralization
+donotmaskcertainidentifiers(e.g.,hospitalnames,
+Toevaluatehowde-identificationmodelstrainedon
+addresses,phonenumbers)andwerethereforeeval-
+USEnglishidentifiersperformonidentifiersfrom
+uateddifferently. Onlytheidentifiersthesemodels
+otherlanguagevariantswritteninEnglish(hence-
+actually mask were considered during the evalu-
+forth: multi-culturalgeneralization),insteadofus-
+ation. For specific cases, the evaluation can be
+ing the standard Faker settings, we replaced the
+nondeterministic;forexample,ifahospitalname
+identifiers using specialized settings in the Faker
+includes a personal name (e.g., ‘Jack’s Clinic’),
+library. We picked the languages most spoken in
+themodelmaymask‘Jack’butnotthefullentity,
+theworld(Mandarin,Spanish,Hindi,French,and
+whichcanleadtovariationsinreportedmetrics.
+Bengali)1 (Ethnologue,2025). Note: unlikeprevi-
+ouswork,ourchangesweremorecomprehensive
+AppendixTable8presentstheperformanceof
+andincludedchangesbeyondjustnamestoother
+modelsonidentifiersfromEnglishvariants(Great
+identifiers (e.g., addresses, phone numbers, and
+Britain, Australia, Canada). All fine-tuned trans-
+otheridentifiertypes).
+former models maintained high precision and re-
+ThissetofexperimentsusedtheMIMICdataset.
+call,demonstratingrobustnesstovariationsinad-
+Themodelswerefine-tunedonclinicalnoteswith
+dresses, phone numbers, and other identifiers in
+USEnglishidentifiersandthentestedonnoteswith
+English-speaking regions. Prompt-tuned Llama-
+identifiersfromotherlanguagevariants.
+70B again showed high recall but decreased pre-
+Table 3 reports the recall of de-identification
+cision due to over-masking. These results indi-
+modelstrainedinUS-Englishandtestedoniden-
+catethat,whilemodelsgeneralizewellacrossEn-
+tifiers from five non-English language variants
+glish variations of identifiers, multi-lingual iden-
+(Mandarin,Spanish,Hindi,French,Bengali),with
+tifier variations remain more challenging, requir-
+1Arabic,althoughamongthetopfivelanguages,wasex- ing careful model selection and tuning. Figure 4
+cludedfromthefullevaluationduetolimitationsintheFaker
+presentstheresultsforthebestperformingmodels
+library,whichdoesnotprovidewell-definedidentifiersforall
+PIIcategoriesinArabic. forthissetofexperiments.
+7
+Model Mandarin Spanish Hindi French Bengali GB AU CA
+P R P R P R P R P R P R P R P R
+BERT(all) 0.986 0.999 0.982 0.998 0.980 0.998 0.980 0.998 0.980 0.998 0.979 0.996 0.977 0.995 0.977 0.996
+BERT(all–cult) 0.988 0.993 0.984 0.981 0.982 0.997 0.980 0.993 0.981 0.995 0.982 0.975 0.982 0.988 0.982 0.990
+ModernBERT(all) 0.984 0.998 0.978 0.997 0.976 0.997 0.973 0.995 0.977 0.997 0.973 0.995 0.971 0.993 0.971 0.994
+ModernBERT(all–cult) 0.985 0.996 0.978 0.984 0.974 0.998 0.979 0.991 0.975 0.976 0.971 0.976 0.977 0.992 0.975 0.989
+ClinicalBERT(all) 0.980 0.998 0.975 0.999 0.973 0.998 0.973 0.998 0.974 0.997 0.971 0.995 0.970 0.994 0.970 0.995
+ClinicalBERT(all–cult) 0.982 0.951 0.980 0.993 0.977 0.997 0.976 0.992 0.976 0.995 0.974 0.992 0.974 0.992 0.973 0.991
+Table3:Experiment3:Performanceofdifferentde-identificationmodelsfine-tunedonMIMIC-IIIacrosslanguage
+variants. “all”=trainedonallvariants;“all–cult”=trainedonallvariantsexceptthetargetvariant. P:Precision,R:
+Recall
+Experiment2.3: Performancedisparityacross all other language variants except for Mandarin).
+GenderedNames Theobserveddifferenceinperformanceservesas
+anindicatorofthegeneralizationgapexhibitedby
+We evaluated the de-identification models, fine-
+themodel.
+tunedonMIMIC-IIIwithUS-basedidentifiers,us-
+Table 3 presents the results of this experiment.
+ingnamesdrawnfromthesamesetoflanguages
+First,weobservethattrainingonalllanguagevari-
+as in Experiment 2.2. To assess potential gender
+ants improves performance on all variants (since
+bias,weseparatelymeasuredperformanceonmas-
+thesevariantsarenolonger“out-of-distribution”).
+culineandfemininenames,allowingustoanalyze
+Surprisingly,weobservethatformostmodels,the
+modelrobustnessacrossgenderednamevariations.
+generalizationgapisminimal(lessthan1percent).
+Specifically,wecomputedtherecallforeachgen-
+Thisindicatesthatthetrainedmodel,beingexposed
+der.
+toafewlanguagevariants,becamemorerobust.
+Appendix Table 9 summarizes the recall per-
+formanceofde-identificationmodelsforfeminine
+7 Conclusion
+(R ) and masculine (R ) names across multiple
+f m
+languages(Mandarin,Spanish,Hindi,French,Ben- Inthisstudy,wesystematicallyevaluatedtheper-
+gali)andEnglishvariants(GreatBritain). Almost formance,generalization,andefficiencyofvarious
+allmodelsachievedsimilarrecallbetweengenders, de-identificationmodelsacrossmultiplescenarios,
+withdifferencesgenerallybelow0.05. Qwenvari- including across formats, language variants, and
+ants exhibited a larger gap for French, where the genderednames.
+differenceinrecallexceeded0.05.
+We observed that large LLMs are a degree of
+magnitude less efficient at de-identification com-
+6.3 Experiment3: Developing
+paredtosmallerLLMvariantsorBERT-basedmod-
+BERT-MultiCulture-DEID
+els. WhilelargeLLMsaregenerallymorerobust,
+AshighlightedinTable3,theobi-deid-bertmodel moreefficientmodels(e.g.,BERTmodels)could
+experienced substantial drops in model recall de- befine-tunedtobetterperformanceatverylowcost,
+pendingonthemodelevaluated(withuptoa10% withonlymarginalimprovementsinperformance
+drop in recall in Spanish). Unfortunately, this is increasingfrom250trainingnotesto1000training
+the only readily accessible publicly available de- notes. Wefoundnodisparityinmodelperformance
+identificationmodelaccessibletomostdatacura- withrespecttogenderednames.
+tors. Toaddressthisgap,wesoughttoexplorethe To improve the robustness of a popular and
+feasibilityofimprovingtheperformanceofBERT- widely used publicly available BERT-based de-
+basedde-identificationonidentifiersfromunseen identificationmodel(OBIOrganization,2022),we
+languagevariants. developedBERT-MultiCulture-DEID,afine-tuned
+For this experiment, we selected three BERT BERTmodelthatdemonstratesimprovedgeneral-
+variants: BERT,ClinicalBERT,andModernBERT izationtoidentifiersfrommultiplelanguagevari-
+(which can reasonably serve as replacements to ants.
+the existing model). To perform this experiment,
+7.1 FutureWork
+wefine-tunedtwovariationsofeachmodel. First,
+wetrainedmodelsonallofthelanguagevariants Ourworkhasuncoveredavenuesforfuturework.
+presentinTables3and8. Second,wetrainedmod- Thefirstandmostdirectstepistoexpandthesetof
+elsonallvariantsexcepttheonebeingevaluated languagevariantsevaluated. Expandingtheanal-
+(e.g.,theMandarinevaluationwouldbetrainedon ysis to less-resourced languages is important to
+8
+ensure equitable protection of privacy. As newer without periodic updates or retraining. Similarly,
+models are released, their performance will need applying these models to different datasets may
+to be scrutinized in a similar way. We also need resultindifferencesinperformanceandranking.
+morepubliclyavailablebenchmarkingdatasetsto Duetocomputationalconstraints(computational
+standardizeandensuretransparencyoffutureeval- calculations are summarized in F), we were also
+uationsacrossstudies. limited in the complexity and number of experi-
+Weattemptedtoimprovegeneralizabilityusing ments that we could perform. Specifically, fine-
+an increased variety of data. Researchers can ex- tuning smaller LLM variant models (e.g., 8B pa-
+plorenovelmodelarchitecturestoimprovethero- rameters)waslimitedtoamaximumof2,000train-
+bustnessofmodelswithoutneedingasmuchvari- ingsamples. Wealsocouldnottestallmodelsfor
+etyinthetrainingdata. allsubexperimentsduetotheexorbitantcostasso-
+ciatedwithtraininglargerLLMs. Thus,welimited
+Limitations ourexperimentstospecificmodelsthatweremost
+likelytobeofusetotheresearchcommunity.
+We acknowledge that our study has limitations.
+Afurtherlimitationisthepresenceoflabeling
+First, inference was performed under controlled
+errorsintheMIMICdataset. SomeelementsofPII
+hardwarespecifications(e.g.,2GPUs). Thefind-
+areincorrectlycategorized(e.g.,identifierssuchas
+ings (especially the specific measurements) are
+name or organization were mislabeled). Despite
+likelytochangewithothersetups(e.g. fasterCPUs
+labeling errors, the tokens still represent PII and
+or GPUs would lead to different results), though
+are usable for de-identification. Past work man-
+wewouldexpectrelativeperformancetostaythe
+ually evaluating the accuracy of the MIMIC data
+same.
+set’sPIIlabelfoundfewerrors,concludingthatit
+Second, while the Faker library simplifies the wouldhavenomeaningfulimpactontheirresults
+replacement of PII in clinical notes, it uses fixed (Aghakasirietal.,2025).
+distributionsfornames,addresses,dates,andother We believe that our work is generally low-risk
+identifiers. Thismaynotfullycapturereal-world, asworkservestoimprovetherobustnessandeffi-
+multi-language diversity, potentially introducing ciency of de-identification which in turn reduces
+biasesduringfine-tuning. Additionally,thereisa theprivacyriskofotherworks. Webelievethatthe
+disparity in the amount of variation available to primaryeffectofourresearchispositive, though
+differentFakerlocales(i.e.,somelanguagesonly therearenegativeexternalitieswiththeexecution
+have a small pool of identifiers or no identifiers of our work (e.g., the climate cost of running so
+forspecificidentifiercategories),whichaffectsthe manydifferentmodels). Ourworkislimitedinthat
+overalldistributions. wedonotaccountforsuchexternalities.
+AnotherlimitationstemmingfromtheFakerli-
+brary deals with gendered languages. Our anal- Acknowledgments
+ysis relies on Faker’s pre-defined list which only
+Carrie Ye is supported by a CRAF (CIORA)-
+deals with the male and female gender and does
+ArthritisSocietyCanadaNewClinicalinvestigator
+notmeaningfullydealwiththeissuessurrounding
+Award(award#Cl-24-0013). RossMitchellisthe
+name-based gender identification. While we are
+AlbertaHealthServicesChairinArtificialIntelli-
+awareoftheseissues,webelievethatitisstillvital
+genceinHealthandissupportedbyCIFAR,Univer-
+toattempttouncoveranyperformancediscrepan-
+sityHospitalFoundation,Amii,andtheCanadian
+cies which may negatively affect patient privacy.
+Foundation for Innovation. Mohamed Abdalla is
+Forthisreason,weproceededwiththeanalysis.
+supportedbyaCIFARAIchair. NoopurZambare
+Moreover,ourevaluationofmulti-culturalgen-
+issupportedthroughanAmiigrant.
+eralization does not cover the entire spectrum of
+language and cultural variations. Although there
+is a great deal of linguistic variety in the evalu-
+atedlanguages,wehavenotproventhatourresults
+necessarilygeneralizetoalllanguages.
+Anotherlimitationofourapproachisthatclini-
+callanguageandpracticesevolveovertime,which
+couldleadtodegradationofourfine-tunedmodels
+9
+References OcéaneDorémus,DylanRusson,BenjaminContrand,
+ArielGuerra-Adames,MartaAvalos-Fernandez,Cé-
+KianaAghakasiri,NoopurZambare,JoAnnThai,Carrie
+dricGil-Jardiné, EmmanuelLagarde, and1others.
+Ye,MayurMehta,JRossMitchell,andMohamedAb-
+2025. Harnessing moderate-sized language mod-
+dalla.2025. Notwhatthedoctorordered: Surveying
+elsforreliablepatientdatadeidentificationinemer-
+llm-basedde-identificationandquantifyingclinical
+gencydepartmentrecords: Algorithmdevelopment,
+informationloss. arXivpreprintarXiv:2509.14464.
+validation, and implementation study. JMIR AI,
+4(1):e57828.
+Emily Alsentzer, John R Murphy, Willie Boag, Wei-
+HungWeng,DiJin,TristanNaumann,andMatthew DavidADorr,WFPhillips,ShobhaPhansalkar,Shan-
+McDermott. 2019. Publicly available clinical bert nonASims,andJohnFranklinHurdle.2006. Assess-
+embeddings. arXivpreprintarXiv:1904.03323. ingthedifficultyandtimecostofde-identification
+in clinical narratives. Methods of information in
+Bayan Altalla’, Sameera Abdalla, Ahmad Altamimi, medicine,45(03):246–252.
+Layla Bitar, Amal Al Omari, Ramiz Kardan, and
+IyadSultan.2025. Evaluatinggptmodelsforclinical MargaretDouglass,GariDClifford,AndrewReisner,
+notede-identification. ScientificReports,15(1):3852. George B Moody, and Mark Rg. 2004. Computer-
+assistedde-identificationoffreetextinthemimicii
+Amazon Web Services. 2018. Amazon comprehend database. InComputersinCardiology,2004,pages
+medical. https://aws.amazon.com/comprehend/ 341–344.IEEE.
+medical/.
+Ethnologue. 2025. What are the top 200 most spo-
+JinzeBai,ShuaiBai,YunfeiChu,ZeyuCui,KaiDang, ken languages? https://www.ethnologue.com/
+XiaodongDeng,YangFan,WenbinGe,YuHan,Fei
+insights/ethnologue200/.
+Huang,and1others.2023. Qwentechnicalreport.
+European Union. 2016. General data protection reg-
+arXivpreprintarXiv:2309.16609.
+ulation. https://eur-lex.europa.eu/eli/reg/
+2016/679/oj/eng.
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie
+Subbiah,JaredDKaplan,PrafullaDhariwal,Arvind DanieleFaragliaandOtherContributors.2014. Faker.
+Neelakantan,PranavShyam,GirishSastry,Amanda
+Askell, and 1 others. 2020. Language models are ÓscarFerrández,BrettRSouth,ShuyingShen,FJeff
+few-shotlearners. Advancesinneuralinformation Friedlin, Matthew H Samore, and Stéphane M
+processingsystems,33:1877–1901. Meystre.2012. Generalizabilityandcomparisonof
+automaticclinicaltextde-identificationmethodsand
+Mikhail Budnikov, Anna Bykova, and Ivan P resources. InAMIAAnnualSymposiumProceedings,
+Yamshchikov.2025. Generalizationpotentialoflarge volume2012,page199.
+languagemodels. NeuralComputingandApplica-
+tions,37(4):1973–1997. AaronGrattafiori,AbhimanyuDubey,AbhinavJauhri,
+Abhinav Pandey, Abhishek Kadian, Ahmad Al-
+Centers for Medicare & Medicaid Services. 1996. Dahle,AieshaLetman,AkhilMathur,AlanSchelten,
+The Health Insurance Portability and Account- AlexVaughan,and1others.2024. Thellama3herd
+ability Act of 1996 (HIPAA). Online at ofmodels. arXivpreprintarXiv:2407.21783.
+http://www.cms.hhs.gov/hipaa/.
+PaulMHeider,JihadSObeid,andStéphaneMMeystre.
+2020. A comparative analysis of speed and accu-
+Fangyi Chen, Syed Mohtashim Abbas Bokhari, Ken-
+racy for three off-the-shelf de-identification tools.
+rickCato,GamzeGürsoy,andSarahRossetti.2024.
+AMIA Summits on Translational Science Proceed-
+Examining the generalizability of pretrained de-
+ings,2020:241.
+identificationtransformermodelsonnarrativenurs-
+ingnotes. AppliedClinicalInformatics,15(02):357–
+Kexin Huang, Jaan Altosaar, and Rajesh Ranganath.
+367.
+2019. Clinicalbert: Modeling clinical notes and
+predicting hospital readmission. arXiv preprint
+Qingyu Chen, Yan Hu, Xueqing Peng, Qianqian Xie,
+arXiv:1904.05342.
+QiaoJin,AidanGilson,MaxwellBSinger,Xuguang
+Ai,Po-TingLai,ZhizhengWang,and1others.2025. Albert Q Jiang, Alexandre Sablayrolles, Antoine
+Benchmarkinglargelanguagemodelsforbiomedical Roux,ArthurMensch,BlancheSavary,ChrisBam-
+naturallanguageprocessingapplicationsandrecom- ford,DevendraSinghChaplot,DiegodelasCasas,
+mendations. Naturecommunications,16(1):3280. Emma Bou Hanna, Florian Bressand, and 1 oth-
+ers. 2024. Mixtral of experts. arXiv preprint
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and arXiv:2401.04088.
+KristinaToutanova.2019. Bert: Pre-trainingofdeep
+bidirectionaltransformersforlanguageunderstand- AlistairEWJohnson,LucasBulgarelli,andTomJPol-
+ing. In Proceedings of the 2019 conference of the lard. 2020. Deidentification of free-text medical
+NorthAmericanchapteroftheassociationforcom- recordsusingpre-trainedbidirectionaltransformers.
+putationallinguistics: humanlanguagetechnologies, In Proceedings of the ACM conference on health,
+volume1(longandshortpapers),pages4171–4186. inference,andlearning,pages214–221.
+10
+AlistairEWJohnson,TomJPollard,LuShen,Li-weiH OBI Organization. 2022. deid_bert_i2b2.
+Lehman, Mengling Feng, Mohammad Ghassemi, https://github.com/obi-ml-public/ehr_
+BenjaminMoody,PeterSzolovits,LeoAnthonyCeli, deidentification.
+andRogerGMark.2016. Mimic-iii,afreelyaccessi-
+blecriticalcaredatabase. Scientificdata,3(1):1–9. David Pissarra, Isabel Curioso, João Alveira, Duarte
+Pereira,BrunoRibeiro,TomásSouper,VascoGomes,
+Woojin Kim, Sungeun Hahm, and Jaejin Lee. 2024. AndréVCarreiro,andVitorRolla.2024. Unlocking
+Generalizing clinical de-identification models by thepotentialoflargelanguagemodelsforclinicaltext
+privacy-safedataaugmentationusinggpt-4. InPro- anonymization: Acomparativestudy. arXivpreprint
+ceedingsofthe2024ConferenceonEmpiricalMeth- arXiv:2406.00062.
+odsinNaturalLanguageProcessing,pages21204–
+AlecRadford,KarthikNarasimhan,TimSalimans,Ilya
+21218.
+Sutskever,and1others.2018. Improvinglanguage
+ZengjianLiu,BuzhouTang,XiaolongWang,andQing- understanding by generative pre-training. OpenAI
+caiChen.2017. De-identificationofclinicalnotes technicalreport.
+viarecurrentneuralnetworkandconditionalrandom
+AmberStubbsandÖzlemUzuner.2015. Annotating
+field. Journal of biomedical informatics, 75:S34–
+longitudinalclinicalnarrativesforde-identification:
+S42.
+The2014i2b2/uthealthcorpus. Journalofbiomedi-
+calinformatics,58:S20–S29.
+Sourab Mangrulkar, Sylvain Gugger, Lysandre De-
+but, Younes Belkada, Sayak Paul, and Benjamin
+Vaakesan Sundrelingam, Shireen Parimoo, Frances
+Bossan. 2022. PEFT: State-of-the-art parameter-
+Pogacar, Radha Koppula, Saeha Shin, Chloe Pou-
+efficient fine-tuning methods. https://github.
+Prom,SurainBRoberts,AmolAVerma,andFahad
+com/huggingface/peft.
+Razak. 2025. pydeid: an improved, fast, flexible,
+andgeneralizablerule-basedapproachfordeidenti-
+StephaneMMeystre,GaryUnderwood,andPaulHei-
+ficationoffree-textmedicalrecords. JAMIAopen,
+der. 2023. Clinideid, an open source solution for
+8(1):ooae152.
+accurate clinical text de-identification. Studies in
+HealthTechnologyandInformatics.
+LatanyaSweeney.1998. Strategiesforde-identifying
+patientdataforresearch.
+Microsoft. 2018. Presidio - Data Protection and De-
+identificationSDK. Qwen Team. 2024. Qwen2 technical report. arXiv
+preprintarXiv:2407.10671,2.
+Mindee. 2021. doctr: Document text recognition.
+https://github.com/mindee/doctr. BenjaminWarner,AntoineChaffin,BenjaminClavié,
+Orion Weller, Oskar Hallström, Said Taghadouini,
+CallandraMoore,LucasBulgarelli,TomPollard,and AlexisGallagher,RajaBiswas,FaisalLadhak,Tom
+AlistairJohnson.2023. Transformer-deid: Deidenti- Aarsen, and1others.2024. Smarter, better, faster,
+ficationoffree-textclinicalnoteswithtransformers. longer: A modern bidirectional encoder for fast,
+memory efficient, and long context finetuning and
+Marco Naguib, Xavier Tannier, and Aurelie Neveol.
+inference. arXivpreprintarXiv:2412.13663.
+2024. Few-shotclinicalentityrecognitioninenglish,
+frenchandspanish: maskedlanguagemodelsoutper- Isabella C Wiest, Marie-Elisabeth Leßmann, Fabian
+formgenerativemodelprompting. InFindingsofthe Wolf, Dyke Ferber, Marko Van Treeck, Jiefu
+AssociationforComputationalLinguistics: EMNLP Zhu, Matthias P Ebert, Christoph Benedikt West-
+2024,pages6829–6852. phalen,MartinWermke,andJakobNikolasKather.
+2025. Deidentifyingmedicaldocumentswithlocal,
+National Library of Medicine. 2019. Nlm scrubber. privacy-preservinglargelanguagemodels: Thellm-
+https://lhncbc.nlm.nih.gov/scrubber/. anonymizer. NEJMAI,2(4):AIdbp2400537.
+Ishna Neamatullah, Margaret M Douglass, Li-Wei H Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Lehman, Andrew Reisner, Mauricio Villarroel, Chaumond,ClementDelangue,AnthonyMoi,Pier-
+WilliamJLong,PeterSzolovits,GeorgeBMoody, ricCistac,TimRault,RémiLouf,MorganFuntowicz,
+Roger G Mark, and Gari D Clifford. 2008. Auto- JoeDavison,SamShleifer,PatrickvonPlaten,Clara
+matedde-identificationoffree-textmedicalrecords. Ma,YacineJernite,JulienPlu,CanwenXu,TevenLe
+BMC medical informatics and decision making, Scao, Sylvain Gugger, and 3 others. 2020. Trans-
+8(1):32. formers:State-of-the-artnaturallanguageprocessing.
+InProceedingsofthe2020ConferenceonEmpirical
+BeauNorgeot,KathleenMuenzen,ThomasAPeterson, Methods in Natural Language Processing: System
+Xuancheng Fan, Benjamin S Glicksberg, Gundolf Demonstrations,pages38–45,Online.Association
+Schenk,EugeniaRutenberg,BorisOskotsky,Marina forComputationalLinguistics.
+Sirota,JinoosYazdany,and1others.2020. Protected
+healthinformationfilter(philter): accuratelyandse- YuxinXiao,ShulammiteLim,TomJosephPollard,and
+curely de-identifying free-text clinical notes. NPJ MarzyehGhassemi.2023. Inthenameoffairness:
+digitalmedicine,3(1):57. assessingthebiasinclinicalrecordde-identification.
+11
+InProceedingsofthe2023ACMConferenceonFair- A DatasetDescription
+ness,Accountability,andTransparency,pages123–
+137. We sampled a total of 4,000 notes from MIMIC-
+III,whichweredividedintosubsetsforfine-tuning,
+validation,andevaluation. Forfine-tuning,weex-
+perimentedwithtrainingsetsofvaryingsizes(250,
+500, 1000, and 2000 notes) to study the effect of
+data scaling. The remaining notes were used for
+validationandfinalevaluation.
+PCD MIMIC-III
+Numberoftexts 204 4000
+NoteLength
+min 120 66
+mean 670 1444
+max 4975 6680
+NumberofSensitive
+Words
+min 38 5
+mean 183 70
+max 981 362
+Table4: Descriptivestatisticsofdatasetsusedinthis
+paper.
+B PIIEntityDistribution
+Figure5showsPIIdistributioninMIMIC-IIItest
+data.
+Figure5: DistributionofPIIentitiesinthetestingdata.
+Thelefty-axisshowsthetotalcountofeachPIItypein
+thetestset,andtherighty-axisshowsthepercentage
+ofmissedidentifiersoutofallmissedidentifiersduring
+de-identificationbythebest-performingmodelBERT.
+C FineTuningSetup
+WeusedPython-basedlibraries,transformers(Wolf
+et al., 2020) and PEFT (Mangrulkar et al., 2022)
+for fine-tuning. BERT, ClinicalBERT, and Mod-
+ernBERT were fine-tuned for 10 epochs with a
+learning rate of 2 × 10−5 and weight decay of
+12
+Model FineTuningSamples Precision Recall Model P R
+250 0.995 0.996 BERT 0.99 0.99
+500 0.997 0.998 ModernBERT 0.99 0.99
+BERT ClinicalBERT 0.99 0.99
+1000 0.997 0.998
+Qwen-1.5B 0.96 0.94
+2000 0.998 0.999 Qwen-3B 0.96 0.94
+250 0.989 0.995 Qwen-7B 0.96 0.95
+500 0.992 0.996 Llama-1B 0.97 0.95
+ClinicalBERT 1000 0.996 0.998 Llama-3B 0.98 0.96
+2000 0.997 0.998 Llama-8B 0.98 0.97
+250 0.990 0.992
+500 0.994 0.996 Table6: Performanceofde-identificationmodelsfine-
+ModernBERT
+1000 0.996 0.998 tunedasmulticlassclassifiers. P:Precision,R:Recall
+2000 0.998 0.998
+250 0.93 0.91
+500 0.94 0.93
+Qwen1.5B
+1000 0.96 0.94
+tifiers). Theywereequallyeffectiveinperformance
+2000 0.97 0.95
+250 0.93 0.92 astheirbinaryclassifiercounterparts.
+500 0.95 0.94
+Qwen-3B
+1000 0.96 0.95
+2000 0.97 0.96 E Prompts
+250 0.92 0.92
+500 0.94 0.94
+Qwen-8B 1000 0.96 0.95 Our prompt-tuning process was conducted using
+2000 0.97 0.96
+5 clinical notes. It began with an initial prompt
+250 0.96 0.94
+Llama-1B 500 0.96 0.95 synthesizedfrompriorwork. Fromthere,wecon-
+1000 0.97 0.96
+2000 0.97 0.97 ductedaniterativerefinementcycle: afterrunning
+250 0.95 0.95
+themodelon5samplenotes,weperformedquali-
+500 0.96 0.96
+Llama-3B
+1000 0.97 0.97 tativeerroranalysistoidentifyerrors(e.g.,missing
+2000 0.97 0.97
+250 0.95 0.96 categories). Basedontheseobservations,wemade
+500 0.97 0.96
+Llama-8B modificationstotheprompt,focusingonimproving
+1000 0.98 0.97
+2000 0.98 0.98 recallwhilepreservingprecision. Aftereachiter-
+Table5: Performanceofvariousde-identificationmod- ation(promptsandresultsforsomeiterationsare
+elsfine-tunedondifferentnumbersofMIMIC-IIIdis- giveninFigure6,were-evaluatedperformance(on
+chargesummariesandevaluatedon1,000MIMIC-III the same 5 notes); we repeated this process until
+dischargesummaries. furtheradjustmentsnolongeryieldedmeasurable
+recall improvements. The final prompt was then
+evaluatedonthetestset,andtheresultisreported
+0.01. The batch size was 8 for BERT and Clin-
+in the paper. Figure 7 presents the final prompt
+icalBERT,whileitwas2forModernBERT.Dueto
+usedfortheMIMICexperimentswithLlama-70B
+theirsmallercontextwindowsof512,BERTand
+and Qwen-72B described in the paper. Figure 8
+ClinicalBERT used a chunk size of 64, whereas
+presents the prompt used for the experiments on
+ModernBERT, with a context window of 8192,
+thePCDdataset.
+usedachunksizeof1024.
+All Llama and Qwen models were LoRA fine- F Compute
+tunedwithα = 16andr = 8. Llama-1,Qwen-1.5,
+and Llama-3 and Qwen-3 were fine-tuned for 5 Theexperimentsdescribedinthepaperwereper-
+epochs. Llama-8BandQwen-7Bweretrainedfor formedonNVIDIAA100-SXM4-80GBGPUs. All
+3 epochs. All these models used a batch size of fine-tuningandinferenceexperiments(exceptfor
+1,chunksizeof2048,andthesamelearningrate Llama-70BandQwen-72B)wereconductedona
+(2×10−5)andweightdecay(0.01). singleGPU.Llama-70BandQwen-72Brequired
+two GPUs. Fine-tuning all models took approxi-
+We also experimented with fine-tuning using
+mately44hoursintotal(forallsamplesizes250,
+differenttotalnumbersofsamples,assummarized
+500,1000and2000). Testingallfine-tunedmod-
+inTable5.
+els,includingbaselines,requiredaround31hours.
+D Multi-classClassificationResults PrompttuningandtestingofLlama-70BandQwen-
+72Btookapproximately255hours,whilecalculat-
+Wealsofine-tunedBERTvariantsandsmallermod- ingCIRErequiredabout252hours.
+elsfromtheLlamaandQwenfamiliesasmulticlass Theparameterspecificationsofthemodelswere
+classifierstode-identifymultipletypesofPII(for as follows: BERT and ClinicalBERT contained
+e.g.,names,phonenumbers,addresses,countries, 110Mparameters,whileModernBERTcontained
+city,hospitalname,companyname,andotheriden- 149Mparameters. TheLlamafamilyconsistedof
+13
+Figure6: Prompt-tuningLlama-70Bwithvariousprompts.
+Figure7: Promptusedforde-identificationusingLlama-70BandQwen-72BtunedonMIMICdataset.
+Figure8: Promptusedforde-identificationusingLlama-70BandQwen-72BtunedonPCD.
+14
+Figure9: PromptusedforCIREwithLlama-70B.
+modelswith1B,3B,8B,and70Bparameters,and
+theQwenfamilyincludedmodelswith1.5B,3B,
+7B,and72Bparameters.
+G UseofAIAssistants
+AnAIassistantwasusedonlyforspelling,gram-
+mar,andphrasing.
+H FullResults
+Model GB AU CA
+P R P R P R
+BERT 0.99 0.97 0.99 0.98 0.99 0.99
+ModernBERT 0.99 0.97 0.99 0.99 0.99 0.99
+ClinicalBERT 0.99 0.96 0.99 0.99 0.99 0.99
+Qwen-1.5B 0.96 0.93 0.96 0.95 0.96 0.94
+Qwen-3B 0.97 0.94 0.96 0.95 0.96 0.95
+Qwen-7B 0.97 0.94 0.97 0.95 0.96 0.95
+Llama-1b 0.97 0.95 0.97 0.96 0.97 0.96
+Llama-3b 0.97 0.96 0.97 0.97 0.97 0.96
+Llama-8b 0.98 0.96 0.98 0.97 0.98 0.96
+Llama-70B 0.75 0.98 0.74 0.98 0.76 0.97
+pyDeid 0.68 0.71 0.67 0.72 0.68 0.74
+obi-deid-bert 0.91 0.91 0.91 0.94 0.91 0.93
+Presidio 0.63 0.88 0.62 0.92 0.62 0.92
+Table 8: Experiment 2.2.2: Performance of de-
+identification models fine-tuned on 1000 MIMIC-III
+and evaluated on 500 samples from above 3 English
+variants. P:Precision,R:Recall
+15
+Model Mandarin Spanish Hindi French Bengali
+P R P R P R P R P R
+BERT 0.99 0.80 0.99 0.77 0.99 0.80 0.99 0.83 0.99 0.75
+ModernBERT 0.99 0.75 0.99 0.83 0.99 0.92 0.99 0.90 0.99 0.81
+ClinicalBERT 0.99 0.87 0.99 0.84 0.99 0.97 0.99 0.87 0.99 0.97
+Qwen-1.5B 0.97 0.80 0.96 0.86 0.96 0.91 0.96 0.89 0.96 0.80
+Qwen-3B 0.97 0.65 0.96 0.82 0.97 0.90 0.97 0.89 0.97 0.89
+Qwen-7B 0.98 0.71 0.97 0.85 0.97 0.89 0.97 0.89 0.97 0.76
+Llama-1b 0.98 0.83 0.97 0.80 0.97 0.90 0.97 0.87 0.97 0.77
+Llama-3b 0.98 0.71 0.98 0.82 0.98 0.88 0.98 0.87 0.97 0.76
+Llama-8b 0.99 0.76 0.98 0.85 0.98 0.91 0.98 0.90 0.98 0.78
+Llama70-prompting 0.81 0.96 0.79 0.95 0.62 0.97 0.74 0.97 0.78 0.96
+pyDeid 0.70 0.58 0.70 0.64 0.64 0.62 0.67 0.66 0.62 0.59
+obi-deid-bert 0.94 0.94 0.92 0.84 0.91 0.92 0.91 0.90 0.91 0.93
+Presidio 0.44 0.94 0.64 0.90 0.60 0.87 0.64 0.92 0.58 0.85
+Table7: Experiment2.2.1: Performanceofde-identificationmodelsfine-tunedon1000MIMIC-IIIandtestedon
+500samplesfromfivelanguages. P:Precision,R:Recall
+Model Mandarin Spanish Hindi French Bengali GB
+Rf Rm Rf Rm Rf Rm Rf Rm Rf Rm Rf Rm
+BERT 0.92 0.90 0.88 0.89 0.58 0.60 0.90 0.96 0.53 0.52 1.0 1.0
+ModernBERT 0.85 0.86 0.94 0.93 0.82 0.80 0.96 0.98 0.76 0.76 0.99 0.99
+ClinicalBERT 0.85 0.85 0.96 0.95 0.93 0.95 0.96 0.99 0.94 0.97 0.99 0.99
+Qwen1.5 0.92 0.91 0.81 0.83 0.78 0.82 0.81 0.87 0.70 0.72 0.90 0.95
+Qwen3 0.81 0.83 0.80 0.83 0.80 0.83 0.83 0.88 0.71 0.76 0.92 0.96
+Qwen7 0.87 0.84 0.82 0.84 0.72 0.75 0.83 0.88 0.62 0.64 0.92 0.95
+Llama-1b 0.93 0.90 0.78 0.81 0.72 0.77 0.82 0.88 0.68 0.71 0.90 0.95
+Llama-3b 0.86 0.85 0.81 0.83 0.70 0.72 0.85 0.90 0.65 0.70 0.91 0.96
+Llama-8b 0.93 0.90 0.86 0.87 0.79 0.82 0.87 0.91 0.74 0.79 0.92 0.96
+Llama-70B 0.99 0.98 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99
+pyDeid 0.80 0.69 0.78 0.75 0.63 0.63 0.72 0.70 0.63 0.62 0.85 0.90
+obi-deid-bert 0.98 0.97 0.91 0.91 0.91 0.94 0.95 0.98 0.93 0.94 0.99 0.99
+Presidio 0.97 0.96 0.88 0.90 0.84 0.84 0.93 0.95 0.72 0.80 0.97 0.97
+Table9: Experiment2.3: Performancedisparityacrossgenderednamesofde-identificationmodelsfine-tuned
+on1000MIMIC-IIIandtestedon500sampleshavingidentifiersfromsixlanguagevariants. Differencesinrecall
+greaterthan0.05betweenfeminineandmasculinenamesarehighlighted. TheFakerlibrarydoesnotprovidean
+explicitpoolforfemaleandmalenamesforAustralianandCanadianEnglish. R : FemaleRecall,R : Male
+f m
+Recall
+16

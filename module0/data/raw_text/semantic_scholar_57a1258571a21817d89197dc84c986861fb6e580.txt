@@ -1,0 +1,804 @@
+Measuring and Improving BERT’s Mathematical Abilities by Predicting
+the Order of Reasoning
+PiotrPie˛kos MateuszMalinowski∗ HenrykMichalewski∗
+UniversityofWarsaw DeepMind UniversityofWarsaw,Google
+piotrpiekos@gmail.com
+Abstract One issue is to create a formalism that covers all
+theaspectsneededtosolvetheseproblems. Onthe
+Imagine you are in a supermarket. You have
+otherhand,deeplearning(LeCunetal.,2015)aims
+two bananas in your basket and want to buy
+todevelopartificialgeneralintelligencethatscales
+four apples. How many fruits do you have
+bettertovariousproblems.
+in total? This seemingly straightforward qu-
+estion can be challenging for data-driven lan- However,despitemanysuccessesincomputervi-
+guage models, even if trained at scale. Ho- sionandnaturallanguageprocessing(Devlinetal.,
+wever, we would expect such generic langu- 2018;Heetal.,2016;Krizhevskyetal.,2012;Lan
+agemodelstopossesssomemathematicalabi- etal.,2019;Mikolovetal.,2013),data-drivenme-
+lities in addition to typical linguistic compe-
+thods evade our dream of building a system with
+tence. Towards this goal, we investigate if a
+basic, every-day, mathematical skills. As large-
+commonly used language model, BERT, po-
+scalenaturallanguagemodelsbecomemorecom-
+ssesses such mathematical abilities and, if so,
+mon(Devlinetal.,2018;Brownetal.,2020),we
+to what degree. For that, we fine-tune BERT
+on a popular dataset for word math problems, wouldexpectthemtoalsoreasonmathematically.
+AQuA-RAT, and conduct several tests to un- Sincenaturallanguageunderstandingalsoinvo-
+derstandlearnedrepresentationsbetter. lvessymbolicmanipulation(Liang,2016),wetreat
+Since we teach models trained on natural lan-
+mathematical reasoning as a language understan-
+guagetodoformalmathematics, wehypothe-
+dingandrevisitthedata-drivenparadigm. Forthat,
+size that such models would benefit from tra-
+we rely on a recent language model, BERT (De-
+ining on semi-formal steps that explain how
+vlinetal.,2019),andchallengeitwithmathword
+math results are derived. To better accommo-
+date such training, we also propose new pre- problems (Ling et al., 2017). Even though such
+texttasksforlearningmathematicalrules. We language models have initially shown promising
+callthem(Neighbor)ReasoningOrderPredic- results,morerecentinvestigationshowstheymay
+tion (ROP or NROP). With this new model, rely on various biases in their predictions (Hen-
+we achieve significantly better outcomes than
+dricksetal.,2018;Brownetal.,2020;Bhardwaj
+data-driven baselines and even on-par with
+et al., 2020; Kurita et al., 2019). Here, we also
+more tailored models. We also show how to
+followthatlineofinvestigationandshowthesemo-
+reducepositionalbiasinsuchmodels.
+delscananswercorrectlywithoutanunderstanding
+1 Introduction oftherationalebehindit.
+Furthermore, as directly predicting answers to
+Automaticallysolvingmathwordproblemshasa
+mathproblemsoftenrequiresmultiplestepsofre-
+longhistorydatingbacktothemiddlesixties(Bo-
+asoning, we show that we can improve BERT’s
+brow, 1964). Early approaches were rule-based
+generalization by exposing it to rationales (Ling
+matching systems that solve the problem symbo-
+etal.,2017;Hendricksetal.,2016;Leietal.,2016).
+lically. Even though there are some impressive
+Theseare,however,onlyusedduringtrainingsimi-
+symbolic systems that operate in a relatively nar-
+larlytoateacherthatshowsastudentajustification
+rowdomain,theinabilitytosuccessfullyscalethem
+foreachanswer. Butthen,thestudentisevaluated
+upissometimespresentedasacritiqueofthegood-
+only on the ability to answer these questions du-
+old-fashionedAI,orGOFAI(Dreyfusetal.,1992).
+ringthecollegeexamcorrectlywithnoaccessto
+∗Authorshavecontributedequally. rationales. Finally,tolearnabetterrepresentation
+Figure1:BERT(right)andournovelextension(left).Weuse
+sharedarchitecturebutweseparatequestiontokens(green
+blocks)fromrationales(blueblocks)usingdifferentsegment
+andpositionalembeddings.Weshowallthreelosses.MLM
+predictsmaskedtokens(depictedhereasPr ).WeuseROP
+Q,k
+orNROPtopredictiftheorderingofrationalestepsiscorrect. Figure 2: ROP or NROP with positive (left) and negative
+Forquestion-answering,wefine-tunethewholemodelwitha (right)labels.Werandomlyswaptworationalesandclassify
+classificationlayerusingsoftmax.Weusetheembeddingthat ifthatchangehashappened.
+correspondstothe[CLS]tokenastheinputrepresentation.
+2.1 Architectures,pretexttasksandlosses
+fromrationalesandtoimprovethegeneralization We base our architecture on BERT (Devlin et al.,
+evenfurther,weintroducenovelpretexttasksand 2019) that has 12 transformer blocks (Vaswani
+correspondinglosses,whichwename(Neighbor) etal.,2017). Asthecore,weusethestandardconfi-
+ReasoningOrderPrediction(ROPorNROP).We gurationdescribedin(Devlinetal.,2019). Weuse
+alsoshowthatpermutationinvariantlossescanlead three self-supervised losses. One is the standard
+to less biased representations. With that, we out- MaskedLanguageModelling(MLM)butextended
+performotherdata-drivenbaselines,andareeven toworkonrationales. Othertwoareournewlosses,
+on-parwithmethodsthataremoretailoredtomath- (Neighbour)ReasoningOrderPrediction(ROPor
+worldproblemsandtheAQuA-RATdataset. NROP).Figure1showstwovariantsofourmodels.
+Notethat,duringfine-tuning,rationalesandallthe
+self-supervisedlossesarediscarded.
+2 Methods
+MLMistheMaskedLanguageModelling(Devlin
+etal.,2019). Werandomlymask15%oftheinput
+Weusethefollowingmethods,eachinitializedwith tokensbyaspecialtoken[MASK].Theobjective
+BERT-base pre-trained on Wikipedia and Books ofthislossistopredictthemaskedtokenusingits
+Corpus(Devlinetal.,2018;Zhuetal.,2015). Note contextcastedasaclassificationproblemoverthe
+that,infine-tuningtheyallhavethesamenumber tokenizer vocabulary. Loss is calculated only on
+ofparameters. masked tokens. We extend this loss to rationales.
+1)BERT-base. Wefine-tuneBERTtopredictthe First,werandomlychoosewhetherwemaskaqu-
+correctanswerandshowitstransfertomathword estionorrationale. Next,wefollowtheprocedure
+problems. aboveappliedtoeitheraquestionorrationale. Ho-
+2) BERT-AQuA. We use the MLM loss on the wever,toencouragebindingbetweenquestionsand
+AQuA-RAT questions before training to predict rationales, we use the whole context for the pre-
+correctanswer. dictions. Interestingly,thereareparallelsbetween
+3)BERT-AQuA-RAT.WeusetheMLMlosson masking numbers and solving mathematical equ-
+theAQuA-RATquestionsandrationalesandshow ations,whereitcanbeseenassolvingtheequation
+if we can inject knowledge from rationales into with unknown. For example, 2 + [MASK] = 4
+BERT. becomes 2+x = 4. As a consequence, models
+4)BERT-(N)ROP.WeusetheMLMlossandthe duringtrainingorganicallydealwithmathematical
+novel(N)ROPlossforcoherenceprediction(defi- calculationswithoutdefiningaspecificlossforma-
+nedlater)andshowifwecanimprovetheresults thematicsallowingsofttransitionsbetweennatural
+byfocusingthemodelonrationales. andmoreformallanguages.
+Laterinthispaper,weproposepermutationin- ROP is our novel coherence loss. Since rationa-
+variant losses that additionally reduce positional les are sequences of consecutive reasoning steps,
+biasesoftheBERT-basemodel,andcanworkwith the order of the execution is critical as shown in
+allthepretexttasksdescribedabove. Figure 2. Following this intuition, we introduce
+Reasoning Order Prediction (ROP) that predicts Model Accuracy
+whether the order of the rationale steps is prese- Randomchance 20.0%
+rved. Henceitencouragesthenetworktopaymore LSTM(Lingetal.,2017) 20.8%
+BERT-base(ours) 28.3(±2.0)%
+attentiontorationales. ThelossissimilartoSen-
+BERT-AQUA(ours) 29.1(±1.7)%
+tence Order Prediction (SOP) (Lan et al., 2019),
+BERT-AQuA-RAT(ours) 32.3(±1.8)%
+butoursisfocusedonlearningreasoningsteps.
+BERT-ROP(ours) 35.4(±1.0)%
+NROPisanextensionofROPwhereonlyconse-
+BERT-NROP(ours) 37.0(±1.1)%
+cutiverationalestepsareswappedmakingthepre- AQuA-RAT(Lingetal.,2017) 36.4%
+diction (swap or no swap) task more challenging MathQA(Aminietal.,2019) 37.9%
+and, hence, it can arguably lead to a better repre-
+Table1:Comparisonofdata-driven(firstsixrows)withtwo
+sentationasunderstandingthecorrectorderingis
+hybridapproachesthatusestrongerandhencemorespecific
+morenuanced. Indeed,weobservethatourmodels inductivebiases(lasttworows).Standarddeviationestimates
+(overrandominitializations)isgiveninparentheses,where
+trained with NROP correctly predict if swap has
+weseeourlossescanreducethevariabilityslightly.
+occurred in about 75% cases, while with ROP in
+about78%cases(bothonthevalidationset). This
+indeed,confirmsourhypothesisthatNROPtaskis
+morechallengingthanROP.
+3 Results
+Dataset. WeuseAQuA-RAT(Lingetal.,2017). It
+Figure3:Accuraciesfordevandtestsets.Greenlinesshow
+hasabout100kcrowd-sourcedmathquestionswith theiterationthatmaximizesvalidationaccuracy.Theimage
+five candidate answers (one is correct). Each qu- alsoshowsthesensitivityofrelationshipbetweentestandthe
+original(left)orourextended(right)validationset.
+estionhasarationale–astep-by-stepexplanation
+ofhowtheansweriscomputed–thatisonlyavaila-
+bleduringtraining. Attesttimeanswerpredictions (Figure3,right),wehaveincreasedthecorrelation
+arebasedonquestions. Thetrainsethasroughly to0.401. Withsuchanewvalidationset,wereport
+100kquestion-answer-rationaletriples,whiledev 37%testaccuracybutwecanalsoseethat40%is
+andtestabout250question-answerpairseach. withinthereach(Figure3,right).
+Mainresults. Table1showsourmainresults. We Rationales. We hypothesize that rationales con-
+see that our method is the state-of-the-art among tain information that is either missing or hard to
+the models with minimal inductive biases and is extractfromquestions. Forinstance,theirstructure
+verycompetitivetotheothertwomodelsthatare is different; they are more formal with emphasis
+morespecifictohandlewordmathproblems(e.g., onthelogicalsteps. However,testingthathypothe-
+requiresprograms). Moreover,eventhoughBERT sisisnon-trivialasthereisaconfoundingfactor–
+isalreadyastrongermodelthanLSTM,itisbetter addingmorerationalesresultsinmoredata. The-
+touseitsMLMpretexttaskandlossontheAQuA- refore, we artificially modify the dataset so that
+RAT questions (BERT-AQuA) or even better on both models (one trained only on questions, and
+questionsandrationales(BERT-AQuA-RAT).Ho- another one on questions and rationales) are tra-
+wever,modelswithournovelcoherenceprediction ined on roughly the same number of data points.
+lossescanbetterlearnfromrationales(BERT-ROP For that, we have estimated that rationales have
+andBERT-NROP). 1.7timesmoretokensthanquestions. Thismeans
+Moreover, we observe a highly sensitive rela- thataquestioncombinedwithrationalehasaround
+tionshipbetweendevandtestsets(Figure3,left), 3 times more tokens than just a question. If our
+where small changes in the accuracies in the for- hypothesisisvalid,trainingon20%questionsand
+mersetcanleadtomoredramaticchangesattest rationales should give better results than training
+time. Indeed, the correlation of results between on60%questions(countingthenumberoftokens).
+bothsetsisonly0.082. Asthevalidationsetisqu- Wethereforecreatedsamplesofrespectivesizesof
+itesmall,weproposeanextendeddevconsistingof justquestionsandquestionscombinedwithratio-
+5000randomlychosensamplesfromthetraining nales. WeshowourresultsinFigure4. Theresults
+set extended by the whole dev set. Although not suggestthataddingmorequestionsisinsufficient
+ideal,andthesensitiverelationshipisstillpresent andonlyslightlyimprovestheoverallperformance.
+Originalquestion
+Howmuchis27/3 A)13B)9C)3D)12E)17
+Generatedquestions
+Howmuchis27/3 A)9B)13C)3D)12E)17
+Howmuchis27/3 A)13B)9C)3D)12E)17
+Howmuchis27/3 A)13B)3C)9D)12E)17
+Howmuchis27/3 A)13B)12C)3D)9E)17
+Howmuchis27/3 A)13B)17C)3D)12E)9
+Table2: Ourgenerationmethodforthepermutationconsi-
+stencytest.Modelsgetapointonlyiftheysolveallthem.
+Figure 4: Accuracy scores conditioned on the number of
+tokensavailablefortraining. Tosupportourargumentthat
+trainingonrationalesisqualitativelydifferentthanquestions, CorrectOption:D
+wealignbothtogethersothatwehavecomparablenumberof
+ExampleofaproblemsolvedbyBERTAshipwentona
+tokensinbothcases.Plotshowstheprogressionofthedataset
+size.Startingwith650Koftokens-20%datasetBERT-AQuA voyage. Afterithadtraveled180milesaplanestartedwith
+and6.66%forBERT-NROPandendingwith3.25M-100%of 10timesthespeedoftheship. Findthedistancewhenthey
+datasetforBERT-AQuAand33.3%datasetforBERT-NROP.
+meetfromstartingpoint.?
+This shows that training with rationales leads to a better
+representation.Evenbetterthantrainingwithmorequestions. Answers:A)238,B)289,C)200,D)287,E)187
+CorrectOption:C
+Ontheotherhand,usingrationalesismorehelpful.
+Model Score
+Embeddings. Tobetterunderstandthedifference
+Randomchance 0.032%
+betweenBERTandBERT+NROP,weanalyzethe-
+BERT 4.33%
+irsembeddings. Forouranalysis,wesample2500
+BERT+NROP 11.02%
+questionswithasingleoperatorinrationales,and
+BERTAUG 13.4%
+nextwevisualisethemwithT-SNE(VanderMa- BERT+NROPAUG 19.7%
+atenandHinton,2008). WeshowbothinFigure5. BERTSEP-NC 15.0%
+WeobservethatBERT+NROPembeddingsprese- BERT+NROPSEP-NC 22.7%
+rvemoreinformationaboutdifferentoperators. BERTSEP-C 16.1%
+Permutation consistency. Random guessing on BERT+NROPSEP-C 23.9%
+AQuA-RAT yields 20%. With that in mind to se-
+Table3:Ourresultsforthepermutationconsistencytest.
+parate questions that were solved by chance, we
+haveconstructedanewevaluationtask–permuta-
+Dropfrom37.0%to11.02%(Table3)suggests
+tionconsistencytest–whereeachquestiongets5
+thatmodelsrelystronglyontheorderofanswers.
+answersatdifferentpositions. Table2showsour
+Toreducesuchabias,wetestseveralpermutation
+procedure. Here,modelsonlyscoreasinglepoint
+invariantlosses.
+if they solve all 5 questions correctly. Hence, a
+1)AUG.Wesamplerandomly25permutationsof
+randomchanceis0.032%insuchexperiments.
+all the possible answers and use them during tra-
+Table3showsourresults. BERT+NROPsolves
+ining. Originalorderingisnotused,sothereisno
+almost three times as many questions as BERT.
+orderbias. Thisisadataaugmentationtechnique.
+Additionally,furtherinspectionshowsthatBERT
+2) SEP-NC. The original models are trained on
+reliesonchoosingtheanswersthatmoststandout,
+a 5-class classification task, where we build the
+e.g., numbers ending with zeros or floats while
+representationbyusingquestionsandallthecandi-
+everyotheroptionisaninteger. Wedidn’tobserve
+dateanswers,i.e.,BERT(Q||P). Here,||denotes
+thatsimplepatternswithBERT+NROP.Questions
+concatenation,QisthequestionandP represents
+solved by BERT+NROP usually contain one or
+thesequenceofallanswers. InSEP-NC,weblock
+twooperationsandshowthatBERT+NROPbetter
+thepathbetweenallthecandidateanswersandthe
+understandstheproblem. Below,weexemplifytwo
+BERT-base. Next,weusealate-fusiontopredict
+mathproblemssolvedbybothmodels.
+if the given candidate answer matches with the
+ExampleofaproblemsolvedbyBERT+NROP:8man question. That is, we use the following formula-
+work for 6 days to complete a work. How many men are tionf(BERT(Q)||BERT(C)),whereC ∈ P isa
+requiredtocompletesameworkin1/2day? singlecandidateanswerandf isamulti-layerper-
+Answers:A)93,B)94,C)95,D)96,E)97 ception(withtwolayers). Attesttime,themodel
+Figure5:BERTandBERT+NROPembeddings.Coloursrepresentdifferentoperatorsinrationales(T-SNE).BERT+NROP
+embeddingsbetterseparateoperators.
+ispromptedtoscoreallfivecandidateanswersand fewbasicoperations, D requiressolvingsimple
+2
+selecttheonewiththehighestscore. Appendixhas equations,andD hasoneortwobasicoperations
+1
+moreinformationaboutthismethod. withclearlywrittennumbers. Weshowanexample
+3)SEP-C.AsmodelstrainedwithSEP-NCdonot fromeachgroupinthesupplementarymaterial. We
+haveaccesstoallthepossibleanswers,theirbiases didn’tobserveasimilarpatternforBERTwiththe
+toanswerpositionsaresignificantlyreduced. Ho- exceptionoftheeasiestgroupD wherethemodel
+1
+wever,thesemodelscannotcompareeachanswer choosestheanswerthatissomewhatdifferentfrom
+toallothercandidateanswers. Here,weusethefol- othercandidates. Weprovideanexampleofeach
+lowing formulation f(BERT(Q||P)||BERT(C)) groupinthesupplementarymaterials.
+tomeasurethecompatibilityoftheinput(question Finally, we also compare the difficulty of qu-
+QandallthecandidateanswersP)withthegiven estions with the difficulty perceived by humans.
+candidate answer C ∈ P. We also reset the po- Forthat,wehaveconductedasmall-grouphuman
+sitional encoding between every possible answer study, where we have asked participants to solve
+inP. Insuchaway, wehypothesisethenetwork someAQuA-RATquestionsandratetheirdifficulty.
+canlearnalessbiasedrepresentation, andonthe Wefindapositivecorrelationbetweenthedifficulty
+otherhand,userelationshipbetweenthecandidate measured by our models (as described above) to
+answers. Table3showsSEP-NCandSEP-Cvastly the difficulty judged by humans. We give more
+outperformtheoriginalmodelonthepermutation detailsintheappendix.
+consistencytest. Detailsareintheappendix. Conclusions. WehaveinvestigatedifBERT(De-
+SEP-NCandSEP-Cimprovepermutationcon- vlin et al., 2019) – a pre-trained, large language
+sistencytests. Yet,theygivesimilarresultstoori- model–candealwithmathematicalreasoning. We
+ginal methods in accuracy measuring task. They findthatitsrepresentationisbiased(Brownetal.,
+achieverespectively33.5%(SEP-NC)and35.4% 2020; Bhardwaj et al., 2020; Kurita et al., 2019)
+(SEP-C). alsoinmathematics. Weinvestigateanddescribe
+Questionsdifficulty. Tobetterunderstandthemo- that bias. Our novel pretext tasks and losses re-
+dels’performance,wecheckwhichquestionsare ducethatbias,butthenetworkstillfindsshortcuts.
+difficult for the model. We categorize questions Wehopeourworkwillsparkinterestofthecom-
+bytheirdifficultyforBERT-NROPandBERT.To munityindevelopinglanguagemodelscapableof
+estimateaquestion’sdifficulty,wehaverankedthe mathematicalreasoning.
+candidateanswersaccordingtothemodel’suncer- Acknowledgements. WethankWangLing(DeepMind)
+tainties. Forinstance,ifthecorrectanswerhasthe for his comments and suggestions on our draft. Also, we
+2ndlargestprobability,weassigntothatquestion thankPiotrBilin´skiandallparticipantsofthe2020Machine
+difficultytwo. Withthat,wegroupquestionsinto LearningProjectcourseattheUniversityofWarsawfortheco-
+5difficultycategories,fromtheeasiest: D 1,..,D 5. nversationsabouttheproject.Allexperimentswereperformed
+ManualinspectionshowsthatforBERT+NROP: usingtheEntropyclusterfundedbyNVIDIA,Intel,thePolish
+D 5 requiresadditionalknowledgeorimplicitlyde- NationalScienceCentergrantUMO-2017/26/E/ST6/00622
+finednumbers(e.g.,addingfirst100numbers),D 4 andERCStartingGrantTOTAL.TheworkofHenrykMicha-
+requiresgeometryornon-linearequationsandsys- lewskiwassupportedbythePolishNationalScienceCenter
+tems, D 3 requires solving linear systems with a grantUMO-2018/29/B/ST6/02959.
+ImpactStatement learners. InAdvancesinneuralinformationproces-
+singsystems.
+Ourresearchfollowsthedata-drivenparadigmfor
+creating general-purpose language models with EugeneCharniak.1969. Computersolutionofcalculus
+wordproblems. InProceedingsofthe1stinternatio-
+some mathematical skills. We expect that mathe-
+naljointconferenceonArtificialintelligence,pages
+maticallyawarelanguagemodelswillbroadenthe
+303–316.
+spectrumoftopicstheycanunderstand,increasing
+Kevin Clark, Urvashi Khandelwal, Omer Levy, and
+theirreliabilityandmakingthemmoreuseful.
+Christopher D. Manning. 2019. What does BERT
+Improvingmathematicalabilitiesandcoherence
+look at? an analysis of BERT’s attention. In
+in language models is likely to affect question- Proceedings of the 2019 ACL Workshop Blackbo-
+answeringordialoguesystems,searchenginesor xNLP:AnalyzingandInterpretingNeuralNetworks
+for NLP, pages 276–286, Florence, Italy. Associa-
+textsummarizationsystems.
+tionforComputationalLinguistics.
+One considerable risk in developing language
+modelsatscaleisthattheycouldusevariousworka- RodneyRCocking,RodneyTCocking,andJosePMe-
+roundsandbiasestoachievetheirresults. Wehave stre.1988. Linguisticandculturalinfluencesonle-
+arningmathematics. PsychologyPress.
+shown that issues in the context of mathematical
+reasoning. Suchproblemscanbecomehazardous Mark GCore, H Chad Lane, Michael Van Lent, Dave
+whenwrongnumberscouldleadtobaddecisions. Gomboc, Steve Solomon, and Milton Rosenberg.
+2006. Building explainable artificial intelligence
+Additionally,apersoncouldeasilyfallintothefal-
+systems.
+lacythattheorderofmagnitudeiscorrectevenif
+theanswerisincorrect. Asweshowed,themodel Scott Crossley, Tiffany Barnes, Collin Lynch, and Da-
+can favour round numbers over the ones close to nielle S McNamara. 2017. Linking language to
+math success in an on-line course. International
+the right answer. To mitigate the risk, we enco-
+EducationalDataMiningSociety.
+urageconsideringadditionaltestsandinvestigating
+themodelsmorerigorously. JacobDevlin, Ming-WeiChang, KentonLee, andKri-
+stinaToutanova.2018. Bert:Pre-trainingofdeepbi-
+directionaltransformersforlanguageunderstanding.
+arXivpreprintarXiv:1810.04805.
+References
+JacobDevlin, Ming-WeiChang, KentonLee, andKri-
+StephanAlanizandZeynepAkata.2019. Explainable
+stinaToutanova.2019. BERT:Pre-trainingofdeep
+observer-classifier for explainable binary decisions.
+bidirectional transformers for language understan-
+arXivpreprintarXiv:1902.01780.
+ding. In Proceedings of the 2019 Conference of
+Aida Amini, Saadia Gabriel, Shanchuan Lin, Rik the North American Chapter of the Association for
+Koncel-Kedziorski, Yejin Choi, and Hannaneh Ha- ComputationalLinguistics: HumanLanguageTech-
+jishirzi.2019. MathQA:Towardsinterpretablemath nologies, Volume 1 (Long and Short Papers), pa-
+word problem solving with operation-based forma- ges 4171–4186, Minneapolis, Minnesota. Associa-
+lisms. In Proceedings of the 2019 Conference of tionforComputationalLinguistics.
+the North American Chapter of the Association for
+Hubert L Dreyfus, L Hubert, et al. 1992. What com-
+ComputationalLinguistics: HumanLanguageTech-
+puters still can’t do: A critique of artificial reason.
+nologies, Volume 1 (Long and Short Papers), pa-
+MITpress.
+ges 2357–2367, Minneapolis, Minnesota. Associa-
+tionforComputationalLinguistics.
+John Rupert Firth. 1961. Papers in Linguistics 1934-
+1951: Repr. OxfordUniversityPress.
+DzmitryBahdanau,KyunghyunCho,andYoshuaBen-
+gio. 2014. Neural machine translation by join-
+LynnSFuchs,DouglasFuchs,DonaldLCompton,Sa-
+tly learning to align and translate. arXiv preprint
+rah R Powell, Pamela M Seethaler, Andrea M Ca-
+arXiv:1409.0473.
+pizzi, ChristopherSchatschneider, andJackMFlet-
+Rishabh Bhardwaj, Navonil Majumder, and Soujanya cher. 2006. The cognitive correlates of third-grade
+Poria.2020. Investigatinggenderbiasinbert. arXiv skillinarithmetic,algorithmiccomputation,andari-
+preprintarXiv:2009.05021. thmeticwordproblems. JournalofEducationalPsy-
+chology,98(1):29.
+DanielGBobrow.1964. Naturallanguageinputfora
+computerproblemsolvingsystem. LynnSFuchs,DouglasFuchs,KarlaStuebing,JackM
+Fletcher, Carol L Hamlett, and Warren Lambert.
+TomBBrown, BenjaminMann, NickRyder, Melanie 2008. Problem solving and computational skill:
+Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind Are they shared or distinct aspects of mathemati-
+Neelakantan,PranavShyam,GirishSastry,Amanda cal cognition? Journal of educational psychology,
+Askell, et al. 2020. Language models are few-shot 100(1):30.
+MorGeva,AnkitGupta,andJonathanBerant.2020. In- FORNIAMARINADELREYCAINSTFORCRE-
+jectingnumericalreasoningskillsintolanguagemo- ATIVE....
+dels. InProceedingsofthe58thAnnualMeetingof
+the Association for Computational Linguistics, pa- Yann LeCun, Yoshua Bengio, and Geoffrey Hinton.
+ges 946–958, Online. Association for Computatio- 2015. Deeplearning. Nature,521(7553):436–444.
+nalLinguistics.
+Tao Lei, Regina Barzilay, and Tommi Jaakkola. 2016.
+Caglar Gulcehre, Sarath Chandar, Kyunghyun Cho,
+Rationalizing neural predictions. arXiv preprint
+and Yoshua Bengio. 2016. Dynamic neural turing
+arXiv:1606.04155.
+machine with soft and hard addressing schemes.
+arXivpreprintarXiv:1607.00036.
+PercyLiang.2016. Learningexecutablesemanticpar-
+sers for natural language understanding. Communi-
+Hossein Hajipour, Mateusz Malinowski, and Mario
+cationsoftheACM,59(9):68–76.
+Fritz. 2020. Ireen: Iterative reverse-engineering of
+black-box functions via neural program synthesis.
+WangLing,DaniYogatama,ChrisDyer,andPhilBlun-
+arXivpreprintarXiv:2006.10720.
+som. 2017. Program induction by rationale genera-
+KaimingHe,XiangyuZhang,ShaoqingRen,andJian tion: Learning to solve and explain algebraic word
+Sun. 2016. Identity mappings in deep residual ne- problems. arXivpreprintarXiv:1705.04146.
+tworks. InEuropeanconferenceoncomputervision
+(ECCV),pages630–645.Springer. YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Lisa Anne Hendricks, Zeynep Akata, Marcus Rohr- LukeZettlemoyer,andVeselinStoyanov.2019. Ro-
+bach, Jeff Donahue, Bernt Schiele, and Trevor Dar- berta: A robustly optimized bert pretraining appro-
+rell. 2016. Generating visual explanations. In Eu- ach. arXivpreprintarXiv:1907.11692.
+ropeanConferenceonComputerVision,pages3–19.
+Springer. Meghann Lomas, Robert Chevalier, Ernest Vincent
+Cross,RobertChristopherGarrett,JohnHoare,and
+LisaAnneHendricks,KayleeBurns,KateSaenko,Tre-
+Michael Kopack. 2012. Explaining robot actions.
+vorDarrell,andAnnaRohrbach.2018. Womenalso
+InProceedingsoftheseventhannualACM/IEEEin-
+snowboard: Overcomingbiasincaptioningmodels.
+ternationalconferenceonHuman-RobotInteraction,
+InProceedingsoftheEuropeanConferenceonCom-
+pages187–188.
+puterVision(ECCV),pages771–787.
+Laurens Van der Maaten and Geoffrey Hinton. 2008.
+DanqingHuang,ShumingShi,Chin-YewLin,JianYin,
+Visualizingdatausingt-sne. Journalofmachinele-
+and Wei-Ying Ma. 2016. How well do computers
+arningresearch,9(11).
+solvemathwordproblems? large-scaledatasetcon-
+structionandevaluation. InProceedingsofthe54th
+Annual Meeting of the Association for Computatio- Mateusz Malinowski, Carl Doersch, Adam Santoro,
+nalLinguistics(Volume1:LongPapers),pages887– andPeterBattaglia.2018. Learningvisualquestion
+896, Berlin, Germany. Association for Computatio- answering by bootstrapping hard attention. In Pro-
+ceedings of the European Conference on Computer
+nalLinguistics.
+Vision(ECCV),pages3–20.
+WLewisJohnson. Agentsthatlearntoexplainthemse-
+lves. Mateusz Malinowski and Mario Fritz. 2014. A multi-
+world approach to question answering about real-
+Alex Krizhevsky, Ilya Sutskever, and Geoffrey E Hin- world scenes based on uncertain input. In Advan-
+ton.2012. Imagenetclassificationwithdeepconvo- cesinneuralinformationprocessingsystems,pages
+lutional neural networks. In Advances in neural in- 1682–1690.
+formationprocessingsystems,pages1097–1105.
+JosePMestre.2013. Theroleoflanguagecomprehen-
+KeitaKurita,NidhiVyas,AyushPareek,AlanWBlack,
+sioninmathematicsandproblemsolving. InLingu-
+and Yulia Tsvetkov. 2019. Measuring bias in con-
+istic and cultural influences on learning mathema-
+textualized word representations. arXiv preprint
+tics,pages201–220.TaylorandFrancis.
+arXiv:1906.07337.
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman, TomasMikolov,IlyaSutskever,KaiChen,GregSCor-
+Kevin Gimpel, Piyush Sharma, and Radu Soricut. rado, and Jeff Dean. 2013. Distributed representa-
+2019. ALBERT: A lite BERT for self-supervised tions of words and phrases and their compositiona-
+learningoflanguagerepresentations. arXivpreprint lity. In Advances in neural information processing
+arXiv:1909.11942. systems,pages3111–3119.
+HChadLane,MarkGCore,MichaelVanLent,Steve Volodymyr Mnih, Nicolas Heess, Alex Graves, et al.
+Solomon,andDaveGomboc.2005. Explainablear- 2014. Recurrent models of visual attention. In Ad-
+tificial intelligence for training and tutoring. Tech- vancesinneuralinformationprocessingsystems,pa-
+nicalreport,UNIVERSITYOFSOUTHERNCALI- ges2204–2212.
+RichardJMurnane,JohnBWillett,MJayBraatz,and Lei Wang, Dongxiang Zhang, Lianli Gao, Jingkuan
+YvesDuhaldeborde.2001. Dodifferentdimensions Song, Long Guo, and Heng Tao Shen. 2018. Ma-
+of male high school students’ skills predict labor thdqn: Solving arithmetic word problems via deep
+market success a decade later? evidence from the reinforcementlearning. InThirty-SecondAAAICon-
+nlsy. Economics of Education Review, 20(4):311– ferenceonArtificialIntelligence.
+320.
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Emilio Parisotto, Abdel-rahman Mohamed, Rishabh Chaumond, ClementDelangue, AnthonyMoi, Pier-
+Singh, Lihong Li, Dengyong Zhou, and Pushmeet ric Cistac, Tim Rault, R’emi Louf, Morgan Funto-
+Kohli. 2016. Neuro-symbolic program synthesis. wicz, and Jamie Brew. 2019. Huggingface’s trans-
+arXivpreprintarXiv:1611.01855. formers: State-of-the-art natural language proces-
+sing. ArXiv,abs/1910.03771.
+MariaChiaraPasolunghi,CesareCornoldi,andStepha-
+nie De Liberto. 1999. Working memory and intru- Huijuan Xu and Kate Saenko. 2016. Ask, attend and
+sions of irrelevant information in a group of spe- answer: Exploringquestion-guidedspatialattention
+cific poor problem solvers. Memory & Cognition, for visual question answering. In European Confe-
+27(5):779–790. renceonComputerVision,pages451–466.Springer.
+MarkusNRabe,DennisLee,KshitijBansal,andChri- Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Carbo-
+stian Szegedy. 2020. Mathematical reasoning via nell, Russ R Salakhutdinov, and Quoc V Le. 2019.
+self-supervised skip-tree training. arXiv preprint Xlnet: Generalized autoregressive pretraining for
+arXiv:2006.04757. language understanding. In Advances in neural in-
+formationprocessingsystems,pages5753–5763.
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+Ilya Sutskever. Improving language understanding Zichao Yang, Xiaodong He, Jianfeng Gao, Li Deng,
+bygenerativepre-training. and Alex Smola. 2016. Stacked attention networks
+forimagequestionanswering. InProceedingsofthe
+ColinRaffel,NoamShazeer,AdamRoberts,Katherine IEEEconferenceoncomputervisionandpatternre-
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou, cognition,pages21–29.
+WeiLi, andPeterJLiu.2019. Exploringthelimits
+of transfer learning with a unified text-to-text trans- YukunZhu,RyanKiros,RichZemel,RuslanSalakhut-
+former. arXivpreprintarXiv:1910.10683. dinov,RaquelUrtasun,AntonioTorralba,andSanja
+Fidler.2015. Aligningbooksandmovies: Towards
+Victor Sanh, Lysandre Debut, Julien Chaumond, and story-like visual explanations by watching movies
+Thomas Wolf. 2019. Distilbert, a distilled version andreadingbooks. InProceedingsoftheIEEEinter-
+of bert: smaller, faster, cheaper and lighter. arXiv national conference on computer vision, pages 19–
+preprintarXiv:1910.01108. 27.
+DavidSaxton,EdwardGrefenstette,FelixHill,andPu- Yanyan Zou and Wei Lu. 2019. Text2Math: End-
+shmeet Kohli. 2019. Analysing mathematical re- to-end parsing text into math expressions. In
+asoning abilities of neural models. arXiv preprint Proceedings of the 2019 Conference on Empirical
+arXiv:1904.01557. Methods in Natural Language Processing and the
+9th International Joint Conference on Natural Lan-
+ShumingShi,YuehuiWang,Chin-YewLin,Xiaojiang
+guage Processing (EMNLP-IJCNLP), pages 5327–
+Liu, and Yong Rui. 2015. Automatically solving
+5337,HongKong,China.AssociationforComputa-
+numberwordproblemsbysemanticparsingandre-
+tionalLinguistics.
+asoning. InProceedingsofthe2015Conferenceon
+EmpiricalMethodsinNaturalLanguageProcessing,
+pages1132–1142.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit,LlionJones,AidanNGomez,ŁukaszKa-
+iser,andIlliaPolosukhin.2017. Attentionisallyou
+need. InAdvancesinneuralinformationprocessing
+systems,pages5998–6008.
+Wietse de Vries, Andreas van Cranenburgh, Arianna
+Bisazza, TommasoCaselli, GertjanvanNoord, and
+MalvinaNissim.2019. Bertje: Adutchbertmodel.
+arXivpreprintarXiv:1912.09582.
+Amber Y Wang, Lynn S Fuchs, and Douglas Fuchs.
+2016. Cognitive and linguistic predictors of mathe-
+matical word problems with and without irrelevant
+information. Learning and individual differences,
+52:79–87.
+A AQuA-RATexample Self-supervision. Here,weuseournewlyintro-
+ducedlosses,ROPandNROP,whereourmodels
+Question:AstartsabusinesswithRs.40,000.After2months,
+use questions and possibly rationales from the
+BjoinedhimwithRs.60,000.Cjoinedthemaftersomemore
+timewithRs.120,000. Attheendoftheyear,outofatotal AQuA-RATdataset. Bothquestionsandrationales
+profitofRs.375,000, CgetsRs.150,000ashisshare. How usethesamewordembeddings. However,todistin-
+manymonthsafterBjoinedthebusiness,didCjoin?
+guishbetweenbothmodalitiesweusetwosegment
+Options:A)30,B)32,C)35,D)36,E)40
+Rationale: embeddings. Thefirstoneforallthequestionto-
+AssumethatCwasthereinthebusinessforxmonths kens,andthesecondoneforalltherationaletokens.
+A:B :C =40000∗12:60000∗10:120000∗x That is, the segment embedding is shared among
+=40∗12:60∗10:120x=40:5∗10:10x
+all the question tokens, and separately among all
+=8:10:2x
+=4:5:x therationaletokens. Weusedynamicmasking(Liu
+C’sshare=375000∗x/(9+x)=150000
+et al., 2019). Here, tokens are randomly masked
+=>375x/(9+x)=150
+foreachbatch. Wenaturallyextendthisapproach
+=>15x=6(9+x)
+=>5x=18+2x to other losses that we use in this phase. That is,
+=>3x=18
+ROPandNROPnegativeexamplesarerandomly
+=>x=18/3=6
+ItmeansCwasthereinthebusinessfor6months.Giventhat recreatedeveryk epochs,wherek = 2inourcase.
+Bjoinedthebusinessafter2months.HenceCjoinedafter4
+monthsafterBjoined Fine-tuning isthelasttrainingphase. Here,once
+AnswerisB our models have learnt the representation during
+Additional examples are in the supplementary theself-supervisedphase,wetunesucharepresen-
+material. tationtothequestion-answeringdownstreamtask.
+Inthistask,ourinputconsistsofquestiontokens
+B Inputrepresentation
+and possible answer options. There are five such
+options that comes with the dataset. Like other
+AllBERTvariantsusetherepresentationthatcorre-
+methods,wetreadthisasafive-classclassification
+spondstoaspecialtoken[CLS]thatweputatthe
+taskwheretheclassificationheadisaddedontop
+beginningofthewholeinputsequenceconsisting
+of the final embedding of the input. We consider
+of question tokens followed by rationale tokens,
+theembeddingcorrespondingtothefirst(fromthe
+and in the downstream, question-answering task,
+left)[CLS]tokenassuchthefinalrepresentation.
+rationaletokensarereplacedbytheansweroptions.
+Withthat,theclassificationusesthecontextualem-
+D Implementationdetails
+bedding of [CLS] that captures the entire input.
+MLMclassifiesovertheentirevocabularyofpossi- Inourexperiments,weusefourTITANVGPUs.
+blewordswhiletheothertwolossesuseabinary Weuseamulti-gpusetup. Inthepre-trainingphase,
+cross-entropylossforthepredictions. weusebatchsizeequalstofourforeachGPUde-
+vice. Therefore the effective batch size equals to
+C Trainingprotocol sixteen. Weusethelearningrate5·10−5 andtra-
+inedthemodelsfor24epochs. Inthefine-tuning
+WetrainallourarchitecturesonAQuA-RATusing
+phase,weuseearlystoppingcriteria,basedonthe
+thefollowingtrainingphases. Inallcases,wecho-
+accuracyscoreonthevalidationset. Weusethefol-
+ose our best model based on the performance on
+lowingcriteria. Ifthemodeldoesnotimprovethe
+the validation set (dev set), and report the final
+performancein15consecutiveepochs,westoptra-
+performanceonthetestset.
+ining,andevaluateamodelthatyieldsthehighest
+Pre-training. Each model is pre-trained on a validationperformance. WeuseADAMoptimizer
+large corpus of texts written in natural language withlearningrate10−5 andgradientclippingthat
+sampled from English Wikipedia and BooksCor- sets the maximal gradient’s norm to one. All our
+pus (Devlin et al., 2018; Zhu et al., 2015). We settings use the same hyper-parameters but they
+usethisasthebase(BERT-base)modelthatisalso differduetotherandominitializationofourself-
+usedinallothervariantsofBERT.Inpractice,we supervisednetworks(duringtheself-supervisedtra-
+initializeallthemodelswiththeweightsusingthe iningphase)andtheclassificationnetworks(during
+HuggingFacelibrary(Wolfetal.,2019)anddon’t thefine-tuningphase). Self-supervisionphaseta-
+keepfinallayerforfine-tuning. Ourmodelthere- kesaround4dayson4GPUs,whereasfine-tuning
+forehasthesamenumberofweightsasBERT-base. takes8hoursonasingleGPU.
+E Permutationinvariantmethods to score all five candidate answers and select the
+onewiththehighestscore. Wenaturallyextended
+Inthemainpaper,wehaveshownthattypicalmo-
+that approach to BERT+ROP and BERT+NROP.
+delscanusepositionalbiasesinachievinganswers.
+Table3(themainpaper)showsasignificantimpro-
+Thisresultsinalowpermutationconsistencyscore
+vementoverthebaselinemethod.
+(Table3inthemainpaper). Tohandlethatissue,
+wehavedefinedextravariantsthatdonotuseposi- E.3 SEP-C
+tionalencodingsfortheansweroptionsandinstead
+SEP-NCmethodcouldbetoorestrictiveasitdoes
+they rely on the retrieval mechanics where input
+not allow the model to compare against different
+representationsarematchedagainstthecandidate
+answers. Therefore,weproposeanotherapproach
+answers. Here,wedescribetwosuchvariants.
+that1)alleviatetheissuewithpositionalbiases,but
+E.1 Originalmethods 2)cancomparebetweendifferentansweroptions.
+WecallthatapproachSEP-C.
+Originalmodelscreateanembeddingofasentence
+Originallyforeachtoken,apositionalencoding
+extended by possible questions. This embedding
+is assigned based on its position. In SEP-C, be-
+isthentransformedbyalinearlayertopredictthe
+foreassigningpositionalencoding,weartificially
+correctanswer. Thatis,
+reset the position at the beginning of each possi-
+o = f (BERT(Q||P)) bleanswer. Forexample,ifpossibleanswersare:
+1 1
+a)10,b)20,c)30,d)40,e)50theyarechangedinto
+where o is a 5-dimensional vector with probabi-
+1 10;20;30;40;50andafterthetokenization,weget
+litiesforeachpossibleanswer,Qisaquestion,P
+the following list of tokens: [’1’,’0’, ’;’, ’2’, ’0’,
+are all possible answers, || represents concatena-
+’;’,’3’,’0’,’;’,’4’,’0’,’;’,’5’,’0’]. Modifiedpo-
+tion,f isasinglefullyconnectedlayerfrom768-
+1 sitionalencodingwillassignvaluebasedonlyon
+dimensionalspaceto5-dimensionalspacewiththe
+therelativepositiontothebeginningofthecurrent
+softmax activation. BERT is a BERT-base sen-
+possibleanswer. Therefore,intheexampleabove,
+tenceembedding. Thesameapproachisusedfor
+each’0’willreceivethesamepositionalencoding,
+BERT+(N)ROP.
+and ’1’ will get the same positional encoding as
+’2’,’3’,andsoon.
+E.2 SEP-NC
+Formally,wehave
+In SEP-NC and SEP-C, we use separate embed-
+dingsforaquestionandSEParateembeddingfora
+o = f (BERT(Q||P )||BERT(C))
+3 3 m
+candidateanswer. Theydiffer,however,inthefact
+thatSEP-Chasaccesstoallfivepossibleanswers, where P is the sequence of all the possible an-
+m
+while SEP-NC has access only to one prompted swersbutmodifiedasexplainedabove. Notethat,
+candidateanswer. ThereforeNCstandsforn´ocan- inthisformulation,themodelcanusetheinforma-
+didates",whileCstandsforc´andidates".
+tion for all the possible answer options, but their
+We train the SEP-NC model on a binary clas- orderisnottakenintoaccount. Table3(themain
+sification task to predict whether each candidate paper) shows a significant improvement over the
+answer C is correct. The method produces two baselinemethod.
+embeddings,oneforquestionandanotheronefor
+acandidateanswerC ∈ P,andnextconcatenates E.4 Humanstudy
+them. Thatis,
+Wecarriedaninitialhumanstudyonthegroupof
+16volunteersfromUniversityofWarsaw. Volun-
+o = f (BERT(Q)||BERT(C))
+2 2
+teerswereMathematicsandInformaticsstudents
+where o is an estimated probability that C is a fromtheFacultyofMathematics,Informaticsand
+2
+correct answer, P is the sequence of all possible Mechanics. We asked the participants to solve
+answers,f isasinglefullyconnectedlayerfrom questions sampled from the AQuA-RAT dataset.
+2
+1536(768*2)dimensionalspaceto1-dimensional We are interested in the relation between BERTs
+space with the sigmoid activation. Note that, all difficulty,BERT+NROPdifficultyandhumandif-
+candidateanswersareindependentofthequestion. ficulty. Therefore to have a full image we would
+Thatis,BERTcannotusepositionalbiasesinderi- liketohave2questionsforeachquestiondifficulty
+vingananswer. Attesttime,themodelisprompted pair,forexample(D BERT,D : BERT+NROP)
+1 2
+dataset A B C D E
+train 21.03% 22% 22.87% 19.95% 14.15%
+dev 27.17% 25.98% 16.93% 19.69% 10.24$
+test 24.80% 22.83% 20.87% 18.11% 13.38%
+Table4:Answerdistributionineachdataset.
+F Distributionofanswers
+Table 4 shows the distribution of the answers in
+the AQuA-RAT (Ling et al., 2017) dataset in all
+thefolds. Imbalanceindistributionscouldpoten-
+tiallybeusedbymodelstofindeasy,shortcutsolu-
+tions. Forinstance,aconstantclassifierthatalways
+choose the first answer (A) gets about 24% test
+accuracy.
+Figure6:Theaveragehuman-judgeddifficultyforquestions
+G Negativeresults
+fromeachmodeldifficultygroup.
+While developing our self-supervised losses, we
+havedevelopedanotherlossthatturnedouttobe
+. However, that would give 25 combinations and
+unhelpful. Here, we describe that loss as some
+50questionsifwewantedtohave2questionsper
+its parts could be insightful for others. (N)ROP
+combination. Thatwouldbetoomuchtoaskfrom
+is a local loss focusing on rationales but not on
+avolunteerparticipant. Inordertoreducethenum-
+theconnectionsbetweenquestionsandrationales.
+berofquestions,wegroupour5difficultygroups
+For that, we have developed Question Rationale
+into3categoriesasfollows.
+Alignment(QRA).QRAchangesarationalewith
+• Easy: D 50% probability to a randomly chosen rationale
+1
+fromthecurrentbatch. However,simplychanging
+• Medium: D 2 andD 3 combined rationaleswouldresultintriviallysolvabletaskin
+most cases. All the model would have to do is
+• Hard: D andD combined
+4 5 checkwhethernumbersintherationaleandthequ-
+estionmatch. Hence,wemasknumbertokenswith
+Because of that we have only 9 possible com-
+aspecialtokenQRAaloneorQRAcombinedwith
+binationsandbysampling2questionsfromeach
+NROPdoesnotimprovetheresults,itgivesitgives
+combination we still have a feasible number of
+33.9%accuracyonthetestinthebestcombination,
+questions(18).
+sowedidn’tincludeitinthemainresults.
+Apartfromsolvingthequestion,weaskedtorate
+questiondifficultyonascalefrom1(thesimplest)
+H Relatedwork
+to10(themostchallenging). Ingeneral,ourparti-
+cipantswereknowledgeableinmathandsolvedall Weareinspiredbythefollowingresearch.
+thequestionscorrectly. Withthatgroupingwenow BERTology. We use BERT (Devlin et al., 2019)
+Theaveragehuman-rateddifficultyforeachof asourcore. ItusesTransformers(Vaswanietal.,
+9 combinations is presented in Figure 6. The re- 2017);powerfulneuralarchitecturesthatappliesa
+sultsshowthattheprogressionofhumandifficulty trainablefunctiontoallthepairsofinputembed-
+iscorrelatedwiththedifficultyjudgedbythemo- dings. Italsousesmaskingthatcoversafraction
+dels. Additionally, thehumandifficultyseemsto oftheinputwordsandrequiresthenetworktopre-
+bemoresensitivetoBERT+NROPdifficultythan dictthehiddenwordsbasedonthecontext. With
+to BERTs. In other words, increasing the diffi- bothingredients,themeaning(representation)ofa
+cultyofBERT+NROPwillincreasethehumandif- wordemergesfromthe“companyitkeeps”(Firth,
+ficultymorethantheincreasingdifficultyofBERT. 1961). Inpractice,often,suchrepresentationsare
+Thisobservationfitsourpreviousobservationsthat pre-trainedonlargetextualcorporawithnoneed
+BERT+NROPsolvesthemoststraightforwardqu- forannotations,andnextfine-tunedonthedown-
+estionswhileBERTislookingforsomeleaks,like streamtasks. BERT’sstrongperformancehasre-
+lookingfortheroundestanswer. sultedintheCambrianexplosionofstudiesofthe
+innerworkingmechanismsandvariousmodifica- Wang et al., 2018; Zou and Lu, 2019) as well as
+tions(Clarketal.,2019;deVriesetal.,2019;Lan datasets(Lingetal.,2017;Aminietal.,2019;Hu-
+etal.,2019;Liuetal.,2019;Sanhetal.,2019;Rad- angetal.,2016;Saxtonetal.,2019)Aninteresting
+ford et al.; Raffel et al., 2019; Yang et al., 2019). approach is proposed in (Rabe et al., 2020), in
+Finally,ourReasoningOrderPrediction(ROP)is whichauthorsuseself-supervisedtasksonparsing
+inspiredbySentenceOrderPrediction(SOP)(Lan treesofformalexpressions. Thisapproachrequires
+etal.,2019). However,ROPworkswithmultiple syntax trees, and hence we would have to use an
+rationalesentences, wherebychangingtheorder externalparser. Asourgoalwastomakeanendto
+weforcethenetworktounderstandtheconsecutive endmodel,wedidnotexperimentwithit,butthere
+“reasoning”steps. Wehavealsofurtherextended arenoobstaclesagainstusingitinsymbiosiswith
+ROPtoamoredifficultNeighborReasoningOrder our methods. (Geva et al., 2020) also proposes
+Prediction(NROP). self-supervised training for improving mathema-
+Language and math. Development psychologi- tical abilities in language models. We, however,
+sts(Cockingetal.,1988;Mestre,2013)oftenargue focusedonadata-drivenapproachtoexcludecho-
+for the necessity of learning languages and point icebiasesandthereforerestrictedourselvesfrom
+out that those with limited language skills are in usinggenerateddata.
+dangerofunder-performingatschool. Moreover,it Rationales. Inhumancommunication,wealways
+isalsobelievedthatlanguagestudiesinvolvedisci- expectthereissomerationalebehindeachdecision.
+plineinlearningandmanipulatingformalstructu- Hence,wesetthesameexpectationstoourartificial
+res,andthusmaypromotethedevelopmentofthe agents. Symbolicorsemi-symbolicarchitectures
+organizationofthoughtsalsorequiredinmathema- naturallyproducejustificationsasasequenceoffor-
+ticalreasoning. Thesimilaritybetweenlinguistic mulasinsomeformallanguage(Laneetal.,2005;
+competenceandmathematicsisespeciallypronoun- Core et al., 2006; Lomas et al., 2012; Johnson;
+cedwhensolvingmathwordproblems(Fuchsetal., Liang,2016;MalinowskiandFritz,2014). Ideally,
+2006,2008;Wangetal.,2016). Interestingly,atten- suchrationaleswouldalsobesharedandcommu-
+tionappearstobecrucialinproblemsolving(Fuchs nicated to us through some language. The latter
+et al., 2006; Pasolunghi et al., 1999). (Crossley approachisespeciallyappealingwhenappliedto
+et al., 2017) show that language skills are corre- black-box neural networks. For instance, (Hen-
+lated with the performance in mathematical tests dricksetal.,2016)proposeasystemthatclassifies
+also among the university students. In particular, the input image as well as it produces a textual
+they pointed out that ability to use complex syn- explanation on “why this class is suitable for the
+tactic structures and cohesion devices are linked givenimage”.
+tobetterscoresinablendeddiscretemathematics Systemsthatproduceexplanationseitherinthe
+course. Wetakeinspirationfromallsuchstudies formofthelanguage(Lingetal.,2017;Hendricks
+anddecidetobuildourmathematicalmodelbased etal.,2016),attention(Bahdanauetal.,2014;Mnih
+onlanguagemodels. et al., 2014; Gulcehre et al., 2016; Malinowski
+Math word problems. Solving math word pro- et al., 2018; Xu and Saenko, 2016; Yang et al.,
+blemsisasignificantcomponentofthemathema- 2016),phraseselection(Leietal.,2016),distilla-
+ticscurriculumandistaughtveryearly,thoroughly, tionintoprograms(Hajipouretal.,2020),ordeci-
+anduniversally. Suchtheemphasizeisoftenmoti- siontrees(AlanizandAkata,2019)canpotentially
+vatedbythatsolvingthemisamongthebestpre- increasethetransparencyoftheblack-boxneural
+dictors of employability, and is considered as a networks. However,mostoftheseapproachescre-
+distinct area of mathematical competence (Mur- aterationalesposthocwherethejustificationiscon-
+nane et al., 2001; Wang et al., 2016). Since so- ditionedonanswersorbyqueryingthenetwork. In
+lving such problems is unique to human intelli- ourwork,weuserationalestolearnafinerrepresen-
+gence,mathwordproblemsarealsointerestingfor tationthatcanpotentiallyleadtobetterdecisions.
+the AI community. This results in various appro- Inthissense,ourtechniqueisconceptuallycloser
+aches,moretraditionalsymbolicmethods,neural to methods that derive answers based on the pro-
+networks,andneuro-symbolicmethods. (Bobrow, gram and use rationales paired with questions to
+1964;Charniak,1969;Shietal.,2015;Lingetal., guide the program induction process (Ling et al.,
+2017; Amini et al., 2019; Parisotto et al., 2016; 2017).

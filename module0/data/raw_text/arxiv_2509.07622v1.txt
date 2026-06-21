@@ -1,0 +1,447 @@
+MaLei at MultiClinSUM: Summarisation of Clinical
+Documents using Perspective-Aware Iterative
+Self-Prompting with LLMs
+Notebookforthe<MultiClinSUM>LabatCLEF2025
+LiboRen1,2, YeeManNg3 and LifengHan1,3,4,*
+1UniversityofManchester,UK
+2ModulUniversityVienna,Austria
+3LeidenInstituteofAdvancedComputerScience(LIACS),LeidenUniversity,TheNetherlands
+4LeidenUniversityMedicalCenter,TheNetherlands
+Abstract
+Efficientcommunicationbetweenpatientsandcliniciansplaysanimportantroleinshareddecision-making.
+However,clinicalreportsareoftenlengthyandfilledwithclinicaljargon,makingitdifficultfordomainexperts
+toidentifyimportantaspectsinthedocumentefficiently.Thispaperpresentsthemethodologyweappliedin
+theMultiClinSUMsharedtaskforsummarisingclinicalcasedocuments.WeusedanIterativeSelf-Prompting
+techniqueonlargelanguagemodels(LLMs)byaskingLLMstogeneratetask-specificpromptsandrefinethem
+viaexample-basedfew-shotlearning.Furthermore,weusedlexicalandembeddingspacemetrics,ROUGEand
+BERT-score,toguidethemodelfine-tuningwithepochs.Oursubmissionusingperspective-awareISPonGPT-4
+andGPT-4oachievedROUGEscores(46.53,24.68,30.77)andBERTscores(87.84,83.25,85.46)for(P,R,F1)from
+theofficialevaluationon3,396clinicalcasereportsfromvariousspecialtiesextractedfromopenjournals.The
+highBERTscoreindicatesthatthemodelproducedsemanticallyequivalentoutputsummariescomparedto
+thereferences,eventhoughtheoverlapattheexactlexiconlevelislower,asreflectedinthelowerROUGE
+scores.Thisworkshedssomelightonhowperspective-awareISP(PA-ISP)canbedeployedforclinicalreport
+summarisationandsupportbettercommunicationbetweenpatientsandclinicians.
+Keywords
+SharedDecisionMaking,HealthLiteracy,PatientCommunication,LLMs,ClinicalSummarisation
+1. Introduction
+Efficientandeffectivecommunicationsbetweenpatientsandhealthcareprofessionalsplayanimportant
+roleinpatientcare[1,2].However,healthcareprovidersfrequentlyhavetoreadmanyclinicaldocuments
+inashorttimeframetounderstandthecurrentpatients. Thisischallenging,asclinicaldocumentsof
+patientsincluderichinformationonpatients’problems,diagnoses,treatments,progressions,andside
+effects. Similarly,patientsoftendonothavetheclinicalexpertisetofullyunderstandthelengthyclinical
+documentsabouttheirhealthissues. Aconciseandaccuratesummarisationofclinicaldocumentswill
+savethetimeofhealthcareprofessionalstounderstandtheproblemathand,aswellashelppatientsto
+understandtheirhealthconditionsbetterandearlier. Weattendedthemultilingualclinicaldocuments
+summarisationsharedtask(MultiClinSUM)toexplorelargelanguagemodels(LLMs)fortheuseofthis
+challenge.
+TheMultiClinSUMTrackisorganisedbytheBarcelonaSupercomputingCenter’sNLPforBiomedical
+InformationAnalysisgroupandpromotedbySpanishandEuropeanprojectssuchasDataTools4Heart,
+AI4HF,andBARITONEhttps://temu.bsc.es/multiclinsum/.
+CLEF2025WorkingNotes,9–12September2025,Madrid,Spain
+*Correspondingauthor:LH.
+$renlibo994@gmail.com(L.Ren);y.m.ng@liacs.leidenuniv.nl(Y.M.Ng);l.han@lumc.nl(L.Han)
+(cid:128)https://github.com/Libo-Ren(L.Ren);https://www.universiteitleiden.nl/en/staffmembers/yee-man-ng(Y.M.Ng);
+https://www.universiteitleiden.nl/en/staffmembers/lifeng-han(L.Han)
+(cid:26)0009-0005-9182-9424(L.Ren);0009-0008-9659-6510(Y.M.Ng);0000-0002-3221-2185(L.Han)
+©2025Copyrightforthispaperbyitsauthors.UsepermittedunderCreativeCommonsLicenseAttribution4.0International(CCBY4.0).
+To utilise the current state-of-the-art development from natural language processing (NLP), we
+investigated Iterative Self-Prompting (ISP) [3] in GPT-4 and ChatGPT for automatic summary of
+clinicaldocuments. Inthismethodology,weasktheLLMstogeneratepromptsthemselvestoapproach
+this task by detailed instruction and example-based learning; the generated automatic summary is
+returnedtotheLLMswithexamplereferencestoasktheLLMtorefinethepromptsforthisspecific
+task. TheISPtechniquehasprovedtobeveryusefulandefficientinleveragingLLMstogeneratea
+clear summary that includes patients’ symptoms, diagnoses, treatments, and outcomes/follow-ups,
+inaprevioussharedtaskforhealthcareanswersummarization[3]. Weusethedatasetsprovidedby
+the shared task organizers, which contain clinical case reports and summaries that are written by
+healthcareprovidersandinvariouslanguages,includingEnglish,Spanish,French,andPortuguese. The
+Englishtestsetunderinvestigationcontains3,396clinicaldocuments. Weperformbothquantitative
+andqualitativeevaluations,throughhumanandautomaticmetrics,includingROUGEandBERTscore.
+ROUGE is a lexical overlapping metric, and BERTscore is an embedding space semantic similarity
+metric.
+Quantitative evaluation scores show that while our system output has a ROUGE F1 score of 0.31
+comparedtothereferenceonexactlexiconmatches,thesemanticBERTscoreshows0.85F1,which
+indicateshighqualityofsemanticmeaningpreservation. Thisshedsgoodlightonthepotentialusage
+ofLLMsforthesummarisationofclinicaldocumentsusingtheISPtechnique. Thequalitativeanalysis
+confirms that the generated summaries tend to cover the key clinical aspects and contain logical
+paraphrasing. WealsocarriedouterroranalysistoseeinwhatwaysLLMsproduceundesirableresults,
+suchastheconsiderablelengthofthesummaries. Anotherinterestingfindingfromthissharedtaskis
+thatLLMstendtogeneratelongertexttocommentonmissingdatawhentheclinicaldocumentistoo
+short,suchas“Thecasereportdoesnotprovidespecificdetailsontheoutcomeorfollow-up. Typically,
+such a patient would require close monitoring and treatment adjustments based on laboratory and
+clinicalresponses.” Thisalsoprovidessomeinsightintotheclarityofcurrentclinicaldocuments/reports.
+2. Background and Related Work
+2.1. ClinicalNLP
+Clinical NLP has drawn attention from both NLP and healthcare researchers in recent years due to
+thedevelopmentandeffectivenessofmodernNLPmodelsandtheeagernesstotestsuchAImodels
+inhealthcaredomains. Forinstance,thereistheClinicalNLPworkshopseriesfrom2016(6thedition
+in2024)[4]. ArelatedtrackofClinicalNLPWSistheBiomedicalNLPinternationalworkshopevents
+(BioNLP)from2004[5,6].
+Thecorrespondingtaskshaveincludedclinicaltexttranslation[7],biomedicalabstractsimplification
+[8,9],clinicaleventsrecognition[10],temporalrelationextraction[11,12],entitylinking/normalisation
+toSNOMEDCTandBritishNationalFormulary(BNF)codes[13],syntheticdatageneration/augmenta-
+tion[14,15],patientsensitiveinformationde-identification[16],andhealthcareanswersummarisation
+[3], etc. These works have explored methodologies from different paradigms, such as fine-tuning
+encoder-basedmodels,trainingencoder-decodermodels,andpromptingdecoder-onlymodelsusing
+differenttechniques.
+2.2. HealthcareDataSummarisation
+Fortheclinicaldocumentssummarisationtask,themostrelevantworkincludesthesharedtaskon
+Perspective-Aware Healthcare Answer Summarisation (PerAnsSumm 2025) [17]. This shared task
+includedthesummarisationofonlineforumhealthcareanswerswhileconsideringthedifferentperspec-
+tives,i.e.,typesofinformationsuchas‘Cause’or‘Suggestion’,withinananswer. Inthissharedtask,we
+usedIterativeSelf-Prompting(ISP)withClaudeando1forPerspective-awareHealthcareAnswerSum-
+marisation,asdescribedin[3,17]. Similartoclinicaldocuments,onlineforumresponsesvarygreatly
+inlength. Thekeydifferenceisthatclinicaldocumentsoftencontainclinician-specificabbreviations
+andjargon,whichposechallengesforNLPmodelstointerpret. Incontrast,onlineforumdatatypically
+includessocialmedia-stylewriting,suchasfrequentspellingmistakesandgrammaticalerrors. Inthis
+work,webuilduponourexperiencefromthePerAnsSummsharedtasktodesignperspective-aware
+summariesforclinicaldocuments.
+3. Methodology
+3.1. OverviewofthePromptingFramework
+Therearemainlythreeclinicaldatasetsinvolvedinthisproject,aslistedbelow:
+• multiclinsum_gs_train_en: contains592gold-standardsamples,whicharemanuallyannotated
+andconsistofafull-textandsummarypair.
+• multiclinsum_large-scale_train_en: contains25,902full-textandsummarypairs. Theirqualityis
+slightlylowerthanthatofthe592goldsamples,buttheyarestillusefulfordataaugmentation.
+• multiclinsum_test_en: theEnglishtestset,whichincludes3,396full-textcasesbutwithoutany
+summaries.
+We mainly adopt the Iterative Self-Prompting (ISP) strategy in this task, with some task-specific
+features. As shown in Figure 1, we construct the meta-prompt based on the combination of Chain-
+of-Thought(CoT)instructions,clinicalperspectives,andmetric-basedguidance. Themeta-promptis
+providedtotheLLMalongwithafewfew-shotexamplesatthebeginning.
+Basedonthismeta-promptandtheexamples,theLLMisinstructedtogenerateanewtask-specific
+promptthatguidestheclinicalsummarisationprocessmoreeffectively. Usingthissyntheticprompt
+(prompt_v1),weinputittogetherwithclinicalfull-textsfromaportionofthegoldentrainingsetinto
+themodeltogeneratecorrespondingsummaries. Thesesyntheticsummariesarethencomparedwith
+theground-truthsummariesfromthegoldendata,andevaluationscores—aswellasreflectivefeedback
+andsuggestionadvice—areproducedaccordingly. Thisfeedbackservesasareferenceforfurtherprompt
+refinement,allowingustoiterativelyupdatetheprompttoobtainprompt_v2,_v3,andsoon.
+Thispromptupdatingprocessisrepeateduntilnoobviousperformanceimprovementisobserved.
+Oncetheimprovementplateaued,weplannedtoaugmentthestructureusingadditionalspansextracted
+from the remaining gold data and to apply a retrieval-based (RAG) technique using the 25,902 non-
+goldentrainingsamples. Afterallexperiments,thebest-performingpromptversionisusedtogenerate
+thefinalclinicalsummariesonthetestset.
+Unfortunately,duetotimeconstraints,wewereonlyabletocompletethestepsbeforethestructure
+augmentationphase(asdetailedinSection3.4). Asaresult,weselectedthebest-performingpromptat
+thatpointanduseditdirectlyforinferenceonthetestset. Theremainingexperimentaldesignscanbe
+exploredinfuturework.
+3.2. PromptInitialisationandFew-shotSetup
+AsshowninFigure1,wefirstconstructaninitialinstructionthatpromptstheLLMsaboutthesummary
+taskdescriptionwiththechainofthoughts(CoTs)onhowitshallthink,forexample:
+• Whatcommonstructureorpatternsdoyouobserveintheexamples?
+• Whatinformationisemphasised?
+• Howcanalanguagemodelbeguidedtoproducesimilarqualityoutputs?
+• Whaterrorsshouldbeavoided?
+TheseCoTsarecombinedwithperspective-based,i.e.,multifaceted,structuralguidanceandmetric-based
+feedbacktoinformtheLLM’sgenerationprocess.
+ThePerspectiveswedesignedinclude:
+1. PatientPresentation: age,sex,relevanthistory.
+Patient Presentation
+CoT
+Clinical Presentation
+refinement
+Summary
+Prompt
+Task Perspective Diagnosis
+generation
+instruction
+system
+Treatment/Intervention outputs
+Metrics-
+Input
+guide
+examples
+Outcome and Follow-up
+references
+Figure1:Perspective-awareIterativeSelf-Prompting(PA-ISP)IllustrationDiagramsfromtheMaLeiteam.
+2. ClinicalPresentation: keysymptomsandsigns.
+3. Diagnosis: relevantinvestigations,tests,conclusions.
+4. Treatment/Intervention: medications,surgeries,therapies.
+5. OutcomeandFollow-up: resultsoftreatment,currentstatus.
+ThemetricsweusedareROUGE-L(forlexicaloverlap)andBERTScore(forembeddingsemantic
+fidelity). Theinstructions,structuralperspectives,evaluationmetrics,andthreerepresentativeexamples
+collectivelyformthemeta-prompt,whichisthenusedtogeneratetheinitialprompt. Anexampleof
+themeta-promptisprovidedinAppendixB.1.
+3.3. PromptIterativeUpdateandRefinement
+Weselectedasmallbatchof50full-textandsummarypairstotraintheprompt-interactivemodel. Note
+thatdatapointsindexedfrom4to53wereusedatthisstage,asthefirstthreesampleshadalreadybeen
+usedfortheinitialpromptgenerationasfew-shotexamples.
+In each epoch, we not only generated summaries based on the full texts using the initial prompt
+but also compared the synthetic summaries with the gold-standard annotations, asking GPT-4o to
+providereflectionsandrevisionsuggestions. Foreachgeneratedsummary,wecomputedbothROUGE-
+L and BERTScore, and requested reflections and revision suggestions from the model behind their
+performance. We found that BERTScore remained relatively stable (consistently above 0.85), while
+ROUGE-Lscoresfluctuatedsignificantly,rangingfrom0.12to0.52. Therefore,ouroptimisationefforts
+focusedonimprovingROUGE-L.
+Toiterativelyupdatethepromptwhilebalancingperformanceandcomputationalcost,weselected
+a small subset of 15 summaries with the lowest ROUGE-L scores and included their corresponding
+evaluation feedback. These were used as new few-shot examples to guide the prompt refinement.
+TheLLMwastheninstructedtorevisethepromptbyintegratingthepreviousversionalongwiththe
+reflectionandsuggestioncontentofthesesamples. Thepromptusedinthisprocessisshowninthe
+AppendixB.2Figure9.
+Weconductedfiveepochsofthisprocess. Fortheinitialversion(prompt_v1), onesummarywas
+foundtobeinvalidforevaluationscoring,withanoverallBERTScoreof0.86andaROUGE-Lof0.30
+amongtheremaining49full-textandsummarypairs. Interestingly,afterthepromptupdates,although
+theevaluationscoresdidnotimprovesignificantly,theinvalidcasewasresolved. Inotherwords,the
+BERTScorecontinuedtofluctuatearound0.86,andtheROUGE-Laround0.30,acrossall50full-text
+andsummarypairs. Asaresult,weadoptedprompt_v2asthebest-performingversion—thefirstin
+whichinvalidpredictionswereeliminated.
+3.4. Full-dataStructure-awarePromptEnhancement
+Tofurtherimprovestructuralconsistency,theremaining539goldsummarieswereintendedforex-
+tractingcommonphrasesandanalysingsection-wiselinguisticpatterns. Forexample, weaimedto
+identifycommonclinicalspansandexaminethelanguagestyleofthegold-standardsummaries,e.g.,
+phraseslike“Thepatientpresentedwith...” or“Treatmentsinclude...”. Wealsoconsideredmeasuring
+theaveragelengthofeachparagraphandinvestigatingwhetherconsistentstructuralpatternscouldbe
+observedandusedtorefinetheprompt.
+Based on these insights, the native instructions for the five clinical perspectives could be further
+specified. Inaddition,regularexpressionsorphrase-matchingmethodscouldbeemployedtocapture
+high-frequencysentencestructuresortemplates. Sentencepatternsthatareoftenoverlookedcould
+alsobestatisticallyanalysed. Combiningthesestepsmaycontributetoimprovingevaluationscores,
+particularlytheROUGE-Lscore.
+Despiteseveraliterationsofpromptrevisionbasedonreflectivefeedback, themodeloutputsdid
+notdemonstrateanyimprovementsinROUGE-L,indicatingthatmoresophisticatedstrategiesbeyond
+self-iterativepromptrefinementmayberequired. Owingtotimeconstraints,furtherexplorationin
+thisareaisreservedforfuturework.
+3.5. SimilarCaseRetrieval-basedFew-shotAugmentation
+In addition to the gold-standard set, the dataset also includes 51,804 extended clinical cases, each
+consistingofafull-textinputanditscorrespondingsummary. Toenhancetest-timegeneration,we
+retrievecaseswhoseinputtextsaresemanticallysimilartothecurrentfull-testinputusingsentence
+embeddings. SentenceBERT,combinedwithcosinesimilarity,isappliedatthisstage.
+Thesummariesfromthetopretrievedcasesareinsertedbeforethetestinputasfew-shotdemonstra-
+tions,followingthesameformatasthemanuallyselectedgoldexamplesatstage3.2. Typically,thetop
+3casesareselectedtobalancediversitywithpromptlengthconstraints. Theretrievedsummariesare
+notincludedintheevaluationandservesolelyasauxiliaryinputforgenerationguidance.
+3.6. TestsetInference
+Once the optimal prompt was selected, the final version was used for testset summarization. The
+generation process follows the same setup described in Section 3.2. The main difference is that we
+expectthegeneratedsummarytobeshorterthantheoriginalfulltext. Therefore,wecomparedthe
+characterlengthsofthesyntheticsummariesandtheircorrespondingfulltextsandidentifiedcases
+wherethesummarywasunexpectedlylonger.
+Forthesecases, weaskedthelanguagemodeltoregeneratethesummaryuptofivetimes. Some
+outputsweresuccessfullyshortened,whileothersremainedlongerthantheinput. Insuchcases,we
+directlyreplacedthegeneratedsummarywiththeoriginalfulltext,assumingthattheoriginaltextwas
+alreadysufficientlyconcise.
+Itshouldbenotedthatalthoughthefullexperimentalpipelinewasinitiallydesigned,wedidnot
+proceedwiththeFull-dataStructure-awarePromptEnhancementandSimilarCaseRetrieval-based
+Few-shotAugmentation(asdetailedinSection3.4andSection3.5)duetotimeconstraints. Thesesteps
+areplannedforfutureworktofurtherexploretheirpotentialforimprovingperformance.
+4. Experimental Work and Submission to MultiClinSUM
+4.1. DevelopmentoftheISP-GPT-4/omodel
+For LLMs, we used GPT-4 to generate the initial prompt based on a meta-prompt, and GPT-4o for
+summarisationandreflectiongeneration. WesplittheofficialMultiClinSUMdataintoseveralparts
+for training around 5 epochs, and selected a well-performing prompt for final test set inference, as
+describedinSection3. Figure2illustratesthedatapartitioningstrategyanditscorrespondingusage
+Figure2:DataPartitioningandUsageintheMultiClinSUMPipeline
+inourpipeline. Wecompletedsummarygenerationfor3,396Englishfull-textcases. Otherlanguages
+(Spanish,Portuguese,andFrench)willbeexploredinfuturework.
+4.2. Submissionoutcomeof MaLeifromthesharedtask
+4.2.1. QuantitativeResults
+FortheMultiClinSUM2025sharedtaskthatweattended[18],theresultsof3,396submittedEnglishtest
+summariesareshowninTable1,andtheircorrespondingGroupedBarChartandOverlaidHistogram
+areshowninFigure3andFigure4.
+Table1
+EvaluationmetricsforBERTScoreandROUGEfromMaLeiteamsubmissions.
+Metric Precision Recall F1Score
+BERTScore 0.8784 0.8325 0.8546
+ROUGE-L 0.4653 0.2468 0.3077
+Atthetestsetlevel,asshowninTable1andFigure3,BERTScoreisoverallmorethantwiceashighas
+ROUGE-L,reflectingasimilartrendobservedinthetrainingset. Thissuggeststhatoursystemachieves
+strongsemanticpreservationwhiletendingtoparaphrasetheoriginalfulltextusingdifferentlinguistic
+styles. Another notable pattern further supports this. Across both metrics, precision consistently
+exceedsrecall. Thisindicatesthatthesyntheticsummariesaregenerallyaccurateintermsofwhatthey
+include,butmaylackcompletenessatafiner-grainedlevel. WespeculatethatthismaybebecauseGPT-
+4otendstogeneratemoreconciseorcompressedtext. Additionally,theROUGE-Lrecallisparticularly
+low—fallingbelow0.25—whichimpliesthatthemodeloftenusesmorevariedexpressionsinsteadof
+preservingtheoriginalkeyphrases,leadingtoreducedlexicaloverlap. Therefore,futureworkcould
+focusonidentifyingandpreservingfixedphrasesandstructuralpatternsinthesummarygeneration
+process. Insummary,thisresultalignswithwhathasbeenobservedinautoregressivemodels: they
+tendtofocusmoreonwhattogenerateratherthanonpreciseword-by-wordreproduction.
+Attheinstancelevel,asshowninFigure4,nearlyallsamples(3374outof3396,≈ 99.35%)have
+BERTScoresconcentratedinthe0.8–0.9range,indicatingahighdegreeofsemanticconsistency. In
+contrast,mostROUGE-Lscoresfallbetween0.2and0.4. Thedistributionexhibitsaclearleft-skewand
+along-tailpattern,suggestingthatISPmayhaveinaccuratelygeneralizedthestructureoftheexamples
+providedtothemodel,therebymisleadingtheLLM’sgeneration. Notably,380samples(11.19%)received
+ROUGE-Lscoresbelow0.2,whilenonescoredparticularlylowonBERTScore. Thisindicatesthata
+subsetofsummariesmaysufferfromissuessuchasmissingcriticalinformation,disorganizedstructure,
+orfragmentedlanguage.
+Figure3:EvaluationMetricComparison:
+Figure4:F1ScoreDistribution:BERTScorevsROUGE
+BERTScorevsROUGE-L
+4.2.2. QualitativeResults
+Figure5:ExampleofanoriginalreportnexttothegeneratedsummaryusingtheISPtechnique,inwhichthe
+generatedsummarycoverskeyaspectsintheoriginalreport.
+Generally,thesummariestendtocoverkeyfeaturesintheclinicalreportandcontainlogicalpara-
+phrasing,whichlikelyledtothehighBERTscores,i.e.,ahighsemanticoverlap. Figure5showshowthe
+generatedsummarycoverskeyaspectsaboutthepatient,suchastheage(82),gender(male),andthe
+travelhistorythatisrelevantforhissymptoms. Thesummarythendescribesthesymptoms(jaundice,
+etc.),andthetestsandresultsthathaveledtoaparticulardiagnosis,followedbythetreatmentand
+outcome. Basedonaqualitativeanalysiswithasmallsample,wereportthatmostgeneratedsummaries
+appeartobewell-structuredaccordingtokeyfeaturespresentinhuman-writtenclinicalreportsand
+consistentwiththeoriginalreport,whichconfirmsthehighBERTscores.
+Comparingthegeneratedsummariesduringthepromptupdatingphaseandthereferencesummaries
+inthetrainingset,weobservethatthegeneratedsummariestendtobelongerthanthegold-standard
+summaries. Thegeneratedsummariestendtobemoredetailed, includingdetailsaboutthespecific
+testsdoneandtheoutcomesofthesetoreachaparticulardiagnosis. Figure6showcasesanexample
+inwhichthereferencesummaryismuchshorterthantheLLM-generatedsummary. Thegenerated
+summarycontainsmoredetailsregardingthedifferenttreatmentsthatweredonepreviously,whilethe
+referencesummaryfocusesonthemaincomplaintofthepatient(“focalhypertrichosisofwhitehair")
+andthetreatmentthatcontributedtothepatient’simprovement(“discontinuedtacrolimususe"). This
+suggeststhattheLLMstruggleswithdiscerningkeyeventsfromdetailsthatmightberedundantfor
+domainexperts,whomaybeabletoinferwhatproceduresweredonefromashortanddensesummary.
+In addition, the generated summaries always introduce the full form of abbreviations, which is not
+alwaysthecaseingold-standardsummaries. ThesedifferencesmighthaveledtoalowerROUGE-L
+score.
+Figure6:Exampleofoutputduringpromptingprocedureinwhichthegeneratedsummaryismuchlongerand
+detailedthanthereferencesummary.
+Furthermore,wefoundthatourpromptdesignresultedintheLLMincludingsectionheaderswith
+every generated summary (see Figure 6 and Figure 7). This led to the generated summaries strictly
+adhering to the structure as provided in the prompt, e.g., “Patient presentation”, “Diagnosis”, and
+“Treatment”. Thisexplicitstructurewasgenerallyabsentingold-standardsummariesinthetrainingset.
+Moreover,thestrictadherencetotheprovidedstructuremighthaveledtoanorderingofkeyevents
+andentitiesthatisdifferentfromthereferencesummary. Whilethestructureislogicalandfollowskey
+featuresofclinicalreportsandsummaries,itmighthavenegativelyimpactedthestructuraloverlap
+betweenthegeneratedsummaryandthereferencesummary. Therefore,inthiscase,theinclusionof
+thesectionheadersandstrictadherencetothestructureprovidedinthepromptmighthavecontributed
+totheoveralllowROUGE-Lscore.
+Surprisingly,somegeneratedsummaries(12textsinthetestset,outof3,396)arelongerthanthe
+originaltexts(excludingthesectionheaders). Examiningtheoriginalclinicalreportsofthissample,it
+appearsthattheoriginalreportsarealreadyquitebriefandinformation-dense. Theoriginaltextsof
+thesegeneratedsummariesaveragearound135words,whichismuchshorterthantheaverageof527
+wordsintheentiretestset. Closeanalysisofthissamplerevealsthatthegeneratedtextsaremostlya
+repetitionoftheoriginaltextratherthanasummaryofkeyaspectsandevents. Figure7depictshow
+thegeneratedsummarycopiesphrasesandsentencesliterallyfromtheoriginalreport,onlyswapping
+afewverbswithclosesynonyms,e.g.,“revealed”insteadof“showed”.
+The generated summaries also frequently include observations about missing information in the
+report,suchas“Thecasereportdoesnotprovidespecificdetailsontheoutcomeorfollow-up. Typically,
+Figure7:Exampleofaninstanceinthetestsetwherethegeneratedsummaryislongerthanandverysimilar
+totheoriginalreport.
+such a patient would require close monitoring and treatment adjustments based on laboratory and
+clinicalresponses.” Figure7exemplifiesthis. Thislikelynegativelyimpactedtheautomaticevaluation
+scores, but might be useful for domain experts who, in this way, can gain insight into what key
+informationismissingintheoriginalreport.
+5. Discussion
+5.1. Prompt-DrivenModelBehavior
+Withtheiterativelyupdatedprompt,themodelexhibitedthefollowingbehaviors:
+• Limited ability to compress content, especially in the Treatment and Patient Presentation
+sections. Thismaybeduetothelackofcontentfiltering—themodeltendstotreatallinformation
+equally,failingtoprioritisecriticalconditionsandkeytreatments.
+• Structure-guidedpromptingmayinducehallucinationsoradditionalcontent,particularly
+duetothedecoder-onlyarchitecture. Forexample,ifthepromptasksthemodeltosummarize
+theOutcome,buttheoriginaltextlackssuchcontent,themodelmayfabricateinformationlike
+"regularfollow-upwasscheduled."Itmayalsoleadtothemodelfillingthegapswithstatements
+suchas"[Outcomeandfollow-updetailsarenotprovidedintheoriginaltext."
+• Limitedstructuralflexibility. Themodeltendstofollowtheprompt-definedstructuretoo
+rigidly,oftengeneratingkeysentencesbycopyinglargeportionsoftheoriginaltextwithonly
+minoradjustments. Itisalsopronetoexplicitlyincludingsectionheadingsbasedonthefocus
+pointsspecifiedintheprompt,whichmaynegativelyaffectROUGE-Lperformance,particularly
+whenthegeneratedorderdiffersfromthegoldreference.
+Futureworkshouldfocusoninstructingthemodeltoavoidredundantrestatement,introducingcoun-
+terfactualconstraintstoreducehallucinatedcontent,anddevelopingmoreflexiblestructuralcontrol,
+suchaspreservingoriginalabbreviationsinsteadofexpandingthem,andsofteningtheenforcementof
+fixedsectionheaders.
+5.2. ReflectionsonEvaluationMetrics
+Althoughtheoriginalevaluationmetric,ROUGE-L,effectivelycaptureslexicaloverlapbetweenthe
+generatedandgoldsummaries,ithasnotablelimitationsandmayunderestimatesummaryqualityin
+certaincases. ThisisprimarilybecauseROUGE-Lishighlysensitivetovariationsinsentencestructure
+andphrasing.
+Furthermore,themanuallyannotatedgoldsummariesareoftenhighlycompressed,frequentlyusing
+abbreviationsandomittingconnectivephrases. Incontrast,thesyntheticsummariestendtoresemble
+patient-facing clinical reports, featuring more complete and explicit expressions. As a result, the
+twotypesofsummariesmaydiffermoreinstylethaninsubstance. AlowROUGE-Lscoredoesnot
+necessarilyindicatepoorsummaryquality,asthegeneratedversionmayconveyequivalentmedical
+contentinadifferentform.
+Futureworkcouldincorporatemetricsthataccountforstructuralcoverageorintroduceclinically
+groundedfactualchecksascomplementaryevaluationstrategies.
+6. Conclusions and Future Work
+For this shared task on multilingual clinical document summarisation, we used perspective-aware
+iterative-selfprompting(ISP)onLLMsviaGPT4/4o,withtheinspirationoftheworkby[3]. During
+themodeldevelopment,wedesignedthefollowingperspectivesforsummarisation,includingPatient
+Presentation,ClinicalPresentation,Diagnosis,Treatment,andOutcome(Follow-up). Inconclusion,
+theperspective-awareiterativeself-prompting(PA-ISP)onLLMscanhelpsummariselengthyclinical
+documents into short summaries while keeping the essence of the clinical knowledge, thus to help
+cliniciansunderstandpatients’healthcarehistorymoreefficiently,andhelpthepatientstounderstand
+theirconditionbetter. Thefutureworkwillalsoincludelay/plainlanguageadaptationintothesum-
+marisationsothatpatientswithlowhealthliteracylevelcanbetterunderstandtheclinicalrecords,thus
+toimprovethecommunicationsbetweenpatientsandhealthcareprovidersforbettershareddecision
+making. LocalLLMswillbeexploredandtrainedforbetterprivacypreservation. LLMExplainability
+andReasoningarealsoourongoingwork. Inaddition,weplantoconsiderotherlanguagessuchasthe
+Spanishdatafromthesharedtask,aswellascomparingmorediverseprompts.
+Acknowledgments
+WethankIdaKorfage,AssociateProfessoratErasmusMCandco-PIfromthe4DPictureProject,for
+thevaluablecommentsandrevisionontheConferenceAbstractversionofthispaper. Wethankthe
+anonymousreviewersfortheirfeedbackonimprovingourarticle.
+Declaration on Generative AI
+During the preparation of this work, the author(s) used GPT-4o in order to: Grammar and spelling
+check.
+References
+[1] A.M.Stiggelbout,A.H.Pieterse,J.C.DeHaes, Shareddecisionmaking: concepts,evidence,and
+practice, Patienteducationandcounseling98(2015)1172–1179.
+[2] A. Stiggelbout, I. Griffioen, J. Brands, M. Melles, J. Rietjens, M. Kunneman, M. Van Der Kolk,
+C. Van Eijck, D. Snelders, Metro mapping: development of an innovative methodology to co-
+designcarepathstosupportshareddecisionmakinginoncology, BMJevidence-basedmedicine
+28(2023)291–294.
+[3] P. Romero, L. Ren, L. Han, G. Nenadic, The manchester bees at peranssumm 2025: Iterative
+self-promptingwithclaudeando1forperspective-awarehealthcareanswersummarisation, in:
+ProceedingsoftheSecondWorkshoponPatient-OrientedLanguageProcessing(CL4Health),2025,
+pp.340–348.
+[4] T. Naumann, A. Ben Abacha, S. Bethard, K. Roberts, D. Bitterman (Eds.), Proceedings of the
+6thClinicalNaturalLanguageProcessingWorkshop,AssociationforComputationalLinguistics,
+MexicoCity,Mexico,2024.URL:https://aclanthology.org/2024.clinicalnlp-1.0/.
+[5] N. Collier, P. Ruch, A. Nazarenko (Eds.), Proceedings of the International Joint Workshop on
+Natural Language Processing in Biomedicine and its Applications (NLPBA/BioNLP), COLING,
+Geneva,Switzerland,2004.URL:https://aclanthology.org/W04-1200/.
+[6] D.Demner-Fushman,S.Ananiadou,M.Miwa,K.Roberts,J.Tsujii(Eds.),Proceedingsofthe23rd
+WorkshoponBiomedicalNaturalLanguageProcessing,AssociationforComputationalLinguistics,
+Bangkok,Thailand,2024.URL:https://aclanthology.org/2024.bionlp-1.0/.
+[7] L.Han,S.Gladkoff,G.Erofeev,I.Sorokina,B.Galiano,G.Nenadic, Neuralmachinetranslation
+of clinical text: an empirical investigation into multilingual pre-trained language models and
+transfer-learning, FrontiersinDigitalHealth6(2024)1211564.
+[8] Z. Ling, Z. Li, P. Romero, L. Han, G. Nenadic, Malei at the plaba track of trec 2024: Roberta
+for term replacement–llama3. 1 and gpt-4o for complete abstract adaptation, arXiv preprint
+arXiv:2411.07381(2024).
+[9] Z. Li, S. Belkadi, N. Micheletti, L. Han, M. Shardlow, G. Nenadic, Investigating large language
+modelsandcontrolmechanismstoimprovetextreadabilityofbiomedicalabstracts, in: 2024IEEE
+12thInternationalConferenceonHealthcareInformatics(ICHI),IEEE,2024,pp.265–274.
+[10] S.Belkadi, L.Han, Y.Wu, G.Nenadic, Exploringthevalueofpre-trainedlanguagemodelsfor
+clinicalnamedentityrecognition, in: 2023IEEEInternationalConferenceonBigData(BigData),
+IEEE,2023,pp.3660–3669.
+[11] H.Tu,L.Han,G.Nenadic, Extractionofmedicationandtemporalrelationfromclinicaltextusing
+neural language models, in: 2023 IEEE International Conference on Big Data (BigData), IEEE,
+2023,pp.2735–2744.
+[12] Y.Cui,L.Han,G.Nenadic, Medtem2.0: Prompt-basedtemporalclassificationoftreatmentevents
+fromdischargesummaries, in: Proceedingsofthe61stAnnualMeetingoftheAssociationfor
+ComputationalLinguistics(Volume4: StudentResearchWorkshop),2023,pp.160–183.
+[13] P.Romero,L.Han,G.Nenadic, Medicationextractionandentitylinkingusingstackedandvoted
+ensembles on llms, in: Proceedings of the Second Workshop on Patient-Oriented Language
+Processing(CL4Health),2025,pp.303–315.
+[14] L. Ren, S. Belkadi, L. Han, W. Del-Pinto, G. Nenadic, Synthetic4health: Generating annotated
+syntheticclinicalletters, FrontiersinDigitalHealth7(2025)1497130.
+[15] L.Ren,S.Belkadi,L.Han,W.Del-Pinto,G.Nenadic, Beyondreconstruction: generatingprivacy-
+preservingclinicalletters, in: ProceedingsoftheSixthWorkshoponPrivacyinNaturalLanguage
+Processing,2025,pp.60–74.
+[16] A.Paul,D.Shaji,L.Han,W.Del-Pinto,G.Nenadic, Deidclinic: Amulti-layeredframeworkfor
+de-identificationofclinicalfree-textdata, arXivpreprintarXiv:2410.01648(2024).
+[17] S.Agarwal,M.S.Akhtar,S.Yadav, OverviewofthePerAnsSumm2025sharedtaskonperspective-
+aware healthcare answer summarization, in: S. Ananiadou, D. Demner-Fushman, D. Gupta,
+P.Thompson(Eds.),ProceedingsoftheSecondWorkshoponPatient-OrientedLanguageProcessing
+(CL4Health),AssociationforComputationalLinguistics,Albuquerque,NewMexico,2025,pp.445–
+455.URL:https://aclanthology.org/2025.cl4health-1.41/.doi:
+10.18653/v1/2025.cl4health-1.
+.
+41
+[18] M. Rodríguez-Ortega, E. Rodríguez-Lopez, S. Lima-López, C. Escolano, M. Melero, L. Pratesi,
+L.Vigil-Gimenez,L.Fernandez,E.Farré-Maduell,M.Krallinger, OverviewofMultiClinSumtask
+atBioASQ2025: evaluationofclinicalcasesummarizationstrategiesformultiplelanguages: data,
+evaluation,resourcesandresults., in: G.Faggioli,N.Ferro,P.Rosso,D.Spina(Eds.),CLEF2025
+WorkingNotes,2025.
+Figure8:Anexampleofstartingprompt
+A. MaLei Team Online Resources
+ThesourcesfortheMaLeiTeamatMultiClinSUMsharedtask2025willbeavailablevia
+• GitHubhttps://github.com/Libo-Ren/MultiClinSum,
+• Our earlier PerAnSumm page from Manchester Bees https://github.com/pabloRom2004/
+-PerAnsSumm-2025.
+B. Prompt
+B.1. StartPrompt
+AnexampleofstartingapromptusingISPisshowninFigure8.
+B.2. InstructionforPromptRefinement
+Meta-promptusedtoinstructtheLLMtorevisethesummary-generationpromptisshowninFigure9.
+Figure9:InstructionforPromptRefinement

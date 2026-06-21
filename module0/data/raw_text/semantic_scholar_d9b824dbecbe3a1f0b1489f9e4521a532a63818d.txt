@@ -1,0 +1,691 @@
+Compressing BERT: Studying the Effects
+of Weight Pruning on Transfer Learning
+MitchellA.Gordon&KevinDuh&NicholasAndrews
+JohnsHopkinsUniversity
+mitchg@jhu.edu, kevinduh@cs.jhu.edu, noa@jhu.edu
+Abstract is labeled for a specific task. Pre-trained models
+usually achieve higher accuracy than any model
+Pre-trained feature extractors, such as BERT
+trainedondownstreamdataalone.
+for natural language processing and VGG for
+Thepre-trainingparadigm,whileeffective,still
+computervision,havebecomeeffectivemeth-
+has some problems. While some claim that lan-
+odsforimprovingdeeplearningmodelswith-
+out requiring more labeled data. While ef- guagemodelpre-trainingisa“universallanguage
+fective, these feature extractors may be pro- learning task” (Radford et al., 2019), there is no
+hibitively large for some deployment scenar- theoreticaljustificationforthis,onlyempiricalevi-
+ios. We explore weight pruning for BERT dence. Second,duetothesizeofthepre-training
+and ask: how does compression during pre-
+dataset, BERT models tend to be slow and re-
+training affect transfer learning? We find that
+quireimpracticallylargeamountsofGPUmemory.
+pruningaffectstransferlearninginthreebroad
+BERT-Large can only be used with access to a
+regimes. Low levels of pruning (30-40%) do
+GoogleTPU,andBERT-Baserequiressomeopti-
+notaffectpre-traininglossortransfertodown-
+streamtasksatall. Mediumlevelsofpruning mizationtrickssuchasgradientcheckpointingor
+increase the pre-training loss and prevent use- gradientaccumulationtobetrainedeffectivelyon
+ful pre-training information from being trans- consumer hardware (Sohoni et al., 2019). Train-
+ferred to downstream tasks. High levels of
+ingBERT-Basefromscratchcosts∼$7kandemits
+pruning additionally prevent models from fit-
+∼1438poundsofCO (Strubelletal.,2019).
+2
+ting downstream datasets, leading to further
+Modelcompression(Bucilaetal.,2006),which
+degradation. Finally, we observe that fine-
+attemptstoshrinkamodelwithoutlosingaccuracy,
+tuning BERT on a specific task does not im-
+proveitsprunability. WeconcludethatBERT isaviableapproachtodecreasingGPUusage. It
+can be pruned once during pre-training rather mightalsobeusedtotradeaccuracyformemory
+thanseparatelyforeachtaskwithoutaffecting insomelow-resourcecases,suchasdeployingto
+performance. smartphones for real-time prediction. The main
+questionsthispaperattemptstoanswerare: Does
+1 Introduction
+compressing BERT impede it’s ability to trans-
+Pre-trainedfeatureextractors,suchasBERT(De- fer to new tasks? And does fine-tuning make
+vlin et al., 2018) for natural language processing BERTmoreorlesscompressible?
+and VGG (Simonyan and Zisserman, 2014) for Toexplorethesequestions,wecompressedEn-
+computer vision, have become effective methods glishBERTusingmagnitudeweightpruning(Han
+for improving the performance of deep learning et al., 2015) and observed the results on transfer
+models. Inthelastyear,modelssimilartoBERT learningtotheGeneralLanguageUnderstanding
+have become state-of-the-art in many NLP tasks, Evaluation(GLUE)benchmark(Wangetal.,2019),
+includingnaturallanguageinference(NLI),named a diverse set of natural language understanding
+entityrecognition(NER),sentimentanalysis,etc. tasks including sentiment analysis, NLI, and tex-
+Thesemodelsfollowapre-trainingparadigm: they tual similarity evaluation. We chose magnitude
+aretrainedonalargeamountofunlabeledtextviaa weight pruning, which compresses models by re-
+taskthatresembleslanguagemodeling(Yangetal., movingweightscloseto0,becauseitisoneofthe
+2019; Chan et al., 2019) and are then fine-tuned mostfine-grainedandeffectivecompressionmeth-
+onasmalleramountof“downstream”data,which odsandbecausetherearemanyinterestingwaysto
+viewpruning,whichweexploreinthenextsection. a form of permanent dropout (Molchanov et al.,
+Ourfindingsareasfollows: Lowlevelsofprun- 2017)oraheuristic-basedL0regularizer(Louizos
+ing(30-40%)donotincreasepre-traininglossor etal.,2018). Throughthislens,pruningdecreases
+affecttransfertodownstreamtasksatall. Medium the complexity of the network and therefore nar-
+levelsofpruningincreasethepre-traininglossand rowstherangeofpossiblefunctionsitcanexpress.2
+prevent useful pre-training information from be- ThemaindifferencebetweenL0orL1regulariza-
+ing transferred to downstream tasks. This infor- tionandweightpruningisthattheformerinduce
+mation is not equally useful to each task; tasks sparsityviaapenaltyonthelossfunction,which
+degradelinearlywithpre-trainloss,butatdifferent is learned during gradient descent via stochastic
+rates. High levels of pruning, depending on the relaxation. It’s not clear which approach is more
+size of the downstream dataset, may additionally principledorpreferred. (Galeetal.,2019)
+degradeperformancebypreventingmodelsfrom Sparse Architecture Search Finally, we can
+fitting downstream datasets. Finally, we observe view neural network pruning as a type of sparse
+thatfine-tuningBERTonaspecifictaskdoesnot architecturesearch. Liuetal.(2019b)andFrankle
+improveitsprunabilityorchangetheorderofprun- and Carbin (2019) show that they can train care-
+ingbyameaningfulamount. fullyre-initializedprunedarchitecturestosimilar
+To our knowledge, prior work had not shown performancelevelsasdensenetworks. Underthis
+whether BERT could be compressed in a task- lens, stochastic gradient descent (SGD) induces
+generic way, keeping the benefits of pre-training network sparsity, and pruning simply makes that
+whileavoidingcostlyexperimentationassociated sparsityexplicit. Thesesparsearchitectures,along
+withcompressingandre-trainingBERTmultiple withtheappropriateinitializations,aresometimes
+times. NorhaditshownwhetherBERTcouldbe referredtoas“lotterytickets.”3
+over-prunedforamemory/accuracytrade-offfor
+2.1 MagnitudeWeightPruning
+deploymenttolow-resourcedevices. Inthiswork,
+weconcludethatBERTcanbeprunedpriortodis- Inthiswork,wefocusonweightmagnitudeprun-
+tributionwithoutaffectingit’suniversality,andthat ingbecauseitisoneofthemostfine-grainedand
+BERTmaybeover-prunedduringpre-trainingfor effectivepruningmethods. Italsohasacompelling
+areasonableaccuracytrade-offforcertaintasks. saliencycriterion(Hanetal.,2015): ifaweightis
+closetozero,thenitsinputiseffectivelyignored,
+2 Pruning: Compression,Regularization,
+whichmeanstheweightcanbepruned.
+ArchitectureSearch
+Magnitudeweightpruningitselfisasimplepro-
+cedure: 1. Pickatargetpercentageofweightstobe
+Neural network pruning involves examining a
+pruned,say50%. 2. Calculateathresholdsuchthat
+trained network and removing parts deemed to
+50%ofweightmagnitudesareunderthatthreshold.
+be unnecessary by some heuristic saliency crite-
+3. Removethoseweights. 4. Continuetrainingthe
+rion. Onemightremoveweights,neurons,layers,
+network to recover any lost accuracy. 5. Option-
+channels,attentionheads,etc. dependingonwhich
+ally, return to step 1 and increase the percentage
+heuristicisused. Below,wedescribethreedifferent
+ofweightspruned. Thisprocedureisconveniently
+lensesthroughwhichwemightinterpretpruning.
+implementedinaTensorflow(Abadietal.,2016)
+Compression Pruning a neural network de-
+package4,whichweuse(ZhuandGupta,2017).
+creasesthenumberofparametersrequiredtospec-
+Calculatingathresholdandpruningcanbedone
+ify the model, which decreases the disk space re-
+forallnetworkparametersholistically(globalprun-
+quired to store it. This allows large models to be
+ing)orforeachweightmatrixindividually(matrix-
+deployed on edge computing devices like smart-
+phones. Pruningcanalsoincreaseinferencespeed 2Interestingly,recentworkusedcompressionnottoinduce
+if whole neurons or convolutional channels are simplicitybuttomeasureit(Aroraetal.,2018).
+pruned,whichreducesGPUusage.1
+3Sparsenetworksaredifficulttotrainfromscratch(Evci
+etal.,2019).However,DettmersandZettlemoyer(2019)and
+Regularization Pruning a neural network also MostafaandWang(2019)presentmethodstodothisbyal-
+regularizes it. We might consider pruning to be lowingSGDtosearchoverthespaceofpossiblesubnetworks.
+Ourfindingssuggestthatthesemethodsmightbeusedtotrain
+1Ifweightsarepruned,however,theweightmatricesbe- sparseBERTfromscratch.
+comesparse.Sparsematrixmultiplicationisdifficulttoopti- 4https://www.tensorflow.org/versions/
+mizeoncurrentGPUarchitectures(Hanetal.,2016),although r1.15/api_docs/python/tf/contrib/model_
+progressisbeingmade. pruning
+local pruning). Both methods will prune to the theembeddingsaccountfor∼21%ofthemodel’s
+same sparsity, but in global pruning the sparsity memory.
+might be unevenly distributed across weight ma- OurexperimentalcodeforpruningBERT,based
+trices. We use matrix-local pruning because it is onthepublicBERTrepository,isavailablehere.8
+morepopularinthecommunity.5 Forinformation
+3.2 PruningDuringPre-Training
+onotherpruningtechniques,werecommendGale
+etal.(2019)andLiuetal.(2019b). We perform weight magnitude pruning on a pre-
+trained BERT-Base model.9 We select sparsities
+3 ExperimentalSetup from0%to90%inincrementsof10%andgradu-
+allypruneBERTtothissparsityoverthefirst10k
+BERT is a large Transformer encoder; for back-
+stepsoftraining. Wecontinuepre-trainingonEn-
+ground, wereferreaderstoVaswanietal.(2017)
+glishWikipediaandBookCorpusforanother90k
+oroneoftheseexcellenttutorials(Alammar,2018;
+stepstoregainanylostaccuracy.10 Theresulting
+Kleinetal.,2017).
+pre-traininglossesareshowninTable1.
+Wethenfine-tunetheseprunedmodelsontasks
+3.1 ImplementingBERTPruning
+fromtheGeneralLanguageUnderstandingEvalu-
+BERT-Baseconsistsof12encoderlayers,eachof
+ation(GLUE)benchmark,whichisastandardset
+whichcontains6prunablematrices: 4forthemulti-
+of9tasksthatincludesentimentanalysis,natural
+headed self-attention and 2 for the layer’s output
+language inference, etc. We avoid WNLI, which
+feed-forwardnetwork. isknowntobeproblematic.11 Wealsoavoidtasks
+Recall that self-attention first projects layer in- with less than 5k training examples because the
+puts into key, query, and value embeddings via resultstendtobenoisy(RTE,MRPC,STS-B).We
+linear projections. While there is a separate key, fine-tuneaseparatemodeloneachoftheremaining
+query,andvalueprojectionmatrixforeachatten- 5GLUEtasksfor3epochsandtry4learningrates:
+tion head, implementations typically “stack” ma- [2,3,4,5]×10−5. Thebestevaluationaccuracies
+tricesfromeachattentionhead,resultinginonly3 are averaged and plotted in Figure 1. Individual
+parameter matrices: one for key projections, one taskresultsareinTable1.
+forvalueprojections,andoneforqueryprojections. BERT can be used as a static feature-extractor
+Wepruneeachofthesematricesseparately,calcu- orasapre-trainedmodelwhichisfine-tunedend-
+latingathresholdforeach. Wealsoprunethelinear to-end. Inallexperiments,wefine-tuneweightsin
+output projection, which combines outputs from alllayersofBERTondownstreamtasks.
+eachattentionheadintoasingleembedding.6
+Weprunewordembeddingsinthesamewaywe 3.3 DisentanglingComplexityRestriction
+prunefeed-fowardnetworksandself-attentionpa- andInformationDeletion
+rameters.7 The justification is similar: if a word Pruninginvolvestwosteps: itdeletestheinforma-
+embeddingvalueisclosetozero,wecanassume tion stored in a weight by setting it to 0 and then
+it’szeroandstoretherestinasparsematrix. This regularizes the model by preventing that weight
+isusefulbecausetoken/subwordembeddingstend fromchangingduringfurthertraining.
+to account for a large portion of a natural lan- Todisentanglethesetwoeffects(modelcomplex-
+guagemodel’smemory. InBERT-Basespecifically, ityrestrictionandinformationdeletion),werepeat
+theexperimentsfromSection3.2withanidentical
+5TheweightsinalmosteverymatrixinBERT-Baseare
+pre-trainingsetup,butinsteadofpruningwesimply
+approximatelynormallydistributedwithmean0andvariance
+between0.03and0.05(TableA).Thissimilaritymayimply settheweightsto0andallowthemtovaryduring
+thatglobalpruningwouldperformsimilarlytomatrix-local
+downstreamtraining. Thisdeletesthepre-training
+pruning.
+6Wecouldhavecalculatedasinglethresholdfortheentire informationassociatedwiththeweightbutdoesnot
+self-attentionlayerorforeachattentionheadseparately.Sim- preventthemodelfromfittingdownstreamdatasets
+ilartoglobalpruningvs.matrix-localpruning,it’snotclear
+bykeepingtheweightatzeroduringdownstream
+whichoneshouldbepreferred.
+7Interestingly,pruningwordembeddingsisslightlymore training. We also fine-tune on downstream tasks
+interpretablethatpruningothermatrices.SeeFigure??fora
+heatmapofembeddingmagnitudes,whichshowsthatshorter
+8https://github.com/mitchellgordon95/bert-prune
+subwordstendtobeprunedmorethanlongersubwordsand
+9https://github.com/google-research/bert
+thatcertaindimensionsarealmostneverprunedinanysub- 10Evaluationcurvesleveledoutat20ksteps.
+word. 11https://gluebenchmark.com/faq
+untiltraininglossbecomescomparabletomodels theoutputofthenetwork.12
+with no pruning. We trained most models for 13
+4.2 MediumPruningLevelsPrevent
+epochsratherthan3. Modelswith70-90%informa-
+InformationTransfer
+tiondeletionrequired15epochstofitthetraining
+data. TheresultsarealsoincludedinFigure1and Past40%pruning, performancestartstodegrade.
+Table1. Pre-training loss increases as we prune weights
+necessary for fitting the pre-training data (Table
+3.4 PruningAfterDownstreamFine-tuning
+1). Feature activations of the hidden layers start
+WemightexpectthatBERTwouldbemorecom- todivergefrommodelswithlowlevelsofpruning
+pressibleafterdownstreamfine-tuning. Intuitively, (Figure2).13 Downstreamaccuracyalsobeginsto
+the information needed for downstream tasks is degradeatthispoint.
+a subset of the information learned during pre- Why does pruning at these levels hurt down-
+training; sometasksrequiremoresemanticinfor- streamperformance? Ononehand,pruningdeletes
+mationthansyntactic,andvice-versa. Weshould pre-training information by setting weights to 0,
+beabletodiscardthe“extra”informationandonly preventing the transfer of the useful inductive bi-
+keepwhatweneedfor,say,parsing(LiandEisner, aseslearnedduringpre-training. Ontheotherhand,
+2019). pruningregularizesthemodelbykeepingcertain
+Formagnitudeweightpruningspecifically,we weightsatzero,whichmightpreventfittingdown-
+might expect downstream training to change the streamdatasets.
+distributionof weightsintheparametermatrices. Figure1andTable1showinformationdeletion
+This, in turn, changes the sort-order of the abso- isthemaincauseofperformancedegradationbe-
+lute values of those weights, which changes the tween40-60%sparsity,sincepruningandinforma-
+order that we prune them in. This new pruning tiondeletiondegrademodelsbythesameamount.
+order, hypothetically, would be less degrading to Informationdeletionwouldnotbeaproblemifpre-
+ourspecificdownstreamtask. traininganddownstreamdatasetscontainedsimi-
+To test this, we fine-tuned pre-trained BERT- larinformation. However,pre-trainingiseffective
+Base on downstream data for 3 epochs. We then preciselybecausethepre-trainingdatasetismuch
+pruned at various sparsity levels and continued largerthanthelabeleddownstreamdataset,which
+training for 5 more epochs (7 for 80/90% spar- allowslearningofmorerobustrepresentations.
+sity), at which point the training losses became We see that the main obstacle to compressing
+comparabletothoseofmodelsprunedduringpre- pre-trainedmodelsismaintainingtheinductivebias
+training. We repeat this for learning rates in ofthemodellearnedduringpre-training. Encoding
+[2,3,4,5]×10−5andshowtheresultswiththebest thisbiasrequiresmanymoreweightsthanfitting
+development accuracy in Figure 1 / Table 1. We downstream datasets, and it cannot be recovered
+alsomeasurethedifferenceinwhichweightsare duetoafundamentalinformationgapbetweenpre-
+selectedforpruningduringpre-trainingvs. down- traininganddownstreamdatasets.14 Thisleadsus
+stream fine-tuning and plot the results in Figure tobelievethattheamountamodelcanbepruned
+3.
+12Weknow,however,thatincreasingthesizeofBERTto
+BERT-Largeimprovesperformance.Thisviewdoesnotfully
+4 PruningRegimes explainwhyevenanobviouslyunder-parameterizedmodel
+shouldbecomesparse.Thismaybecausedbydropout,orit
+4.1 30-40%ofWeightsAreDiscardable maybeageneralpropertyofourtrainingregime(SGD).Per-
+hapsanextensionofTianetal.(2019)tounder-parameterized
+Figure 1 shows that the first 30-40% of weights modelswouldprovidesomeinsight.
+prunedbymagnitudeweightpruningdonotimpact 13Webelievethisobservationmaypointtowardsamore
+principledstoppingcriterionforpruning.Currently,theonly
+pre-traininglossorinferenceonanydownstream
+waytoknowhowmuchtopruneisbytrialand(dev-set)error.
+task. These weights can be pruned either before Predictorsofperformancedegradationwhilepruningmight
+or after fine-tuning. This makes sense from the help us decide which level of sparsity is appropriate for a
+giventrainednetworkwithouttryingmanyatonce.
+perspectiveofpruningassparsearchitecturesearch:
+14We might consider finding a lottery ticket for BERT,
+whenweinitializeBERT-Base,weinitializemany which we would expect to fit the GLUE training data just
+possiblesubnetworks. SGDselectsthebestonefor aswellaspre-trainedBERT(Morcosetal.,2019;Yuetal.,
+2019). However, wepredictthatthelottery-ticketwillnot
+pre-trainingandpushestherestoftheweightsto0.
+reach similar generalization levels unless the lottery ticket
+Wecanthenprunethoseweightswithoutaffecting encodesenoughinformationtoclosetheinformationgap.
+Figure1: (Blue)ThebestGLUEdevaccuracyandtraininglossesformodelsprunedduringpre-training,averaged
+over5tasks. Alsoshownaremodelswithinformationdeletionduringpre-training(orange),modelsprunedafter
+downstreamfine-tuning(green),andmodelsprunedrandomlyduringpre-traininginsteadofbylowestmagnitude
+(red).30-40%ofweightscanbeprunedusingmagnitudeweightpruningwithoutdecreasingdowsntreamaccuracy.
+Noticethatinformationdeletionfitsthetrainingdatabetterthanun-prunedmodelsatallsparsitylevelsbutdoes
+notfullyrecoverevaluationaccuracy. Also,modelsprunedafterdownstreamfine-tuninghavethesameorworse
+development accuracy, despite achieving lower training losses. Note: none of the pruned models are overfitting
+becauseun-prunedmodelshavethelowesttraininglossandthehighestdevelopmentaccuracy.Whiletheresultsfor
+individualtasksareinTable1,eachtaskdoesnotvarymuchfromtheaveragetrend,withanexceptiondiscussed
+inSection4.3.
+Figure2: (Left)Pre-traininglosspredictsinformationdeletionGLUEaccuracylinearlyassparsityincreases. We
+believetheslopeofeachlinetellsushowmuchabitofBERTisworthtoeachtask. (CoLAat90%isexcluded
+from the line of best fit.) (Right) The cosine similarities of features extracted for a subset of the pre-training
+developmentdatabeforeandafterpruning. Featuresareextractedfromactivationsofall12layersofBERTand
+comparedlayer-wisetoamodelthathasnotbeenpruned. Asperformancedegrades,cosinesimilaritiesoffeatures
+decreases.
+islimitedbythelargestdatasetthemodelhasbeen
+trainedon: inthiscase,thepre-trainingdataset. 15
+4.3 HighPruningLevelsAlsoPreventFitting
+DownstreamDatasets
+At70%sparsityandabove,modelswithinforma-
+tiondeletionrecoversomeaccuracyw.r.t. pruned
+models, so complexity restriction is a secondary
+causeofperformancedegradation. However,these
+modelsdonotrecoverallevaluationaccuracy,de-
+spitematchingun-prunedmodel’strainingloss.
+Table1showsthatontheMNLIandQQPtasks,
+whichhavethelargestamountoftrainingdata,in-
+formationdeletionperformsmuchbetterthanprun-
+ing. Incontrast,modelsdonotrecoveraswellon
+SST-2andCoLA,whichhavelessdata. Webelieve
+this is because the larger datasets require larger
+modelstofit,socomplexityrestrictionbecomesan
+issueearlier.
+Wemightbeconcernedthatpoorlyperforming
+modelsareover-fitting,sincetheyhavelowertrain-
+ing losses than unpruned models. But the best
+performing information-deleted models have the
+lowest training error of all, so overfitting seems
+unlikely.16
+Figure 3: (Top) The measured difference in pruning
+masksbetweenmodelsprunedduringpre-trainingand
+4.4 HowMuchIsABitOfBERTWorth?
+modelsprunedduringdownstreamfine-tuning. Aspre-
+We’veseenthatover-pruningBERTdeletesinfor- dicted, the differences are less than 6%, since fine-
+mation useful for downstream tasks. Is this in- tuning only changes the magnitude sorting order of
+formation equally useful to all tasks? We might weights locally, not globally. (Bottom) The average
+GLUEdevelopmentaccuracyandpruningmaskdiffer-
+consider the pre-training loss as a proxy for how
+enceformodelstrainedondownstreamdatasetsbefore
+much pre-training information we’ve deleted in
+pruning60%atlearningrate5e-5. Afterpruning,mod-
+total. Similarly, the performance of information-
+elsaretrainedforanadditional2epochstoregainaccu-
+deletion models is a proxy for how much of that
+racy. Weseethattrainingbetween3and12epochsbe-
+information was useful for each task. Figure 2 forepruningdoesnotchangewhichweightsarepruned
+shows that the pre-training loss linearly predicts orimproveperformance.
+theeffectsofinformationdeletionondownstream
+accuracy.
+is worth only one accuracy point on QQP but 10
+For every bit of information we delete from
+pointsonCoLA.It’sunclear,however,whetherthis
+BERT,itappearsonlyafractionisusefulforCoLA,
+isbecausethepre-trainingtaskislessrelevantto
+andanevensmallerfractionusefulforQQP.17This
+QQPorwhetherQQPsimplyhasabiggerdataset
+relationshipshouldbetakenintoaccountwhencon-
+withmoreinformationcontent.18
+sideringthememory/accuracytrade-offofover-
+pruning. Pruninganextra30%ofBERT’sweights
+5 DownstreamFine-tuningDoesNot
+15Wewouldhavemoreconfidenceinthissuppositionifwe ImprovePrunability
+hadexperimentswherethepre-trainingdataismuchsmaller
+thanthedownstreamdata. Itwouldalsobeusefultohavea Sincepre-traininginformationdeletionplaysacen-
+moreinformation-theoreticanalysisofhowdatacomplexity
+tral role in performance degradation while over-
+influencesmodelcompressibility.Thisismaybeaninteresting
+directionforfuturework. pruning, we might expect that downstream fine-
+16Weareremindedofthedouble-descentriskcurvepro-
+posedbyBelkinetal.(2018). 18Hendrycks et al. (2019) suggest that pruning these
+17Wecan’tquantifythisnow,butperhapscompressionwill weightsmighthaveahiddencost:decreasingmodelrobust-
+helpquantifythe“universality”oftheLMtask. ness.
+Figure 4: (Left) The average, min, and max percentage of individual attention heads pruned at each sparsity
+level. Weseeat60%sparsity,eachattentionheadindividuallyisprunedstrictlybetween55%and65%. (Right)
+We compute the magnitude sorting order of each weight before and after downstream fine-tuning. If a weight’s
+original position is 59 / 100 before fine-tuning and 63 / 100 after fine-tuning, then that weight moved 4% in the
+sorting order. After even an epoch of downstream fine-tuning, weights quickly stabilize in a new sorting order
+whichisnotfarfromtheoriginalsortingorder. Variancesleveloutsimilarly.
+tuning would improve prunability by making im- 6 RelatedWork
+portantweightsmoresalient(increasingtheirmag-
+CompressingBERTforSpecificTasksSection5
+nitude). However, Figure 1 shows that models
+showed that downstream fine-tuning does not in-
+pruned after downstream fine-tuning do not sur-
+crease prunability. However, several alternative
+passthedevelopmentaccuraciesofmodelspruned
+compressionapproacheshavebeenproposedtodis-
+duringpre-training,despiteachievingsimilartrain-
+cardnon-task-specificinformation. LiandEisner
+ing losses. Figure 3 shows fine-tuning changes
+(2019) used an information bottleneck to discard
+whichweightsareprunedbylessthan6%.
+non-syntacticinformation. Tangetal.(2019)used
+BERTasaknowledgedistillationteachertocom-
+Whydoesn’tfine-tuningchangewhichweights
+pressrelevantinformationintosmallerBi-LSTMs,
+are pruned much? Table 2 shows that the magni-
+whileKuncoroetal.(2019)tookasimilardistilla-
+tudesortingorderofweightsismostlypreserved;
+tionapproach. Whilefine-tuningdoesnotincrease
+weights move on average 0-4% away from their
+prunability,task-specificknowledgemightbeex-
+startingpositionsinthesortorder. Wealsoseethat
+tractedfromBERTwithothermethods.
+highmagnitudeweightsaremorestablethanlower
+Attention Head Pruning previously showed
+ones(Figure6).
+redundancyintransformermodelsbypruningen-
+tire attention heads. Michel et al. (2019) showed
+Ourexperimentssuggestthattrainingondown- that after fine-tuning on MNLI, up to 40% of at-
+stream data before pruning is too blunt an instru- tention heads can be pruned from BERT without
+ment to improve prunability. Even so, we might affectingtestaccuracy. Theyshowredundancyin
+considersimplytrainingonthedownstreamtasks BERT after fine-tuning on a single downstream
+formuchlonger,whichwouldincreasethediffer- task; in contrast, our work emphasizes the inter-
+enceinweightspruned. However,Figure4shows play between compression and transfer learning
+thatevenafteranepochofdownstreamfine-tuning, tomanytasks,pruningbothbeforeandafterfine-
+weightsquicklyre-stabilizeinanewsortingorder, tuning. Also, magnitude weight pruning allows
+meaninglongerdownstreamtrainingwillhaveonly ustoadditionallyprunethefeed-fowardnetworks
+amarginaleffectonwhichweightsarepruned. In- andsub-wordembeddingsinBERT(notjustself-
+deed,Figure3showsthattheweightsselectedfor attention), which account for ∼72% of BERT’s
+60%pruningquicklystabilizeandevaluationaccu- totalmemoryusage.
+racy does not improve with more training before We suspect that attention head pruning and
+pruning. weightpruningremovedifferentredundanciesfrom
+BERT. Figure 4 shows that weight pruning does JayAlammar.2018. Theillustratedtransformer.
+not prune any specific attention head much more
+Sanjeev Arora, Rong Ge, Behnam Neyshabur, and
+thanthepruningrateforthewholemodel. Itisnot
+Yi Zhang. 2018. Stronger generalization bounds
+clear,however,whetherweightpruningandrecov- for deep nets via a compression approach. CoRR,
+erytrainingmakesattentionheadslessprunableby abs/1802.05296.
+distributingfunctionalitytounusedheads.
+Mikhail Belkin, Daniel Hsu, Siyuan Ma, and Soumik
+Mandal.2018. Reconcilingmodernmachinelearn-
+7 ConclusionAndFutureWork
+ing practice and the bias-variance trade-off. arXiv
+e-prints,pagearXiv:1812.11118.
+We’veshownthatencodingBERT’sinductivebias
+requires many more weights than are required to Cristian Bucila, Rich Caruana, and Alexandru
+fitdownstreamdata. Futureworkoncompressing Niculescu-Mizil.2006. Modelcompression. InPro-
+ceedingsoftheTwelfthACMSIGKDDInternational
+pre-trained models should focus on maintaining
+ConferenceonKnowledgeDiscoveryandDataMin-
+thatinductivebiasandquantifyingitsrelevanceto
+ing, Philadelphia, PA, USA, August 20-23, 2006,
+varioustasksduringaccuracy/memorytrade-offs. pages535–541.
+Formagnitudeweightpruning,we’veshownthat
+William Chan, Nikita Kitaev, Kelvin Guu, Mitchell
+30-40%oftheweightsdonotencodeanyusefulin-
+Stern,andJakobUszkoreit.2019. KERMIT:genera-
+ductivebiasandcanbediscardedwithoutaffecting
+tiveinsertion-basedmodelingforsequences. CoRR,
+BERT’suniversality. Therelevanceoftherestof abs/1906.01604.
+theweightsvaryfromtasktotask,andfine-tuning
+TimDettmersandLukeS.Zettlemoyer.2019. Sparse
+on downstream tasks does not change the nature
+networks from scratch: Faster training without los-
+of this trade-off by changing which weights are
+ingperformance. ArXiv,abs/1907.04840.
+pruned. Infuturework,wewillinvestigatethefac-
+torsthatinfluencelanguagemodeling’srelevance Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+KristinaToutanova.2018. Bert:Pre-trainingofdeep
+todownstreamtasksandhowtoimprovecompres-
+bidirectional transformers for language understand-
+sioninatask-generalway.
+ing. CoRR,abs/1810.04805.
+It’sreasonabletobelievethattheseconclusions
+Utku Evci, Fabian Pedregosa, Aidan N. Gomez, and
+willgeneralizetootherpre-trainedlanguagemod-
+ErichElsen.2019. Thedifficultyoftrainingsparse
+els such as Kermit (Chan et al., 2019), XLNet
+neuralnetworks. CoRR,abs/1906.10732.
+(Yangetal.,2019),GPT-2(Radfordetal.,2019),
+RoBERTa (Liu et al., 2019a) or ELMO (Peters Jonathan Frankle and Michael Carbin. 2019. The lot-
+terytickethypothesis: Findingsparse,trainableneu-
+et al., 2018). All of these learn some variant of
+ralnetworks. InInternationalConferenceonLearn-
+languagemodeling,andmostuseTransformerar-
+ingRepresentations.
+chitectures. While it remains to be shown in fu-
+turework,viewingpruningasarchitecturesearch TrevorGale,ErichElsen,andSaraHooker.2019. The
+state of sparsity in deep neural networks. CoRR,
+implies these models will be prunable due to the
+abs/1902.09574.
+trainingdynamicsinherenttoneuralnetworks.
+Song Han, Xingyu Liu, Huizi Mao, Jing Pu, Ardavan
+Pedram, Mark A. Horowitz, and William J. Dally.
+References 2016. Eie:Efficientinferenceengineoncompressed
+deep neural network. In Proceedings of the 43rd
+Mart´ın Abadi, Ashish Agarwal, Paul Barham, Eugene InternationalSymposiumonComputerArchitecture,
+Brevdo,ZhifengChen,CraigCitro,GregoryS.Cor- ISCA ’16, pages 243–254, Piscataway, NJ, USA.
+rado, Andy Davis, Jeffrey Dean, Matthieu Devin, IEEEPress.
+SanjayGhemawat,IanJ.Goodfellow,AndrewHarp,
+GeoffreyIrving,MichaelIsard,YangqingJia,Rafal Song Han, Jeff Pool, John Tran, and William Dally.
+Jo´zefowicz,LukaszKaiser,ManjunathKudlur,Josh 2015. Learning both weights and connections
+Levenberg,DanMane´,RajatMonga,SherryMoore, for efficient neural network. In C. Cortes, N. D.
+Derek Gordon Murray, Chris Olah, Mike Schuster, Lawrence, D. D. Lee, M. Sugiyama, and R. Gar-
+JonathonShlens,BenoitSteiner,IlyaSutskever,Ku- nett, editors, Advances in Neural Information Pro-
+nalTalwar,PaulA.Tucker,VincentVanhoucke,Vi- cessingSystems28,pages1135–1143.CurranAsso-
+jay Vasudevan, Fernanda B. Vie´gas, Oriol Vinyals, ciates,Inc.
+Pete Warden, Martin Wattenberg, Martin Wicke,
+Yuan Yu, and Xiaoqiang Zheng. 2016. Tensorflow: Dan Hendrycks, Kimin Lee, and Mantas Mazeika.
+Large-scalemachinelearningonheterogeneousdis- 2019. Usingpre-trainingcanimprovemodelrobust-
+tributedsystems. CoRR,abs/1603.04467. nessanduncertainty. InICML,pages2712–2721.
+GuillaumeKlein,YoonKim,YuntianDeng,JeanSenel- Nimit Sharad Sohoni, Christopher Richard Aberger,
+lart, and Alexander M. Rush. 2017. Opennmt: Megan Leszczynski, Jian Zhang, and Christopher
+Open-source toolkit for neural machine translation. Re´.2019. Low-memoryneuralnetworktraining: A
+InProc.ACL. technicalreport. CoRR,abs/1904.10631.
+AdhigunaKuncoro,ChrisDyer,LauraRimell,Stephen Emma Strubell, Ananya Ganesh, and Andrew McCal-
+Clark, and Phil Blunsom. 2019. Scalable syntax- lum. 2019. Energy and policy considerations for
+awarelanguagemodelsusingknowledgedistillation. deeplearninginNLP. CoRR,abs/1906.02243.
+CoRR,abs/1906.06438.
+Raphael Tang, Yao Lu, Linqing Liu, Lili Mou, Olga
+Xiang Lisa Li and Jason Eisner. 2019. Specializing Vechtomova, andJimmyLin.2019. Distillingtask-
+word embeddings (for parsing) by information bot- specific knowledge from BERT into simple neural
+tleneck. InProceedingsofthe2019Conferenceon networks. CoRR,abs/1903.12136.
+EmpiricalMethodsinNaturalLanguageProcessing
+and 9th International Joint Conference on Natural Yuandong Tian, Tina Jiang, Qucheng Gong, and
+LanguageProcessing,HongKong. Ari S. Morcos. 2019. Luck matters: Understand-
+ingtrainingdynamicsofdeeprelunetworks. CoRR,
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- abs/1905.13405.
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019a. Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Roberta:ArobustlyoptimizedBERTpretrainingap- Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+proach. CoRR,abs/1907.11692. Kaiser, and Illia Polosukhin. 2017. Attention is all
+youneed. CoRR,abs/1706.03762.
+Zhuang Liu, Mingjie Sun, Tinghui Zhou, Gao Huang,
+andTrevorDarrell.2019b. Rethinkingthevalueof Alex Wang, Amanpreet Singh, Julian Michael, Felix
+network pruning. In International Conference on Hill, Omer Levy, and Samuel R. Bowman. 2019.
+LearningRepresentations. GLUE: A multi-task benchmark and analysis plat-
+form for natural language understanding. In Inter-
+Christos Louizos, Max Welling, and Diederik P. nationalConferenceonLearningRepresentations.
+Kingma. 2018. Learning sparse neural networks
+through l-0 regularization. In International Confer- ZhilinYang, ZihangDai, YimingYang, JaimeG.Car-
+enceonLearningRepresentations. bonell,RuslanSalakhutdinov,andQuocV.Le.2019.
+Xlnet: Generalized autoregressive pretraining for
+Paul Michel, Omer Levy, and Graham Neubig. 2019. languageunderstanding. CoRR,abs/1906.08237.
+Are sixteen heads really better than one? ArXiv,
+abs/1905.10650. HaonanYu,SergeyEdunov,YuandongTian,andAriS.
+Morcos.2019. Playingthelotterywithrewardsand
+Dmitry Molchanov, Arsenii Ashukha, and Dmitry multiple languages: lottery tickets in RL and NLP.
+Vetrov. 2017. Variational dropout sparsifies deep arXive-prints,pagearXiv:1906.02768.
+neural networks. In Proceedings of the 34th Inter-
+nationalConferenceonMachineLearning-Volume Michael Zhu and Suyog Gupta. 2017. To prune,
+70,ICML’17,pages2498–2507.JMLR.org. or not to prune: exploring the efficacy of prun-
+ing for model compression. arXiv e-prints, page
+Ari S. Morcos, Haonan Yu, Michela Paganini, and arXiv:1710.01878.
+Yuand ong Tian. 2019. One ticket to win them
+all: generalizing lottery ticket initializations across A Appendix
+datasets and optimizers. arXiv e-prints, page
+arXiv:1906.02773.
+HeshamMostafaandXinWang.2019. Parametereffi-
+cienttrainingofdeepconvolutionalneuralnetworks
+bydynamicsparsereparameterization.
+MatthewE.Peters,MarkNeumann,MohitIyyer,Matt
+Gardner, Christopher Clark, Kenton Lee, and Luke
+Zettlemoyer.2018. Deepcontextualizedwordrepre-
+sentations. CoRR,abs/1802.05365.
+Alec Radford, Jeff Wu, Rewon Child, David Luan,
+DarioAmodei,andIlyaSutskever.2019. Language
+modelsareunsupervisedmultitasklearners.
+Karen Simonyan and Andrew Zisserman. 2014.
+Very Deep Convolutional Networks for Large-
+Scale Image Recognition. arXiv e-prints, page
+arXiv:1409.1556.
+Pre-train MNLI QQP QNLI SST-2 CoLA
+Pruned AVG
+Loss 392k 363k 108k 67k 8.5k
+0 1.82 83.1|0.25 90.5|0.10 91.1|0.12 92.1|0.06 79.1|0.26 87.2|15.7
+10 1.82 83.3|0.21 90.4|0.10 91.0|0.12 91.6|0.07 79.4|0.30 87.2|16.0
+20 1.83 83.3|0.24 90.5|0.11 91.1|0.11 91.6|0.05 79.1|0.30 87.1|16.0
+30 1.86 83.3|0.23 90.2|0.12 90.7|0.12 91.9|0.06 79.5|0.31 87.1|16.9
+40 1.93 83.0|0.25 90.1|0.12 90.4|0.12 91.5|0.06 78.4|0.23 86.7|15.6
+50 2.03 82.6|0.27 89.8|0.13 90.2|0.13 90.9|0.07 77.4|0.30 86.2|18.0
+60 2.25 81.8|0.32 89.4|0.16 89.3|0.16 91.4|0.07 75.9|0.44 85.6|23.0
+70 2.62 79.5|0.40 88.6|0.18 88.4|0.21 90.1|0.10 72.7|0.47 83.9|27.1
+80 3.44 75.9|0.49 86.9|0.24 85.3|0.29 88.1|0.12 69.1|0.61 81.1|34.8
+90 5.83 64.8|0.76 81.1|0.36 71.7|0.52 80.3|0.25 69.1|0.61 73.4|49.8
+InformationDeletion
+0 1.82 83.0|0.20 90.6|0.06 90.0|0.10 92.1|0.03 80.6|0.18 87.3|11.6
+10 1.82 82.8|0.01 90.5|0.05 90.5|0.09 92.2|0.05 80.8|0.16 87.4|07.2
+20 1.83 82.9|0.01 90.5|0.05 90.5|0.09 91.5|0.05 80.3|0.16 87.2|07.3
+30 1.86 82.3|0.01 90.6|0.04 90.5|0.10 90.8|0.05 80.0|0.18 86.9|07.7
+40 1.93 82.2|0.19 90.5|0.05 90.1|0.10 92.0|0.05 79.0|0.17 86.7|11.1
+50 2.03 82.5|0.19 90.3|0.05 90.2|0.10 91.2|0.05 77.9|0.19 86.4|11.6
+60 2.25 81.9|0.20 90.1|0.05 89.5|0.10 90.8|0.05 76.4|0.23 85.7|12.6
+70 2.62 80.8|0.01 90.2|0.01 88.7|0.10 90.3|0.06 74.4|0.28 84.9|09.3
+80 3.44 78.6|0.01 89.3|0.02 86.0|0.02 88.8|0.07 70.0|0.45 82.5|11.5
+90 5.83 72.9|0.01 87.5|0.02 76.8|0.06 83.0|0.09 69.1|0.61 77.9|15.7
+PrunedafterDownstreamFine-tuning
+0 - 82.6|0.15 90.6|0.06 90.1|0.10 92.1|0.04 78.7|0.25 86.8|12.0
+10 - 82.9|0.19 90.6|0.06 90.3|0.10 91.6|0.05 79.0|0.11 86.9|10.3
+20 - 82.7|0.15 90.6|0.07 90.2|0.07 92.0|0.04 79.0|0.22 86.9|10.7
+30 - 82.7|0.23 90.4|0.07 89.7|0.07 91.6|0.04 78.5|0.23 86.6|12.8
+40 - 82.7|0.25 90.5|0.11 89.9|0.12 91.7|0.05 78.8|0.17 86.7|13.9
+50 - 82.6|0.19 90.3|0.08 89.7|0.11 90.8|0.06 78.0|0.22 86.3|13.0
+60 - 81.8|0.22 90.2|0.10 89.3|0.12 90.6|0.06 76.1|0.31 85.6|16.4
+70 - 80.5|0.30 89.4|0.14 86.2|0.19 88.2|0.07 69.5|0.58 82.7|25.8
+80 - 73.7|0.53 87.8|0.12 80.4|0.21 86.4|0.07 69.1|0.59 79.5|30.5
+90 - 58.7|0.86 82.5|0.26 65.2|0.52 81.5|0.16 69.1|0.61 71.4|47.9
+RandomPruning
+0 1.82 83.3|0.26 90.5|0.10 90.6|0.15 92.4|0.07 78.7|0.18 87.1|15.3
+10 2.09 82.0|0.27 90.1|0.12 90.3|0.13 92.3|0.05 77.0|0.32 86.3|18.0
+20 2.46 80.6|0.32 89.8|0.12 88.5|0.14 91.1|0.07 73.5|0.39 84.7|20.8
+30 2.98 79.1|0.36 89.2|0.14 86.9|0.23 89.3|0.10 71.8|0.47 83.3|25.9
+40 3.76 75.4|0.45 88.2|0.16 84.5|0.23 88.6|0.09 69.3|0.57 81.2|30.3
+50 4.73 71.6|0.60 86.6|0.20 81.5|0.28 85.0|0.10 69.1|0.61 78.8|35.8
+60 5.63 70.4|0.60 85.2|0.24 71.7|0.45 81.5|0.21 69.1|0.61 75.6|42.3
+70 6.22 64.1|0.76 81.4|0.34 63.0|0.62 80.6|0.20 69.1|0.61 71.6|50.3
+80 6.87 58.8|0.84 76.6|0.46 61.1|0.64 80.6|0.23 69.1|0.61 69.3|55.6
+90 7.37 49.8|0.98 74.3|0.51 60.2|0.65 75.1|0.33 69.1|0.61 65.7|61.4
+Table 1: Pre-training development losses and GLUE task development accuracies for various levels of pruning.
+Eachdevelopmentaccuracyisaccompaniedonitsrightbytheachievedtrainingloss,evaluatedontheentiretrain-
+ingset. AveragesaresummarizedinFigure1. Pre-traininglossesareomittedformodelsprunedafterdownstream
+fine-tuningbecauseitisnotclearhowtomeasuretheirperformanceonthepre-trainingtaskinafairway.
+Figure5:ThesumofweightsprunedateachsparsitylevelforoneshotpruningofBERT.Giventhemotivationfor
+oursaliencycriterion, itseemsstrangethatsuchalargemagnitudeofweightscanbeprunedwithoutdecreasing
+accuracy.
+LR MNLI QQP QNL SST-2 CoLA
+2e-5 1.91±1.81 1.82±1.72 1.27±1.22 1.06±1.03 0.79±0.77
+3e-5 2.68±2.51 2.56±2.40 1.79±1.69 1.54±1.47 1.06±1.03
+4e-5 3.41±3.18 3.30±3.10 2.31±2.19 1.99±1.89 1.11±1.09
+5e-5 4.12±3.83 4.02±3.74 2.77±2.62 2.38±2.29 1.47±1.43
+Table 2: We compute the magnitude sorting order of each weight before and after downstream fine-tuning. If a
+weight’s original position is 59 / 100 before fine-tuning and 63 / 100 after fine-tuning, then that weight moved
+4% in the sorting order. We then list the average movement of weights in each model, along with the standard
+deviation. Sorting order changes mostly locally across tasks: a weight moves, on average, 0-4% away from its
+startingposition. Asexpected,largerdatasetsandlargerlearningrateshavemoremovement(perepoch). Wealso
+seethathighermagnitudeweightsaremorestablethanlowerweights,seeFigure6.
+Figure6: Weshowhowweightsortordermovementsaredistributedduringfine-tuning,givenaweight’sstarting
+magnitude. Weseethathighermagnitudeweightsaremorestablethanlowermagnitudeweightsanddonotmove
+asmuchinthesortorder. Thisplotisnearlyidenticalforeverymodelandlearningrate,soweonlyshowitonce.
+Figure7:Aheatmapoftheweightmagnitudesofthe12horizontallystackedself-attentionkeyprojectionmatrices
+for layer 1. A banding pattern can be seen: the highest values of the matrix tend to cluster in certain attention
+heads. This pattern appears in most of the self-attention parameter matrices, but it does not cause pruning to
+prune one head more than another. However, it may prove to be a useful heuristic for attention head pruning,
+whichwouldnotrequiremakingmanypassesoverthetrainingdata. (Right)Aheatmapoftheweightmagnitudes
+of BERT’s subword embeddings. Interestingly, pruning BERT embeddings are more interpretable; we can see
+shorter subwords (top rows) have smaller magnitude values and thus will be pruned earlier than other subword
+embeddings.
+WeightMatrix WeightMean WeightSTD
+embeddingswordembeddings -0.0282 0.042
+layer0attentionoutputFC -0.0000 0.029
+layer0selfattnkey 0.0000 0.043
+layer0selfattnquery 0.0000 0.043
+layer0selfattnvalue -0.0000 0.029
+layer0intermediateFC -0.0000 0.037
+layer0outputFC -0.0012 0.036
+layer1attentionoutputFC 0.0001 0.028
+layer1selfattnkey 0.0000 0.043
+layer1selfattnquery -0.0003 0.043
+layer1selfattnvalue -0.0000 0.029
+layer1intermediateFC 0.0001 0.039
+layer1outputFC -0.0014 0.038
+layer10attentionoutputFC -0.0000 0.033
+layer10selfattnkey -0.0000 0.046
+layer10selfattnquery 0.0002 0.046
+layer10selfattnvalue -0.0000 0.036
+layer10intermediateFC 0.0000 0.039
+layer10outputFC -0.0011 0.038
+layer11attentionoutputFC -0.0000 0.037
+layer11selfattnkey 0.0002 0.044
+layer11selfattnquery -0.0001 0.045
+layer11selfattnvalue -0.0000 0.039
+layer11intermediateFC 0.0004 0.039
+layer11outputFC -0.0008 0.036
+layer2attentionoutputFC 0.0000 0.027
+layer2selfattnkey 0.0000 0.047
+layer2selfattnquery 0.0000 0.048
+layer2selfattnvalue -0.0000 0.028
+layer2intermediateFC 0.0001 0.040
+layer2outputFC -0.0015 0.038
+layer3attentionoutputFC 0.0001 0.029
+layer3selfattnkey 0.0000 0.043
+layer3selfattnquery 0.0003 0.043
+layer3selfattnvalue -0.0001 0.031
+layer3intermediateFC -0.0001 0.040
+layer3outputFC -0.0014 0.039
+layer4attentionoutputFC 0.0000 0.033
+layer4selfattnkey 0.0000 0.042
+layer4selfattnquery -0.0001 0.042
+layer4selfattnvalue 0.0001 0.035
+layer4intermediateFC 0.0001 0.041
+layer4outputFC -0.0014 0.040
+layer5attentionoutputFC -0.0000 0.033
+layer5selfattnkey -0.0001 0.043
+layer5selfattnquery -0.0000 0.043
+layer5selfattnvalue -0.0000 0.035
+layer5intermediateFC 0.0000 0.041
+layer5outputFC -0.0014 0.039
+layer6attentionoutputFC 0.0001 0.032
+layer6selfattnkey -0.0000 0.043
+layer6selfattnquery 0.0001 0.043
+layer6selfattnvalue 0.0000 0.034
+layer6intermediateFC -0.0000 0.041
+layer6outputFC -0.0014 0.039
+layer7attentionoutputFC 0.0000 0.032
+layer7selfattnkey -0.0000 0.044
+layer7selfattnquery -0.0000 0.044
+layer7selfattnvalue 0.0001 0.033
+layer7intermediateFC 0.0003 0.039
+layer7outputFC -0.0013 0.038
+layer8attentionoutputFC 0.0000 0.034
+layer8selfattnkey -0.0000 0.044
+layer8selfattnquery 0.0001 0.044
+layer8selfattnvalue 0.0000 0.035
+layer8intermediateFC 0.0004 0.039
+layer8outputFC -0.0013 0.037
+layer9attentionoutputFC 0.0001 0.033
+layer9selfattnkey 0.0000 0.046
+layer9selfattnquery -0.0001 0.046
+layer9selfattnvalue 0.0000 0.035
+layer9intermediateFC 0.0005 0.040
+layer9outputFC -0.0012 0.039
+poolerFC 0.0000 0.029
+Table3: ThevaluesofBERT’sweightsarenormallydistributedineachweightmatrix. Themeansandvariances
+arelistedforeach.

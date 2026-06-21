@@ -1,0 +1,879 @@
+CLaC at DISRPT 2025: Hierarchical Adapters for Cross-Framework
+Multi-lingual Discourse Relation Classification
+NawarTurk,DanieleComitogianni,LeilaKosseim
+ComputationalLinguisticsatConcordia(CLaC)Lab
+Dept. ofComputerScienceandSoftwareEngineering
+ConcordiaUniversity,Montréal,Québec,Canada
+nawar.turk@mail.concordia.ca,danielecomitogianni@outlook.com,leila.kosseim@concordia.ca
+Abstract Thisyear,thetaskproposedaunifiedsetof17
+labelstoclassifytherelationsacrossmultiplelan-
+We present our submission to Task 3 guagesandframeworks,makingtheclassification
+(Discourse Relation Classification) of the problemmorechallengingduetothediversityof
+DISRPT 2025 shared task. Task 3 intro-
+data and the need to generalize across different
+duces a unified set of 17 discourse relation
+frameworksandlanguages. Thisworkcontributes
+labels across 39 corpora in 16 languages
+tothesharedeffortofbuildingamultilingualand
+and six discourse frameworks, posing sig-
+cross-frameworkdiscourseparser.
+nificant multilingual and cross-formalism
+challenges. We first benchmark the task Forourparticipation,weevaluatedthreemeth-
+by fine-tuning multilingual BERT-based ods: transformer-basedbaselines,promptengineer-
+models (mBERT, XLM-RoBERTa-Base, ing with LLMs, and a custom made model Hi-
+and XLM-RoBERTa-Large) with two
+DACHierarchicalDual-AdapterContrastivelearn-
+argument-orderingstrategiesandprogressive
+ing,anovelparameter-efficientframeworkwhich
+unfreezingratiostoestablishstrongbaselines.
+employs a hierarchical adapter backbone and is
+Wethenevaluateprompt-basedlargelanguage
+trained with a dual-loss objective. Results show
+models(namelyClaudeOpus4.0)inzero-shot
+andfew-shotsettingstounderstandhowLLMs thatHiDACachievedslightlyhigheroverallaccu-
+respondtothenewlyproposedunifiedlabels. racythanthetransformerbaselineswithconsider-
+Finally, we introduce HiDAC, a Hierarchical ablyfewertrainingparameters,whiletheprompt-
+Dual-Adapter Contrastive learning model. ingapproachesdidnotperformwell.
+Results show that while larger transformer
+modelsachievehigheraccuracy,theimprove-
+2 RelatedWork
+mentsaremodest,andthatunfreezingthetop
+75% of encoder layers yields performance
+Recent work has explored cross-framework and
+comparable to full fine-tuning while training
+multilingualdiscourserelationclassification. Costa
+farfewerparameters.Prompt-basedmodelslag
+significantly behind fine-tuned transformers, etal.(2023)proposedmappingsbetweenRST-DT
+and HiDAC achieves the highest overall andPDTB3.0frameworks,whileCostaandKos-
+accuracy (67.5%) while remaining more seim(2025a,b)developedmultilabelhierarchical
+parameter-efficientthanfullfine-tuning. modelsformultilingualimplicitdiscourserelation
+recognition. Recently, Eichin et al. (2025) con-
+1 Introduction
+ductedacomprehensiveanalysisevaluatingopen-
+weightLLMs,inwhichtheydefinedaunifiedset
+The2025DISRPTsharedtaskaddressesthreechal-
+of discourse relation labels to better understand
+lenges in discourse parsing1: discourse unit seg-
+howthesemodelsgeneralizeacrosslanguagesand
+mentation(Task1),connectivedetection(Task2),
+annotation frameworks. The study demonstrated
+anddiscourserelationclassification(Task3)which
+thatLLMs,especiallythosewithmultilingualtrain-
+aimsatidentifyinglogicalandrhetoricalrelation-
+ingcorpora,cangeneralizediscourseinformation
+shipsbetweentextsegments. Thispaperpresents
+acrosslanguagesandframeworks. Theirerroranal-
+ourapproachtoTask3whichexpandsthetaskfrom
+ysishighlightedoverlappingrelations,suchasfre-
+previousyearsto39corporaacross16languages
+quent confusions between Elaboration, Framing,
+andsixdiscourseframeworks.
+andExplanation.
+1https://sites.google.com/view/disrpt2025 The DISRPT Task 3 itself was first intro-
+5202
+peS
+12
+]LC.sc[
+1v30961.9052:viXra
+duced in 2021, where two teams submitted sys- followinginstancewithlabelpurposeanddirection
+tems: DisCoDisCo(Gessleretal.,2021)achieved annotatedas1 < 2:
+61.82%2 accuracyusinglanguage-specificBERT- Arg1: Weproposeaneuralnetworkapproach
+base models (varying per language) fine-tuned Arg2: to benefit from the non-linearity of corpus-
+per corpus with additional hand-crafted features, wide statistics for part-of-speech (POS) tagging.
+while DiscRel (Varachkina and Pannach, 2021) In this case, the natural ordering is the way the
+reached 54.23%2 accuracy using multilingual argumentsappearinthetext,whereastherelation-
+Sentence-BERTtoembeddiscourseunits,thenfed directedorderingisobtainedbyreversingtheargu-
+the Euclidean distance between the unit embed- mentstorespectthedirectionoftherelation1 < 2:
+dingsanddirectionalityasfeaturesintoatwo-level Arg1: to benefit from the non-linearity of corpus-
+stackedRandomForest,firstpredictingfivecoarse widestatisticsforpart-of-speech(POS)tagging.
+classes,thenfine-grainedlabelswithineachclass. Arg2: Weproposeaneuralnetworkapproach
+The task was proposed again in 2023 where (2) using the original order only, we explored
+threeteamssubmittedsystems: MELODI(Methen- gradual unfreezing strategies, where we initially
+iti et al., 2023) used three mBERT-based mod- frozealllayersandthenprogressivelyunfroze25%,
+els: abaselinefine-tunedmodelandtwoadapter- 50%,and75%oftheencodertoplayers.
+enhanced variants with layer freezing, achieving Thismultilingualencoderapproachwastested
+54.44%3 accuracy. HITS (Liu et al., 2023) used because previous BERT-based work mainly fine-
+BERT-based encoders with adversarial training, tunedsingle-languageBERT-basedmodelsorcom-
+training separate models for large corpora and a bined small languages, with, to our knowledge,
+joint multilingual model for smaller corpora and across both the 2021 and 2023 versions of the
+achieved an accuracy of 62.36%3. On the other sharedtask(Zeldesetal.,2021;Braudetal.,2023),
+hand,DiscoFlan(Anuranjana,2023)usedmultilin- onlyoneteam,MELODI(Methenitietal.,2023),
+gualFlan-T5basedseq2seqmodelwithinstruction attempted a fully multilingual model. With DIS-
+fine-tuning to generate discourse relation labels RPT2025’sexpandeddataandlanguages,reevalu-
+frominputprompts,achieving31.21%3 accuracy. atingaunifiedmultilingualBERT-basedapproach
+is now feasible and promising for cross-lingual
+3 Methodology
+knowledgetransfer.
+ToaddressTask3(DiscourseRelationClassifica-
+3.1.2 PromptEngineering
+tion),weexperimentedwiththreefamiliesofmod-
+Asasecondfamilyofbaselines,weevaluatedboth
+els: (1)BERT-basedmodelsasbaselines(seeSec-
+zero-shotandfew-shotpromptingstrategiesusing
+tion3.1.1);(2)prompt-basedgenerativemodelsto
+Claude Opus 4.0. We chose the Claude model
+useasabaselinesaswell(seeSection3.1.2),and
+because in a previous work (Turk et al., 2025),
+(3)acustommodel,HiDAC,basedonadaptersand
+this LLM achieved the highest average macroF1
+contrastivelearning(seeSection3.2).
+compared to GPT and Gemini models that were
+evaluatedtoidentifyPDTB3.0Level2discourse
+3.1 BaselineModels
+relations.
+3.1.1 BERT-BasedModels
+Due to cost constraints of prompting the full
+Our first baseline models are based on multilin-
+developmentset,weusedstratifiedsamplingtoen-
+gual BERT transformers obtained from Hugging
+sure a representativeevaluation. We first divided
+Face4: bert-base-multilingual-cased,xlm-roberta-
+the validation set into 27 equal stratified subsets
+base, and xlm-roberta-large. We conducted two usingStratifiedKFoldfromscikit-learn5 which
+setsofexperiments: (1)wetestedbothnaturalargu-
+preserveslabeldistribution,wethenrandomlyse-
+mentorderingaswellasrelation-directedordering
+lected4groups(≈1ksampleseach). Eachselected
+withnofreezingoftheBERTmodels;therelation
+subsetwasevaluatedunderbothzero-shotandfew-
+orderingreorderstheargumentsoastorespectthe
+shotpromptingsettings.
+direction of the relation. For example, given the
+In zero-shot prompting, we provided a struc-
+2https://sites.google.com/georgetown.edu/
+turedprompttemplate(availableinourrepository6)
+disrpt2021/results without examples and tested both natural-order
+3https://sites.google.com/view/disrpt2023/
+results 5https://scikit-learn.org
+4https://huggingface.co/ 6https://github.com/CLaC-Lab/DISRPT-2025
+andrelation-directedorderargumentarrangements.
+ThetemplateincludesDISRPT2025’sunifiedset
+of17discourserelationlabelsinthelabellist.
+Forfew-shotprompting,weusedthesamestruc-
+tured template but included examples. We devel-
+opedabalancedpoolof≈1kexamples,stratified
+acrossframework,language,andlabel(3examples
+for each of the 327 unique framework-language-
+label combinations). We then ran three few-shot
+promptingexperiments: (1)Exp1used4examples
+intotal(notperlabel),sampledrandomlyfromthe
+balanced example pool in the same language as
+the input instance (note that the task instructions
+remained in English). (2) Exp 2 used 4 English
+only examples from the same pool regardless of
+theinstancelanguage;and(3)Exp3analyzedExp
+1 & 2 results to identify six labels with the low-
+estF1scores,thenused6Englishexamplesfrom
+theselow-performinglabelsplus2randomEnglish
+examples from the remaining pool, doubling the
+numberofexamples. Figure 1: Overview of the HiDAC architecture. The
+contrastivelossisappliedtoanintermediatelayer(8)to
+3.2 TheHiDACModel structuretheembeddingspace,whilethecross-entropy
+lossisappliedtotherepresentationatthelastlayerfor
+Our third method which we call Hierarchical
+thefinalclassification.
+Dual-Adapter Contrastive (HiDAC) is based on
+aparameter-efficientfine-tuningapproach. HiDAC
+is based on a pre-trained language model (PLM) of all incorrect classes. The upper layers (12-24)
+withtwomainadditions: (1)ahierarchicaladapter then receive these structured representations and
+backbone varying adapter types based on layer are trained by a separate Cross-Entropy loss on
+depth,and(2)adual-losstrainingobjectivethatap- thefinal-layeroutputstoperformtheclassification
+pliestwodifferentlossesattwodifferentpointsin task. Theentiremodelistrainedbyminimizinga
+thenetwork. Anintermediate-layercontrastiveloss weightedsumofthesetwocomplementarylosses.
+isusedtotrainthelowerlayerstobuildbetterrepre-
+3.2.2 DiscourseUnitRepresentationand
+sentations,whileafinal-layercross-entropylossis
+EnhancedPredictionHead
+usedtotraintheupperlayersfortheclassification
+task. AsshowninFigure1,HiDACusesadual-encoder
+framework. From the final layer’s hidden states,
+3.2.1 ModelArchitecture weextractthe[CLS]tokenrepresentationofeach
+TheoverallarchitectureofHiDACisshowninFig- discourseunit,Arg1andArg2,resultinginvectors
+ure 1. The model processes each discourse argu- u ∈ Rdandv ∈ Rd,respectively,whered = 1024,
+mentindependentlythroughadual-encoderPLM themodelsizeofXLM-RoBERTa-Large.
+backbone (XLM-RoBERTa-Large). The architec- Tocapturerelationalinformationforclassifica-
+tureisnamed‘hierarchical’becauseitpartitionsthe tion, we create an enhanced feature vector, z, by
+encoderlayersintotwodistinctfunctionallevels, concatenating u and v along with their element-
+eachwithadifferentadaptationmethodandtrain- wisedifferenceandproduct(Conneauetal.,2017).
+ing objective. The lower layers (1-8) are trained Weoptedforthisricherfeaturerepresentationafter
+using a Contrastive loss, which operates on the anablationstudyshoweditoutperformedthesim-
+output representations from layer 8. The goal of plerconcatenationof[u;v],whichachievedade-
+this objective is to learn foundational representa- velopmentsetaccuracyof67.18%andanF1-score
+tions by explicitly pulling the embedding of an of 64.64%. As this was lower than the 67.46%
+instanceclosertoitscorrectclassprototype,while accuracy and 65.14% F1-score of the enhanced
+simultaneouslypushingitawayfromtheprototypes method(seeSection5),wechosethelatterforour
+finalmodel. Theenhancedvectorzservesasthe loss and a more traditional instance-vs-instance
+inputtothemulti-layerperceptron(MLP)classifier loss.
+andisdefinedasz = [u, v, u−v, u∗v]. Asdetailedinouranalysis(seeSection6),the
+Label-Centered method yielded superior perfor-
+3.2.3 HierarchicalAdapterArchitecture
+mance and training stability, and was therefore
+HiDAC uses a hierarchical Parameter-Efficient selected for our final model. The chosen Label-
+Fine-Tuning(PEFT)strategy,segmentingtheback- CenteredSCL,inspiredby(Wuetal.,2024),sim-
+bone PLM into lower layers (1 to 8) and upper plifiesthecontrastiveobjectivebyintroducingsta-
+layers(12to24),eachemployingdistinctadapter ble,learnableembeddingscorrespondingdirectly
+mechanisms. to each class label. Instead of comparing an in-
+stancetootherrandominstances,themodel’stask
+LowerLayers: Layers(1-8)aimtolearnfoun-
+isnowmuchclearer: itlearnstomaketherepresen-
+dational representations using standard LoRA
+tationofaninstance(fromlayer8)moresimilarto
+adapters (Hu et al., 2022). The purpose of these
+theembeddingofitscorrectlabel,whilemakingit
+adapters is to learn basic patterns that help sepa-
+dissimilartotheembeddingofallincorrectlabels.
+ratethedifferentdiscourserelationclasses. They
+Thelossiscomputedas:
+achievethisbyadjustingthemodel’searlyrepre-
+sentations, grouping instances with the same dis- exp(sim(h ,e )/τ)
+contrastive y
+L = −log
+course relation together in the embedding space. lcl (cid:80) exp(sim(h ,e )/τ)
+j∈C contrastive j
+Theseadapters,optimizedexclusivelybythecon-
+trastiveloss,addminimalcomputationaloverhead Here,h isformedbytakingthe[CLS]
+contrastive
+andencourageearlyformationofawell-organized tokenrepresentationforeachdiscourseunitfrom
+embeddingspace. theintermediatelayer’soutput(layer8),andthen
+averagingthesetwovectors. Thetermse ande
+y j
+UpperLayers: Layers(12-24)aimtolearntask-
+refertothelearnableclassprototypes;wheree is
+y
+specific representations. The upper layers use
+the embedding of the ground-truth class y, while
+Mixture-of-ExpertsLoRAadapters(MoE-LoRA),
+thesuminthedenominatorisovertheembeddings
+enabling dynamic, formalism-specific specializa-
+for all 17 labels in the set C. Finally, sim is the
+tion. EachMoE-LoRAlayerismadeofmultiple
+cosinesimilarity,andτ isthetemperaturehyperpa-
+LoRA adapters acting as "experts." For each in-
+rameter.
+put token, a gating network computes a softmax
+Ontheotherhand,theinstance-vs-instancecon-
+distribution over these experts. The final output
+trastivelossworksbycreatingtwoslightlydifferent
+is a weighted sum of all expert outputs, allowing
+vectorrepresentationsforthesameinputtext. The
+the model to learn a soft combination of special-
+model is then trained to solve a simple matching
+izedadaptationsforeachtoken. Theseadaptersare
+task: itlearnstopullthesetwoviewsofthesame
+optimizedbythecross-entropyloss.
+texttogether,whilesimultaneouslypushingthem
+awayfromtherepresentationsofallotherdifferent
+3.2.4 Dual-LossObjective
+texts in the batch. To provide a larger and more
+HiDAC uses a dual-loss framework integrating
+consistentsetofnegativeexamples,thismethodis
+Cross-Entropyloss(L )andContrastiveloss(L )
+ce lcl augmentedwithamomentum-updatedencoderand
+to optimize model representations and decision
+anegativequeue(Heetal.,2020).
+boundaries concurrently. The total loss (L )
+total
+is a weighted sum L = λ ·L +λ ·L , 4 ExperimentalSetup
+total ce ce cl lcl
+whereλ andλ arehyperparameters.
+ce cl
+4.1 Datasets
+Cross-Entropy Loss (L ) This loss is applied
+ce We trained and evaluated our models using the
+atthefinalclassificationlayerastheprimaryobjec- datasets provided by the shared task organizers.7
+tiveforthepredictiontask.
+Intotal,thebenchmarkiscomposedof39datasets,
+covering 16 languages and 6 frameworks. These
+Contrastive Loss (L ) This loss provides the
+lcl
+datasetswereobtainedfromthefollowingcorpora:
+trainingsignalforthefoundationaladaptersinthe
+theCzechRSTDiscourseTreebank1.0(Poláková
+lowerlayers(1-8)oftheencoder. Weexperimented
+withtwocontrastiveobjectives: aLabel-Centered 7https://github.com/disrpt/sharedtask2025
+et al., 2023), the Potsdam Commentary Corpus Label Train(≈170k) Dev(≈28k)
+(StedeandNeumann,2014;BourgonjeandStede, 1 elaboration 19.9% 23.3%
+2 conjunction 17.5% 16.5%
+2020),theCOVID-19DiscourseDependencyTree-
+3 causal 11.7% 10.6%
+bank (Nishida and Matsumoto, 2022), the Dis-
+4 temporal 9.4% 8.1%
+course Dependency TreeBank for Scientific Ab-
+5 query 6.5% 5.1%
+stracts(YangandLi,2018;Yietal.,2021;Cheng
+6 contrast 5.2% 4.6%
+andLi,2019),theGenreTestsforLinguisticEvalu-
+7 concession 4.5% 4.7%
+ationcorpus(Aoyamaetal.,2023),theGeorgetown
+8 comment 4.0% 3.3%
+University Multilayer corpus (Zeldes, 2017), the 9 explanation 3.7% 3.9%
+RSTDiscourseTreebank(Carlsonetal.,2001),the 10 purpose 3.1% 3.7%
+Science, Technology, and Society corpus (Potter, 11 condition 3.0% 2.7%
+2008),theUniversityofPotsdamMultilayerUNSC 12 attribution 3.0% 3.2%
+13 organization 2.9% 3.5%
+Corpus(ZaczynskaandStede,2024),theMinecraft
+14 frame 2.3% 2.9%
+Structured Dialogue Corpus (Thompson et al.,
+15 mode 1.4% 2.0%
+2024),theStrategicConversationscorpus(Asher
+16 reformulation 1.2% 1.4%
+etal.,2016),theBasqueRSTTreebank(Iruskieta
+17 alternation 0.7% 0.7%
+etal.,2013),thePersianRSTCorpus(Shahmoham-
+madietal.,2021),theANNOtationDIScursivecor- Table1: Classdistributionofdiscourserelationlabels
+pus(Afantenosetal.,2012),theSUMM-REcorpus inthetraininganddevelopmentsets.
+(Hunteretal.,2024;Prévotetal.,2025),theDutch
+DiscourseTreebank(Redekeretal.,2012),thePol-
+thetrainingdataset(≈170Kinstances)anddevel-
+ish Discourse Corpus (Ogrodniczuk et al., 2024;
+opmentdataset(≈28Kinstances)isnotbalanced
+Calzolarietal.,2024),theCross-documentStruc-
+with elaboration and conjunction being overrep-
+ture Theory News Corpus (Cardoso et al., 2011),
+resented while alternation and reformulation are
+theRussianRSTTreebank(Toldovaetal.,2017),
+severelyunderrepresented.
+theRSTSpanishTreebank(daCunhaetal.,2011),
+the RST Spanish-Chinese Treebank (Cao et al., 4.2 TrainingDetails
+2018), the Georgetown Chinese Discourse Tree-
+For the BERT-based models (see Section 3.1.1),
+bank(Pengetal.,2022b,a),theDiscoNaijacorpus
+weused standardfixed hyperparameters: Weuse
+(Scholmanetal.,2025),thePennDiscourseTree-
+the AdamW optimizer with a learning rate of 3e-
+bank (Prasad et al., 2014; Webber et al., 2019),
+5, batch size of 32, weight decay of 0.01, and
+the TED-Multilingual Discourse Bank (English)
+warm-up ratio of 0.1, we set a maximum of 20
+(Zeyreketal.,2018,2019),theLUNACorpusDis-
+epochsandappliedearlystoppingwithapatience
+courseDataSet(Tonellietal.,2010;Riccardietal.,
+of 3 epochs based on the validation loss and
+2016), the Portuguese Discourse Bank (Mendes
+we used fixed random seeds (seed=42) for repro-
+and Lejeune, 2022; Généreux et al., 2012), the
+ducibility across all experiments. We used the
+ThaiDiscourseTreebank(Prasertsometal.,2024),
+defaultAutoModelForSequenceClassification
+theTurkishDiscourseBank(ZeyrekandWebber,
+implementationfromHuggingFaceTransformers8
+2008;ZeyrekandKurfalı,2017),andtheChinese
+with 17 output classes corresponding to DISRPT
+DiscourseTreebank(Zhouetal.,2014).
+2025’sunifiedlabelset.
+Thedatasetisdividedintoofficialtrain/dev/test
+For the prompt-based experiments (see Sec-
+splits;however,somecorporaareincludedonlyas
+tion 3.1.2), we set the temperature to 0 to ensure
+surprise or out-of-domain (OOD) evaluation sets
+fullydeterministicoutputs. Wealsofixedarandom
+and are not represented in the training data. Ad-
+seed (seed=42) when selecting examples for the
+ditionally, four corpora are fully masked (i.e., ar-
+few-shotpromptingsettingforreproducibility.
+gumenttextsarereplacedwithunderscores),and
+The implementation of HiDAC uses XLM-
+twoarepartiallymaskedduetoLDCsubscription
+RoBERTa-Large as the foundational model.
+requirements.
+Adaptermodulesareappliedusingforwardhooks,
+For our experiments, we used the official train
+preservingthepre-trainedweightswhileupdating
+and dev splits to train and evaluate our models,
+onlythesmalladaptermatrices. Duringinference,
+excludingtheinstancesrequiringanLDCsubscrip-
+tion. As Table 1 shows, the class distribution of 8https://huggingface.co/docs/transformers
+BERT-basedModels
+mBERT XLM-R-Base XLM-R-Large
+Category Size(%) NO RO 0 0.25 0.5 0.75 NO RO 0 0.25 0.5 0.75 NO RO 0 0.25 0.5 0.75
+Overall – 64.4% 63.5% 53.4% 64.0% 64.1% 64.3% 65.4% 64.6% 33.3% 63.8% 65.3% 65.1% 66.4% 65.8% 32.2% 65.9% 66.5% 66.8%
+Framework
+pdtb 27.0 65.6% 65.1% 51.6% 65.0% 65.5% 65.3% 67.3% 66.6% 25.5% 65.5% 67.1% 67.1% 68.8% 67.7% 22.9% 67.8% 68.8% 68.5%
+rst 26.5 57.8% 57.4% 47.8% 58.4% 58.4% 58.5% 59.2% 58.3% 28.7% 57.2% 59.5% 59.0% 60.2% 60.5% 27.6% 60.2% 59.8% 60.2%
+dep 16.7 72.2% 70.3% 62.5% 70.6% 71.2% 71.7% 72.0% 69.8% 46.4% 71.7% 70.1% 71.2% 72.2% 70.2% 46.1% 70.6% 72.4% 72.1%
+sdrt 14.5 75.3% 74.1% 64.4% 74.7% 73.9% 75.0% 75.6% 75.4% 49.5% 74.4% 75.8% 75.0% 76.2% 75.6% 51.2% 76.4% 76.7% 76.7%
+erst 12.5 56.0% 55.6% 46.8% 56.2% 55.7% 56.3% 56.7% 56.9% 24.2% 54.4% 57.6% 57.2% 58.2% 58.9% 21.6% 58.4% 59.5% 60.5%
+iso 2.8 47.2% 45.7% 40.7% 47.2% 48.2% 46.3% 52.1% 50.7% 29.2% 49.2% 53.4% 50.8% 55.3% 51.4% 31.4% 53.0% 52.6% 56.7%
+Language
+eng 51.0 67.0% 66.0% 57.7% 66.5% 66.3% 66.7% 67.6% 66.6% 38.0% 66.1% 67.2% 67.6% 68.1% 67.2% 37.1% 67.7% 68.6% 68.9%
+zho 9.8 60.3% 62.0% 47.6% 59.9% 60.4% 60.3% 60.7% 61.8% 26.9% 60.1% 62.2% 60.6% 64.2% 64.0% 24.9% 61.0% 63.9% 63.1%
+rus 8.2 62.5% 61.2% 52.2% 62.0% 62.8% 62.9% 63.8% 62.6% 30.4% 60.5% 63.5% 63.4% 63.5% 63.8% 28.9% 63.7% 63.7% 64.2%
+por 7.4 64.7% 64.2% 55.6% 65.8% 65.8% 65.2% 67.0% 66.9% 33.3% 65.6% 66.9% 66.3% 68.3% 68.0% 30.0% 68.9% 67.8% 68.0%
+tha 4.5 93.5% 94.2% 66.3% 94.4% 94.0% 94.4% 96.0% 95.9% 26.7% 95.0% 96.1% 95.7% 95.7% 95.9% 26.5% 95.5% 95.9% 96.0%
+pcm 3.8 51.0% 49.6% 33.3% 49.6% 48.8% 50.0% 52.9% 51.0% 22.9% 47.4% 50.5% 51.7% 56.1% 54.2% 21.0% 52.3% 53.5% 52.8%
+pol 2.8 47.2% 45.7% 40.7% 47.2% 48.2% 46.3% 52.1% 50.7% 29.2% 49.2% 53.4% 50.8% 55.3% 51.4% 31.4% 53.0% 52.6% 56.7%
+eus 2.2 50.3% 48.4% 37.8% 49.3% 50.8% 52.6% 52.4% 51.3% 22.5% 52.3% 54.1% 54.2% 54.6% 57.2% 21.8% 56.7% 53.7% 58.6%
+fra 1.9 61.2% 54.5% 51.8% 60.6% 59.5% 59.1% 58.5% 57.6% 38.4% 60.0% 59.3% 54.5% 62.0% 58.1% 37.1% 62.9% 62.5% 62.5%
+fas 1.8 55.1% 53.5% 45.9% 52.9% 53.5% 54.5% 54.3% 54.3% 28.1% 54.7% 54.1% 55.5% 57.9% 57.7% 30.1% 56.5% 56.5% 57.7%
+spa 1.7 68.1% 65.6% 50.9% 67.7% 67.7% 69.2% 66.2% 66.7% 27.5% 63.5% 68.3% 64.8% 68.3% 68.1% 26.8% 68.3% 70.4% 66.9%
+deu 1.6 44.7% 44.2% 37.6% 45.4% 47.6% 45.8% 47.1% 46.2% 18.6% 47.3% 48.2% 45.4% 49.3% 46.9% 19.2% 49.3% 45.6% 44.9%
+nld 1.2 53.2% 51.1% 38.4% 54.4% 54.7% 56.5% 56.5% 50.5% 29.9% 56.5% 54.7% 55.9% 55.3% 57.1% 28.4% 58.9% 55.9% 54.7%
+tur 0.8 51.7% 44.5% 44.1% 46.4% 50.2% 49.8% 54.0% 45.0% 30.8% 52.1% 52.1% 52.6% 52.6% 50.7% 32.2% 53.6% 54.5% 54.5%
+ita 0.7 60.7% 63.1% 54.4% 62.1% 60.2% 59.2% 63.1% 63.6% 22.8% 59.7% 59.2% 60.7% 58.7% 60.7% 21.8% 62.6% 62.1% 65.0%
+ces 0.4 40.7% 47.2% 33.3% 45.5% 39.8% 45.5% 48.0% 46.3% 22.0% 41.5% 39.8% 44.7% 45.5% 55.3% 23.6% 46.3% 53.7% 48.0%
+Table2: AccuracyoftheBERT-basedmodels(mBERT,XLM-RoBERTa-Base&XLM-RoBERTa-Large)acrossthe
+twoargumentorderingandfreezingstrategieswithsubsetsize(%)onthedevelopment(≈28k)dataset. Note: NO=
+Naturalordering;RO=Relation-basedordering. Thepercentagesrepresenttheportionoftheencoder’stoplayers
+thatweunfreezeafterinitiallyfreezingtheentiremodel. Allprogressiveunfreezingexperimentswereconducted
+withNOargumentorderingonly. Lightgreencellsindicatethehighestaccuracywithineachmodelfamilyfora
+givenframework/language,whiledarkgreencellsindicatetheoverallbestaccuracyacrossallfamilies.
+Prompt-basedModels CustomModel
+Zero-Shot Few-Shot HiDAC
+Category Size(%) NO RO Exp1 Exp2 Exp3 Instance*Instance LabelCentered FinalHiDAC
+Overall – 40.85% 31.93% 39.90% 39.6% 34.7% 66.88% 66.97% 67.46%
+Framework
+pdtb 27.0 43.22% 35.30% 43.50% 41.8% 37.50% 67.89% 67.64% 69.00%
+rst 26.5 39.36% 28.80% 36.33% 36.9% 31.60% 60.63% 60.98% 60.92%
+dep 16.7 51.78% 35.70% 48.60% 48.0% 38.65% 75.70% 75.96% 75.89%
+sdrt 14.5 30.76% 31.30% 31.48% 32.2% 31.13% 76.17% 76.62% 76.67%
+erst 12.5 36.90% 26.05% 37.85% 37.9% 33.50% 58.97% 58.68% 59.49%
+iso 2.8 37.33% 39.18% 39.35% 40.4% 36.55% 50.79% 50.53% 51.97%
+Language
+eng 51.0 40.36% 30.38% 39.90% 40.0% 34.70% 69.67% 69.75% 70.00%
+zho 9.8 36.15% 27.68% 37.18% 35.5% 32.83% 64.35% 64.24% 65.06%
+rus 8.2 45.12% 34.90% 39.15% 40.3% 37.53% 64.17% 63.64% 64.61%
+por 7.4 47.38% 31.38% 41.53% 39.7% 34.78% 68.16% 68.36% 69.92%
+tha 4.5 64.30% 64.30% 66.18% 64.4% 57.70% 95.82% 95.58% 95.90%
+pcm 3.8 28.23% 23.75% 36.23% 32.3% 24.33% 51.24% 50.76% 53.33%
+pol 2.8 37.33% 39.18% 39.35% 40.4% 36.55% 50.79% 50.53% 51.97%
+eus 2.2 33.18% 26.35% 34.83% 35.9% 30.78% 55.54% 55.70% 53.75%
+fra 1.9 45.63% 45.63% 35.30% 38.7% 37.38% 56.02% 57.36% 57.36%
+fas 1.8 35.83% 29.60% 37.28% 38.8% 32.60% 52.30% 55.51% 55.31%
+spa 1.7 34.68% 17.68% 38.80% 38.1% 30.33% 66.88% 66.88% 67.71%
+deu 1.6 27.25% 25.88% 23.00% 23.0% 23.95% 56.86% 57.52% 56.64%
+nld 1.2 34.50% 34.18% 31.65% 25.4% 24.03% 49.85% 53.47% 52.27%
+tur 0.8 40.08% 28.98% 40.08% 36.5% 19.05% 48.82% 51.66% 52.61%
+ita 0.7 33.75% 20.00% 30.00% 30.0% 37.50% 60.68% 60.19% 59.71%
+ces 0.4 16.08% 16.08% 6.25% 13.4% 9.38% 49.59% 51.22% 49.59%
+Table 3: Accuracy of Prompt Engineering using Claude Opus 4.0 (Zero-Shot, Few-Shot) and HiDAC on the
+development(≈28k)dataset. Note: NO=Naturalordering;RO=Relation-basedordering;Exp1=Multilingual
+examples;Exp2=English-onlyexamples;Exp3=English-onlymainlyfromweak-labelexamples. Lightgreen
+cellsindicatethehighestaccuracywithineachmodelfamilyforagivenframework/language,whiledarkgreencells
+indicatetheoverallbestaccuracyacrossallfamilies.
+the trained LoRA adapter weights are loaded on 6.1 BERT-BasedModels
+topofthefrozenbasemodel. Thisapproachadds
+Effect of Model Size: As shown in Table 2
+negligiblecomputationallatencycomparedtous-
+larger models tend to perform slightly better.
+ing the base model without any adapters, as the
+XLM-RoBERTa-Large(550Mparameters)achieves
+forwardpassonlyinvolvesafewsmallmatrixmul-
+66.4%,comparedtoXLM-RoBERTa-Base(65.4%,
+tiplications(Huetal.,2022). Thehyperparameters
+270Mparameters)andmBERT (64.4%,179Mpa-
+weretunedempiricallybasedonperformanceon
+rameters). Althoughtheabsolutegainsaremodest,
+thedevelopmentset. OurfinalmodelusesaLoRA
+thistrendsuggeststhatincreasedcapacitymayhelp
+rank(r)of128withascalingfactor(α)of256for
+themodelcapturecomplexsemanticrelationships
+all adapters. For the contrastive loss, the temper-
+acrosslanguagesandannotationframeworks.
+ature (τ) was set to 0.1. The final loss weighting
+coefficients were set to λ ce = 1.0 and λ cl = 0.3. EffectofProgressiveUnfreezing: Progressive
+WetrainedthemodelusingtheAdamWoptimizer unfreezingleadstomodestperformanceimprove-
+with a learning rate of 2e-5 and a cosine learn- ments as more layers are unfrozen; accuracy
+ingrateschedulerwithawarmupperiodcovering steadilyincreasesfromthe25%tothe75%unfreez-
+the first 2 epochs. The model was trained with a ing ratio across all models. At 75% unfreezing,
+batchsizeof32,fixedrandomseed(seed=42)and performance is comparable to or slightly higher
+weusedearlystoppingwithpatienceof2epochs thanfullfine-tuningwhilebeingsignificantlymore
+basedontheaccuracyofthedevelopmentset. All parameter-efficient. Forexample,XLM-RoBERTa-
+experimentswereconductedonGoogleColabus- Largeachieves66.8%accuracywhiletrainingonly
+ingasingleNVIDIAA100GPU.Trainingruntook 41%ofparameters(vs. 66.4%fullytrained),and
+approximately5hoursfortheargument-ordering mBERT reaches64.3%whiletraining36%ofpa-
+andHiDACmodels,whiletheprogressiveunfreez- rameters(asopposedto64.4%fullytrained). This
+ingoneswereshorterandvarieddependingonthe suggeststhatfullfine-tuningmaybeunnecessary
+unfreezingratio. toachievestrongperformance,allowingreductions
+incomputationalresources.
+5 Results
+Cross-Formalism Analysis: The training data
+Tables 2 and 3 summarize the results across all isdominatedbyPDTB(28.3%)andRST(31.8%).
+three model families where we report the accu- Incontrast,SDRTandDEPrepresentonly18.7%
+racy values overall, as well as by framework and and4%ofthetrainingdata,respectively. However,
+language. Table 2 shows the results for the two onthedevelopmentset,SDRT(14.5%ofdev)and
+argument-orderarrangementsandfortheprogres- DEP(16.7%ofdev)achievenotablyhigheraccu-
+sive unfreezing experiments at 0%, 25%, 50%, racythanPDTB(27%ofdev)andRST(26.5%of
+and 75% unfreezing ratios. Overall, accuracy in- dev) across models. For example, on the XLM-
+creasesacrossunfreezingratiosforallmodels,with R-Large with unfreezing ratio of 0.75, we have
+thehighestscoresobservedatthe75%unfreezing the following accuracy values: SDRT = 76.7%,
+ratio, and natural argument ordering consistently DEP=72.1%vs. PDTB=68.5%,RST=60.2%.
+outperformedrelation-directedorderingacrossall Thisraisesthequestionofwhetherthe17proposed
+models. Table 3 shows prompting results, with unified labels may align more with these frame-
+zero-shot achieving 40.85% and few-shot reach- worksorwhetherotherfactors,suchastheratioof
+ing39.90%. HiDACachievedthehighestoverall implicittoexplicitrelations,contributetothisdis-
+performance at 67.46%, outperforming both the crepancy. Furtheranalysisisneededtounderstand
+bestBERTbaselinewithoutprogressiveunfreezing, thesourceofthesedifferences.
+wherethemodelisfullytrainable(XLM-RoBERTa-
+6.2 Prompt-basedModels
+Largeat66.43%)andwithprogressiveunfreezing
+(66.76%with75%unfreezing). Promptengineeringwassignificantlyaffectedby
+relation-directed ordering, suggesting that LLMs
+6 Analysis may prefer the natural flow of arguments regard-
+lessofdiscourserelationsourceordirection. Sur-
+WeanalyzetheresultsofTables2and3tobetter prisingly, performance did not improve when us-
+understandtheimpactofmodelchoices. ingfew-shotpromptswithfourexamples,whether
+English-onlyorinstance-language-specific,show- HiDAC Final Tuning: Our final model incor-
+ingthedifficultyofdesigningeffectivepromptsfor porates few tuning enhancements to the Label-
+theproposedlabels;particularly,forthefollowing Centeredarchitecture.
+labels,whichachievedF1scoresbelow15%: con- As a regularization technique, we used label
+cession, explanation, frame, mode, organization, smoothing within the cross-entropy loss func-
+andreformulation. Whendoublingtheexamplesin tionandappliedgradientclippingduringtraining.
+Exp3,accuracydroppedto34.7%,whichcouldbe Thesemethodsmitigateoverfitting,stabilizetrain-
+because the model became overwhelmed by con- ingdynamics,andfacilitatesmootherconvergence.
+flicting patterns and noise. Too many examples Inaddition,wereplacedthelinearlearningrate
+could have created confusion rather than clarity. schedulerwithacosineannealingscheduler. This
+TheinstructionsinallcaseswereinEnglishonly; modification ensures a more gradual and stable
+itisworthinvestigatingtheuseoflanguage-specific reductioninlearningrate,improvingconvergence
+instructions. Also, we only investigated with the behaviorduringthefinaltrainingstages.
+Claudemodel;itmaybebeneficialtoevaluateother
+AsshowninTable3,theserefinementsdelivered
+LLMsontheunifieddiscourselabelsforabroader
+afinalincrementalperformanceboost,ultimately
+comparison.
+yieldingourbestoverallresults.
+7 Conclusion
+6.3 HiDACModel
+ThispaperpresentedthreeapproachesforTask3
+EffectofContrastiveLearningObjective: We
+of DISRPT 2025: transformer-based baselines,
+assess two distinct supervised contrastive learn-
+prompt-based models, and HiDAC, a hierarchi-
+ing (SCL) objectives. As shown in Table 3, the
+cal adapter-based model with a dual-loss objec-
+instance-basedsupervisedcontrastivelearningob-
+tive. Our experiments showed that natural argu-
+jective,augmentedwithamomentumencoderand
+ment ordering and progressive unfreezing gener-
+negative queue (He et al., 2020) achieved strong
+allyimprovedperformance,whileprompt-basedap-
+performance, comparable to our other methods.
+proachesunderperformedcomparedtofine-tuned
+However,acloseranalysisofthetrainingdynam-
+transformers. HiDACachievedthebestoverallac-
+icsrevealedasignificantissue: thecontrastiveloss
+curacywhiletrainingonfewerparameters,showing
+valueremainedstagnantaftertheinitialwarm-up
+thatadapter-basedmethodscanreducetrainingcost
+period, indicating that the model was failing to
+without sacrificing accuracy. Future work could
+optimizethisobjective. Wehypothesizethiswas
+focusonimprovingprompt-basedmodelsandex-
+causedbytwofactors. First,randomin-batchnega-
+ploringmulti-tasktrainingacrossTasks1-3. Also
+tivesoftenincludedsemanticallysimilarpairs(e.g.,
+we plan to explore a multi-layer contrastive loss,
+two elaboration instances), which may have pro-
+applyingtheSCLobjectiveacrossseveralinterme-
+videdacontradictorytrainingsignal. Second,the
+diatelayerstobuildamorerobustrepresentation.
+constantly changing nature of the negative exam-
+Additionally,wewillinvestigateusingFocalLoss
+plesprevented themodelfrom learningagainst a
+with class-aware weighting to better address the
+fixedtarget. Althoughthelossstagnated,itdidlead
+severeclassimbalanceinthedatasetandimprove
+toastrongperformance.
+performanceonunderrepresentedlabels.
+The Label-Centered SCL improved the learn-
+ing dynamics. Unlike the stagnant loss observed 8 Limitations
+with the instance-vs-instance method, the Label-
+Centeredobjectiveresultedinaconsistentdecrease FortheBERT-basedmodels,weusedfixedhyper-
+in the contrastive loss throughout training. This parameters across all models and datasets with-
+indicates that the model was able to effectively out additional fine-tuning on the validation sets.
+learnfromtheclearer,morestabletrainingsignal Ourpromptengineeringexperiments,althoughone
+provided by the fixed label embeddings. While setupincludedlanguage-basedexamples,usedin-
+the final performance scores were comparable to structionsonlyinEnglish. Whileweexploredboth
+theinstance-basedmethod,weselectedtheLabel- zero-shotandfew-shotprompting,wedidnotex-
+Centered approach for our final model due to its perimentwithchain-of-thoughtreasoningandonly
+demonstrablysuperiortrainingstability. usedtheClaudemodel.
+With respect to HiDAC, the hierarchical dual- TatsuyaAoyama,ShabnamBehzad,LukeGessler,Lau-
+adapterdesignintroducesadditionalcomputational renLevine,JessicaLin,YangJanetLiu,SiyaoPeng,
+Yilun Zhu, and Amir Zeldes. 2023. GENTLE: A
+overheadduringtraining;specifically,calculating
+genre-diverse multilayer challenge set for English
+twoseparatelossesandextractingrepresentations
+NLPandlinguisticevaluation. InProceedingsofthe
+fromintermediatelayersmakesthetrainingprocess 17th Linguistic Annotation Workshop (LAW-XVII),
+slowerthanastandardapproach. Furthermore,ex- pages166–178,Toronto,Canada.
+perimentsrevealedthatthemodel’sperformanceis
+Nicholas Asher, Julie Hunter, Mathieu Morey, Bena-
+sensitivetothebalancebetweenthecross-entropy
+maraFarah,andStergosAfantenos.2016. Discourse
+andcontrastivelossweights(λ andλ ). Thissug- structure and dialogue acts in multiparty dialogue:
+ce cl
+geststhatapplyingthisframeworktonewdatasets theSTACcorpus. InProceedingsoftheTenthInter-
+national Conference on Language Resources and
+wouldrequirecarefulhyperparametertuning.
+Evaluation (LREC 2016), pages 2721–2727, Por-
+ThearchitecturalchoicesofHiDACcouldalso
+torož,Slovenia.EuropeanLanguageResourcesAs-
+be explored. The division of the PLM into lower sociation(ELRA).
+(1-8)andupper(12-24)layerswasbasedonprior
+PeterBourgonjeandManfredStede.2020. Thepots-
+work (Wu et al., 2024) and was not optimized;
+damcommentarycorpus2.2: Extendingannotations
+other partitioning schemes might yield different for shallow discourse parsing. In Proceedings of
+outcomes. Similarly,thegatingmechanisminthe the12thInternationalConferenceonLanguageRe-
+upper-layerMoEadaptersusesasimplesoftmix- sourcesandEvaluation(LREC2020),Paris,France.
+EuropeanLanguageResourcesAssociation(ELRA).
+ture,andmoreadvancedsparseroutingstrategies
+werenotexplored. Finally,theperformanceofthe ChloéBraud,YangJanetLiu,EleniMetheniti,Philippe
+modelisfundamentallydependentonthecapabili- Muller,LauraRivière,AttapolRutherford,andAmir
+tiesoftheunderlyingXLM-RoBERTabackbone, Zeldes. 2023. The DISRPT 2023 shared task on
+elementarydiscourseunitsegmentation,connective
+anditseffectivenessmayvarywhenappliedtodif-
+detection,andrelationclassification. InProceedings
+ferentpre-trainedencoders. ofthe3rdSharedTaskonDiscourseRelationPars-
+Finally,duetotimeconstraints,wedidnotper- ing and Treebanking (DISRPT 2023), pages 1–21,
+formtestsofstatisticalsignificanceontheperfor- Toronto,Canada.
+mancedifferenceofthevariousexperiments.
+Nicoletta Calzolari, Min-Yen Kan, Veronique Hoste,
+AlessandroLenci,SakrianiSakti,andNianwenXue,
+Acknowledgments editors. 2024. Proceedings of the 2024 Joint In-
+ternational Conference on Computational Linguis-
+This work was financially supported by the Nat- tics, Language Resources and Evaluation (LREC-
+ural Sciences and Engineering Research Council COLING2024).ELRAandICCL,Torino,Italy.
+of Canada (NSERC), the Fonds de recherche du
+ShuyuanCao,IriadaCunha,andMikelIruskieta.2018.
+Québec(FRQ),andthePierreArbourFoundation.
+TheRSTSpanish-Chinesetreebank. InProceedings
+oftheJointWorkshoponLinguisticAnnotation,Mul-
+tiwordExpressionsandConstructions(LAW-MWE-
+References CxG-2018),pages156–166,SantaFe,NewMexico,
+USA.AssociationforComputationalLinguistics.
+Stergos Afantenos, Nicholas Asher, Farah Bena-
+mara, Myriam Bras, Cécile Fabre, Mai Ho-dac, PaulaChristinaFigueiraCardoso,ErickGalaniMaziero,
+Anne Le Draoulec, Philippe Muller, Marie-Paule Maria Lucía del Rosario Castro Jorge, M. Eloize,
+Péry-Woodley,LaurentPrévot,JosetteRebeyrolles, R. Kibar Aji Seno, Ariani Di Felippo, Lucia He-
+LudovicTanguy,MarianneVergez-Couret,andLaure lenaMachadoRino,MariadasGraçasVolpeNunes,
+Vieu.2012. Anempiricalresourcefordiscovering andThiagoAlexandreSalgueiroPardo.2011. CST-
+cognitive principles of discourse organisation: the News-adiscourse-annotatedcorpusforsingleand
+ANNODIScorpus. InProceedingsoftheEighthIn- multi-document summarization of news texts in
+ternationalConferenceonLanguageResourcesand BrazilianPortuguese. InProceedingsofthe3rdRST
+Evaluation(LREC2012),pages2727–2734,Istanbul, BrazilianMeeting,pages88–105,Cuiabá,Brazil.
+Turkey.EuropeanLanguageResourcesAssociation
+(ELRA). Lynn Carlson, Daniel Marcu, and Mary Ellen
+Okurovsky.2001. Buildingadiscourse-taggedcor-
+KaveriAnuranjana.2023. DiscoFlan: Instructionfine- pusintheframeworkofRhetoricalStructureTheory.
+tuningandrefinedtextgenerationfordiscoursere- InProceedingsoftheSecondSIGdialWorkshopon
+lation label classification. In Proceedings of the DiscourseandDialogue,Aalborg,Denmark.
+3rdSharedTaskonDiscourseRelationParsingand
+Treebanking(DISRPT2023),pages22–28,Toronto, YiChengandSujianLi.2019. Zero-shotChinesedis-
+Canada. course dependency parsing via cross-lingual map-
+ping. In Proceedings of the 1st Workshop on Dis- KaimingHe,HaoqiFan,YuxinWu,SainingXie,and
+courseStructureinNeuralNLG,pages24–29,Tokyo, Ross Girshick. 2020. Momentum contrast for un-
+Japan.AssociationforComputationalLinguistics. supervised visual representation learning. In Pro-
+ceedingsoftheIEEE/CVFConferenceonComputer
+AlexisConneau,DouweKiela,HolgerSchwenk,Loïc VisionandPatternRecognition(CVPR2020),pages
+Barrault, and Antoine Bordes. 2017. Supervised 9729–9738,Seattle,Washington.
+learningofuniversalsentencerepresentationsfrom
+Edward J. Hu, Yelong Shen, Phillip Wallis, Zeyuan
+naturallanguageinferencedata. InProceedingsof
+Allen-Zhu,YuanzhiLi,SheanWang,LuWang,and
+the2017ConferenceonEmpiricalMethodsinNat-
+WeizhuChen.2022. LoRA:Low-RankAdaptation
+ural Language Processing (EMNLP 2017), pages
+ofLargeLanguageModels. InInternationalConfer-
+670–680,Copenhagen,Denmark.
+enceonLearningRepresentations(ICLR2022).
+NelsonFilipeCostaandLeilaKosseim.2025a. AMulti-
+Julie Hunter, Hiroyoshi Yamasaki, Océane Granier,
+Task and Multi-Label Classification Model for Im-
+JérômeLouradour,RoxaneBertrand,KateThomp-
+plicitDiscourseRelationRecognition. InProceed-
+son,andLaurentPrévot.2024. MEETING:Acorpus
+ings of the 26th Annual Meeting of the Special In-
+ofFrenchmeeting-styleconversations. InActesde
+terestGrouponDiscourseandDialogue(SIGDIAL
+la31èmeConférencesurleTraitementAutomatique
+2025),Avignon,France.
+desLanguesNaturelles,volume1: articleslongset
+prisesdeposition,pages508–529,Toulouse,France.
+NelsonFilipeCostaandLeilaKosseim.2025b. Multi-
+ATALAandAFPC.
+Lingual Implicit Discourse Relation Recognition
+withMulti-LabelHierarchicalLearning. InProceed- MikelIruskieta,MaríaJesúsAranzabe,ArantzaDiaz
+ings of the 26th Annual Meeting of the Special In- de Ilarraza, Itziar Gonzalez-Dios, Mikel Lersundi,
+terestGrouponDiscourseandDialogue(SIGDIAL andOierLopezdeLacalle.2013. TheRSTBasque
+2025),Avignon,France. TreeBank:Anonlinesearchinterfacetocheckrhetor-
+icalrelations. In4thWorkshoponRSTandDiscourse
+NelsonFilipeCosta,NadiaSheikh,andLeilaKosseim. Studies,pages40–49,Fortaleza,Brasil.
+2023. MappingExplicitandImplicitDiscourseRe-
+WeiLiu, YiFan, andMichaelStrube.2023. HITSat
+lationsbetweentheRST-DTandthePDTB3.0. In
+DISRPT2023: Discoursesegmentation,connective
+Proceedingsofthe14thInternationalConferenceon
+detection,andrelationclassification. InProceedings
+Recent Advances in Natural Language Processing
+ofthe3rdSharedTaskonDiscourseRelationPars-
+(RANLP’23),pages344–352,Varna,Bulgaria.
+ingandTreebanking(DISRPT2023),pages43–49,
+Toronto,Canada.TheAssociationforComputational
+IriadaCunha,Juan-ManuelTorres-Moreno,andGer-
+Linguistics.
+ardoSierra.2011. OnthedevelopmentoftheRST
+Spanish treebank. In Proceedings of the 5th Lin-
+AmáliaMendesandPierreLejeune.2022. CRPC-DB
+guisticAnnotationWorkshop,pages1–10,Portland,
+aDiscourseBankforPortuguese. InProceedingsof
+Oregon, USA. Association for Computational Lin-
+the15thInternationalConferenceonComputational
+guistics.
+Processing of Portuguese (PROPOR 2022), pages
+79–89,Berlin,Heidelberg.Springer-Verlag.
+Florian Eichin, Yang Janet Liu, Barbara Plank, and
+MichaelA.Hedderich.2025. ProbingLLMsformul- Eleni Metheniti, Chloé Braud, Philippe Muller, and
+tilingualdiscoursegeneralizationthroughaunified LauraRivière.2023. DisCutandDiscReT:MELODI
+labelset. InProceedingsofthe63rdAnnualMeet- atDISRPT2023. InProceedingsofthe3rdShared
+ingoftheAssociationforComputationalLinguistics TaskonDiscourseRelationParsingandTreebanking
+(Volume1: LongPapers)(ACL2025),pages18665– (DISRPT2023),pages29–42,Toronto,Canada.The
+18684,Vienna,Austria. AssociationforComputationalLinguistics.
+Noriki Nishida and Yuji Matsumoto. 2022. Out-of-
+MichelGénéreux,IrisHendrickx,andAmáliaMendes.
+domaindiscoursedependencyparsingviabootstrap-
+2012. Introducingthereferencecorpusofcontempo-
+ping: Anempiricalanalysisonitseffectivenessand
+raryPortugueseonline. InProceedingsoftheEighth
+limitation. TransactionsoftheAssociationforCom-
+International Conference on Language Resources
+putationalLinguistics,10:127–144.
+andEvaluation(LREC2012),pages2237–2244,Is-
+tanbul,Turkey.EuropeanLanguageResourcesAsso-
+MaciejOgrodniczuk,AleksandraTomaszewska,Daniel
+ciation(ELRA). Ziembicki,SebastianZ˙urowski,RyszardTuora,and
+AleksandraZwierzchowska.2024. PolishDiscourse
+LukeGessler,ShabnamBehzad,YangJanetLiu,Siyao
+Corpus(PDC):Corpusdesign,ISO-compliantanno-
+Peng, Yilun Zhu, and Amir Zeldes. 2021. Dis-
+tation,datahighlights,andparserdevelopment. In
+CoDisCoattheDISRPT2021sharedtask: Asystem
+(Calzolarietal.,2024),pages12829–12835.
+fordiscoursesegmentation,classification,andcon-
+nectivedetection. InProceedingsofthe2ndShared SiyaoPeng,YangJanetLiu,andAmirZeldes.2022a.
+TaskonDiscourseRelationParsingandTreebanking Chinese Discourse Annotation Reference Manual.
+(DISRPT2021),pages51–62,PuntaCana,Domini- ResearchReport,GeorgetownUniversity(Washing-
+canRepublic. ton,D.C.).
+SiyaoPeng,YangJanetLiu,andAmirZeldes.2022b. KateThompson,JulieHunter,andNicholasAsher.2024.
+GCDT:AChineseRSTTreebankforMultigenreand DiscoursestructurefortheMinecraftcorpus. InPro-
+MultilingualDiscourseParsing. InProceedingsof ceedingsofthe2024JointInternationalConference
+the 2nd Conference of the Asia-Pacific Chapter of onComputationalLinguistics,LanguageResources
+theAssociationforComputationalLinguisticsand andEvaluation(LREC-COLING2024),pages4957–
+the12thInternationalJointConferenceonNatural 4967,Torino,Italia.ELRAandICCL.
+LanguageProcessing,pages382–391,Onlineonly.
+AssociationforComputationalLinguistics. Svetlana Toldova, Dina Pisarevskaya, Margarita
+Ananyeva, Maria Kobozeva, Alexander Nasedkin,
+Lucie Poláková, Šárka Zikánová, Jiˇrí Mírovský, and SofiaNikiforova, IrinaPavlova, andAlexeyShele-
+EvaHajicˇová.2023. CzechRSTdiscoursetreebank pov.2017. RhetoricalrelationsmarkersinRussian
+1.0. LINDAT/CLARIAH-CZ digital library at the RSTtreebank. InProceedingsofthe6thWorkshop
+onRecentAdvancesinRSTandRelatedFormalisms,
+InstituteofFormalandAppliedLinguistics(ÚFAL).
+pages29–33,SantiagodeCompostela,Spain.Asso-
+AndrewPotter.2008. InteractionalCoherenceinAsyn- ciationforComputationalLinguistics.
+chronous Learning Networks: A Rhetorical Ap-
+SaraTonelli,GiuseppeRiccardi,RashmiPrasad,andAr-
+proach. Internet and Higher Education, 11(2):87–
+avindJoshi.2010. Annotationofdiscourserelations
+97.
+forconversationalspokendialogs. InProceedingsof
+theSeventhInternationalConferenceonLanguage
+Rashmi Prasad, Bonnie Webber, and Aravind Joshi.
+Resources and Evaluation (LREC 2010), Valletta,
+2014. ReflectionsonthePennDiscourseTreeBank,
+Malta. European Language Resources Association
+comparablecorpora,andcomplementaryannotation.
+(ELRA).
+ComputationalLinguistics,40(4):921–950.
+NawarTurk,SevagKaspar,andLeilaKosseim.2025.
+PonraweePrasertsom,ApiwatJaroonpol,andAttapolT.
+Ontheinfluenceofdiscourserelationsinpersuasive
+Rutherford.2024. TheThaiDiscourseTreebank:An-
+texts. InProceedingsofthe38thCanadianConfer-
+notatingandClassifyingThaiDiscourseConnectives.
+enceonArtificialIntelligence(CanAI2025),Calgary,
+TransactionsoftheAssociationforComputational
+Canada.
+Linguistics,12:613–629.
+Hanna Varachkina and Franziska Pannach. 2021. A
+Laurent Prévot, Roxane Bertrand, and Julie Hunter.
+unifiedapproachtodiscourserelationclassification
+2025. Segmentingalargefrenchmeetingcorpusinto
+inninelanguages. InProceedingsofthe2ndShared
+elementary discourse units. In Proceedings of the
+TaskonDiscourseRelationParsingandTreebanking
+26thAnnualMeetingoftheSpecialInterestGroup
+(DISRPT2021),pages46–50,PuntaCana,Domini-
+on Discourse and Dialogue (SIGDIAL 2025), Avi-
+canRepublic.
+gnon,France.
+BonnieWebber,RashmiPrasad,AlanLee,andAravind
+Gisela Redeker, Ildikó Berzlánovich, Nynke van der
+Joshi.2019. ThePennDiscourseTreeBank3.0an-
+Vliet,GosseBouma,andMarkusEgg.2012. Multi-
+notation manual. Technical report, University of
+layer discourse annotation of a Dutch text corpus.
+Edinburgh,Interactions,LLC,UniversityofPennsyl-
+InProceedingsoftheEighthInternationalConfer-
+vania.
+enceonLanguageResourcesandEvaluation(LREC
+2012),pages2820–2825,Istanbul,Turkey.European Yiheng Wu, Junhui Li, and Muhua Zhu. 2024. Con-
+LanguageResourcesAssociation(ELRA). strained Multi-Layer Contrastive Learning for Im-
+plicit Discourse Relationship Recognition. arXiv
+Giuseppe Riccardi, Evgeny A. Stepanov, and Sham-
+preprintarXiv:2409.13716.
+murAbsarChowdhury.2016. Discourseconnective
+detection in spoken conversations. In 2016 IEEE AnYangandSujianLi.2018. SciDTB:Discoursede-
+InternationalConferenceonAcoustics,Speechand pendencyTreeBankforscientificabstracts. InPro-
+SignalProcessing(ICASSP),pages6095–6099. ceedingsofthe56thAnnualMeetingoftheAssocia-
+tionforComputationalLinguistics(Volume2: Short
+MerelCJScholman,MarianMarchal,AriaRayBrown, Papers),pages444–449,Melbourne,Australia.As-
+andVeraDemberg.2025. DiscoNaija: adiscourse- sociationforComputationalLinguistics.
+annotated parallel Nigerian Pidgin-English corpus.
+LanguageResourcesandEvaluation,pages1–37. Cheng Yi, Li Sujian, and Li Yueyuan. 2021. Unify-
+ingdiscourseresourceswithdependencyframework.
+SaraShahmohammadi,HadiVeisi,andAliDarzi.2021. In Proceedings of the 20th Chinese National Con-
+PersianRhetoricalStructureTheory. arXivpreprint ferenceonComputationalLinguistics,pages1058–
+arXiv:2106.13833. 1065,Huhhot,China.ChineseInformationProcess-
+ingSocietyofChina.
+Manfred Stede and Arne Neumann. 2014. Potsdam
+CommentaryCorpus2.0: Annotationfordiscourse KarolinaZaczynskaandManfredStede.2024. Rhetori-
+research. InProceedingsoftheLanguageResources calstrategiesintheUNsecuritycouncil: Rhetorical
+andEvaluationConference(LREC2014),pages925– StructureTheoryandconflicts. InProceedingsofthe
+929,Reykjavik,Iceland. 25thAnnualMeetingoftheSpecialInterestGroupon
+DiscourseandDialogue,pages15–28,Kyoto,Japan.
+AssociationforComputationalLinguistics.
+AmirZeldes.2017. TheGUMCorpus: CreatingMul-
+tilayer Resources in the Classroom. Language Re-
+sourcesandEvaluation,51(3):581–612.
+AmirZeldes,YangJanetLiu,MikelIruskieta,Philippe
+Muller,ChloéBraud,andSoniaBadene.2021. The
+DISRPT2021sharedtaskonelementarydiscourse
+unit segmentation, connective detection, and rela-
+tionclassification. InProceedingsofthe2ndShared
+TaskonDiscourseRelationParsingandTreebanking
+(DISRPT2021),pages1–12,PuntaCana,Dominican
+Republic.
+DenizZeyrekandMurathanKurfalı.2017. TDB1.1:
+ExtensionsonTurkishdiscoursebank. InProceed-
+ings of the 11th Linguistic Annotation Workshop,
+pages76–81,Valencia,Spain.AssociationforCom-
+putationalLinguistics.
+Deniz Zeyrek, Amália Mendes, Yulia Grishina, Mu-
+rathanKurfalı,SamuelGibbon,andMaciejOgrod-
+niczuk. 2019. TED Multilingual Discourse Bank
+(TED-MDB): A parallel corpus annotated in the
+PDTBstyle. LanguageResourcesandEvaluation,
+pages1–27.
+DenizZeyrek,AmáliaMendes,andMurathanKurfalı.
+2018. Multilingual extension of PDTB-style an-
+notation: The case of TED multilingual discourse
+bank. InProceedingsoftheEleventhInternational
+ConferenceonLanguageResourcesandEvaluation
+(LREC2018),Miyazaki,Japan.EuropeanLanguage
+ResourcesAssociation(ELRA).
+DenizZeyrekandBonnieWebber.2008. Adiscourse
+resourceforTurkish: Annotatingdiscourseconnec-
+tivesintheMETUcorpus. InProceedingsofthe6th
+WorkshoponAsianLanguageResources.
+Yuping Zhou, Jill Lu, Jennifer Zhang, and Nian-
+wen Xue. 2014. Chinese Discourse Treebank 0.5
+LDC2014T21.

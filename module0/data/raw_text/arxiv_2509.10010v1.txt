@@ -1,0 +1,464 @@
+Multi-Intent Recognition in Dialogue
+Understanding: A Comparison Between Smaller
+Open-Source LLMs
+AdnanAhmadandPhilineKowolandStefanHillmannandSebastianMo¨ller
+AbstractInthispaper,weprovideanextensiveanalysisofmulti-labelintentclassi-
+ficationusingLargeLanguageModels(LLMs)thatareopen-source,publiclyavail-
+able, and can be run in consumer hardware. We use the MultiWOZ 2.1 dataset, a
+benchmarkinthedialoguesystemdomain,toinvestigatetheefficacyofthreepop-
+ularopen-sourcepre-trainedLLMs,namelyLLama2-7B-hf,Mistral-7B-v0.1,and
+Yi-6B. We perform the classification task in a few-shot setup, giving 20 examples
+in the prompt with some instructions. Our approach focuses on the differences in
+performance of these models across several performance metrics by methodically
+assessing these models on multi-label intent classification tasks. Additionally, we
+comparetheperformanceoftheinstruction-basedfine-tuningapproachwithsuper-
+visedlearningusingthesmallertransformermodelBertForSequenceClassification
+asabaseline.Toevaluatetheperformanceofthemodels,weuseevaluationmetrics
+likeaccuracy,precision,andrecallaswellasmicro,macro,andweightedF1score.
+We also report the inference time, VRAM requirements, etc. The Mistral-7B-v0.1
+outperformstwoothergenerativemodelson11intentclassesoutof14intermsofF-
+Score,withaweightedaverageof0.50.ItalsohasrelativelylowerHummingLoss
+andhigherJaccardSimilarity,makingitthewinningmodelinthefew-shotsetting.
+WefindBERTbasedsupervisedclassifierhavingsuperiorperformancecomparedto
+thebestperformingfew-shotgenerativeLLM.Thestudyprovidesaframeworkfor
+small open-source LLMs in detecting complex multi-intent dialogues, enhancing
+theNaturalLanguageUnderstandingaspectoftask-orientedchatbots.
+AdnanAhmad
+TechnischeUniversita¨tBerlin,10623Berlin,Germany,e-mail:adnan.ahmad@tu-berlin.de
+PhilineKowol
+TechnischeUniversita¨tBerlin,10623Berlin,Germany,e-mail:p.goerzig@tu-berlin.de
+StefanHillmann
+TechnischeUniversita¨tBerlin,10623Berlin,Germany,e-mail:stefan.hillmann@tu-berlin.de
+SebastianMo¨ller
+TechnischeUniversita¨tBerlin,10623Berlin,Germany,e-mail:sebastian.moeller@tu-berlin.de
+1
+5202
+peS
+21
+]LC.sc[
+1v01001.9052:viXra
+2 AdnanAhmadandPhilineKowolandStefanHillmannandSebastianMo¨ller
+1 Introduction
+RecentadvancementsinthedomainofLargeLanguageModelsandConversational
+AI have been showing tremendous potential in few-shot learning [1]. The sheer
+amount of data and model parameters leads to the model’s emerging capability of
+performingunknowntaskswithlittletonoamountoftrainingdata.Thishasbeen
+rigorouslyreportedonmanybenchmarknaturallanguageprocessingtasks,forex-
+ample, question answering [2], document summarization [3], information extrac-
+tion [4], and language generation [5] etc. However critical problems remain about
+thesizeandavailabilityofthemodelsforthemtouseinaconsumerhardwaresetup
+withoutsharingtheconfidentialdata.MostsuccessfulLLMsareproprietarymodels
+andneedtobeaccessedviacommercialAPIs1,2,3.Themassivesizeofthesemod-
+elsisnotconvenienttohostlocally.Forexample,GPT-3has175Bparameters[3],
+PALM-2 has 540B parameters [2], Claude-2 has 137 billion parameter [6, 7], etc.
+Thereforetheyarebarelybeingusedtodealwithconfidentialdata,ordatathatre-
+quireshigherprivacy,astheyoftencollectuser’sdatatofarthertrainthemodel4and
+not doing so requires enterprise licensing. Thankfully, a growing number of small
+to medium size open-source large language models (somoLLMs) have been pub-
+lishedrecently.SuchsomoLLMscanbedownloadedtolocalmachinesandbeused
+inconsumerhardwareefficiently.
+Some prominent somoLLMs are LLama 2 [9], Mistral [10], and Yi [11]. How-
+ever, smaller models often come with the cost of reduced ability. So they need to
+beevaluatedondifferenttasksbeforeusingthem.Theirperformancedependonthe
+task,model’schoice,modelsize,userprompt,pre-trainedvsfine-tuned,andsoon.
+Soinsteadofrelyingonevaluationofsomegenerictasks,itisalwaysimportantto
+evaluatethemodelsonthetaskathand.Whiledoingso,itisoftenbestpracticeto
+compare the performance of multiple models on the task and choose the best one.
+Onesuchtaskisanintentclassificationformulti-turndialogues[12].
+Inthiswork,weuseMultiWoz2.1[15]dataset,awidelyusedhumanannotated
+multi-turndialoguedataset,threesmall-scalepre-trainedsomoLLMswithabout7B
+parameters to perform few shot dialogue intent classification, and a BERT-based
+model [24] for supervised learning using BERT-embeddings as baseline. The so-
+moLLMsthatwechooseareLlama2-7B-hf,Mistral-7B-v0.1,andYi-6B,thethree
+top-performingmodelsintheHuggingfaceleaderboard[16]for7Bparameterrange.
+Thereasonwechoose7Bparameterrangemodelsastheyandtheirquantizedver-
+sionscaneasilyfitintoday’sconsumerGPUs.Wedonotfine-tunethesemodelsfar-
+ther as fine-tuning even such relatively small models requires substantial amounts
+of hardware resource, therefore can’t be used in of-the shelf manner. For super-
+1https://openai.com/gpt-4
+2https://www.anthropic.com/index/introducing-claude
+3https://blog.google/technology/ai/google-palm-2-ai-large-language-model/
+4https://openai.com/enterprise-privacy
+Multi-IntentRecognitioninDialogueUnderstanding 3
+vised learning baseline, we have selected BertForSequenceClassification5 as it is
+optimizedforsequentialtextualdatalikeutterancesinadialog.
+As the MultiWoz 2.1 dataset contains multi-label intents, therefore its a multi-
+labelclassificationtask,wepresentappropriateevaluationmetricsintheresultsec-
+tion.Weonlypresenttheresultsoftheuserutteranceclassificationandignorethe
+systemutteranceresultsastheyareoftengeneratedbytemplatesinmostdialogue
+systems.Weusedvalidationdatatochooseourpromptandusedthesameprompt
+across different models on the same test data for few-shot learning. More details
+will be given in the corresponding data and experiment section. We also discuss
+the model size and inference time. Then we compare the LLM with the best per-
+formance in few-shot setup with the BERT based supervised approach. This pa-
+perwillhelpthespeechanddialoguecommunitywithastandardofhowtosetup
+suchindividualtasksandevaluation,andalsoinformtheresearchersanddevelopers
+aboutthecomparativemodelperformanceonmulti-labelintentclassificationtasks
+onmulti-turndialogues.
+2 Related Works
+Natural language processing (NLP) has seen a revolution with the introduction of
+largelanguagemodels(LLMs).Theemergenceofauto-regressiveLargeLanguage
+Models such as GPT-3, PALM-2, Claude-2, FLAN-t5 are notable development in
+thisfield[1,2,7].Theyhaveshownexceptionalfew-shotperformanceonarange
+ofNLPtasks,suchastranslation,question-answering,andtext-summarisingtasks.
+This capability of LLMs, to perform tasks with little to no training data, opens up
+newpossibilitiesforconversationalsystemstoachieveeffectiveintentrecognition.
+Recentstudieshaveproposedvarioustechniqueslikedataaugmentationforintent
+classification using off-the-shelf LLMs such as GPT-3, highlighting the models’
+abilitytogeneratetrainingdatawithouttask-specificfine-tuning[8].
+Inrecenttimes,therehasbeensignificantprogressinthedevelopmentofsmaller,
+open-source Large Language Models (somoLLMs) that are more accessible and
+manageable for a wider range of applications [9, 10]. These models, often scaled-
+downversionsoftheirlargercounterparts,provideabalancebetweenperformance
+andresourceefficiency.Theyareparticularlyusefulfortasksinenvironmentswith
+limited computational resources or budget constraints. Open-source availability
+means that researchers and developers can modify and fine-tune these models for
+specific applications without the prohibitive costs associated with larger models.
+These smaller somoLLMs, while not matching the full capabilities of their larger
+counterparts, still offer robust natural language understanding (NLU) and gener-
+ation (NLG), making them ideal for NLU tasks, especially when integrated with
+internal,i.e.privateorconfidential,dataandchatbots.
+TheMultiWOZ2.1dataset[15]isabenchmarkdatasetfordialoguesystems.It
+spans seven distinct domains and contains over 10,000 dialogues, providing a di-
+versetestinggroundforintentclassification.Althoughtherearemanytransformer
+5https://huggingface.co/transformers/v3.5.1/model doc/bert.html#bertforsequenceclassification
+4 AdnanAhmadandPhilineKowolandStefanHillmannandSebastianMo¨ller
+based approaches has been proposed for dialogue state tracking and natural lan-
+guage understanding on this dataset [12, 13, 13], to our best knowledge, there has
+beennoreportsonfewshotintentclassificationperformanceusingrelativelysmall
+somoLLMs.Therefore,weseeaneedtoevaluatehissubject.
+3 Dataset
+Forourstudy,weusetheMultiWOZ2.1dataset6 [15],anenhancedversionofthe
+originalMultiWOZ2.0[17]dataset,whichiswidelyrecognizedinconversational
+AIresearch.Thisversionaddressesseveralannotationerrorsandstateinconsisten-
+ciesfoundinitspredecessor,MultiWOZ2.1,therebyprovidingamorereliableand
+coherentdataset.MultiWOZ2.1ispubliclyavailableandadherestoethicalguide-
+lines for data collection and usage. It is sourced from crowd-sourced dialogues,
+ensuringadiverserepresentationoflinguisticpatternsanduserbehaviours.
+MultiWOZ2.1comprisesover10,000multi-turndialogues,encompassingseven
+distinct domains: Attraction, Hotel, Restaurant, Taxi, Train, Hospital, and Police.
+Each dialogue ismeticulously annotated with dialogue actsand spans across vari-
+oustopics,offeringacomprehensivelandscapeforintentclassification.Themulti-
+facetednatureoftheconversationsinMultiWOZ2.1makesitparticularlysuitable
+formulti-labelintentclassification.Thedialoguesoftenexhibitoverlappingintents
+within a single user utterance, reflecting realistic and complex user queries. This
+characteristicchallengesthemodeltodiscernandclassifymultipleintentsconcur-
+rently,acriticalrequirementforadvancedconversationalAIsystems[18].
+Table1:DialoguesessionsanduserturnsinTrain,Test,andValidationsets
+Set DialogueSessionsUserTurnsIntentClasses
+All 10,438 71,524 14
+Train 8,438 56778 14
+Validation 1,000 7,372 14
+Test 1,000 7,374 14
+In our research, we leverage the validation and test dataset of MultiWOZ 2.1
+to validate and evaluate our multi-label intent classification task across different
+LLMs.Forourfew-shotapproach,wedonotneedthetrainingdata.ButforBERT
+basedbaselineapproach,weutilizethecompletetraining,validationandtestdata.
+the training data for supervised training. The original dataset contains more than
+10,000dialoguesessions,eachwithmultipledialogueturns.Thevalidationandtest
+datasetconsistsof1,000dialoguesessionseach(seeTable1).Weperformourinitial
+experiments using the validation data to come up with a semi-optimized prompt.
+Thenweusethatpromptacrossdifferentmodelstoperformpredictiononthetest
+data.Forthisstudy,weevaluatethemodel’sintentrecognitioncapacityonlyforthe
+6https://github.com/budzianowski/multiwoz/blob/master/data/MultiWOZ 2.1.zip
+Multi-IntentRecognitioninDialogueUnderstanding 5
+userutterances.Thetestdataconsistsof7,282userturns.However,wedousethe
+previoussystemutteranceinthecontextwhilepromptingthemodels.DuringBERT
+based experiment, we perform two different set of experiments, with and without
+thepreviousutteranceinthecontext.
+4 Experiment Setup
+4.1 ModelandHardwareSelection
+As mentioned earlier, we choose three pre-trained somoLLMs with a relatively
+smallnumberofparameters(∼7B).Asmentionedbefore,themodelsthatwechoose
+forthisexperimentareLlama2-7B-hf7,Mistral-7B-v0.18,andYi-6B9.
+Our hardware consists of two NVIDIA RTX A6000, each having 48GB of
+VRAM.NVIDIARTXA6000areconsumer-gradevisualcomputingGPUfordesk-
+topworkstations.AlthoughthemodelswechosetakemuchlessGPUmemories,the
+2*48GBofVRAMallowedustoperformbatchinferencetomaketheinferencepro-
+cess faster. We used a FP16 quantized version of the original FP32 models which
+reducedeachmodelsizetohalf.Eachmodel’shardwarerequirementisgiveninthe
+Table2.
+Table2:VRAMUsageofDifferentsomoLLMsModels
+Model ParametersDtypeVRAMUsage(MiB) Creator
+Mistral-7B-v0.1 7B FP16 15898 MistralAI
+Llama-2-7b-hf 7B FP16 14234 MetaAI
+Yi-6B 6B FP16 12338 01.AI
+4.2 PromptTemplateSelection
+Prompting is a very crucial aspect of model performance on few-shot learning in
+largelanguagemodels[3].However,promptsaresemi-optimalandrequiretrialand
+error to come up with a good format. As this is a multi-label classification task,
+we gave our model a system prompt by describing the role and the input format.
+Then we provided a set of instructions, a list of intent classes with a short single-
+line description of each, and some examples of the input-output format. First, we
+randomlychooseoneexampleperintentclassfromthevalidationset.Thenweran
+multiple experiments on some small portion of the validation data with different
+7https://huggingface.co/meta-llama/Llama-2-70b-chat-hf
+8https://huggingface.co/mistralai/Mistral-7B-v0.1
+9https://huggingface.co/01-ai/Yi-6B
+6 AdnanAhmadandPhilineKowolandStefanHillmannandSebastianMo¨ller
+instruction wording. We added some more examples based on the results of these
+experiments for which the model performed poorly. In the end, we provided 20
+examplesaltogether,eachinavalidJSONformat.Weaddedasinglelinetodescribe
+the reasoning of the output labels. We also added instructions like “Think step-
+by-step” and “Take a deep breath” to enhance the model’s reasoning capability as
+suggestedinsomepreviousresearch[3].Astheprompttemplateisrelativelylong,
+wedonotprovidethisinthepapercontent.
+4.3 ModelInference
+Duringinference,weuseparallelinferencewithabatchsizeof4.Ontheonhand,
+this reduced the inference time significantly. On the other hand, it requires more
+VRAM.However,batchsizehasnoimpactonthemodel’soutputandonecanuse
+serial inference in case of more limited VRAM. Additionally, the model will take
+additionalVRAMdependingonthesizeoftheinputprompt.
+During inference, we set the temperature value to 0 for deterministic out-
+puts.Thisisaparameterthatcontrolsmodel’screativity(randomness)inlanguage
+generation. Although we instruct the model to provide the output in a valid JSON
+format,becauseofthegenerativenature,themodeloutputsneedtobefurtherparsed
+togetthelistofpredictedintents.Weonlyconsidersuchintentsrecognisedbythe
+LLM that exist in our predefined intent set. If the model hallucinates an intent, or
+outputsnointents,theparserreturnsanemptylist,symbolisingnointents.Eachof
+the used somoLLMs takes roughly 300 minutes to perform inference on all 7,374
+user turns in the test data. On the predicted outputs we, evaluate the model’s per-
+formanceusingstandardmulti-labelclassificationevaluationmetrics.Detailsonthe
+evaluationareprovidedinSection5.
+5 Evaluation Results
+In this section, we first introduce the used evaluation metrics. Afterwards, we
+present our results in the few-shot setting and provide also our results using su-
+pervisedlearningforcomparison.
+5.1 EvaluationMetrics
+In evaluating our model’s performance of multi-label intent classification, we em-
+ployedacomprehensivesetofevaluationmetricswhichisdescribedinthefollow-
+ing.
+Precisionmeasurestheproportionofcorrectlyidentifiedpositiveinstancesamong
+allinstancesthatthemodelclassifiedaspositive.Recallassessestheproportionof
+actual positives that were correctly identified. F-Score harmonizes precision and
+Multi-IntentRecognitioninDialogueUnderstanding 7
+Table3:Multi-labelintentclassificationreportonuserutterancesofMultiWOZ
+2.1testdataset
+Llama-2-7b-hf Mistral-7B-v0.1 Yi-6B
+IntentClass PrecRecallF-ScorePrecRecallF-ScorePrecRecallF-ScoreSupport
+restaurant-inform 0.57 0.20 0.30 0.72 0.44 0.55 0.28 0.31 0.29 1243
+restaurant-request 0.11 0.54 0.19 0.15 0.84 0.26 0.04 0.46 0.07 243
+taxi-inform 0.66 0.09 0.16 0.91 0.20 0.32 0.39 0.11 0.18 351
+taxi-request 0.21 0.81 0.33 0.16 0.89 0.27 0.19 0.58 0.28 53
+hotel-inform 0.68 0.69 0.68 0.73 0.44 0.55 0.68 0.28 0.40 1202
+hotel-request 0.12 0.46 0.18 0.15 0.78 0.26 0.10 0.24 0.14 246
+attraction-inform 0.31 0.06 0.10 0.40 0.24 0.30 0.23 0.11 0.14 569
+attraction-request 0.31 0.43 0.36 0.39 0.86 0.54 0.25 0.39 0.30 452
+train-inform 0.47 0.33 0.39 0.92 0.25 0.40 0.67 0.32 0.43 1401
+train-request 0.13 0.68 0.22 0.18 0.90 0.30 0.13 0.28 0.18 345
+police-inform 0.10 0.75 0.18 0.75 0.75 0.75 0.00 0.00 0.00 4
+general-bye 0.14 0.95 0.24 0.21 1.00 0.35 0.10 0.74 0.17 105
+general-thank 0.75 0.52 0.62 0.90 0.83 0.87 0.75 0.11 0.18 1061
+general-greet 0.02 0.29 0.04 0.04 0.29 0.06 0.01 0.29 0.03 7
+MicroAvg 0.33 0.41 0.36 0.40 0.52 0.45 0.21 0.27 0.24 7282
+MacroAvg 0.33 0.49 0.29 0.47 0.62 0.41 0.27 0.30 0.20 7282
+WeightedAvg 0.50 0.41 0.40 0.67 0.52 0.50 0.46 0.27 0.29 7282
+SamplesAvg 0.34 0.37 0.35 0.40 0.47 0.42 0.19 0.23 0.20 7282
+HammingLoss 0.1006 0.0892 0.1206
+JaccardSimilarity 0.3227 0.379 0.178
+recallintoasinglemetricbycalculatingtheirharmonicmean.Micro-Averageag-
+gregatesthecontributionsofallclassestocomputetheaveragemetric.Inamulti-
+label setting, micro-averaging implies accounting for the total true positives, false
+negatives, and false positives, which is crucial for datasets with class imbalance.
+Macro-Average calculates the metric independently for each class and then takes
+theaverage.WeightedAveragetakesintoaccountthelabelimbalancebyweighting
+the metric of each class by the number of true instances for each class. The latter
+helps in assessing the performance in datasets where the number of items is quite
+differentamongtheclasses,asintheMultiWOZ2.1dataset.
+HammingLossisthefractionofthewronglabelstothetotalnumberoflabels.
+In multi-label classification, it measures the fraction of labels that are incorrectly
+predicted. A lower Hamming Loss indicates a better classifier. In the context of
+thisstudy,JaccardSimilarityScore[22]providesanunderstandingoftheoverlap
+betweenthepredictedandactuallabels.
+5.2 EvaluationresultsfortheFew-ShotApproach
+In terms of individual classes, Mistral-7B-v0.1 outperformed the two other so-
+moLLMs across 11 intent classes among all 14, as shown in Table 4. The model
+particularly performed well-detecting restaurant-inform, attraction-request, police-
+8 AdnanAhmadandPhilineKowolandStefanHillmannandSebastianMo¨ller
+Fig.1:Multi-labelIntentClassification:ConfusionMatrixofMistral-7B-v0.1
+inform, and general-thank intents, having >.5 F-Score. Llama-2-7b-hf performed
+wellonthehotel-informclassandYi-6Bperformedpoorlyacrossallclasses,except
+outperformingothermodelsdetectingtrain-informintents.Overall,theMistral-7B-
+v0.1outperformedtwoothermodelswithaWeightedAverageF-Scoreof0.50.It
+alsohasarelativelylowerHumminglossof0.0892andhigherJaccardSimilarity
+of0.397comparedtotwoothermodels.InFigure1,wepresenttheConfusionMa-
+trixforthebestperformingMistral-7B-v0.1modelacrossdifferentintentclasses.
+We can’t directly compare these results with the previous works as most previ-
+ousapproachesreportJointGoalAccuracy(JGA)measureonthewholedataset.It
+measurestheaccuracyofasystem’sabilitytotrackthestate(bothintentsandslots
+detection) of a dialogue across all turns. Current state-of-the-art is a BERT based
+architecturethathasaJGAaccuracyof60.61%[23].Forbettercomparisoninthis
+paper,wehaveevaluatedasupervisedlearningapproachusingaBERTbasedarchi-
+tectureusingthesamedatasetandtask,andtheresultsareprovideinSection5.3.
+However,weintendtocompareopen-sourceLLMs’performanceonmulti-label
+intent detection with few-shot learning and to provide a framework for such com-
+parisons.It’sinterestingthatevenifYi-6BoutperformstwoothermodelsinOpen-
+LLMLeaderboard,itperformstheleastforthisparticulartask.
+Multi-IntentRecognitioninDialogueUnderstanding 9
+OneaspectoftheLargeLanguageModelsistonotethattheyaretrainedonvery
+largecorpora,oftencontainingalargeamountoftextualdatathatisavailableinthe
+internet.Sothereisachancethatthisdatasetmightalreadybepartofthemodel’s
+initialtrainingdata.Butasthemodelslearntogeneralizeratherthanmemorize,and
+wesignificantlychangestheformattingoftheoriginaldataset,wecanconsiderthat
+thishasfeweffectsontheexperiment.Therelativelypoorperformancebytheother
+twosomoLLMsonthisspecifictaskalsosupportsthisclaim.Moreover,thereisno
+proposedmethodsofartomakethemodelforgetaparticularpartofitstrainingdata
+inafewshotsetup.
+5.3 EvaluationResultsforSupervisedLearning
+Table4:Multi-labelintentclassificationreportonuserutterancesofMultiWOZ
+2.1testdataset
+Mistral-7B-v0.1 BertFSC BertFSC+Prev.Msg.
+IntentClass PrecRecallF-ScorePrecRecallF-ScorePrecRecallF-ScoreSupport
+restaurant-inform 0.72 0.44 0.55 0.89 0.89 0.89 0.92 0.92 0.92 1243
+restaurant-request 0.15 0.84 0.26 0.61 0.56 0.58 0.82 0.89 0.86 243
+taxi-inform 0.91 0.20 0.32 0.93 0.89 0.91 0.89 0.93 0.91 351
+taxi-request 0.16 0.89 0.27 0.92 0.92 0.92 1.00 0.94 0.97 53
+hotel-inform 0.73 0.44 0.55 0.92 0.89 0.90 0.91 0.91 0.91 1202
+hotel-request 0.15 0.78 0.26 0.76 0.54 0.63 0.81 0.83 0.82 246
+attraction-inform 0.40 0.24 0.30 0.89 0.90 0.89 0.89 0.89 0.89 569
+attraction-request 0.39 0.86 0.54 0.84 0.69 0.76 0.93 0.91 0.92 452
+train-inform 0.92 0.25 0.40 0.94 0.95 0.95 0.96 0.96 0.96 1401
+train-request 0.18 0.90 0.30 0.86 0.79 0.82 0.84 0.85 0.84 345
+police-inform 0.75 0.75 0.75 1.00 1.00 1.00 1.00 0.75 0.86 4
+general-bye 0.21 1.00 0.35 1.00 1.00 1.00 1.00 0.99 1.00 105
+general-thank 0.90 0.83 0.87 0.99 0.98 0.99 0.99 0.98 0.98 1061
+general-greet 0.04 0.29 0.06 1.00 0.71 0.83 1.00 0.57 0.73 7
+MicroAvg 0.40 0.52 0.45 0.91 0.88 0.89 0.92 0.93 0.92 7282
+MacroAvg 0.47 0.62 0.41 0.74 0.69 0.71 0.76 0.72 0.74 7282
+WeightedAvg 0.67 0.52 0.50 0.91 0.88 0.89 0.92 0.93 0.92 7282
+SamplesAvg 0.40 0.47 0.42 0.81 0.81 0.80 0.85 0.85 0.85 7282
+Inasecondexperiment,weuseanapproachthathasfrequentlybeenusedforin-
+tentdetectioninthelastyears.TheBERTtransformermodel[24]canbecombined
+withasimpleclassificationheadandtrainedonthetaskofintentclassification.We
+usetheBertForSequenceClassificationavailableonHuggingFace10withaweighted
+BCEWithLogitsLoss11toaccommodatethemulti-classproblem.Asatokenizer,we
+used the pretrained bert-base-uncased tokenizer (110M parameters). The model is
+10https://huggingface.co
+11https://pytorch.org/docs/stable/generated/torch.nn.BCEWithLogitsLoss.html
+10 AdnanAhmadandPhilineKowolandStefanHillmannandSebastianMo¨ller
+trainedonthe56,778trainingsamplesoftheMultiWOZdataset.Intwoapproaches,
+wefirstusedtheuserutteranceonitsown(BertFSC)andthenrananotherexperi-
+ment with the last system utterances concatenated in front of the user utterance to
+providemorecontext(BertFSC+PrevMsg).Weimplementedearlystoppingwitha
+patience of 3 epochs and set the number of epochs to 20 and the batch size to 8.
+Themodelwiththebestperformanceonthevalidationsetwasusedforevaluation.
+This was reached at epoch 5-6 but the training itself was running the additional
+3 epochs. Each epoch took 10-15 minutes to train where the single, shorter utter-
+ancewasfasterthantheapproachwithboththeprevioussystemutterancesandthe
+userutterancecombined(around5minutesfaster).Aftertrainingwascomplete,we
+firsttestedtheperformanceonthevalidationset.Eachintentwithascoreabovea
+threshold was considered as recognised and all other intents were not considered
+forthatsample.The thresholdwaspickedbyevaluating9 possiblethresholdsand
+theirmicrof1-scoreonthevalidationset.Inbothexperiments,thebestperforming
+thresholdwas0.5whichwasthenappliedtothefinalevaluationonthetestset.The
+final evaluation time to get the results on all 7,282 test samples took less than a
+minute.
+The results this experiment show a satisfying performance with an overall f1-
+score of 0.89. Additionally, adding the previous system utterance to the input im-
+proved the performance further with a final f1-score of 0.92. The full script, all
+results,thetraining,validationlossesoverallepochs,andthedatacanbefoundin
+ourgitrepository12.
+6 Discussion and Future Works
+Table5:PerformancecomparisonofMistralandBERT
+Category Mistral BERT
+#TrainingSamples 30 56778
+TrainingTime(min) 0 80-120
+EvaluationTime(min) 300 <1
+#Parameters 7B 110M
+Performance(microf1) 0.45 0.92
+In this paper, we experimented with three relatively small open-source pre-
+trainedLargeLanguageModels(somoLLMs)toperformfew-shotmulti-labelclas-
+sification on the MultiWOZ 2.1 dataset containing 14 intent classes and compare
+their performance using standard evaluation metrics. We found that Mistral-7B-
+v0.1 outperforms Llama2-7b-hf and Yi-6B and achieves a 50% weighted average
+F-Score. However, we also found that a BERT-based approach using supervised
+learningstilloutperformssomoLLMs–whichisonlyapplicableifsufficienttrain-
+ingdataisavailable.Table5givesanoverviewontheamountoftrainingdataand
+12https://git.tu-berlin.de/goerzig/nlu/
+Multi-IntentRecognitioninDialogueUnderstanding 11
+timerequiredforthetwodifferentapproaches.Wealsoprovideaframeworktoper-
+formandevaluatesuchexperimentsonmulti-labelintentclassificationinconsumer
+hardware.
+Weshowthatwithoutrequiringmuchtrainingdataandhardware,onecancon-
+siderusingthismodeltoperformNaturalLanguageUnderstandingtasksfortask-
+orienteddialoguesystems.Asfine-tuningLargeLanguageModelshasoftenshown
+significantperformanceimprovementsonspecifictasks[3],weareplanningtofine-
+tunethebest-performingmodelandcomparetheresults.Butthenagain,fine-tuning
+comes with the trade-off of requiring more training data and hardware compared
+tofew-shotlearning.Researchersanddevelopersoftask-orienteddialoguesystems
+canbenefitfromtheinsightsofthispapertomaketheirchoice.
+7 Acknowledgement
+ThepresentedworkhasbeenfundedbytheFederalMinistryofEducationandRe-
+search(Germany)andtheFederalStateofBerlinundergrantno.16DHBKI088for
+theprojectUSOSatTechnischeUniversita¨tBerlin.
+References
+1. Brown,T.,Mann,B.,Ryder,N.,Subbiah,M.,Kaplan,J.D.,Dhariwal,P.,Neelakantan,A.,
+Shyam,P.,Sastry,G.,Askell,A.andAgarwal,S.,2020.Languagemodelsarefew-shotlearn-
+ers.Advancesinneuralinformationprocessingsystems,33,pp.1877-1901.
+2. Chowdhery, A., Narang, S., Devlin, J., Bosma, M., Mishra, G., Roberts, A., Barham, P.,
+Chung,H.W.,Sutton,C.,Gehrmann,S.andSchuh,P.,2022.Palm:Scalinglanguagemod-
+elingwithpathways.arXivpreprintarXiv:2204.02311.
+3. Wei,J.,Bosma,M.,Zhao,V.Y.,Guu,K.,Yu,A.W.,Lester,B.,Du,N.,Dai,A.M.andLe,Q.V.,
+2021.Finetunedlanguagemodelsarezero-shotlearners.arXivpreprintarXiv:2109.01652.
+4. Chung,H.W.,Hou,L.,Longpre,S.,Zoph,B.,Tay,Y.,Fedus,W.,Li,Y.,Wang,X.,Dehghani,
+M.,Brahma,S.andWebson,A.,2022.Scalinginstruction-finetunedlanguagemodels.arXiv
+preprintarXiv:2210.11416.
+5. Ouyang,L.,Wu,J.,Jiang,X.,Almeida,D.,Wainwright,C.,Mishkin,P.,Zhang,C.,Agarwal,
+S.,Slama,K.,Ray,A.andSchulman,J.,2022.Traininglanguagemodelstofollowinstructions
+withhumanfeedback.AdvancesinNeuralInformationProcessingSystems,35,pp.27730-
+27744.
+6. Anthropic Introducing Claude. Anthropic Blog 2023, March 14.
+https://www.anthropic.com/index/introducing-claude(accessedon19November2023).
+7. AnthropicClaude2.AnthropicBlog2023,July11.https://www.anthropic.com/index/claude-
+2(accessedon19November2023).
+8. Sahu,G.,Rodriguez,P.,Laradji,I.H.,Atighehchian,P.,Vazquez,D.andBahdanau,D.,2022.
+Data augmentation for intent classification with off-the-shelf large language models. arXiv
+preprintarXiv:2204.01959.
+9. Touvron,H.,Martin,L.,Stone,K.,Albert,P.,Almahairi,A.,Babaei,Y.,Bashlykov,N.,Batra,
+S.,Bhargava,P.,Bhosale,S.andBikel,D.,2023.Llama2:Openfoundationandfine-tuned
+chatmodels.arXivpreprintarXiv:2307.09288.
+10. Jiang,A.Q.,Sablayrolles,A.,Mensch,A.,Bamford,C.,Chaplot,D.S.,Casas,D.D.L.,Bres-
+sand, F., Lengyel, G., Lample, G., Saulnier, L. and Lavaud, L.R., 2023. Mistral 7B. arXiv
+preprintarXiv:2310.06825.
+12 AdnanAhmadandPhilineKowolandStefanHillmannandSebastianMo¨ller
+11. Yi model github repository, November 2023. https://github.com/01-ai/Yi (accessed on 19
+November2023).
+12. Hao, Z., Zhang, J., Xu, B., Wang, Y., de Melo, G. and Li, X., 2023. IntentDial: An Intent
+GraphbasedMulti-TurnDialogueSystemwithReasoningPathVisualization.arXivpreprint
+arXiv:2310.11818.
+13. Li,S.,Yavuz,S.,Hashimoto,K.,Li,J.,Niu,T.,Rajani,N.,Yan,X.,Zhou,Y.andXiong,C.,
+2020.Coco:Controllablecounterfactualsforevaluatingdialoguestatetrackers.arXivpreprint
+arXiv:2010.12850.
+14. Yu,T.,Zhang,R.,Polozov,A.,Meek,C.andAwadallah,A.H.,2020,October.Score:Pre-
+trainingforcontextrepresentationinconversationalsemanticparsing.InInternationalCon-
+ferenceonLearningRepresentations.
+15. Eric,M.,Goel,R.,Paul,S.,Kumar,A.,Sethi,A.,Ku,P.,Goyal,A.K.,Agarwal,S.,Gao,S.
+and Hakkani-Tur, D., 2019. MultiWOZ 2.1: A consolidated multi-domain dialogue dataset
+withstatecorrectionsandstatetrackingbaselines.arXivpreprintarXiv:1907.01669.
+16. Beeching, E., Fourrier, C., Habib, N., Han, S., Lambert, N., Rajani, N., Sanseviero,
+O., Tunstall, L. & Wolf, T., 2023. Open LLM Leaderboard. Hugging Face. Avail-
+ableat:https://huggingface.co/spaces/HuggingFaceH4/open llm leaderboard(accessedon19
+November2023).
+17. Budzianowski, P., et al. (2018). ”MultiWOZ - A Large-Scale Multi-Domain Wizard-of-Oz
+DatasetforTask-OrientedDialogueModelling.”InProceedingsoftheEMNLP.
+18. Rastogi, A., et al. (2020). ”Towards Scalable Multi-domain Conversational Agents: The
+Schema-GuidedDialogueDataset.”InAAAI.
+19. Han,T.,Liu,X.,Takanabu,R.,Lian,Y.,Huang,C.,Wan,D.,Peng,W.andHuang,M.,2021.
+Multiwoz2.3:Amulti-domaintask-orienteddialoguedatasetenhancedwithannotationcor-
+rectionsandco-referenceannotation.InNaturalLanguageProcessingandChineseComput-
+ing:10thCCFInternationalConference,NLPCC2021,Qingdao,China,October13–17,2021,
+Proceedings,PartII10(pp.206-218).SpringerInternationalPublishing.
+20. Zang,X.,Rastogi,A.,Sunkara,S.,Gupta,R.,Zhang,J.andChen,J.,2020.MultiWOZ2.2:
+Adialoguedatasetwithadditionalannotationcorrectionsandstatetrackingbaselines.arXiv
+preprintarXiv:2007.12720.
+21. Ye,F.,Manotumruksa,J.andYilmaz,E.,2021.Multiwoz2.4:Amulti-domaintask-oriented
+dialogue dataset with essential annotation corrections to improve state tracking evaluation.
+arXivpreprintarXiv:2104.00773.
+22. Gouk,H.,Pfahringer,B.andCree,M.,2016,November.Learningdistancemetricsformulti-
+labelclassification.InAsianConferenceonmachinelearning(pp.318-333).PMLR.
+23. Dai,Y.,Li,H.,Li,Y.,Sun,J.,Huang,F.,Si,L.andZhu,X.,2021.Preview,attendandreview:
+Schema-aware curriculum learning for multi-domain dialog state tracking. arXiv preprint
+arXiv:2106.00291.
+24. Devlin,J.,Chang,M.-W.,Lee,K.,Toutanova,K.(2019).BERT:Pre-trainingofDeepBidi-
+rectionalTransformersforLanguageUnderstanding.InProc.NAACL2019,ACL,pp.4171–
+4186.doi:10.18653/v1/N19-1423.

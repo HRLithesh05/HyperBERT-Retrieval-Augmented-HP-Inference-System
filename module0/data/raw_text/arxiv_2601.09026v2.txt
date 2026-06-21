@@ -1,0 +1,1021 @@
+Layer-Parallel Training for Transformers
+ShuaiJiang MarcSalvadó-Benasco
+SandiaNationalLaboratories UniversitàdellaSvizzeraItaliana
+Albuquerque,NM,USA Lugano,Switzerland
+sjiang@sandia.gov marc.salvado@usi.ch
+EricC.Cyr AlenaKopanicˇáková
+SandiaNationalLaboratories Toulouse-INP/ENSEEIHT
+Albuquerque,NM,USA Toulouse,France
+eccyr@sandia.gov alena.kopanicakova@toulouse-inp.fr
+RolfKrause
+AppliedMathematicsandComputationalScience
+KingAbdullahUniversityofScienceandTechnology(KAUST)
+rolf.krause@kaust.edu.sa
+JacobB.Schroder
+Dept. ofMathematicsandStatistics
+UniversityofNewMexico,USA
+jbschroder@unm.edu
+Abstract
+Wepresentanewtrainingmethodologyfortransformersusingamultilevel,layer-
+parallelapproach. ThroughaneuralODEformulationoftransformers,ourapplica-
+tionofamultilevelparallel-in-timealgorithmfortheforwardandbackpropagation
+phasesoftrainingachievesparallelaccelerationoverthelayerdimension. This
+dramaticallyenhancesparallelscalabilityasthenetworkdepthincreases,whichis
+particularlyusefulforincreasinglylargefoundationalmodels. However,achieving
+this introduces errors that cause systematic bias in the gradients, which in turn
+reducesconvergencewhenclosertotheminima. Wedevelopanalgorithmtodetect
+thiscriticaltransitionandeitherswitchtoserialtrainingorsystematicallyincrease
+theaccuracyoflayer-paralleltraining. Results,includingBERT,GPT2,ViT,and
+machine translation architectures, demonstrate parallel-acceleration as well as
+accuracycommensuratewithserialpre-trainingwhilefine-tuningisunaffected.
+1 Introduction
+Thetransformer[Vaswanietal.,2017]isanattention-based,sequence-to-sequencemodel,variations
+ofwhichhaveachievedcutting-edgeresultsinmanyareas,includingnaturallanguageprocessing,
+computer vision, audio processing, and multi-modality problems; it serves as the backbone for
+foundation models [Bodnar et al., 2024, Zhou et al., 2024]. The performance of transformers
+surpassesrecurrentneuralnetworks(RNNs)duetoparallelizationacrossthesequencedimension,
+aswellasaccesstoallpriorpositionsinsideitscontextwindow. Whilenetworkdepthislimitedby
+computationalcostandmemoryfootprint,increasingdepthisonestrategyforenhancingaccuracyin
+languageprocessing[Wangetal.,2024].
+Preprint.Underreview.
+6202
+naJ
+42
+]GL.sc[
+2v62090.1062:viXra
+Thechallengewhenparallelizingoverdepthisthattransformersarebasedonasequenceofresidual
+layers whose forward and backward propagations are inherently serial. This serialization is also
+endemictoneuralODEmodelsthattreatdepth(layers)asthetime-dimension. Forthespeedupof
+serial ordinary differential equation (ODE) simulations, the scientific computingcommunity has
+proposedasolutionbydevelopingparallel-in-timemethods[Gander,2015,OngandSchroder,2020],
+includingmultigrid-reduction-in-time(MGRIT)[Falgoutetal.,2014],whichisusedhere. These
+techniquesdecomposethetimedomainofthediscretizedODE,anddevelopiterativestrategiesto
+simultaneouslysolveoveralllayers(i.e.,alltime-steps).
+Tothisend,wedevelopanMGRIT-basedstrategyfortransformertrainingthatexposesparallelism
+overthelayerdimension, resultingingreaterpotentialspeedupasthedepthincreases. Weusea
+neuralODEtransformerformulation,whichenablestheapplicationofparallel-in-timeforwardand
+backwardpropagationschemes. Ournovelcontributionsare:
+• Layer-parallel training [Gunther et al., 2020] is applied to transformers with increasing
+depth,yieldingspeedupsandreducingper-devicememoryoverheadonmultipleGPUs.
+• Layer-paralleltrainingcreatesinexactgradientswithbias. Amethodologyfordetecting
+whenthebiasbecomestoolarge,andremedyingthroughreversiontoaserialalgorithmis
+shown. Theoverallprocesspreservessignificantparallelspeedup.
+• Detailed studies are shown for different parameter choices in the layer-parallel training
+algorithmintermsofpre-trainingperformanceandoveralltrainingaccuracy, aswellas
+fine-tuningonlanguagemodeldatasets.
+• Tothebestofourknowledge,thisisthefirstworktodevelopaneuralODEformulationfor
+anencoder–decodertransformerarchitectureandtodemonstrateitsapplication.
+2 Background
+Transformers. Transformers have revolutionized natural language processing (NLP) since their
+introduction in 2017 [Vaswani et al., 2017]. They leverage self-attention, which computes the
+relevance of each token in the input sequence to every other token. This facilitates the capture
+oflong-rangedependenciesandcontextualinformation,therebyenhancingthemodel’sabilityto
+understandandgeneratehumanlanguage. Thearchitectureusesresidualconnectionstomitigate
+the vanishing gradient problem. Unsurprisingly, transformers have trended towards increasingly
+deeperarchitectures. WhileearlymodelslikeBERT[Devlinetal.,2018]andGPT[Radfordetal.,
+2018]featuredamodestnumberoflayers,typicallyaround6to24,recentadvancementshaveseena
+dramaticincreaseindepth. Forinstance,GPT-3employs96layers,whiledeeperarchitectureshave
+beenexploredinT5andSwitchTransformermodels[Xueetal.,2020,Fedusetal.,2022,Wang
+etal.,2024]. Increasingthenumberoflayershasbeeninstrumentalinachievingstate-of-the-art
+performanceacrossarangeofNLPtasks,includingmachinetranslation,textsummarization,and
+questionanswering. Thus,transformerscalabilitywithrespecttodepthiscritical,withlargeand
+deepmodelstakinglongertotrainwithlargermemoryrequirements.
+ParallelizationTechniques. Parallelizationinmachinelearninghasbeenwell-studied[Ben-Nun
+and Hoefler, 2019, Narayanan et al., 2021, Danieli et al., 2023]. The most common approach is
+dataparallelism[Valiant,1990],withrobustimplementationsinexistinglibraries[Deanetal.,2012,
+Abadietal.,2016,Paszkeetal.,2019]. DataparallelismreplicatesthemodelacrossmultipleGPUs
+anddistributesthetrainingdata,allowingeachGPUtoprocessasubsetofthedatasimultaneously.
+Thisparallelizationmitigatesthecostoflargedatasetsandbatch-sizes. However, largermodels
+demandadditionalparallelismduetomemoryrequirementsandgradientstorage. Thisisaddressed
+bymodelparallelismthatsplitsthemodelacrossmultipleGPUs. Thisenablestrainingmodelswhose
+memoryrequirementsexceedsthatofasingleGPU.Implementations,sometimesalsoreferredtoas
+tensorparallelism,thatmitigatecomputationalcostswithincreasednetworkwidthcanbefoundin
+[Bradburyetal.,2018,Rasleyetal.,2020]. Combiningmodelanddataparallelismyieldsfurther
+speeduppotential.
+Afinalformispipelineparallelismwhichmitigatesgrowthinnetworkdepthbydistributinglayers
+acrossprocessors[Huangetal.,2019,Rasleyetal.,2020]. Here,batchesarefurthersubdividedinto
+minibatchesandthenstreamedthroughthelayersinapipelinefashion.Bycarefullyrearrangingwork
+inanasynchronousway,parallelspeedupscanbeobtainedandthememoryoverheadisnaturally
+2
+distributedacrossmultipleGPUs. ForinstanceLietal.[2021b]appliespipelineparallelismalong
+thesequencelengthofdecoder-onlytransformersandproposesanalgorithmthatdynamicallyfinds
+theoptimalsequencepartitionstoequallysharethecomputationalloadamongdevices. InZhuang
+Zhuangetal.[2023],theauthorsstudytheoptimalcombinationofinter-opparallelism(pipeline
+parallelism)andintra-opparallelism(tensorparallelism)whileKorthikantiKorthikantietal.[2023]
+usestensorandsequenceparallelismtostoreactivations,thusavoidingtheirrecomputation.
+The layer-parallel approach has the same goal as pipelining, to mitigate the computational cost
+of growing network depth, while avoiding some of the its drawbacks. Pipelining works by over-
+decomposingthedataandrelyingonthedistributionoflayerstoachieveparallelism. Thisrisks
+givingupsomedataparallelism[Narayananetal.,2019],whichtypicallyhasexcellentscalability.
+Moreover,pipelineaccelerationisreducedifthenumberoflayersismuchgreaterthanthelengthof
+thepipelineduetocomputationallatency,orthebubblephenomenon. Thelayer-parallelalgorithm,
+ontheotherhand,introducescontrollableerrorsinforwardandbackwardpropagationinexchange
+foradditionalparallelism. Thisyieldsaniterativealgorithmthatisfullycompatiblewithdataand
+modelparallelism.
+Multigridintime.Multigridmethodsareiterativesolversforlarge,sparsesystems[Trottenbergetal.,
+2001,BrandtandLivne,2011,Hackbusch,2013]. Themostwell-knownaregeometricmultigrid
+methodsappliedtoellipticpartialdifferentialequations(PDEs)inspace. Thesemethodsutilizea
+hierarchyofgridsandrestriction/prolongationoperatorstoefficientlyreducehigh-frequencyerrors
+onfinergridswithrelaxation(e.g.,JacobiorGauss-Seidel)andlow-frequencyerrorsoncoarsergrids.
+Theeffectivenessandnearoptimalalgorithmiccomplexityhasbeendemonstratedacrossvarious
+physicaldomains.
+MultigridisextendedtothetimedimensionbytheMGRITalgorithm[Falgoutetal.,2014,Dobrev
+et al., 2017]. By recasting serial time stepping as a single, global space-time operator, temporal
+multigridmethodsemployasimilarhierarchicalapproachtoaddresserrors.Thisapproachaccelerates
+time-dependentsimulations,particularlyforproblemsinvolvinglongtimehorizons,orinsystems
+whereotherparallelizationdimensionsaresaturated.
+Thelayer-parallelalgorithm,proposedinGüntheretal. Guntheretal.[2020],usesMGRITtoexploit
+thetimedependentnatureofneuralODEmodels. Layer-parallelappliesaniterativeMGRITmethod
+totheforwardandbackwardpropagationphasestocomputeaninexactgradient. Throughapartition
+ofthelayerdimension,thisformofmodel-parallelismdistributesthemodelacrossmanydevices,
+allowingarbitrarilylargemodels,providedenoughGPUsareavailable. Layer-paralleltrainingcan
+beusedinconjunctionwithdataandotherformsofmodelparallelism. Whilelayer-parallelhasbeen
+usedinotherarchitectures[Cyretal.,2019,Sunetal.,2021,MoonandCyr,2022],thisisthefirst
+timeithasbeenappliedtotransformers.
+3 Layer-ParallelTransformers
+3.1 ODEformulationofTransformers
+Weconsidertransformerarchitectureswithpre-layernormalization[Xiongetal.,2020]. Forward
+propagationthroughtheencoderwithN layersisgivenas
+Enc
+X =X +h(φ (X ,θ )+φ (X +φ (X ,θ ),θ )),
+n+1 n 1 n n,1 2 n 1 n n,1 n,2
+(cid:124) (cid:123)(cid:122) (cid:125) (1)
+:=FEnc(tn,Xn)
+whereX isthen-thlayerinput,X isthen-thlayeroutput,andh=1forstandardtransformers.
+n n+1
+Thesymbolθ denotestheparametersofthen-thlayer’sj-thsublayer,whichisparametrizedby
+n,j
+evaluatingF att .Thefunctionsφ andφ aredefinedasφ :=SA◦LN,andφ :=MLP◦LN,
+Enc n 1 2 1 2
+whereSA,LN,andMLPdenoteself-attention,layernorm,andMLPrespectively. Decoder-only
+architecturesaresimilar,withtheadditionofacausalmaskintheattention.
+Incaseofencoder-decoderarchitectures,thedecoder,withN layers,hastheform:
+Dec
+(cid:0) (cid:1)
+Y =Y +h Y +φ (Y +Y ,θ ) , (2)
+n+1 n n 2 n n n,2
+(cid:124) (cid:123)(cid:122) (cid:125)
+:=FDec(tn,Yn,XNEnc)
+3
+Figure 1: Layer-parallel transformer. The ParallelNet contains a time grid hierarchy with the
+coarseningratedenotedbyc . Experimentsuseafineleveltime-stepofh=1.
+f
+where Y = φ (Y ,θ )+φ (Y +φ (Y ,θ ),X ,θ ). The symbol θ denotes the
+n 1 n n,1 3 n 1 n n,1 NEnc n,3 n
+parametersofn-thdecoderlayer,Y denotesthen-thdecoder-layerinput,andX denotesthe
+n NEnc
+encoderoutput. Thefunctionφ isφ :=CA◦LN,whereCAiscross-attention.
+3 3
+Tofacilitateapplicationofparallel-in-time,weassociatethetransformerarchitecturewithaneural
+ODE.TheideaofviewingtheforwardpropagationasODEdiscretizationswasfirstintroducedfor
+ResNetsinE[2017],establishingacontinuous-depthperspectiveondeepnetworks. Thestability
+andwell-posednessoftheforwardpropagationwasthenstudiedinHaberandRuthotto[2017],Lu
+etal.[2018],Chenetal.[2018],wheretheauthorsapplyseveralnumericalschemestotraindeep
+neuralnetworks. ThisODE-basedformulationwaslaterexpandedtoencoder-onlytransformersin
+Queirugaetal.[2021]andLietal.[2021a]. Wefurtherextendtheformulationtoencoder-decoder
+transformerarchitectures.
+Tothisaim,letthefinal“time"beT :=T +T ,T :=hN ,andT :=hN ,wherehis
+Enc Dec Enc Enc Dec Dec
+analogoustoatime-stepsize. Forencoder-decodertransformers,westacktheencoderstatesXand
+the(shifted)decoderstatesY,suchthattheforwardpropagationthroughthetransformerisdefined
+as
+Z :=[X ,Y ]=Z +hF(t ,Z ), (3)
+n+1 n+1 n+1−NEnc n n n
+whereX :=X , ∀n>N ,andY :=Y , ∀n<N .Inotherwords,Xtheencoderstate
+n NEnc Enc n 0 Enc
+isfixedafterthefinalencoderstep,whileYisconstantduringtheencoderstages. ThefunctionFis
+givenas
+(cid:26)
+[F (t,X), 0 ], ift<T ,
+F(t,[X,Y],):= Enc Enc
+[ 0 , F (t,Y,X)], ift≥T .
+Dec Enc
+For encoder-only transformers, T := T , Z := X, and F := F with an easy alteration for
+Enc Enc
+decoder-onlytransformers.
+Thus, we can interpret the transformer forward propagation (3) as a forward Euler discretization
+withtimesteph=1oftheinitialvalueproblem(IVP)ineq.(4)(left)whereθisdefinedon[0,T],
+withθ representingthevalueatt . Here,foragiventimet∈[0,T],F dependsonthestatesZ(t)
+n n
+andparametersθ(t). TheinitialvalueZ isdefinedanalogouslyonX andY ,whichdenotethe
+0 0 0
+positionally-encodedsourceandtargetembeddings,respectively. Next,thegradientsrequiredfor
+trainingcanbethenobtainedbysolvingtheadjointequationineq.(4)(right)backwardintime. Here,
+L isthelossandλ(t )isthebackpropagatedgradientsatthen-thlayer.
+n
+(cid:26)dZ =F(Z,θ) (cid:40) ∂λ =λT∂F
+forward: Zdt (0)=Z backward: λ∂ (t t )= ∂Z ∂L (4)
+0 N ∂Z(tN)
+4
+3.2 MGRIT:inexactforwardandbackwardpropagation
+MGRITconstructsahierarchyofdiscretizationsoftheIVPs(4). Startingwithafinetime-stepsizeh
+onlevel0,progressivelycoarserdiscretizationsareconstructedwithacoarseningfactorc ∈ N+
+f
+(e.g.,thefirstcoarse-levelhasstepsizec h,thesecondcoarse-levelc2h,andsoon). Thecoarser
+f f
+levelscorrectthefine-gridsolution,acceleratingconvergencetotheserialsolution. Thefine-gridis
+evaluatedonlylocally,inahighlyparallelmanner.
+Two-levelMGRIT:
+1.Parallel FCF-relaxation
+with S
+0
+2.Restrict r =G −A W
+0 0 0 0
+to coarse-level, set as r
+1
+3.Solve for coarse-level
+error e serially with
+1
+A e =r
+1 1 1
+4.Correct fine-level
+solution with e
+1
+Figure2: Two-levelMGRITpseudocode(left),MGRITdiagramwithc =2,L=2on2devices
+f
+(right).
+3.2.1 InexactMGRITforwardpropagation
+FortheMGRIThierarchy,letl=0...L−1forLtotallevels,thendefineA W =G where
+l l l
+ I 
+(−I−cl fhF 1) I 
+A l = 
+
+... ...   ,
+(−I−clhF ) I
+f Nl−1
+Z  (I+clhF )Z 
+1 f 0 0
+Z 0
+ 2   
+W l =  . . .  , G l =  . . .  ,
+Z 0
+Nl
+andnumberoftime-stepsN = N/cl. Forl = 0thisistheiterativeevolutionEq.3writtenasa
+l f
+system. Thevariablec isauser-definedintegercoarseningfactor(often2or4). Theinitialcondition
+f
+isimplicitlyincludedinthefirstentryofG . TheapplicationofthenonlinearoperatorA writtenin
+l l
+matrixnotationisunderstoodascomponent-wisenonlinearcomposition(e.g. F Z =F (Z )).
+k k k k
+Remark: Theexactsolutiontothesystemwhenl = 0yieldsthesamestatevectorW aswould
+0
+beobtainedfromforwardpropagationoftheneuralODEtransformer. Further,thesolutiontothe
+systeml+1isanO(h)approximationofthesystematl.
+Figure2outlinesthealgorithmicapproachusedbya2-levelMGRITmethod(L=2)toexploitthis
+hierarchytosolveA W =G .Thefirststepofthisalgorithm,seeFig.2(left),appliesasmoothing
+0 0 0
+operatorS ≈A−1onthefinegrid. Thissmootherisselectedtoreducehighfrequencyerrorsina
+l l
+parallelway[Dobrevetal.,2017]. AformofblockJacobi,FCF-relaxation(fine-coarse-fine),isthe
+approachtakeninlayer-parallelandisdescribedindetailinAppendixAandGuntheretal.[2020].
+Forlevell,theapplicationofFCFhasN /cl wayparallelism. Figure2(right)indicatesthisparallel
+l f
+relaxationphasewiththeredandbluearrows. Theredarrowsexecuteconcurrently,followedby
+concurrentexecutionofthebluearrows. Afterrelaxationtheerrorhasbeenreducedlocallyover
+subsetsoflayers,yetnoendtoendcommunicationhasoccurred.
+Step2inFig.2computestheresidualr = G −A W onthefinegridandthen“restricts”the
+0 0 0 0
+residualwithinjectiontothecoarselevel(orangearrows),yieldingr . Inthethirdstep,the“coarse
+1
+solve”step(yellowarrows)computestheerroronthecoarse-levelimpliedbytheresidualbysolving
+A e =r exactly. Thiscommunicatesend-to-endacrossthedomaininserial,albeitatafactorof
+1 1 1
+c cheaperthanthefinegrid(thenumberoftimestepsisN /c onlevel1). InStep4,thiserror
+f 0 f
+5
+correctionis“interpolated”backuptothefinegrid(greenarrows). Thealgorithmrepeatsasrequired
+untilastoppingcriteriaismet.
+OneiterationofthisalgorithmisreferredtoasaV-cycle. Tocreateahierarchywithmorelevels,
+theserialcoarsesolvecanbereplacedwithanothertwo-levelsolveandthewholeprocessproceeds
+recursively. The serial coarsest-level solve will then be cL−1 times cheaper than the fine grid,
+f
+with additional parallel relaxation work done on intermediate levels. Critical for layer-parallel
+performanceisthatonlyahandfulofV-cycleiterationsareneededforsufficientaccuracy,which
+resultsinapproximateforwardorbackwardpropagation.
+ToinitializeMGRITforthesystemA ,wedistributethelayersacrossmultipleGPUs. InFigure2
+0
+(right),anexampleisshown,wherean8layernetworkissplitover2GPUs/devices;acoarsening
+factorofc =2isshown. TheexampleshowsthesecondGPUstoresF throughF ,andaninitial
+f 4 7
+guessforX . GPU-awareMPIisusedforinter-devicecommunication. SeeCyretal.[2025]for
+4
+moreimplementationdetails. Similartomodelparallelism,layer-paralleldistributesthenetwork
+acrossmultipleGPUs,reducingtheperdevicememoryrequirement.
+3.2.2 InexactMGRITbackwardpropagation
+Toevaluatethegradientsinparallel,thesameMGRITalgorithmcanbeappliedtosolvethediscretized
+adjointproblem(4)(right)backwardintime;see[Guntheretal.,2020,Cyretal.,2025]fordetails.
+Notably,inmanycases,asingleMGRITiterationfortheadjointproblemisenoughtoapproximate
+thegradientwithsufficientaccuracy,enablingsignificantspeedups. Thisbehaviorisconsistentwith
+findingsintheliterature,whichindicatethatoptimizerconvergenceissignificantlymoresensitiveto
+noiseinthelossfunctionevaluationsthaningradientevaluations[Bellaviaetal.,2023,Louetal.,
+2025]. Asaresult,theMGRITforwardsolvetypicallyrequiresmoreiterationsthanbackward. In
+theresultssection,forwarditerationswillrefertothenumberofMGRITiterationsusedforforward
+propagation,andbackwarditerationsforbackwardpropagation,whichwilltypicallybesmaller.
+3.2.3 Adaptivecontroloftheinexactness
+Statistically biased error from inexact gradient evaluations is known to change the convergence
+properties of stochastic gradient descent algorithms. However, theory indicates that this can be
+mitigatediftheerrorcanbecontrolledastheminimaisapproached[Lin,2022,Demidovichetal.,
+2023]. Thus,detectingwhentheerroristoolargerelativetothegradientiscrucialfortheapplication
+ofcorrectivemeasuressuchasincreasingthenumberofiterationsorswitchingtoexactsolves. Due
+tothenonlinearityoftransformers,MGRITmayrequiretoomanyiterationstoobtainasufficient
+speeduprelativetoserial. Toaddressthis,wemonitortheeffectivenessofMGRITiterationsduring
+trainingbyevaluatingthe“convergencefactor”,definedastheratioofconsecutivefine-levelresiduals
+foriterationk,∥r(k+1)∥/∥r(k)∥. Asmallconvergencefactorimpliesrapidconvergence. Toensure
+0 0
+robustness,weperiodically,everyfew(e.g. 500)batches,doublethenumberofMGRITiterations
+tomonitortheconvergencefactorofthefinaliteration. Aconvergencefactorabove1indicatesthat
+theiterationcountisnolongereffective. Themitigationeitherimprovestheaccuracybyincreasing
+iterationcount,orswitchingtoserialtraining. Ourresultsconfirm,assuggestedbythebiasedSGD
+theory[Demidovichetal.,2023],thatdespitetheinitialphaseusinginexactgradients,theimproved
+accuracyinlaterstagesleadstoanetworkwithcomparableperformance.
+4 NumericalResults
+Toevaluatetheefficacyoflayer-paralleltrainingandinference,weconsiderthefollowingnetworks
+andapplications,withadditionaldetailsprovidedintheAppendix.
+1. BERTpre-trainingistheclassicallanguagemodelingtrainingproblemforapureencoderonly
+network. Thetrainingobjectivesarethenextsentenceprediction(NSP)andmasked-language
+modeling(MLM),howeverweonlyutilizeMLMlearning[Liuetal.,2019]. WeusetheC4
+dataset[Raffeletal.,2020]forpretrainingdata.
+2. Morphologicalclassification(MC)isassociatedwithclassifyingawordtoitsmorphological
+class (noun, adjective, adverb, etc). We use the GUM corpus [Zeldes, 2017] dataset from
+UniversalDependencies[Nivreetal.,2017]andemploytheneuralODEencoder-onlytransformer
+architecture,specifiedinQueirugaetal.[2021].
+6
+80
+75
+0 20 40
+Epochs
+cca
+.laV
+0.3
+0.25
+0.2
+20 40 60
+Epochs
+UELB
+.laV
+GPUs GPUs
+1 1
+2 2
+4 2–>1
+8 2–>1
+Figure3: Thelongtermtrainingbehaviorusingsequentialversuslayer-parallelwithmultipleGPUs.
+Ontheleft, thevalidation accuracyfortheMCexamplewith64transformerlayers, L = 2, and
+c =2. Ontheright,thevalidationBLEUfortheMTexamplewith6-6transformerlayers,L=2,
+f
+andc =3. Theplotcorrespondingto“2–>1”labelillustratesaswitchfromparalleltrainingwith2
+f
+GPUstoserialtrainingwith1GPU.Notethattwodepicted“2–>1”runsswitchfromaparallelto
+serialrunatdifferentpointsduringthetraining.
+3. Visiontransformer(ViT)isanencoder-onlyimagetransformer[Dosovitskiyetal.,2020]. We
+applyaclassicalViTtotheImageNetdataset[Dengetal.,2009].
+4. Machine translation (MT) consists of translating German sentences into English using the
+OPUSdataset[TiedemannandThottingal,2020],thepre-trainedMarianTokenizer[Tiedemann
+andThottingal,2020],andanencoder-decodertransformerinspiredbyJunczys-Dowmuntetal.
+[2018]withtheneuralODEmodificationsfromabove.
+5. GPT2pre-trainingisthedecoder-onlylanguagemodeldevelopedbyOpenAI[Radfordetal.,
+2018]. We use the nanoGPT implementation [Karpathy, 2022] trained on OpenWebText
+[Gokaslan and Cohen, 2019] with minor modifications to the time stepping detailed in sec-
+tionB.
+Foreachtask,wedemonstratethatlayer-parallelforwardandbackwardpropagation,withadaptive
+control of inexactness, achieves the same accuracy as serial computations. We further show the
+strongscalabilitypropertieswithrespecttoavaryingnumberoftransformerblocksN,theMGRIT
+coarseningfactorc ,andthenumberofMGRITlevelsL. Hyperparameterconfigurationsforall
+f
+benchmarkproblemsareprovidedintheAppendix.
+4.1 ConvergenceofMGRIT
+Inthissection,wedemonstratetheimpactofthelayer-parallelapproachontrainingaccuracy.
+MCTraining Figure3(left)comparesthebehaviorofsequentialandlayer-paralleltrainingwith
+increasingnumberofGPUs.Theinexactnessinthegradientsdoesnotnegativelyimpactthevalidation
+accuracy: layer-parallelachievesthesameaccuracyasserialtraining.
+MTTraining Figure3(right)illustrateshowtheerrormayaccumulateduetoinexactlossand
+gradient evaluations resulting in slight deterioration in validation BLEU compared to the serial
+baseline. However, switching to sequential training after an efficient, parallel phase, allows the
+optimizertoquicklyrecoverthevalidationBLEUscoreachievedinserial.
+BERT/GPT/ViTPretraining InFigure4(left),weshowthelossvalueofpretraininga128layer
+BERTmodel[Wangetal.,2024]usingserial(blue),purelayer-parallel(red)andswitchingfrom
+paralleltoserial(green,withmultipleseedsshadedingrey). Thelayer-parallelconfigurationis2
+levelsforbothforwardandbackwardsolve,andc =4on4GPUs. Weusethislargemodelasan
+f
+exemplarforthelossdynamics. Duringpretraining,layer-parallelconvergespastthelossplateau
+typicalofBERT[Nagatsukaetal.,2021,Fuetal.,2023],butdivergesandthenstagnatesduetothe
+inexactness.
+We can use the indicator as described in Section 3.2.3 to demarcate the need to switch to using
+serial(exact)gradientcomputations. Figure4(left,green)showsafterswitchingtrainingdynamics
+closelymatchtheserialcase. InTable1,performancedifferencesaredisplayedforafewGLUE
+7
+benchmarkscomparingserialtrainedmodels,tothosetrainedwiththeswitchingtrainingschemes.
+Thedifferencesbetweenthefine-tunedmodelsdemonstratelayer-parallelyieldsparallelspeedups
+andcommensurateaccuracy.
+ThelossresultsforGPTandViTfollowsanextremelysimilarlytrajectory,asshowninFigure4
+(middle/right). While GPT is a decoder-only network, and ViT operates on image data, we see
+thatinexactgradients(red)causesadivergenceintrainingdynamicscomparedtoexactdynamics
+(blue). However, by using the indicator, we are able to recover the dynamics by switching from
+serialtoparallelwheretheindicatorFigure5dictates. Weusea32layerViTwiththeneuralODE
+modificationwiththeserialforward,andonelevelparallelbackwardsforMGRITusing2GPUs.
+TheGPTnetworkconsistsof20layerswiththeneuralODEmodificationononlythemiddle16
+layerswithserialforwardandonelevelparallelbackwards;formoredetail,pleaseseeSectionB.
+7
+6
+5
+4
+10 15 20
+Batches(x1000)
+ssoL
+5.5
+5
+4.5
+4
+3.5
+0 1 2 3
+Batches(x1000)
+7
+6
+5
+0 2 4 6 8 10
+Batches(x1000)
+Figure4: Plotsofthelossforserial(blue),pureparallel(red)andswitchingtoserialfromparallel
+(green)fortheBERT(left),GPT(middle)andViT(right). Inalltheexperiments,weseethatpurely
+layer-parallelrunswilldivergefromserialtrainingafteracertainpoint. However,onecanrecoverthe
+originaldynamicsbyswitchingfromparalleltoserialatanappropriatetimegivenbytheindicator.
+ThegraycolorintheBERTsubplotindicatesthemin/maxoverthreedifferentseeds.
+2
+1.5
+1
+0.5
+0 2 4 6
+Batches(x1000)
+rotacidnI 1 1
+0.5 0.5
+0
+0 0.5 1 0 2 4 6
+Batches(x1000) Batches(x1000)
+Figure5: TheindicatorvaluesforBERT(forwardinred,backwardinblue),ViTandGPT(backward
+inblue)usingMGRIT.Weseethatatthe70000thbatch,1000th,and6000thbatchrespectively,the
+indicatorsexceed1,meaningthatoneshouldswitchtoexactgradientcomputationthen.
+4.2 Scalingstudies
+Inthissection,weinvestigatetheparallelscalingpropertiesofthelayer-parallelapproach. Figure6
+shows the speedup achieved for encoder-only transformers: (left) the BERT task with c = 4,
+f
+8
+Table1: AbsolutedifferencesinlossandaccuracyforsubsetofGLUEtaskperformancecomparison
+betweenserialandparallelfollowedbyserial(adaptiveswitching)
+TaskName ∆inLoss ∆inAcc.
+CoLA(CorpusofLinguisticAcceptability) 3.99e-4 0%
+MRPC(MicrosoftResearchParaphraseCorpus) 1.10e-2 0%
+QNLI(QuestionNaturalLanguageInference) 3.38e-4 1.2%
+3
+2
+1
+0
+1 2 4 8
+GPUs
+pudeepS
+N
+Enc
+32
+64
+128
+256
+1 2 4 8 1 2 4 8
+GPUs GPUs
+Figure6: Speedupoflayer-parallelforencoder-onlytransformersusingL = 2. Left: BERT,on
+Singra,1forward,and1backwarditeration,withc =4. Middle: MC,onJean-Zay,2forward,1
+f
+backwarditerations,withc =2. Right: ViT,onSingra,serialforward,and1backwarditeration,
+f
+withc =4. SeesectionCforsystemdetails.
+f
+(middle)theMCtaskwithc = 2, and(right)theViTmodelwithc = 4. AlltasksuseL = 2
+f f
+levels. Theobtainedresultsindicatethatthenumericalandcommunicationoverheadintroducedby
+MGRITmayoccasionallyleadtoincreasedexecutiontimewhenusingtwoGPUsforsmallproblems.
+However,asmorecomputationalresourcesareemployedfordeepermodels,thelayer-parallelism
+enabledbyMGRITyieldsasubstantialreductionintheoverallexecutiontime.
+AsimilarconclusionisdrawnfromFigure7. Thestrongscalingpropertiesfortheencoder-decoder
+architecture used in the MT task are illustrated. The model size ranges from 80 layers, to 320
+layers. Whilethereareapparentspeedups,additionalimprovementscanbeobtainedusingalternative
+algorithmicparametersforlayer-parallel. Weprovidepracticalguidanceforparameterselectionby
+analyzingtheimpactofthenumberoflevels(L),coarseningfactor(c ),andtransformerdepth(N)
+f
+ontheparallelscaling. Tothisend,weconsidertheMCexamplewithlayer-parallelconfiguredto
+performtwoforwardandonebackwarditeration. Figure8showsthatthescalabilityimproveswith
+anincreasingnumberoflevels(left)andlargercoarseningfactors(middle). However,takingalarge
+coarseningfactorcanhaveanimpactontheconvergencerate[Falgoutetal.,2014,Dobrevetal.,
+2017]. Thelastpanel(right)showthebenefitsoflayer-paralleltrainingimprovewithnetworkdepth.
+Finally, we perform a large scale study combining two different but compatible parallelization
+methods: layer-parallelwiththetypicaldataparallelapproach. Weconsiderarelativelylarge64
+layerGPTmodelwithscalingbatchsizes,butotherwisethesamesettingsastheGPTpretrainingas
+above. InFigure9,weshowtheresultsforbudgetsof16,32,and64totalGPUswithbatchsizesof
+16,32,and64,respectively,sothattheoverallper-GPUwork-loadisuniform. Thex-axisdenotesthe
+data-paralleldegree. Forexample,whenusing32totalGPUswithadata-parallelsizeof8,thebatch
+4
+3
+2
+1
+2 4 8
+GPUs
+pudeepS
+N −N
+Enc Dec
+40−40
+80−80
+160−160
+Ideal
+2 4 8 2 4 8
+GPUs GPUs
+Figure7: StrongscalingonJean-ZaywithrespecttoincreasingnumberoflayersN +N for
+Enc Dec
+MTtask. MGRITusesc =4,L=2,1backward,and2forwarditerations.
+f
+9
+4
+3
+2
+1
+2 4 8
+GPUs
+pudeepS
+2 4 8 2 4 8
+GPUs GPUs
+4,3,2,1
+L c f N Enc
+2 2 256
+3 4 512
+4 8 768
+5 16 1024
+Figure8:TheimpactofMGRITparametersonscalingproperties.Theexperimentisperformedusing
+2forwardand1backwarditerationfortheMCtaskonJean-Zay. Left: c = 2andN = 1024.
+f Enc
+Middle: L=2andN =1024. Right: L=3andc =4. Theblanklinedepictsidealscaling.
+Enc f
+4
+3
+2
+1
+1 2 4 8 16 32
+DataParallelSize
+sdnoceS 16GPUs
+32GPUs
+64GPUs
+Figure 9: Time per batch for a 64 layer GPT model under a fixed total GPU budget, combining
+dataparallelismandlayer-parallelism. BatchsizesarescaledproportionallytotheGPUcount. The
+x-axisdenotesthedata-paralleldegree;theremainingGPUsareusedforlayer-parallelism. Each
+curveexhibitsaconvexshape,indicatinganoptimalbalancepointbetweendataandlayerparallelism
+thatminimizesruntimebyexposingadditionalmodelparallelismwhilecontrollingcommunication
+overheads.
+issplitacross8ranks(i.e.,8samplesperGPU),whilethemodelispartitionedwithlayer-parallel
+acrosstheremaining32/8 = 4GPUs,resultinginapproximately16transformerlayersperGPU.
+ForeachofthethreeGPUbudgets,thetimeperbatchisaparabolicfunctionofthedataparallel
+size. Onetheonehand,iftoomuchdataparallelismisused,thenthefinalall-to-allcallfordata
+parallelismbecomesprohibitivelyexpensive,howeveriftoolittledataparallelismisused,thenwe
+failtotakeadvantageoftheexcellentscalingpropertiesofdataparallelismforsmallernumbersof
+GPUs. Thisindicatesthatlayer-parallelallowsforadditionalspeedupoverjustpuredataparalleldue
+tomoreexposedtotalparallelism,andthatthetwoapproaches,withorthogonalformsofparallelism,
+complementeachother.
+5 Conclusion
+WedemonstratedthetrainingofneuralODEbasedtransformermodelsusingalayer-parallelapproach
+basedonMGRIT.Thisalgorithmusesinexactcomputationsofthegradientsfortraininginorderto
+exposeadditionalparallelismoverthelayerdimension. Thisformoflayer-parallelismiscompatible
+withotherapproaches,likedataortensorparallelism. Scalability,parallelspeedupsusingmultiple
+GPUs,andtrainingaccuracyaredemonstratedforthreenaturallanguageprocessingbenchmarks
+whencomparedtostandardserialtraining. Additionally, theapproachnaturallydistributeslarge
+memoryloadsacrossmultipleGPUsallowingforthetrainingofverydeeptransformermodels.
+Wealsoexploredtheimpactofinexactgradientsresultinginastatisticallybiasedgradient. Layer-
+paralleltrainingmatchedserialtrainingduringtheearlystagesofpre-training. Howeverforsome
+problems,inexactgradientseventuallyledtodivergingorstagnanttrainingdynamics. Wecorrected
+thisbydevelopingindicatorstodetectthedivergenceorstagnationandthentransitiontoaserial
+gradientcomputation. Weanticipatethistomotivatethedevelopmentofnewinexactapproaches
+exposinggreaterparallelismfortraininglargetransformers. Futureworkwillfocusonimproving
+10
+MGRITconvergenceandtheimplementationdetailstoincludemorevectorizationwhilereducing
+overheads.
+Acknowledgements
+ThisworkwaspartiallysupportedbytheSwissPlatformforAdvancedScientificComputing(PASC)
+projectExaTrainandbytheSwissNationalScienceFoundationthroughtheprojects“ML2–Multi-
+levelandDomainDecompositionMethodsforMachineLearning”(197041). Moreover,thiswork
+benefitedfromtheAIInterdisciplinaryInstituteANITI,fundedbytheFrance2030programunder
+GrantAgreementNo. ANR-23-IACL-0002. SomenumericalresultswerecarriedoutusingHPC
+resourcesfromGENCI-IDRIS(GrantNo. AD011015766).
+Thispaperdescribesobjectivetechnicalresultsandanalysis. Anysubjectiveviewsoropinionsthat
+mightbeexpressedinthepaperdonotnecessarilyrepresenttheviewsoftheU.S.Departmentof
+EnergyortheUnitedStatesGovernment.
+ThisarticlehasbeenauthoredbyanemployeeofNationalTechnology&EngineeringSolutions
+ofSandia,LLCunderContractNo. DE-NA0003525withtheU.S.DepartmentofEnergy(DOE).
+The employee owns all right, title and interest in and to the article and is solely responsible for
+its contents. The United States Government retains and the publisher, by accepting the article
+forpublication,acknowledgesthattheUnitedStatesGovernmentretainsanon-exclusive,paid-up,
+irrevocable,world-widelicensetopublishorreproducethepublishedformofthisarticleorallow
+others to do so, for United States Government purposes. The DOE will provide public access
+to these results of federally sponsored research in accordance with the DOE Public Access Plan
+https://www.energy.gov/downloads/doe-public-access-plan. SAND2026-15880O.
+11
+References
+MartínAbadi,PaulBarham,JianminChen,ZhifengChen,AndyDavis,JeffreyDean,MatthieuDevin,
+SanjayGhemawat,GeoffreyIrving,MichaelIsard,etal. Tensorflow: Asystemforlarge-scale
+machinelearning. 12thUSENIXSymposiumonOperatingSystemsDesignandImplementation
+(OSDI16),pages265–283,2016.
+Stefania Bellavia, Gianmarco Gurioli, Benedetta Morini, and Philippe Louis Toint. The impact
+ofnoiseonevaluationcomplexity: thedeterministictrust-regioncase. JournalofOptimization
+TheoryandApplications,196(2):700–729,2023.
+TalBen-NunandTorstenHoefler. Demystifyingparallelanddistributeddeeplearning: Anin-depth
+concurrencyanalysis. ACMComputingSurveys(CSUR),52(4):1–43,2019.
+Cristian Bodnar, Wessel P Bruinsma, Ana Lucic, Megan Stanley, Johannes Brandstetter, Patrick
+Garvan,MaikRiechert,JonathanWeyn,HaiyuDong,AnnaVaughan,etal. Aurora: Afoundation
+modeloftheatmosphere. arXivpreprintarXiv:2405.13063,2024.
+James Bradbury, Roy Frostig, Peter Hawkins, Matthew James Johnson, Chris Leary, Dougal
+Maclaurin, George Necula, Adam Paszke, Jake VanderPlas, Skye Wanderman-Milne, and
+Qiao Zhang. JAX: composable transformations of Python+NumPy programs, 2018. URL
+http://github.com/jax-ml/jax.
+Achi Brandt and Oren E Livne. Multigrid Techniques: 1984 Guide with Applications to Fluid
+Dynamics,RevisedEdition. SIAM,2011.
+Ricky TQ Chen, Yulia Rubanova, Jesse Bettencourt, and David K Duvenaud. Neural ordinary
+differentialequations. Advancesinneuralinformationprocessingsystems,31,2018.
+EricCCyr,StefanieGünther,andJacobBSchroder. Multilevelinitializationforlayer-paralleldeep
+neuralnetworktraining. arXivpreprintarXiv:1912.08974,2019.
+EricC.Cyr,JensHahne,NicholasS.Moore,JacobB.Schroder,BenS.Southworth,andDavidA.
+Vargas.Torchbraid:High-performancelayer-paralleltrainingofdeepneuralnetworkswithmpiand
+gpuacceleration.ACMTrans.Math.Softw.,August2025.ISSN0098-3500.doi:10.1145/3759244.
+URLhttps://doi.org/10.1145/3759244. JustAccepted.
+FedericoDanieli,MiguelSarabia,XavierSuauCuadros,PauRodriguez,andLucaZappella.Deeppcr:
+Parallelizingsequentialoperationsinneuralnetworks. AdvancesinNeuralInformationProcessing
+Systems,36:47598–47625,2023.
+JeffreyDean,GregSCorrado,RajatMonga,KaiChen,MatthieuDevin,QuocVLe,MarkZMao,
+Marc’AurelioRanzato,AndrewSenior,PaulTucker,etal. Largescaledistributeddeepnetworks.
+Advancesinneuralinformationprocessingsystems,25:1223–1231,2012.
+YuryDemidovich,GrigoryMalinovsky,IgorSokolov,andPeterRichtárik. Aguidethroughthezoo
+ofbiasedsgd. AdvancesinNeuralInformationProcessingSystems,36:23158–23171,2023.
+JiaDeng, WeiDong, RichardSocher, Li-JiaLi, KaiLi, andLiFei-Fei. Imagenet: Alarge-scale
+hierarchicalimagedatabase. In2009IEEEconferenceoncomputervisionandpatternrecognition,
+pages248–255.Ieee,2009.
+JacobDevlin,Ming-WeiChang,KentonLee,andKristinaToutanova. Bert: Pre-trainingofdeep
+bidirectionaltransformersforlanguageunderstanding. arXivpreprintarXiv:1810.04805,2018.
+VADobrev,TzKolev,NAndersPetersson,andJacobBSchroder. Two-levelconvergencetheory
+formultigridreductionintime(mgrit). SIAMJournalonScientificComputing,39(5):S501–S527,
+2017.
+AlexeyDosovitskiy,LucasBeyer,AlexanderKolesnikov,DirkWeissenborn,XiaohuaZhai,Thomas
+Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al. An
+image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint
+arXiv:2010.11929,2020.
+12
+WeinanE. Aproposalonmachinelearningviadynamicalsystems. CommunicationsinMathematics
+andStatistics,5(1):1–11,2017. doi: 10.1007/s40304-017-0103-z. URLhttps://doi.org/10.
+1007/s40304-017-0103-z.
+R. D. Falgout, S. Friedhoff, Tz. V. Kolev, S. P. MacLachlan, and J. B. Schroder. Parallel time
+integrationwithmultigrid. SIAMJournalonScientificComputing,36(6):C635–C661,2014. doi:
+10.1137/130944230.
+WilliamFedus,BarretZoph,andNoamShazeer. Switchtransformers: Scalingtotrillionparameter
+modelswithsimpleandefficientsparsity. JournalofMachineLearningResearch,23(120):1–39,
+2022.
+JingwenFu,TaoYang,YuwangWang,YanLu,andNanningZheng. Breakingthroughthelearning
+plateausofin-contextlearningintransformer. arXivpreprintarXiv:2309.06054,2023.
+MartinJGander. 50yearsoftimeparalleltimeintegration. InMultipleShootingandTimeDomain
+DecompositionMethods: MuS-TDD,Heidelberg,May6-8,2013,pages69–113.Springer,2015.
+Aaron Gokaslan and Vanya Cohen. Openwebtext corpus. http://Skylion007.github.io/
+OpenWebTextCorpus,2019.
+StefanieGunther,LarsRuthotto,JacobBSchroder,EricCCyr,andNicolasRGauger. Layer-parallel
+trainingofdeepresidualneuralnetworks. SIAMJournalonMathematicsofDataScience,2(1):
+1–23,2020.
+EldadHaberandLarsRuthotto. Stablearchitecturesfordeepneuralnetworks. Inverseproblems,34
+(1):014004,2017.
+WolfgangHackbusch. Multi-gridmethodsandapplications,volume4. SpringerScience&Business
+Media,2013.
+YanpingHuang,YoulongCheng,AnkurBapna,OrhanFirat,DehaoChen,MiaChen,HyoukJoong
+Lee, Jiquan Ngiam, Quoc V Le, Yonghui Wu, et al. Gpipe: Efficient training of giant neural
+networksusingpipelineparallelism. Advancesinneuralinformationprocessingsystems,32,2019.
+MarcinJunczys-Dowmunt,RomanGrundkiewicz,TomaszDwojak,HieuHoang,KennethHeafield,
+TomNeckermann,FrankSeide,UlrichGermann,AlhamFikriAji,NikolayBogoychev,AndréF.T.
+Martins,andAlexandraBirch. Marian: FastneuralmachinetranslationinC++. InProceedingsof
+ACL2018,SystemDemonstrations,pages116–121,Melbourne,Australia,July2018.Association
+forComputationalLinguistics. URLhttp://www.aclweb.org/anthology/P18-4020.
+AndrejKarpathy. NanoGPT. https://github.com/karpathy/nanoGPT,2022.
+Vijay Anand Korthikanti, Jared Casper, Sangkug Lym, Lawrence McAfee, Michael Andersch,
+MohammadShoeybi,andBryanCatanzaro.Reducingactivationrecomputationinlargetransformer
+models. ProceedingsofMachineLearningandSystems,5,2023.
+BeiLi,QuanDu,TaoZhou,ShuhanZhou,XinZeng,TongXiao,andJingboZhu. ODEtransformer:
+Anordinarydifferentialequation-inspiredmodelforneuralmachinetranslation. arXivpreprint
+arXiv:2104.02308,2021a.
+Zhuohan Li, Siyuan Zhuang, Shiyuan Guo, Danyang Zhuo, Hao Zhang, Dawn Song, and Ion
+Stoica. Terapipe: Token-levelpipelineparallelismfortraininglarge-scalelanguagemodels. In
+InternationalConferenceonMachineLearning,pages6543–6552.PMLR,2021b.
+ShengchaoLin. Multilevel-in-timemethodsforoptimalcontrolofPDEsandtrainingofRecurrent
+NeuralNetworks. PhDthesis,RiceUniversity,2022.
+YinhanLiu, MyleOtt, Naman Goyal, JingfeiDu, MandarJoshi, DanqiChen, OmerLevy, Mike
+Lewis,LukeZettlemoyer,andVeselinStoyanov. Roberta: Arobustlyoptimizedbertpretraining
+approach. arXivpreprintarXiv:1907.11692,2019.
+YuchenLou,ShigengSun,andJorgeNocedal. Designguidelinesfornoise-tolerantoptimizationwith
+applicationsinrobustdesign. SIAMJournalonScientificComputing,47(3):A1335–A1357,2025.
+13
+Yiping Lu, Aoxiao Zhong, Quanzheng Li, and Bin Dong. Beyond finite layer neural networks:
+Bridgingdeeparchitecturesandnumericaldifferentialequations. InInternationalConferenceon
+MachineLearning,pages3276–3285.PMLR,2018.
+GordonEuhyunMoonandEricCCyr. Paralleltrainingofgrunetworkswithamulti-gridsolverfor
+longsequences. arXivpreprintarXiv:2203.04738,2022.
+KoichiNagatsuka,CliffordBroni-Bediako,andMasayasuAtsumi.Pre-trainingabertwithcurriculum
+learningbyincreasingblock-sizeofinputtext. InProceedingsoftheInternationalConferenceon
+RecentAdvancesinNaturalLanguageProcessing(RANLP2021),pages989–996,2021.
+DeepakNarayanan,AaronHarlap,AmarPhanishayee,VivekSeshadri,NikhilRDevanur,GregoryR
+Ganger,PhillipBGibbons,andMateiZaharia. Pipedream: Generalizedpipelineparallelismfor
+dnntraining. InProceedingsofthe27thACMsymposiumonoperatingsystemsprinciples,pages
+1–15,2019.
+DeepakNarayanan,MohammadShoeybi,JaredCasper,PatrickLeGresley,MostofaPatwary,Vijay
+Korthikanti, Dmitri Vainbrand, Prethvi Kashinkunti, Julie Bernauer, Bryan Catanzaro, et al.
+Efficientlarge-scalelanguagemodeltrainingongpuclustersusingmegatron-lm. InProceedings
+oftheinternationalconferenceforhighperformancecomputing,networking,storageandanalysis,
+pages1–15,2021.
+JoakimNivre,DanielZeman,FilipGinter,andFrancisTyers.Universaldependencies.InProceedings
+ofthe15thConferenceoftheEuropeanChapteroftheAssociationforComputationalLinguistics:
+TutorialAbstracts,2017.
+Benjamin W Ong and Jacob B Schroder. Applications of time parallelization. Computing and
+VisualizationinScience,23:1–15,2020.
+AdamPaszke,SamGross,FranciscoMassa,AdamLerer,JamesBradbury,GregoryChanan,Trevor
+Killeen,ZemingLin,NataliaGimelshein,LucaAntiga,AlbanDesmaison,AndreasKöpf,Edward
+Yang,ZachDeVito,MartinRaison,AlykhanTejani,SasankChilamkurthy,BenoitSteiner,LuFang,
+JunjieBai,andSoumithChintala. PyTorch: animperativestyle,high-performancedeeplearning
+library. CurranAssociatesInc.,RedHook,NY,USA,2019.
+RemigijusPaulavicˇiusandJuliusŽilinskas. Analysisofdifferentnormsandcorrespondinglipschitz
+constantsforglobaloptimization. TechnologicalandEconomicDevelopmentofEconomy,12(4):
+301–306,2006.
+AlejandroQueiruga,NBenjaminErichson,LiamHodgkinson,andMichaelWMahoney. Stateful
+ODE-netsusingbasisfunctionexpansions. AdvancesinNeuralInformationProcessingSystems,
+34:21770–21781,2021.
+Alec Radford, Karthik Narasimhan, Tim Salimans, Ilya Sutskever, et al. Improving language
+understandingbygenerativepre-training. 2018.
+ColinRaffel,NoamShazeer,AdamRoberts,KatherineLee,SharanNarang,MichaelMatena,Yanqi
+Zhou,WeiLi,andPeterJLiu. Exploringthelimitsoftransferlearningwithaunifiedtext-to-text
+transformer. Journalofmachinelearningresearch,21(140):1–67,2020.
+Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase, and Yuxiong He. Deepspeed: System op-
+timizations enable training deep learning models with over 100 billion parameters. In Pro-
+ceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery &
+Data Mining, KDD ’20, page 3505–3506, New York, NY, USA, 2020. Association for Com-
+puting Machinery. ISBN 9781450379984. doi: 10.1145/3394486.3406703. URL https:
+//doi.org/10.1145/3394486.3406703.
+QiSun,HexinDong,ZeweiChen,WeizhenDian,JiachengSun,YitongSun,ZhenguoLi,andBin
+Dong. Layer-paralleltrainingofresidualnetworkswithauxiliaryvariables. InTheSymbiosisof
+DeepLearningandDifferentialEquations,2021.
+JörgTiedemannandSanthoshThottingal. OPUS-MT—Buildingopentranslationservicesforthe
+World. InProceedingsofthe22ndAnnualConferenecoftheEuropeanAssociationforMachine
+Translation(EAMT),Lisbon,Portugal,2020.
+14
+UlrichTrottenberg,CorneliusWOosterlee,andAntonSchuller. Multigridmethods. Academicpress,
+2001.
+LeslieGValiant. Abridgingmodelforparallelcomputation. CommunicationsoftheACM,33(8):
+103–111,1990.
+AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,AidanNGomez,Łukasz
+Kaiser,andIlliaPolosukhin. Attentionisallyouneed. Advancesinneuralinformationprocessing
+systems,30,2017.
+HongyuWang,ShumingMa,LiDong,ShaohanHuang,DongdongZhang,andFuruWei. Deepnet:
+Scaling transformers to 1,000 layers. IEEE Transactions on Pattern Analysis and Machine
+Intelligence,2024.
+Ruibin Xiong, Yunchang Yang, Di He, Kai Zheng, Shuxin Zheng, Chen Xing, Huishuai Zhang,
+YanyanLan,LiweiWang,andTieyanLiu. Onlayernormalizationinthetransformerarchitecture.
+InInternationalConferenceonMachineLearning,pages10524–10533.PMLR,2020.
+LintingXue,NoahConstant,AdamRoberts,MihirKale,RamiAl-Rfou,AdityaSiddhant,Aditya
+Barua,andColinRaffel. mt5: Amassivelymultilingualpre-trainedtext-to-texttransformer. arXiv
+preprintarXiv:2010.11934,2020.
+AmirZeldes. TheGUMcorpus:Creatingmultilayerresourcesintheclassroom. LanguageResources
+andEvaluation,51(3):581–612,2017. doi: http://dx.doi.org/10.1007/s10579-016-9343-x.
+CeZhou,QianLi,ChenLi,JunYu,YixinLiu,GuangjingWang,KaiZhang,ChengJi,QibenYan,
+LifangHe,etal. Acomprehensivesurveyonpretrainedfoundationmodels: Ahistoryfrombertto
+chatgpt. InternationalJournalofMachineLearningandCybernetics,pages1–65,2024.
+YonghaoZhuang,HexuZhao,LianminZheng,ZhuohanLi,EricXing,QirongHo,JosephGonzalez,
+IonStoica,andHaoZhang. Onoptimizingthecommunicationofmodelparallelism. Proceedings
+ofMachineLearningandSystems,5,2023.
+15
+A MGRIT-FCFRelaxation
+AsdiscussedinSection3.2.1,theMGRITalgorithmexposesadditionalparallelismthatallowsthe
+distributionoflayersacrossmultiplecomputedevices(e.g. GPUs). Figure2presentsthestructure
+of a two level scheme. However for a full picture of MGRIT, we now provide details about the
+relaxationoperatorS ,whichisneededforMGRITefficiencyandscalability. Tothisend,wefocus
+0
+onthefinestlevelofaneuralODEbasedtransformerarchitecture. Followingthenotationusedin
+Section 3.2.1, our network has N time-steps, coarsened at a rate of c . The value c implicitly
+0 f f
+defines“coarsepoint”layers,i.e.,thelayers[0,c ,2c ,3c ,...],whichgoontoformthefirstcoarse
+f f f
+grid. Allotherpointsare“finepoints.”
+Forwardpropagationisdenotedas
+Z =Φ(Z )forn=0...N −1, (5)
+n+1 n 0
+whereΦisadiscreteforwardpropagatorimplementingencoder-decoder(Eq.3)orencoder/decoder-
+only(Eq.1)architectures. Thissectionexplicitlydiscussesonlyforwardpropagation. Backward
+propagationissimilar,butusesanadjointoperatorinthepropagationsteptomovebackwardthrough
+thetimedomain.
+TherelaxationwhichformstheactionofS consistsoftwophases. Thefirstoneisfine-relaxation
+0
+(F-relaxation),wherebyEquation(5)isusedtopropagateZ startingfromeachcoarsepointuntil,
+n
+butnotincluding,thefollowingcoarsepoint. Mathematicallythisisexpressedas
+Z =Φ◦Φ◦...◦Φ◦Z , (6)
+n+cf−1
+(cid:124) (cid:123)(cid:122) (cid:125)
+n
+cf−1times
+wherenisacoarsepoint(anintegermultipleofc ). Byconstruction,F-relaxationcanbeapplied
+f
+withN /c wayparallelism. Thesecondphaseisthecoarse-relaxation(C-relaxation). Thistakesthe
+0 f
+finalstep
+Z =Φ(Z ) (7)
+n+cf n+cf−1
+foreachoftheN /c coarsepoints. Hereagain,theavailableparallelismisN /c .
+0 f 0 f
+CombiningthesetwophasesbyfirstapplyingF-relaxation,thenC-relaxation,andfinallyF-relaxation
+again,yieldsFCF-relaxation. Again,thiscanbecomputedwithN /c wayparallelism. InFalgout
+0 f
+etal.[2014],theauthorsshowexperimentallythattheuseofFCF-relaxationisneededformultilevel
+scalability,yieldingasimilarresulttomultigridreductioninspace. InDobrevetal.[2017],theneed
+forFCF-relaxationisfurtherdevelopedtheoreticallyforlinearmodelproblems,whereFCF-relaxation
+isshowntodamperroroverlargepartsofthespectrumeffectively(i.e.,eigenvaluesofthespatial
+discretizationwithmagnitudeawayfrom1,oftencorrespondingtooscillatoryerror). FCF-relaxation
+is presented formally in Algorithm 1. At the start of the algorithm, Z contains a guess for the
+n
+features, while at the conclusion, the features are updated with an improved approximation with
+reducedhighfrequencyerrors(intime). TheoperatorS isthendefinedasmappingfromtheinitial
+0
+guessforeachZ ,totheupdated,improvedfeatures. Theparallel-forblocksindicatewherethe
+n
+relaxationschemeexposesparallelism.
+B Bufferlayers
+TheconvergenceofMGRITinthelinearcaseisdeterminedbythestabilityfunctionofthetime-
+steppingschemeandtheeigenvaluesofthetime-steppingmatrix[Dobrevetal.,2017]. Inthecase
+ofMGRIT’sapplicationtoneuralnetworkpretraining, oneisthereforeinterestedinthestability
+constraintsarisingfromtheEulertime-steppingschemeduetothefeed-forwardstructureofmodern
+neuralnetworks. Toinvestigatethisfurther,weproposeexaminingtheLipschitzconstantsarising
+frompretraining,whichcanbeeasilyestimatedevenfortransformers.
+Asmotivation,supposewearesolving
+dy(t)
+=f(y(t)),
+dt
+for some given initial condition (a simplification of Equation (4)). An Euler iteration would be
+yn+1 =yn+∆tf(yn),andlettheerrorbeen =y(t )−yn. RecallingtheusualTaylor’stheorem,
+n
+16
+Algorithm1FCF-Relaxation
+1: procedureFCF-RELAXATION(Z)
+2: parallel-fork←0toN /c −1do ▷BeginfirstF-relaxation
+0 f
+3: n←c k
+f
+4: fori←0toc −2do ▷Doc −1propagationsteps
+f f
+5: Z ←Φ(Z )
+n+i+1 n+i
+6: endfor
+7: endparallel-for
+8: parallel-fork←1toN /c do ▷BeginfirstC-relaxation
+0 f
+9: n←c k
+f
+10: Z =Φ(Z )
+n n−1
+11: endparallel-for
+12: parallel-fork←0toN /c −1do ▷BeginsecondF-relaxation
+0 f
+13: n←c k
+f
+14: fori←0toc −2do
+f
+15: Z ←Φ(Z )
+n+i+1 n+i
+16: endfor
+17: endparallel-for
+18: endprocedure
+Figure 10: Plots illustrating the Lipschitz constants of each layer as one trains a GPT2-decoder
+network. Notethatthelastfewlayersarethefirsttochange,followedbytheinitialtransformerlayer.
+alongwiththeassociatedassumptionsofsmoothness,y(t )=y(t )+∆tf(y(t ))+O(∆t2),one
+i+1 i i
+canwritetheerrorrelationas
+ei+1 =ei+∆t(f(y(t ))−f(yi))+O(∆t2)
+i
+=ei+∆t(f′(y∗)ei)+O(∆t2)=(1+∆tf′(y∗))ei+O(∆t2),
+where we used the mean value theorem to produce y∗. Thus, by the recursive nature, if
+(1+∆tf′(y∗))≫1,thenanyinitialerrorwouldamplifyandcauseissuesforMGRITwhenusing
+Euler’smethod.
+Basedonthisheuristic,weproposeexaminingthelargesteigenvalueoftheJacobianoftheindividual
+layers,whichcanindicatewhichlayersarecausingdivergencewhenapplyingMGRIT.Calculating
+theJacobianitselfforaself-attentionorMLPlayeriscomputationallyintractablegiventhelarge
+sequencelengthandhiddendimension. ThisleadsustoempiricallyestimatetheLipschitzconstant
+viaaMonteCarloapproach,whichistightlycorrelatedwiththeintendedvalue[Paulavicˇiusand
+Žilinskas,2006].
+In Figure 10, we show the estimated Lipschitz constants during the training of a GPT2 decoder
+networkintheusualserialfashion. Remarkably,asthenetworktrainsandbecomesmoreexpressive,
+17
+Figure 11: Plots illustrating the changes in relative weight values during the training of a GPT
+decoder-onlynetwork,withtransformerweightsbrokendownintoattentionandMLPcomponents.
+Whilealllayersclearlychange,theimpactontheLipschitzconstantisnotdirect.
+the rate of change of the Lipschitz constant at each layer is not uniform. It appears that the last
+fewlayerschangesignificantlyfirst,followedbytheinitiallayers,whilethemiddlelayersremain
+stagnantforlonger. Itisknownthatthegradientupdatesaregreaterinmagnitude[Wangetal.,2024]
+forthedeeperlayers,butwecannotexplaintheriseintheLipschitzconstantfortheearlylayers.
+WenotethatthechangeintheLipschitzconstantisunrelatedtothechangeinthemagnitudeofthe
+weightsthemselves, ∥w−w0∥ wherewistheweightsataspecificiterationandw denotestheinitial
+∥w0∥ 0
+weights,asshowninFigure11.
+RegardlessofthemechanicsdrivingthechangeintheLipschitzconstant,theprescriptionforMGRIT
+isclear: create“buffer”layerswherethefirstandlastlayersarecomputedserially,targetingexact
+computation of the layers with large estimated Lipschitz constants. MGRIT will perform layer-
+parallel computations on the middle portion, where the estimated Lipschitz constants are more
+modest. Inotherwords,afewtransformerlayersaremovedtotheopen/closelayersinFigure1from
+theParallelNet. Besidesmovingthelayers,wealsotweakedthe∆t(e.g. hfromEquation(3))for
+theopen/closelayers: wesimplygivethem∆t=1fortheopen/closelayers,whilethetransformer
+layers in the ParallelNet will have the typical ∆t = 1 where L is the number of layers in the
+L
+ParallelNet. Thismethodresultsingreatlyincreasedalignmentbetweentheserialandparallelruns
+indecoder-onlynetworks,asshownintheFigure12.
+C Hyperparameterandexperimentalsetup
+Theimplementationusesthelayer-parallelsoftwareTorchBraid[Cyretal.,2025]builtonPyTorch.
+ExperimentsandscalingstudiesareconductedontheHPCsystems: Jean-ZayGPUnodes, each
+equippedwitheightV100and720GBofmemoryandSingraGPUcomputenodes,consistingof
+dualAMDEPYC7513ProcessorsandasingleA10080GBGPU.
+Table2specifiesthehyperparametersforthetransformersusedtogeneratetheresultspresentedin
+Section4. ForallexcepttheBERT,theparametersofthetransformerlayersareinitializedusing
+PyTorch’s default initialization. For the BERT initialization, we follow the pre-LN initialization
+scalingdetailedin[Wangetal.,2024]thatprovidesenoughstabilityforustotraintheextremelylong
+BERTnetworkwithoutgradientcollapse. Inparticular,theMLP,value,andoutputprojectionsof
+√
+thetransformersarescaledby log2L. TheBERTdataispreprocessedusingamasked-language
+18
+5
+4.5
+4
+3.5
+3
+0 1 2 3 4 5
+Batches(x1000)
+ssoL
+Serial(buffer)
+Serial(nobuffer) 0.6
+0.4
+0.2
+0
+0 1 2 3 4 5
+Batches(x1000)
+ssoLniecnereffiDfo
+.laV
+.sbA
+Buffer
+Nobuffer
+Figure12: (Left)LossplotsoftrainingGPT-2decodersinserialfortwodifferentconfigurations.
+The buffer indicates four of the twenty layers are in the open/close layer (two each) with the
+remainingsixteeninthemiddlewith∆t = 1/16. Thenobufferindicatesallthelayersareinthe
+middlewith∆t = 1/20. Thereisnosignificantdifferenceinlossbetweentheserialversionsof
+thetwoconfigurations. (Right)Theabsolutedifferencebetweenthetwoserialrunsagainsttheir
+correspondinglayerparallelruns. Whiletheserialdynamicsaresimilar,notethathavingthebuffer
+layerssignificantlyreducesdifferencebetweenlayerparallellossandserialloss.
+Parameter/Example BERT MC ViT MT GPT
+Batch-sizeB 32 8 4 8 256
+Dim.feed-forward 3072 128 3072 2048 3072
+Dropout 0.1 - - 0.1 -
+Max.lengthL/Patchsize(ViT) 224 2048 16 274 1024
+Optimizer AdamW SGD Adam Adam AdamW
+Modeldimensiond 768 128 768 512 768
+Num.headsH 12 1 12 8 12
+Num.encoderlayersN 128 4 32 6 -
+Enc
+Num.decoderlayersN - - - 6 20
+Dec
+Table2: Transformerhyperparametersusedforallpretrainingproblems.
+modelingwith20%,whichishigherthantheoriginalBERTmanuscript,buthasbeenfoundtobe
+usefulinmorerecentimplementations[Liuetal.,2019].
+Table 3 reports the MGRIT configuration used for the strong scaling experiments described in
+Section4. Additionally,Table4summarizesthehyperparametervaluesusedfortuningtheMTtask,
+obtainedusingBayesianoptimization. Table5showsthehyperparametersfortheGLUEfine-tuning;
+weremarkthatfine-tuningonthe128layersBERTmodelprovedtobechallenging,butweonlyseek
+tocomparetheserialversustheparallel-switchingtrainingprocedures.
+Finally,wenotethatdropoutisoftenusedforregularization,however,thelayerparallelparadigm
+cannot simply adopt the Dropout classes in existing software. This is because the layers corre-
+spondingtoexactlyc (e.g. layers1,3,5,7inFigure2)musthavethesamemaskswhiledoingthe
+f
+relaxationandthecoarsesolvetoensuretheiterationswillconverge. Assuch,weimplementeda
+solutionwherebythemasksdonotupdateunlessexplicitlyspecifiedbytheuser.
+19
+Parameter/Example BERT MC ViT MT GPT
+Stepsizeh 1 1 1 1 1
+Num. levels 2 2 2 2 2
+Num. forwarditerations 1 2 - - -
+Num. backwarditerations 1 1 1 3 1
+Coarseningfactor 4 8 4 3 4
+Pre-smoothingrelaxation F F F F F
+Table3: Theconfigurationdetailsofthestrongscalingexperiments. Adashintheforwarditerations
+indicatesserialintheforwardsolve.
+Hyperparameter Values
+Modeldimension 512,1024
+Dropout 0.1,0.3
+Gradientaccumulation 1,4,16
+Parameterinitialization Torch’sdefault,Xavier
+Numberofwarmingsteps 2000,4000,8000
+Tokenization Spacy,BPE,Unigram
+Vocabularysize 8000,32000
+Table4: TherangeofhyperparametersusedduringBayesianoptimizationfortheMTtask.
+Parameter/Example CoLA MRPC QNLI
+Batchsize 8 16 16
+Weightdecay 0.01 0.01 0.01
+Learningrate 3e-5 2e-5 2e-5
+Warmupsteps 100 0 0
+Table5: Parametersforfine-tuningthesubsetofGLUEbenchmarksforthelargeBERTmodel. All
+optimizationisperformedusingPyTorchimplementationofAdamW.Allcomputationsaredonein
+FP16precision. Notethatweonlyseektocomparetheperformanceofthepureserialversusthe
+parallel-switchingmodel,andnottheexactvalues.
+20

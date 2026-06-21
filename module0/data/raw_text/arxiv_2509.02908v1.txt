@@ -1,0 +1,1009 @@
+Advancing Minority Stress Detection with
+Transformers: Insights from the Social Media
+Datasets
+Santosh Chapagain1, Cory J Cascalheira2,
+Shah Muhammad Hamdi1, Soukaina Filali Boubrahimi1,
+Jillian R. Scheer3
+1*Department of Computer Science, Utah State University, 4205 Old
+Main Hill, Logan, 84322, UT, USA.
+2VA Puget Sound Health Care System, Seattle VA Medical Center, 1660
+South Columbian Way, Seattle, 98108, WA, USA.
+3Department of Psychology, University of Rhode Island, 142 Flagg
+Road, Kingston, 02881, RI, USA.
+Contributing authors: santosh.chapagain@usu.edu;
+cjcascalheira@gmail.com; s.hamdi@usu.edu;
+soukaina.boubrahimi@usu.edu; jrscheer@syr.edu;
+Abstract
+Individuals from sexual and gender minority groups experience disproportion-
+atelyhighratesofpoorhealthoutcomesandmentaldisorderscomparedtotheir
+heterosexual and cisgender counterparts, largely as a consequence of minority
+stress as described by Meyer’s (2003) model. This study presents the first com-
+prehensive evaluation of transformer-based architectures for detecting minority
+stress in online discourse. We benchmark multiple transformer models including
+ELECTRA, BERT, RoBERTa, and BART against traditional machine learning
+baselinesandgraph-augmentedvariants.Wefurtherassesszero-shotandfew-shot
+learning paradigms to assess their applicability on underrepresented datasets.
+Experiments are conducted on the two largest publicly available Reddit cor-
+pora for minority stress detection, comprising 12,645 and 5,789 posts, and are
+repeated over five random seeds to ensure robustness. Our results demonstrate
+that integrating graph structure consistently improves detection performance
+across transformer-only models and that supervised fine-tuning with relational
+context outperforms zero and few-shot approaches. Theoretical analysis reveals
+1
+5202
+peS
+3
+]LC.sc[
+1v80920.9052:viXra
+thatmodelingsocialconnectivityandconversationalcontext viagraphaugmen-
+tation sharpens the models’ ability to identify key linguistic markers such as
+identity concealment, internalized stigma, and calls for support, suggesting that
+graph-enhancedtransformersofferthemostreliablefoundationfordigitalhealth
+interventions and public health policy.
+Keywords:SexualandGenderMinority,HumanComputerInteraction,Deep
+Learning,Transformers,Stress
+1 Introduction
+Stress is a state of worry or mental tension caused by a difficult situation. Minority
+stress is a specific type of stress that disproportionately affects marginalized groups
+—communitiesdiscriminatedagainstbasedonrace,sex,sexualorientationordisabil-
+ity(Meyer,2003).Minority stress isdefinedasthehighlevelsofstressexperiencedby
+stigmatized groups due to factors such as poor social support, low socioeconomic sta-
+tus, prejudice, and discrimination (Meyer, 2003). Lesbian, gay, bisexual, transgender,
+queer, and other people with sexual and gender minorities (LGBTQ+) are especially
+vulnerable among marginalized groups (Salerno et al, 2020). Minority stress plays a
+major role in health disparities (Pachankis et al, 2020; de Lange et al, 2022) between
+them and the majority population. Research shows that these forms of stress cause
+serious mental and physical health harm that includes anxiety, depression, and, in
+extremecases,suicidalideation(deLangeetal,2022).Minority stress theory(Meyer,
+2003) explains how adverse social conditions contribute to chronic stress and health
+disparities. Some of the key contributors (Cascalheira et al, 2023) to minority stress
+include (1) prejudiced events —discrimination and violence, (2) expected rejection
+—anticipate discrimination even in the absence of it, (3) identity concealment —con-
+cealingone’ssexualitytoavoiddiscrimination,(4)internalizedstigma—feelingshame
+and a desire to hide their identity, (5) gender dysphoria —distress from a mismatch
+between gender identity and birth sex.
+Although the impact of minority stress is well known, its detection remains chal-
+lenging due to its linguistic complexity (Cascalheira et al, 2023). In their paper,
+Cascalheira et al (2023) explain how minority stress is characterized by linguistic
+sophistication, involving advanced syntactic, semantic, and pragmatic elements. It
+servesasasocialdeterminantofhealthdisparitiesduetoitsuniquelinguisticfeatures:
+• Specific semantics and pragmatics: Minority stress expressions often incorpo-
+rate cultural idioms unique to LGBTQ+ communities, such as “I’m not out” or
+“I’m in the closet,” to convey identity concealment.
+• Psycholinguistic permutations:Thesamestressfactor,likeinternalizedstigma,
+can be expressed in varied ways, e.g., “I don’t like who I am” or “bisexual people
+just can’t make up their mind.”
+• Lexical density: Communicating minority stress requires a detailed context to
+distinguishitfromgeneralstressorotherhealthissues,highlightingthecomplexity
+of accurately interpreting such expressions.
+2
+Itssubtleandcomplexlinguisticexpressions,oftenmarkedbysarcasm,ambiguity,
+or implicit references, are difficult to identify using traditional methods. Addressing
+thisissuerequiresthedevelopmentofrobustdatasetsandadvancedmodelscapableof
+detecting minority stress in textual data. Such tools could enable early interventions,
+provide crucial support for at-risk individuals, and inform strategies to reduce the
+harmful effects of minority stress.
+Social media platforms, where LGBTQ+ individuals often disclose their experi-
+ences, have become valuable sources for studying linguistic expressions of minority
+stress (Durstewitz et al, 2019; Selkie et al, 2020; Woznicki et al, 2021). Reddit and
+its subreddits are ideal for studying minority stress because they provide access to
+diverse, authentic, and anonymous discussions in targeted communities (e.g. r/lgbt).
+These platforms capture culturally specific language, emotional expressions, and per-
+sonal narratives, offering rich, real-time, and publicly accessible data to analyze how
+minority stress manifests across various identities and contexts. As a result, Reddit
+has become an essential space for LGBTQ+ individuals to connect, come out, and
+seek support while minimizing the risk of prejudice (McDermott, 2015; McDermott
+and Roen, 2012).
+Previousresearchhasexploredtheuseofnaturallanguageprocessing(NLP)tech-
+niques, including hybrid models, for the classification of minority stress (Cascalheira
+et al, 2022; Saha et al, 2019; Cascalheira et al, 2023, 2024; Chapagain et al, 2024).
+Still, it lacks a fair comparison between transformer-based models and only uses one
+dataset. Building on this foundation, our study offers the first comprehensive evalu-
+ation of transformer-based models for minority stress classification. Specifically, this
+paper makes the following contributions:
+• Weintroduceandempiricallytestthehypothesisthatgraph-augmentedtransform-
+ers (e.g., BERT-GCN, RoBERTa-GCN, BART-GCN) outperform sequence-only
+modelsbycapturingcommunityco-occurrencepatterns,conversationalcontext,and
+distinctive linguistic features of minority stress.
+• Weevaluatearangeoftransformer-onlyarchitectures,includingBART,ELECTRA,
+BERT, RoBERTa, and GPT-2, on the two largest publicly available Reddit cor-
+poraforminoritystressdetection(12,645and5,789posts),reportingrobustresults
+averaged over five random seeds.
+• Weassessthesegraph-augmentedvariantsonhowrelationaledges(userandthread
+connections) enhance detection by modeling homophily, discourse coherence, cul-
+tural idioms (e.g., “I’m in the closet”), and psycholinguistic permutations (e.g., “I
+don’t like who I am” vs. “bisexual people just can’t make up their mind”).
+• We explore zero-shot and few-shot classification with ChatGPT to evaluate the
+generalizability of large pre-trained models on underrepresented datasets, and we
+compare these results against supervised fine-tuning.
+• We show that while zero and few shot methods show promise in low-resource
+scenarios, supervised fine-tuning, especially with graph augmentation, consistently
+achieves superior performance, highlighting the importance of labeled data and
+relational context for reliable minority stress detection.
+3
+2 Related Work
+Recent research has increasingly focused on analyzing textual data—such as social
+mediaposts,interviews,andsurveyresponses—toclassifyandinterpretminoritystress
+expressions. The theoretical foundational work of authors like Meyer (2003), who
+introduced the minority stress model, has been extended by empirical studies apply-
+ing computational methods. For example, Pachankis (2007) and Hendricks and Testa
+(2012) explored the psychological mechanisms of minority stress and its impact on
+mental health outcomes, providing a foundation for further exploration using NLP.
+Machine learning classifiers have been widely used to detect expressions of depres-
+sion, suicidal ideation, and other mental health concerns in online communities
+(Bagroyetal,2017;DeChoudhuryandDe,2014;DeChoudhuryetal,2016;Sahaetal,
+2019). For example, researchers have found that self-disclosure posts in communities
+liker/SuicideWatch andr/depression alignwithclinicaldescriptionsofmentalhealth
+problems, providing valuable information on stigmatized experiences (De Choudhury
+andDe,2014;Sahaetal,2019).WithadvancesinNLP,manyresearchers(Yangetal,
+2023) have analyzed and classified stress-related expressions in text using techniques
+such as sentiment analysis, topic modeling, and machine learning. Similarly, deep
+learning models have proven effective in predicting social determinants of health dis-
+parities,includingcyberbullyingandracism(Shawetal,2022),aswellashatespeech
+detectiononlargerdatasets(Chapagainetal,2025a;Piotetal,2024).Hybridmodels,
+such as BERT-LSTM, have also shown strong performance in predicting misogynis-
+tic speech on Twitter (Angeline et al, 2022). Some recent work has also examined
+bias and harmful speech targeting LGBTQ+ communities, including gender neutral
+formintegrationforbiasreduction(Sobhanietal,2023),cyberbullyingdetectionspe-
+cific to LGBTQ+ contexts (Arslan et al, 2024), and harmful conversational content
+classification (Dacon et al, 2022).
+Online discussions have become a valuable resource for examining minority stress,
+addressingthelimitationsoftraditionalresearchmethodsbasedonconvenience-based
+samples, such as surveys (Martinez et al, 2014; Nguyen et al, 2016). Social media
+platforms, especially Reddit, are useful for reaching minority populations because
+their anonymity encourages self-disclosure and the creation of communities around
+stigmatized topics, such as r/lgbtq+, r/asktransgender, and r/queer (Andalibi et al,
+2018, 2016; Saha et al, 2019).
+Sahaetal(2019)utilizedRedditasasocialmediaplatformtostudyself-disclosure
+expressionsofminoritystressamongLGBTQ+individuals,identifyingitasascalable
+and inclusive method to capture diverse experiences in geographies, sexual orienta-
+tions,andgenderidentities.Theyusedtraditionalmachinelearningmodels,including
+logistic regression and multilayer perceptron, achieving a best F1 score of 0.75,
+althoughthemodelstruggledwithsequentialdata.Cascalheiraetal(2022)introduced
+a Bi-LSTM model but, due to architectural limitations, achieved only an F1 score
+of 0.61. Subsequently, the combination of BERT-CNN demonstrated a strong perfor-
+mance in predicting both composite minority stress and its factors (Cascalheira et al,
+2023).Chapagainetal(2024)utilizedtransductivelearningtechniquestoanalyzethe
+disclosureofsocialnetworks,uncoveringpredictivepatternsofminoritystressexpres-
+sionsandtheircorrelationwithmentalhealthoutcomesamongLGBTQ+individuals.
+4
+However, the transductive nature of their model limits its ability to generalize and
+handle unseen data, restricting its applicability to new or evolving contexts beyond
+the specific dataset used for analysis.
+In contrast to previous research, our research addresses the limitations of previ-
+ous work by providing a comprehensive evaluation of transformer-based models for
+minority stress classification. We compare both sequence-only models (ELECTRA,
+BERT, RoBERTa, BART) and their graph-augmented variants across two only two
+publicly available Reddit datasets (12,645 and 5,789 posts). We also investigate zero-
+shot and few-shot classification to assess how well pre-trained models generalize to
+underrepresenteddatawithlimitedlabels.Ourresultsdemonstratethatincorporating
+graph structure consistently enhances detection performance, confirming that graph-
+augmented transformers more effectively identify nuanced markers of minority stress
+than sequence-only approaches.
+By bridging computational linguistics with psychological theories, this growing
+body of research continues to illuminate the multifaceted experiences of minority
+stress among LGBTQ+ individuals, offering transformative potential for academic
+understanding and practical interventions.
+3 Methodology
+3.1 Transformer and Graph Convolutional Network
+TheBERT-GCNframeworkFigure1integratesBERTtoinitializetheembeddingsof
+document nodes in a heterogeneous Reddit corpus graph. These embeddings are then
+processed through a graph convolutional network (GCN), iteratively refining node
+representations. The final outputs are passed through a linear transformation and a
+softmax layer for classification.
+Fig. 1: BERT-GCN Network Architecture.
+In our graph representation, the document nodes (N ) and word nodes (N )
+doc word
+form the initial feature matrix and is given by below equation (1):
+(cid:18) (cid:19)
+Z
+X = doc (1)
+0
+(Ndoc+Nword)×d
+where Z denotes document embeddings. These embeddings undergo transfor-
+doc
+mation via:
+5
+Z =softmax(WX) (2)
+B
+where W is the weight matrix.
+To construct a heterogeneous graph, we follow TextGCN (Yao et al, 2019) and
+BertGCN (Lin et al, 2021), using term frequency-inverse document frequency (TF-
+IDF) for document-word edges and positive pointwise mutual information (PPMI)
+for word-word relationships. The edge weights between nodes i and j are assigned as
+follows:
+
+TF-IDF(i,j), if i is a document, j is a word
+PPMI(i,j),
+if i,j are words and i̸=j
+A = (3)
+i,j
+1 0,
+,
+i of thi e= rwj
+ise
+PPMI measures the correlation between words:
+p(i,j)
+PPMI(i,j)=log (4)
+p(i)p(j)
+Here, p(i,j) and p(i) represent the probabilities of the word pair (i,j) and the
+single word i occurring in the corpus, respectively. The terms #W(i,j) and #W(i)
+refer to the number of sliding windows that contain both words (i,j) and the word i,
+respectively. Finally, #W denotes the total number of sliding windows in the corpus.
+Edges are added only for positive PPMI values, ensuring meaningful semantic
+relationships. The input matrix X is then passed through the GCN layers, with the
+output defined as:
+Z
+G
+=softmax(gcn(X,A(cid:101))) (5)
+The BERT-GCN model combines predictions from both BERT and GCN using
+linear interpolation.
+Z =λZ +(1−λ)Z (6)
+Final G B
+where λ ∈ (0,1) controls the balance between the two models. When λ = 0,
+the model is entirely based on BERT, while λ = 1 prioritizes GCN. This adap-
+tive weighting optimizes classification performance based on the characteristics of the
+dataset.
+3.2 Transformer and Convolutional Neural Network
+The BERT-CNN model, shown in Figure 2 consists of four main layers: the BERT
+embedding layer, the convolutional layer, the fully connected neural network (FCNN)
+and the sigmoid layer. The model processes text sequences by converting them into
+768-dimensional contextual word embeddings using BERT, which are then passed
+through three convolutional layers, each with 100 filters and kernel sizes of [3, 4, 5] to
+capturediversetextpatterns.Maxpoolingextractskeyfeaturesthatareconcatenated
+and pass through a dropout layer (0.5) before reaching the FCNN and the sigmoid
+layerforclassification.Themodelistrainedfor10epochswithabatchsizeof32,using
+6
+binarycross-entropywithlogitsasthelossfunction.TheAdamoptimizer,withalearn-
+ingrateofα=10−3,momentumhyperparameterβ =0.9,RMS-prophyperparameter
+1
+β = 0.999, and the weight decay hyperparameter, updates model parameters effi-
+2
+ciently. The sigmoid layer converts raw scores into probabilities, applying a threshold
+of 0.5 for final binary classification.
+Fig. 2: BERT-CNN network architecture
+3.3 Transformer and Gated Recurrent Unit Model
+As shown in Figure 2, this architecture modifies the BERT-CNN model by replacing
+the convolutional layer with a BiGRU layer. The step-by-step learning process for
+the BERT-BiGRU framework, which consists of four distinct layers: the BERT layer,
+the BiGRU layer, the fully connected neural network layer (FCNN), and a sigmoid
+layer. The process begins by taking a batch of text sequences as input and converting
+them into contextual word embeddings using BERT. These embeddings serve as the
+initial input for the BiGRU layer, which captures sequential information both in the
+forward and backward directions. Subsequently, dropout regularization is applied to
+the output of BiGRU, which is then passed through the linear layer and a sigmoid
+layer for binary classification.
+3.4 Transformer-Based Models with Linear Layers
+This section describes how transformer-based architectures—particularly those lever-
+agingattentionmechanisms—areappliedtominoritystressdetection.Firstintroduced
+by Vaswani (2017), transformers replace recurrent or convolutional structures with
+multi-head self-attention, allowing for parallel processing and richer contextual
+embeddings.Figure3illustratesthetwomainvariantsofthetransformerarchitecture:
+• Encoder-based transformers (e.g. BERT) use a bidirectional design. Tokens are
+embeddedwithpositionalinformation,andeachlayerusesmulti-headself-attention
+plus feed-forward networks. The residual and normalization layers stabilize the
+training, and the final output is fed through the classification layers.
+• Decoder-based transformers (e.g., GPT) use a unidirectional (causal) mask in self-
+attention,focusingonlyonpasttokens.Aftereachself-attentionstep,afeed-forward
+network refines the representations and the final outputs go through softmax.
+7
+Fig. 3: Encoder-Based (Left) and Decoder-Based (Right) Transformer Architectures
+Forourminoritystressclassificationtaskonbothdatasets,weusedthebasemodel
+for all transformers to ensure a fair comparison. We set the maximum sequence
+length to 512 and trained the model for 4 epochs using a batch size of 4 with a
+learning rate of 3e-5.
+3.4.1 BERT
+BERT(BidirectionalEncoderRepresentationsfromTransformers)(Devlin,2018)isa
+transformer-based model designed to understand context by processing text bidirec-
+tionally.ItwastrainedonlargedatasetsliketheTorontoBookCorpusandWikipedia
+usingmaskedlanguagemodelingandnext-sentenceprediction.Thesetechniquesallow
+BERT to grasp meaning more effectively, making it a strong performer in various
+natural language processing (NLP) tasks.
+3.4.2 RoBERTa
+RoBERTa (Robustly Optimized BERT Pretraining Approach) (Liu, 2019) enhances
+BERT by removing the next-sentence prediction task and focusing on more effec-
+tive masked language modeling. With larger batch sizes, longer training times, and
+dynamic masking, RoBERTa improves both performance and robustness, making it a
+strong alternative to BERT.
+3.4.3 ELECTRA
+ELECTRA(EfficientlyLearninganEncoderthatClassifiesTokenReplacementsAccu-
+rately)(Clarketal,2020)introducesamoreefficientpre-trainingapproach.Insteadof
+simply masking words like BERT, it trains two networks: a generator, which replaces
+words, and a discriminator, which learns to detect these replacements. This method
+significantlyimprovestoken-levelunderstandingwhilebeingcomputationallyefficient.
+8
+3.4.4 GPT-2
+GPT-2(GenerativePre-trainedTransformer2)(Radfordetal,2019)isanautoregres-
+sivetransformermodelwith1.5billionparameters,trainedonadiverse40GBdataset.
+Unlike BERT, GPT-2 is unidirectional, meaning that it generates text one token at
+a time. Using Byte-Pair Encoding for efficient text processing, GPT-2 is particularly
+powerful for text generation tasks such as dialogue and storytelling.
+3.4.5 BART
+BART(BidirectionalandAuto-RegressiveTransformer)(Lewis,2019)blendsthebest
+of both worlds by combining a bidirectional encoder (like BERT) with an autoregres-
+sive decoder (like GPT). This hybrid architecture allows BART to capture complex
+contextual relationships while generating fluent and coherent text, making it highly
+effective for tasks such as summarization and translation.
+3.4.6 DeBERTa
+DeBERTa (Decoding-enhanced BERT with Disentangled Attention) (He et al, 2020)
+builds on BERT and RoBERTa by introducing a disentangled attention mecha-
+nism, which separates content from positional information. In addition, an improved
+mask decoder helps it better capture contextual relationships, resulting in enhanced
+language understanding.
+3.4.7 Longformer
+Longformer(Beltagyetal,2020)isdesignedtoefficientlyhandlelongdocuments,over-
+coming the memory limitations of traditional transformers. This is achieved through
+a sparse attention mechanism that combines local and global attention patterns. This
+allows Longformer to process extended sequences effectively, making it particularly
+useful for document summarization and other long-form text applications.
+3.5 Zero-Shot Classification
+Zero-shot learning is an NLP technique that classifies data into categories without
+explicit training, enabling models to predict unseen classes (Xian et al, 2018). In this
+work, we use a Zero-shot Learning approach for minority stress classification. The
+model used a pre-trained language model, which can be thought of as an example of
+transfer learning —applying the knowledge of a pre-trained model to a new related
+task.Inthissetting,weprovidethepromptandthesequenceoftextasaninstruction
+for what we want our model to do. Zero-shot classification differs from single-shot or
+few-shot classification as it does not use any examples of the target task, unlike the
+latter, which uses one or a few examples. These capabilities emerge in large-language
+models with more than 100M parameters, and their effectiveness improves as the
+modelsizeincreases,withlargermodelsgenerallyperformingbetteratthesetasks.An
+example of a zero-shot prompt for classifying whether there is a presence of minority
+stress or not from a sequence of text is shown below:
+9
+Task: Classify the following input text into one of the following two cate-
+gories: [minority stress, no minority stress]
+Input Text:
+I have to be straight if I want things in life. Being a lesbian will mean having
+a life where everything I want will be extremely hard to get.
+Output:
+minority stress
+3.6 Few-Shot Classification
+Few-shot learning is a newer approach that enables model training with fewer labeled
+data. For our implementation, we used 3-shot and 10-shot learning using ChatGPT
+(GPT-4o) for the classification of minority stress text. For 3-shot learning, we pro-
+videdthemodelwithtwopositive-labeledexamplesandonenegative-labeledexample
+before performing classification on a test set consisting of 869 samples from the MiS-
+SOM+ dataset. Similarly, in the 10-shot learning approach, we increased the number
+of training examples by providing five positive and five negative labeled samples. By
+implementing3-and10-shotlearning,weaimedtoassesshowthenumberofprovided
+examplesinfluencesmodelperformanceandwhetherincreasingthenumberoflabeled
+instances leads to a significant improvement in classification accuracy.
+4 Experiments
+For implementing the model, we used Python 3.10.12, Numpy 1.22.4, Pandas 1.5.3,
+and PyTorch 1.13.0 with Cuda 11.1. We ran all the experiments on the Linux server,
+which supports dual Intel Xeon Gold 5220R processors, each with 24 cores at 2.20
+GHz, with a substantial 35.75 MB cache. The source code can be found on GitHub.1.
+The Institutional Review Board of the university of the second author approved this
+study as exempt. Scores presented on results (Section 5) are averages of 5 runs with
+different seeds and subscriptions indicate standard deviation.
+4.1 Dataset
+In this study, we used two Reddit-based datasets. Both datasets have access con-
+trol requirements, although they are free to use after approval from the authors.
+The datasets scraped data from Reddit, and informed consent was neither required
+nor obtained. Personal identifiers (i.e., Reddit usernames) were not included in the
+datasets.Wemaintainedthedatasetsonpassword-protectedserversduringtheexperi-
+ments.Formoreinformationonaccesscontrolandconsent,seeEthicalConsiderations.
+The two datasets were split into 70% for the training set, 15% for the validation set,
+and 15% for the test set. In each dataset, minority stress was coded as a binary out-
+come, where 1 represents the presence of minority stress and 0 represents the absence
+1https://github.com/chapagaisa/transformer
+10
+ofminoritystress.Table1showsthetextexamplesofeachlabel,withthetextslightly
+paraphrased to protect the anonymity of the Reddit user.
+The first dataset was made available by Saha et al (2019) and contained 12,645
+examplesofminoritystressonReddit,ofwhich350werehuman-annotatedand12,295
+were machine-annotated. All Reddit posts were scraped from subreddit r/lgbt. Saha
+et al. developed a codebook by annotating 50 posts to achieve consensus between two
+coders.Asinglecoderannotated300additionalpostsindependently.Theteamtrained
+MLPonthese350postsandthenusedMLPtomachine-annotatetheremainingposts.
+Becausemachineannotationcanintroducelabelingerrors,weusedasecond,newer
+dataset: the LGBTQ+ Minority Stress on Social Media (MiSSoM+) dataset (Cas-
+calheira et al, 2024), which contains 5,789 human-annotated Reddit posts related to
+minority stress. Reddit posts were scraped from the following subreddits: r/actualles-
+bians, r/ainbow, r/bisexual, r/gay, r/genderqueer, r/questioning, and r/trans. The
+MiSSoM+ team, consisting of mental health clinicians, psychologists, and students
+with expertise in LGBTQ+ health, used conventional content analysis to annotate
+the posts. They developed a codebook and annotated 375 posts to achieve consensus
+among nine coders. The nine coders then independently coded the remaining posts.
+Threeadditionalcodersperiodicallyassistedwithannotationunderthesupervisionof
+the lead author (Cascalheira et al, 2024). The team met weekly to discuss their cod-
+ingdecisions,engageinpeerdebriefing,andauditoneanother’sannotationdecisions,
+resolving disagreements through consensus.
+The MiSSoM+ dataset comprises 4,551 positive class labels and 1,238 negative
+class labels, while the Saha dataset contains 8,264 positive and 4,323 negative class
+labels. Here, the label 1 represents the presence of minority stress, and 0 indicates
+its absence. Both datasets are imbalanced, which might lead the model to be biased
+towardthemajorityclass.Toovercomethisimbalanceproblem,weusedstratification.
+By using stratified sampling, the imbalanced classes are represented proportionally in
+eachsubsetofthedata,enablingamorereliableevaluationofthemodel’sperformance
+across different classes.
+Table 1: Text examples of minority stress.
+Label Dataset Text
+0 Saha et al. (Saha Ifoundacoolthread[...]ThoughtIwouldpostitto
+etal,2019) seeotherpeople’sopinions.
+1 Saha et al. (Saha Ihatemylife,Ihatebeinginthecloset...
+etal,2019)
+0 MiSSoM+ (Cascal- I have lived with my partner for years but I have
+heiraetal,2024) always been attracted to other women. But I’m
+mostlyattractedtotheiraestheticsnotsexually.
+1 MiSSoM+ (Cascal- I have to be straight if I want things in life. Being
+heiraetal,2024) a lesbian will mean having a life where everything I
+wantwillbeextremelyhardtoget.
+11
+4.2 Interpretability and Explainability
+To better understand model behavior on psychologically sensitive text, we present
+threecomplementaryinterpretabilityanalyses:(i)wordcloudvisualization,(ii)aword
+co-occurrencegraph,and(iii)self-attentionheatmapinspection.Together,thesemeth-
+ods help open the “black box” of our models and validate that their decision-making
+aligns with known linguistic and psychological cues relevant to minority stress.
+Figure 4 shows word clouds for posts with and without minority stress. In pos-
+itively labeled posts, salient words include feel, guy, feeling, friend, men, and
+gender, often occurring in syntactic frames that express personal states (e.g., first-
+person pronoun + affective verb). In negatively labeled posts, frequent terms include
+thank, friend, girl, guy, and men. These lexical differences not only highlight the-
+maticdivergencebutalsomapontosemanticcategoriesdescribedin(Cascalheiraetal,
+2024), such as social relations, identity, and emotional expression.
+The word co-occurrence graph (Figure 5) depicts ten posts (red nodes) and their
+most important words (green nodes). Edges connect posts to their salient words,
+and words to each other when they frequently co-occur. On the left, clusters around
+think,feel,andguycaptureintrospectiveandself-referentialdiscourse.Ontheright,
+trans, lesbian, and people form an identity-oriented cluster. Connector words such
+astalkandstartbridgethesethemes,whilelifeandgirlactashubslinkingpersonal
+feelingsandsocialidentity.Thesestructuralrelationshipsalignwiththesemanticnet-
+works and psychological constructs (e.g., self-identity, community affiliation) outlined
+in (Cascalheira et al, 2024).
+The attention heatmap (Figure 6) reveals that the model predominantly attends
+to content-bearing words rather than function words. For instance, feel and anxious
+are linked, signaling recognition of emotional states; coming and out are grouped
+andconnectedtofamily,capturingtheculturallyandpsychologicallyloadedeventof
+coming out to family members. Such patterns demonstrate that the model’s learned
+attention extends beyond isolated keywords: it captures the syntactic composition
+(e.g., verb–object and multiword expressions), semantic cohesion (related concepts
+appearing in context), and psychological salience (emotion, identity, and relational
+categories per Cascalheira et al (2024)) of language.
+(a)Positive (b)Negative
+Fig. 4: WordCloud on LGBTQ+ MiSSoM+ dataset labels.
+12
+Fig. 5: Heterogeneous Graph: TF-IDF and PPMI Edge Construction from 10
+Documents with Top 5 Words of MiSSoM+ dataset.
+4.3 Baseline Methods
+We compare the classification performance of our model with several other models
+performed by Cascalheira et al (2023) and Saha et al (2019):
+• Naive Bayes: It is a probabilistic algorithm that applies Bayes’ theorem with an
+assumption of independence between features (Raschka et al, 2022). The baseline
+was implemented using Multinomial Naive Bayes with the Term Frequency-Inverse
+Document Frequency (TF-IDF) (Salton and Buckley, 1988) for feature extraction.
+• Logistic Regression: It is a classification algorithm that uses a logistic function
+to map input variables to probabilities, determining the likelihood of belonging to
+a particular class (Raschka et al, 2022). It was trained using TD-IDF (Salton and
+Buckley, 1988) with L2 regularization.
+• Support Vector Machine (SVM): It optimizes decision boundaries by maxi-
+mizing margins between support vectors, aiming to minimize errors and enhance
+modelgeneralization(Raschkaetal,2022).ItwastrainedusingTF-IDF(Saltonand
+Buckley, 1988) with a regularization parameter of 1 and the radial basis function
+kernel.
+• RandomForest:Itisanensemblelearningmethodthatcombinesdecisiontreesby
+training each tree on a random subset of features. Predictions are made through a
+majority vote or averaging of individual tree predictions (Raschka et al, 2022). The
+baseline comprised 100 decision trees trained on the TF-IDF (Salton and Buckley,
+1988).
+• AdaBoost:Itisanensemblelearningalgorithmthatiterativelytrainsweakclassi-
+fiers on different weighted versions of the training data. It assigns higher weights to
+misclassifiedsamplesineachiteration,allowingsubsequentweakclassifierstofocus
+13
+Fig. 6: Heatmap showing attention weight for positive class (minority stress).
+on those instances (Freund et al, 1996). The baseline was trained on base estima-
+tor of DecisionTreeClassifier with max depth of 1, number of estimators as 50, and
+TF-IDF (Salton and Buckley, 1988).
+• Multi-LayerPerceptron(MLP):Itisafeed-forwardneuralnetworkarchitecture
+composedofmultiplelayersoffullyconnectedneurons(Raschkaetal,2022).Itwas
+trainedwithTF-IDF(SaltonandBuckley,1988)usingthedefaulthyperparameters,
+which included a hidden layer of 100, adam as optimizer, and relu as activation
+function.
+• BiLSTM: It is an RNN architecture that processes sequential data by incorporat-
+ingbothforwardandbackwardinformationflowtocapturecontextualdependencies
+(Schuster and Paliwal, 1997). This model, trained with pretrained GloVe embed-
+dings (Mohammed et al, 2020), utilized a batch size of 64, an alpha of 0.001, a
+hidden size of 128, a dropout rate of 0.5, and Adam optimization.
+5 Results
+5.1 Comparative Analysis of Classification Models
+Tables 2 and 3 compare the performance of classifiers on the Saha et al (2019) (N =
+12,645)andMiSSoM+(Cascalheiraetal,2024)(N =5,789)datasetsusingprecision,
+recall, and F1-score. On the Saha dataset, traditional models such as SVM (F1 =
+0.7401)andMLP(F1=0.7499)performedmoderatelywell.Amongtransformer-based
+14
+methods, RoBERTa(Large)-BiGRU achieved the highest F1-score (0.7718), though
+its improvement over the corresponding backbone (RoBERTa) was not statistically
+significant.Thissuggeststhatthenoisy,partiallymachine-labelednatureofSahamay
+limit the benefit of architectural augmentations.
+In contrast, MiSSoM+, which is fully human-annotated by domain experts, shows
+consistent gains from enhanced transformer architectures. RoBERTa-GCN achieved
+thehighestF1-score(0.8536),significantlyoutperformingitsbackboneRoBERTa(p<
+0.001).SimilarpatternswereobservedforBERT-CNN,BERT-BiGRU,andRoBERTa-
+BiGRU, indicating that the cleaner, high-quality labels in MiSSoM+ enable models
+to exploit relational structure (via GCN/GAT) and local sequential patterns (via
+CNN/BiGRU) more effectively.
+Statistical Significance Testing: We assessed whether architectural enhancements
+significantly improve performance over their own transformer backbones using two-
+tailed paired t-tests on five independent runs with identical splits. The Bonferroni
+correctionwasappliedtocontrolforfamily-wiseerrorinmultiplecomparisons.Signif-
+icancemarkersinTables2–3indicateimprovementsoverthecorrespondingbackbone:
+† (p<0.05), ‡ (p<0.01), ⋆ (p<0.001).
+Table2:Comparisonofclassifiers’performancesin Sahaetal(2019)(N =12,645).
+Values are mean over 5 runs. Significance markers denote improvements vs. the
+std
+corresponding backbone. Bold marks highest in column.
+Model Precision Recall F1
+Na¨ıveBayes 0.70010.012 0.48970.015 0.53020.014
+LogisticRegression 0.72990.010 0.72030.009 0.71990.010
+SVM 0.74050.009 0.73980.022 0.74010.012
+RandomForest 0.76030.011 0.67010.012 0.70020.011
+AdaBoost 0.72980.010 0.72040.019 0.72010.010
+MLP 0.75020.011 0.73990.321 0.74990.347
+BiLSTM 0.63020.332 0.62050.012 0.61010.013
+BERT-CNN 0.76310.008 0.76810.451 0.76300.500
+BERT(Base)-BiGRU 0.77190.497 0.76260.127 0.74760.218
+BERT(Large)-BiGRU 0.77140.200 0.76530.186 0.75090.117
+RoBERTa(Base)-BiGRU 0.78290.156 0.78050.665 0.77000.425
+RoBERTa(Large)-BiGRU 0.78410.185 0.78130.116 0.77180.152
+Dataset Quality and Architectural Gains: The absence of significant gains from
+CNN or BiGRU in the Saha dataset aligns with its partially machine-labeled nature,
+where annotation noise likely limits the model’s ability to exploit richer structural
+patterns.Bycontrast,MiSSoM+’shuman-annotatedlabelsprovideacleanertraining
+signal, enabling graph-augmented (GCN/GAT) and sequentially-enhanced (CNN/Bi-
+GRU) transformer architectures to realize measurable and statistically significant
+improvements over their backbones.
+5.2 Performance of transformer-only models
+Table 4 shows the results on the effectiveness of transformer-based language models
+in detecting minority stress in the discourse on social networks. The dataset was split
+15
+Table 3: Comparison of classifiers’ performances in MiSSoM+ (Cascalheira et al,
+2024) (N = 5,789). Values are mean over 5 runs. Significance markers denote
+std
+improvements vs. the corresponding backbone. Bold marks highest in column.
+Model Precision Recall F1
+Na¨ıveBayes 0.62040.058 0.78960.011 0.69050.012
+LogisticRegression 0.78980.222 0.81020.008 0.78010.009
+SVM 0.78990.823 0.81010.118 0.78990.629
+RandomForest 0.78010.326 0.78990.210 0.70030.211
+AdaBoost 0.78030.265 0.78970.328 0.78020.259
+MLP 0.78020.211 0.79980.109 0.78040.159
+BiLSTM 0.71030.186 0.74970.211 0.71970.212
+BERT-CNN 0.84250.200 0.85160.006 0.83890.007†
+BERT(Base)-BiGRU 0.83170.033 0.83690.107 0.83020.098†
+BERT(Large)-BiGRU 0.84640.106 0.85300.105 0.84750.106‡
+RoBERTa(Base)-BiGRU 0.83060.378 0.83760.757 0.83080.568†
+RoBERTa(Large)-BiGRU 0.84840.654 0.85630.542 0.84780.532‡
+BERT-GCN 0.80360.856 0.81980.821 0.81160.825
+RoBERTa-GCN 0.86360.321⋆ 0.85860.258⋆ 0.85360.245⋆
+BERT-GAT 0.82500.125 0.82000.356 0.81500.250
+RoBERTa-GAT 0.84340.236 0.83840.263 0.83340.255†
+using a 70:15:15 ratio, where 70% was allocated for training, and the remaining 30%
+was further divided into validation sets (15%) and test sets (15%) using stratified
+sampling to preserve the distribution of the label. We utilized the base model for all
+transformers to maintain a fair comparison. Among the models tested on the MiS-
+SoM+ dataset, BART achieved the highest performance (F1 score: 0.8586, accuracy:
+0.8550), with RoBERTa and Longformer also performing well. GPT-2 had the lowest
+F1 score (0.6918) but maintained a high recall (0.7860). On the Saha et al. dataset,
+BERT emerged as the best performer (F1 score: 0.8397, accuracy: 0.8412), followed
+by DeBERTa and ELECTRA, while GPT-2 remained the weakest. Similarly, Table 5
+showstheresultsofthezero-shotandfew-shotlearningexperiments,whereChatGPT
+(10-shot) emerged as the top performer (F1 score: 0.7437, accuracy: 0.7963), per-
+forming better than zero-shot settings and 3-shot settings, as well as most fine-tuned
+traditional machine learning models.
+Figure8showstheconfusionmatricesofBARTintheMiSSoM+dataset(Cascal-
+heiraetal,2024)andBERTintheSahaetal(2019)datasetshowingtheirclassification
+performanceontwodifferentdatasets.AdirectcomparisonbetweenBARTandBERT
+is challenging due to differences in their datasets. However, analyzing each model on
+its respective dataset can be valuable for assessing performance.
+BARTperformswellinidentifyingnegativecases,butstrugglesindetectingactual
+minority stress, leading to a high false negative rate and lower recall in MiSSoM+
+dataset (Cascalheira et al, 2024). On the other hand, BERT shows a better balance
+between precision and recall, capturing more minority stress cases with a lower false
+negative rate in the Saha et al (2019) dataset. These results suggest that BERT may
+generalize better for stress detection in its dataset, whereas BART might require
+improvements to improve minority stress detection.
+16
+Table4:Performanceevaluationoftransformer-onlymodelsontheMiSSoM+(Cas-
+calheira et al, 2024) and Saha et al (2019) datasets. Bold marks highest in column
+for each dataset.
+Dataset Model Precision Recall F1 Accuracy
+DeBERTa 0.84030.189 0.84230.172 0.84120.181 0.84230.172
+BERT 0.81020.221 0.81120.205 0.81060.213 0.81120.205
+RoBERTa 0.85780.147 0.85390.156 0.85560.151 0.85390.156
+MiSSoM+ GPT-2 0.61770.302 0.78600.290 0.69180.296 0.78600.290
+Longformer 0.85300.134 0.85160.128 0.85230.131 0.85160.128
+ELECTRA 0.85040.178 0.86700.162 0.84850.169 0.86700.162
+BART 0.86420.154 0.85500.140 0.85860.147 0.85500.140
+DeBERTa 0.83480.112 0.83380.105 0.83420.108 0.83380.105
+BERT 0.83930.098 0.84120.092 0.83970.095 0.84120.092
+RoBERTa 0.79770.125 0.79830.119 0.79800.122 0.79830.119
+Sahaetal. GPT-2 0.43090.276 0.65640.263 0.52030.269 0.65640.263
+Longformer 0.76070.147 0.76650.139 0.76110.143 0.76650.139
+ELECTRA 0.83310.104 0.83540.099 0.83310.101 0.83540.099
+BART 0.82000.118 0.82210.111 0.82060.114 0.82210.111
+(a) (b)
+Fig. 7: Confusion Matrix of BART on (a) MiSSoM+ (Cascalheira et al, 2024) and
+BERT on (b) Saha et al (2019)
+5.3 Few-Shot Performance
+Table 5: Zero-Shot and Few-Shot results in 869 samples of MiSSoM+ (Cascalheira
+et al, 2024) (results as of January 26, 2025). Bold marks highest in column.
+Model Precision Recall F1 Accuracy
+RoBERTa(Zero-shot) 0.64271.234 0.61102.001 0.62571.578 0.61102.001
+ChatGPT(Zero-shot) 0.70151.847 0.61222.315 0.64321.429 0.61222.315
+ChatGPT(3-shot) 0.73451.102 0.74451.907 0.73911.256 0.74451.907
+ChatGPT(10-shot) 0.76272.781 0.79631.654 0.74372.023 0.79631.654
+17
+Fig. 8:ConfusionMatrixofChatGPT10-shotonMiSSoM+(Cascalheiraetal,2024)
+The ChatGPT 10-shot classification model performed well in identifying non-
+minority stress cases, but struggled with detecting minority stress. The confusion
+matrix (Figure 9) shows 665 True Negatives and 27 True Positives, but a high False
+Negativecount(159)indicatesthatmanyminoritystresscasesweremissed.Although
+False positives were low (18), the model’s recall is weaker than precision, meaning it
+correctly identifies minority stress when predicted but often fails to detect it. This
+explainswhytheweightedF1score(0.7437)islowerthanprecisionandrecall.Forthe
+10-shotclassification,weperformedanerroranalysisonthemisclassifiedsamplesand
+foundthatmosterrorswereduetoindirectcontext,idiomaticlanguage,sarcasm,and
+similar phenomena. Table 6 summarizes these error categories with descriptions and
+illustrativeexamplesofChatGPT’sperformance.Theseresultsdemonstratethepoten-
+tialofAI-drivenhealthinterventionstocreatepersonalizedstressreductionplatforms,
+similarly reinforcing AI’s role in digital health and public policy.
+5.4 Ablation Study
+λ is the hyperparameter in BERT–GCN that balances the contributions of the BERT
+andGCNmodules.VaryingλproducesdifferentaccuracyandF1-scoreresults.Figure
+10showsclassificationperformanceontheLGBTQ+MiSSoM+testsetacrossseveral
+λ values. Setting λ=0 uses only the BERT module, while λ=1 uses only the GCN.
+Throughextensiveexperiments,wefoundthatλ=0.2yieldsthebesttrade-off,achiev-
+ingpeakaccuracyandF1-score.ForRoBERTa,integratingtheGCNboostsaccuracy
+by 1.97% and F1-score by 1.44%. Although BERT pretraining generally contributes
+more than graph learning, appropriately weighting and incorporating the GCN com-
+ponent can still deliver a meaningful accuracy improvement. Figure 11 shows the
+percentage changes observed in our ablation study. Jointly deploying BERT and the
+CNN clearly outperforms either model alone. Recall sees the largest gain—up 5.43%
+compared to BERT only—while overall accuracy improves by 4.57% and F1-score by
+2.43%. Precision remains largely unchanged. These results confirm that combining
+18
+Table 6: Qualitative error categories for misclassified minority stress expres-
+sions in ChatGPT’s 10-shot classification
+Category Description Example
+IndirectContext Stress expressed via situation “I finally told them last
+references without explicit key- week... nowIcan’tsleep.”
+words;dependsonpriorposts
+IdiomaticLanguage Community-specific idioms not “I’mkeepingitinthevaultfor
+seen in training; literal reading now.”(i.e.“inthecloset”)
+fails
+Sarcasm/Irony Polarity flipped by tone; stress “Sure, because everyone loves
+maskedunderhumororirony mebeingqueer... *eyeroll*”
+MixedSentiment Postscombinepositiveandneg- “I feel great today, but I still
+ative affect, confusing binary dreadtomorrow’souting.”
+labeler
+ImplicitStigma Self-directed negative state- “Sometimes I wish I’d never
+ments without explicit “hate” realizedthisaboutmyself.”
+keywords
+BERT with a convolutional graph encoder enhances the model’s overall classification
+performance.
+6 DISCUSSION
+Our results strongly support the central hypothesis that augmenting transformer
+models with relational or structural context improves minority stress detection.
+Experiments focused primarily on the MiSSoM+ dataset, which contains high-
+quality human-annotated labels, ensuring reliable evaluation. On this dataset, graph-
+augmented models such as RoBERTa-GCN and BERT-GCN outperformed their
+sequence-only counterparts, confirming that social and semantic structure enhances
+model sensitivity to certain stress expressions like identity concealment and inter-
+nalized stigma. We also found that integrating convolutional layers into BERT (i.e.,
+BERT-CNN) improved performance by capturing local text patterns that are present
+in stress-related language. These enhancements demonstrate that both graph and
+CNN-based architectural additions contribute meaningful gains over standard trans-
+formers. While models like RoBERTa and BART performed well on their own,
+graph-augmented and CNN-enhanced versions consistently delivered superior results.
+In contrast, zero- and few-shot models like ChatGPT showed promise but lagged
+behind supervised approaches, particularly in recall.
+In summary, our findings validate that combining transformers with relational
+and local modeling leads to more accurate detection of minority stress. These results,
+groundedintheMiSSoM+dataset,highlighttheimportanceofdomain-specifictuning
+and structured context for effective digital health interventions.
+19
+(a)AccuracyandF1scorewithvaryingλon
+RoBERTa-GCN.
+(b)Performancedifferencefromablationstudyon
+BERT-CNN.
+Fig. 9: Ablation analyses on the LGBTQ+ MiSSoM+ dataset.
+6.1 Digital Health Interventions
+As noted in past research (Cascalheira et al, 2024), the accurate prediction of minor-
+ity stress could inform digital health interventions. Interventionists could develop a
+personalizedstressreductionsmartphoneappforminoritypeoplethattriggersanoti-
+fication reminder to use a coping skill when minority stress is detected. Furthermore,
+inpreexistingdigitalhealthinterventions,appdeveloperscanuseourmodelstoadjust
+contentshowninamodularmobilehealthappgiventhepresenceorabsenceofminor-
+itystress.Forexample,ifaminoritypersonisstartingacourseofcomputer-delivered
+therapy for stress-induced health conditions, delivering modules on distress tolerance
+during high-stress periods may be superior to delivering modules in a linear fashion.
+Highlyaccuratedetectionofminoritystresscouldalsoinfluencethetimingofbooster
+sessions (i.e., follow-up therapy sessions provided after a course of psychotherapy). If
+an app built with our models detects minority stress at a given threshold, a reminder
+couldbesenttotheclientortherapisttopromptoutreach.Eachofthesedownstream
+20
+applicationshasthepotentialtoreduceminoritystressforminorityindividuals.(e.g.,
+,expressive writing and self-affirmation interventions).
+6.2 Public Health and Policy
+Beyond enhancing personal health, our results pave the way toward more effective
+public health and policy. Our findings could be used to forecast possible surges in
+minority stress following specific events (e.g., outbreaks of new sexually transmitted
+diseases,gunviolenceinnightclubs);suchpredictionscouldleadtobetterallocationof
+resources across minority community spaces. In addition, policymakers and social sci-
+entists could track how the passage of specific legislation influences levels of minority
+stress , which can be difficult to quantify and demonstrate as effective. For exam-
+ple, state policies that effectively reduce minority stress could be replicable in new
+jurisdictions, while policies with fewer reductions in minority stress might be revised.
+This measurement-based approach to policy making could assist advocates and other
+stakeholders in prioritizing actions with the largest reduction in minority stress.
+6.3 Limitations and Future Research
+Althoughourexperimentsresultedinexcellentperformance,thereareseveralpossible
+nextstepstoimprovetheclassificationofminoritystress.Thedatausedweresourced
+fromReddit,whichmaynotfullycapturetheexperiencesofthebroaderminoritycom-
+munity.Toensurethatdiverselinguisticpatternsandstressexpressionsareconsidered,
+future research should explore other social media platforms like Twitter and TikTok.
+From a social science perspective, we utilized a human-annotated dataset grounded
+in minority stress theory. Although this theory is widely recognized for explaining
+the social stressors faced by minority individuals, we acknowledge its limitations in
+addressing the complexities of intersecting identities (e.g., being both a gender/sex-
+ual minority and belonging to a low-income socioeconomic group) (Rivas-Koehl et al,
+2023; Noyola et al, 2020). Future research should further explore minority stress
+by incorporating a more comprehensive understanding of social identities and their
+intersections.Finally,althoughmodelperformancemetricsarepromising,theirimple-
+mentation in healthcare or policy settings requires further validation. Future studies
+should assess how well these models function in real-world applications, including
+integration into digital mental health services. Future work should explore additional
+robustness strategies. Pruning-based defenses in large language models show promise
+for mitigating hidden vulnerabilities (Chapagain et al, 2025b). Integrating pruning
+with augmentation could enhance both accuracy and resilience in minority stress
+detection.
+6.4 Ethical Consideration
+While our study adheres to standard practices for analyzing public Reddit data, we
+recognize deeper ethical complexities in working with stigmatized communities and
+sensitive topics like minority stress. Users may not anticipate that their disclosures,
+shared in vulnerable moments, could be subject to computational analysis. Although
+weremovedallidentifyinginformationandrestricteddataaccess,thelackofinformed
+21
+consentremainsethicallysignificant.Forthisreason,werestrictaccesstothedatasets
+in this paper to protect user privacy, releasing only the code and Python scripts
+necessary to reproduce our analyses. Interested and qualified scientists should con-
+tact us directly for data access. Our models also carry risks in potential real-world
+applications. False negatives could result in missed opportunities for support, while
+false positives may misrepresent needs or reinforce stereotypes. These misclassifica-
+tions can have real consequences, especially for marginalized populations. We caution
+against deploying such models in clinical or policy settings without rigorous valida-
+tion and community involvement. Finally, we acknowledge that our work reflects the
+assumptions of minority stress theory, which may not capture the full complexity of
+intersectingidentities.Futureresearchshouldpursuemoreparticipatory,intersectional
+approaches and deepen ethical engagement beyond procedural norms.
+7 Acknowledgements
+CoryJ.CascalheiraissupportedasaRISEFellowbytheNationalInstitutesofHealth
+(R25GM061222).ShahMuhammadHamdiissupportedbytheCISEandGEOdirec-
+torates under NSF awards #2301397 and #2305781. Soukaina Filali Boubrahimi is
+supported by CISE and GEO Directorates under NSF awards #2204363, #2240022,
+#2301397, and #2305781. Jillian R. Scheer is supported by a Mentored Scientist
+Development Award (K01AA028239-01A1) from the National Institute on Alcohol
+Abuse and Alcoholism.
+References
+Andalibi N, Haimson OL, De Choudhury M, et al (2016) Understanding social media
+disclosuresofsexualabusethroughthelensesofsupportseekingandanonymity.In:
+Proceedings of the 2016 CHI conference on human factors in computing systems,
+pp 3906–3918
+Andalibi N, Haimson OL, Choudhury MD, et al (2018) Social support, reciprocity,
+and anonymity in responses to sexual abuse disclosures on social media. ACM
+Transactions on Computer-Human Interaction (TOCHI) 25(5):1–35
+Angeline RS, Nurjanah D, Nurrahmi H (2022) Misogyny speech detection using long
+short-term memory and bert embeddings. In: 2022 5th International Conference on
+Information and Communications Technology (ICOIACT), IEEE, pp 155–159
+Arslan M, Madrigal MS, Abuhamad M, et al (2024) Detecting lgbtq+ instances of
+cyberbullying. arXiv preprint arXiv:240912263
+Bagroy S, Kumaraguru P, De Choudhury M (2017) A social media based index of
+mental well-being in college campuses. In: Proceedings of the 2017 CHI Conference
+on Human factors in Computing Systems, pp 1634–1646
+22
+Beltagy I, Peters ME, Cohan A (2020) Longformer: The long-document transformer.
+arXiv preprint arXiv:200405150
+Cascalheira CJ, Hamdi SM, Scheer JR, et al (2022) Classifying minority stress disclo-
+sure on social media with bidirectional long short-term memory. In: Proceedings of
+the International AAAI Conference on Web and Social Media, pp 1373–1377
+Cascalheira CJ, Chapagain S, Flinn RE, et al (2023) Predicting linguistically sophis-
+ticated social determinants of health disparities with neural networks: The case
+of lgbtq+ minority stress. In: 2023 IEEE International Conference on Big Data
+(BigData), IEEE, pp 1314–1321
+Cascalheira CJ, Chapagain S, Flinn RE, et al (2024) The lgbtq+ minority stress on
+social media (missom) dataset: A labeled dataset for natural language processing
+and machine learning. In: Proceedings of the International AAAI Conference on
+Web and Social Media, pp 1888–1899
+ChapagainS,ZhaoY,RohleenTK,etal(2024)Predictiveinsightsintolgbtq+minor-
+ity stress: A transductive exploration of social media discourse. arXiv preprint
+arXiv:241113534
+Chapagain S, Hamdi SM, Boubrahimi SF (2025a) Advancing hate speech detection
+with transformers: Insights from the metahate. URL https://arxiv.org/abs/2508.
+04913, 2508.04913
+Chapagain S, Hamdi SM, Boubrahimi SF (2025b) Pruning strategies for backdoor
+defense in llms. arXiv preprint arXiv:250820032
+Clark K, Luong MT, Le QV, et al (2020) Electra: Pre-training text encoders as
+discriminators rather than generators. arXiv preprint arXiv:200310555
+Dacon J, Shomer H, Crum-Dacon S, et al (2022) Detecting harmful online conversa-
+tional content towards lgbtqia+ individuals. arXiv preprint arXiv:220710032
+DeChoudhuryM,DeS(2014)Mentalhealthdiscourseonreddit:Self-disclosure,social
+support, and anonymity. In: Proceedings of the international AAAI conference on
+web and social media, pp 71–80
+De Choudhury M, Kiciman E, Dredze M, et al (2016) Discovering shifts to suicidal
+ideation from mental health content in social media. In: Proceedings of the 2016
+CHI conference on human factors in computing systems, pp 2098–2110
+Devlin J (2018) Bert: Pre-training of deep bidirectional transformers for language
+understanding. arXiv preprint arXiv:181004805
+Durstewitz D, Koppe G, Meyer-Lindenberg A (2019) Deep neural networks in
+psychiatry. Molecular psychiatry 24(11):1583–1598
+23
+Freund Y, Schapire RE, et al (1996) Experiments with a new boosting algorithm. In:
+icml, Citeseer, pp 148–156
+He P, Liu X, Gao J, et al (2020) Deberta: Decoding-enhanced bert with disentangled
+attention. arXiv preprint arXiv:200603654
+Hendricks ML, Testa RJ (2012) A conceptual framework for clinical work with trans-
+gender and gender nonconforming clients: An adaptation of the minority stress
+model. Professional Psychology: Research and Practice 43(5):460
+deLangeJ,BaamsL,vanBergenDD,etal(2022)Minoritystressandsuicidalideation
+and suicide attempts among lgbt adolescents and young adults: a meta-analysis.
+LGBT health 9(4):222–237
+Lewis M (2019) Bart: Denoising sequence-to-sequence pre-training for natural lan-
+guage generation, translation, and comprehension. arXiv preprint arXiv:191013461
+Lin Y, Meng Y, Sun X, et al (2021) Bertgcn: Transductive text classification by
+combining gcn and bert. arXiv preprint arXiv:210505727
+LiuY(2019)Roberta:Arobustlyoptimizedbertpretrainingapproach.arXivpreprint
+arXiv:190711692
+Martinez O, Wu E, Shultz AZ, et al (2014) Still a hard-to-reach population? using
+social media to recruit latino gay couples for an hiv intervention adaptation study.
+Journal of medical Internet research 16(4):e3311
+McDermott E (2015) Asking for help online: Lesbian, gay, bisexual and trans youth,
+self-harm and articulating the ‘failed’self. Health: 19(6):561–577
+McDermott E, Roen K (2012) Youth on the virtual edge: Researching marginalized
+sexualities and genders online. Qualitative health research 22(4):560–570
+MeyerIH(2003)Prejudice,socialstress,andmentalhealthinlesbian,gay,andbisex-
+ual populations: conceptual issues and research evidence. Psychological bulletin
+129(5):674
+Mohammed SM, Jacksi K, Zeebaree SR (2020) Glove word embedding and dbscan
+algorithms for semantic document clustering. In: 2020 International Conference on
+Advanced Science and Engineering (ICOASE), IEEE, pp 1–6
+NguyenTQ,Bandeen-RocheK,GermanD,etal(2016)Negativetreatmentbyfamily
+as a predictor of depressive symptoms, life satisfaction, suicidality, and tobacco/al-
+cohol use in vietnamese sexual minority women. LGBT health 3(5):357–365
+Noyola N, S´anchez M, Cardemil EV (2020) Minority stress and coping among sexual
+diverse latinxs. Journal of Latinx Psychology 8(1):58
+24
+Pachankis JE (2007) The psychological implications of concealing a stigma: a
+cognitive-affective-behavioral model. Psychological bulletin 133(2):328
+Pachankis JE, Mahon CP, Jackson SD, et al (2020) Sexual orientation concealment
+and mental health: A conceptual and meta-analytic review. Psychological bulletin
+146(10):831
+Piot P, Mart´ın-Rodilla P, Parapar J (2024) Metahate: A dataset for unifying efforts
+on hate speech detection. In: Proceedings of the International AAAI Conference on
+Web and Social Media, pp 2025–2039
+Radford A, Wu J, Child R, et al (2019) Language models are unsupervised multitask
+learners. OpenAI blog 1(8):9
+Raschka S, Liu YH, Mirjalili V, et al (2022) Machine Learning with PyTorch and
+Scikit-Learn: Develop machine learning and deep learning models with Python.
+Packt Publishing Ltd
+Rivas-Koehl M, Rivas-Koehl D, McNeil Smith S (2023) The temporal intersectional
+minoritystressmodel:Reimaginingminoritystresstheory.JournalofFamilyTheory
+& Review 15(4):706–726
+SahaK,KimSC,ReddyMD,etal(2019)Thelanguageoflgbtq+minoritystressexpe-
+riences on social media. Proceedings of the ACM on human-computer interaction
+3(CSCW):1–22
+Salerno JP, Williams ND, Gattamorta KA (2020) Lgbtq populations: Psychologically
+vulnerable communities in the covid-19 pandemic. Psychological trauma: Theory,
+research, practice, and policy 12(S1):S239
+Salton G, Buckley C (1988) Term-weighting approaches in automatic text retrieval.
+Information processing & management 24(5):513–523
+Schuster M, Paliwal KK (1997) Bidirectional recurrent neural networks. IEEE
+transactions on Signal Processing 45(11):2673–2681
+Selkie E, Adkins V, Masters E, et al (2020) Transgender adolescents’ uses of social
+media for social support. Journal of Adolescent Health 66(3):275–280
+Shaw B, Saha S, Mishra SK, et al (2022) Investigations in psychological stress detec-
+tion from social media text using deep architectures. In: 2022 26th International
+Conference on Pattern Recognition (ICPR), IEEE, pp 1614–1620
+Sobhani N, Sengupta K, Delany SJ (2023) Measuring gender bias in natural language
+processing: Incorporating gender-neutral linguistic forms for non-binary gender
+identities in abusive speech detection. In: Proceedings of the 14th international
+conference on recent advances in natural language processing, pp 1121–1131
+25
+VaswaniA(2017)Attentionisallyouneed.AdvancesinNeuralInformationProcessing
+Systems
+WoznickiN,ArriagaAS,Caporale-BerkowitzNA,etal(2021)Parasocialrelationships
+and depression among lgbq emerging adults living with their parents during covid-
+19: The potential for online support. Psychology of Sexual Orientation and Gender
+Diversity 8(2):228
+Xian Y, Lampert CH, Schiele B, et al (2018) Zero-shot learning—a comprehensive
+evaluationofthegood,thebadandtheugly.IEEEtransactionsonpatternanalysis
+and machine intelligence 41(9):2251–2265
+YangYC,XieA,KimS,etal(2023)Automaticdetectionoftwitteruserswhoexpress
+chronic stress experiences via supervised machine learning and natural language
+processing. CIN: Computers, Informatics, Nursing 41(9):717–724
+Yao L, Mao C, Luo Y (2019) Graph convolutional networks for text classification. In:
+Proceedings of the AAAI conference on artificial intelligence, pp 7370–7377
+Appendix A Checklist
+1. For most authors...
+(a) Wouldansweringthisresearchquestionadvancesciencewithoutviolatingsocial
+contracts,suchasviolatingprivacynorms,perpetuatingunfairprofiling,exacer-
+batingthesocio-economicdivide,orimplyingdisrespecttosocietiesorcultures?
+Yes, see Ethical Considerations section.
+(b) Do your main claims in the abstract and introduction accurately reflect the
+paper’s contributions and scope? Yes, see Abstract and Introduction.
+(c) Doyouclarifyhowtheproposedmethodologicalapproachisappropriateforthe
+claims made? Yes, see Introduction and Related Work.
+(d) Do you clarify what are possible artifacts in the data used, given population-
+specific distributions? Yes, see Limitations and Future Research.
+(e) Did you describe the limitations of your work? Yes, see Limitations and Future
+Research.
+(f) Did you discuss any potential negative societal impacts of your work? Yes, see
+Ethical Considerations section.
+(g) Did you discuss any potential misuse of your work? Yes, see Ethical Considera-
+tions section.
+(h) Didyoudescribestepstakentopreventormitigatepotentialnegativeoutcomes
+of the research, such as data and model documentation, data anonymization,
+responsible release, access control, and the reproducibility of findings? Yes, see
+Ethical Considerations section.
+(i) Haveyoureadtheethicsreviewguidelinesandensuredthatyourpaperconforms
+to them? Yes.
+2. Additionally, if your study involves hypotheses testing...
+(a) Did you clearly state the assumptions underlying all theoretical results? N/A
+26
+(b) Have you provided justifications for all theoretical results? N/A
+(c) Did you discuss competing hypotheses or theories that might challenge or
+complement your theoretical results? N/A
+(d) Haveyouconsideredalternativemechanismsorexplanationsthatmightaccount
+for the same outcomes observed in your study? N/A
+(e) Did you address potential biases or limitations in your theoretical framework?
+No,critiquingtheminoritystressframeworkistoolargeofataskforapaperof
+thecurrentscope(i.e.,wherethepurposewastoimprovepredictionofminority
+stress on social media).
+(f) Have you related your theoretical results to the existing literature in social
+science? N/A
+(g) Did you discuss the implications of your theoretical results for policy, practice,
+or further research in the social science domain? N/A
+3. Additionally, if you are including theoretical proofs...
+(a) Did you state the full set of assumptions of all theoretical results? N/A
+(b) Did you include complete proofs of all theoretical results? N/A
+4. Additionally, if you ran machine learning experiments...
+(a) Did you include the code, data, and instructions needed to reproduce the main
+experimentalresults(eitherinthesupplementalmaterialorasaURL)?Yes,we
+include a link to all Python scripts. However, we do not release the data—see
+Ethical Considerations for more details.
+(b) Did you specify all the training details (e.g., data splits, hyperparameters, how
+they were chosen)? Yes, see Methodology and Experiments.
+(c) Did you report error bars (e.g., with respect to the random seed after running
+experiments multiple times)? No, however, we reported the mean metric after
+five independent trials with unique random seeds.
+(d) Did you include the total amount of compute and the type of resources used
+(e.g., type of GPUs, internal cluster, or cloud provider)? Yes, see Experiments.
+(e) Do you justify how the proposed evaluation is sufficient and appropriate to the
+claims made? Yes, see Experiments.
+(f) Do you discuss what is “the cost“ of misclassification and fault (in)tolerance?
+Yes, see Results.
+5. Additionally, if you are using existing assets (e.g., code, data, models) or curat-
+ing/releasing new assets...
+(a) If your work uses existing assets, did you cite the creators? Yes, see Datasets.
+(b) Did you mention the license of the assets? Yes, see Datasets.
+(c) DidyouincludeanynewassetsinthesupplementalmaterialorasaURL?N/A
+(d) Didyoudiscusswhetherandhowconsentwasobtainedfrompeoplewhosedata
+you’re using/curating? Yes, see Datasets and Ethical Considerations.
+(e) Did you discuss whether the data you are using/curating contains personally
+identifiable information or offensive content? Yes, see Datasets.
+(f) If you are curating or releasing new datasets, did you discuss how you intend to
+make your datasets FAIR (see FORCE11 (2020))? N/A
+(g) Ifyouarecuratingorreleasingnewdatasets,didyoucreateaDatasheetforthe
+Dataset (see Gebru et al. (2021))? N/A
+27
+6. Additionally, if you used crowdsourcing or conducted research with human sub-
+jects...
+(a) Did you include the full text of instructions given to participants and screen-
+shots? N/A
+(b) Did you describe any potential participant risks, with mentions of Institutional
+Review Board (IRB) approvals? Yes, see Experiments.
+(c) Did you include the estimated hourly wage paid to participants and the total
+amount spent on participant compensation? N/A
+(d) Did you discuss how data is stored, shared, and deidentified? Yes, see Datasets.
+28

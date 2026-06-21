@@ -1,0 +1,438 @@
+AraS2P: Arabic Speech-to-Phonemes System
+BassamMattar MohamedFayed AymanKhalafallah
+AlexandriaUniversity AppliedinnovationCenter AppliedinnovationCenter
+b.mattar@alexu.edu.eg m.essam@aic.gov.eg a.khalafallah@aic.gov.eg
+GeorgiaInstituteofTechnology
+mfayed8@gatech.edu
+Abstract siongeneratedviatheMSAPhonetiser,1 resulting
+in labeled corpora that capture fine-grained pho-
+This paper describes AraS2P, our speech-to- neticdistinctions,and(2)fine-tuningontheofficial
+phonemes system submitted to the Iqra’Eval sharedtaskdataaswellastargetedaugmentation
+2025 Shared Task. We adapted Wav2Vec2- throughXTTS-v2-synthesizedrecitationsthatvary
+BERTviaTwo-Stagetrainingstrategy. Inthe
+inAyatsegments,speakerembeddings,andnoisy
+firststage,task-adaptivecontinuepretraining
+textualcontenttosimulaterealisticrecitationser-
+was performed on large-scale Arabic speech-
+rors.
+phonemesdatasets,whichweregeneratedby
+Wesummarizeourcontributionsasfollows:
+converting the Arabic text using the MSA
+Phonetiser. In the second stage, the model
+• A phoneme-aware task-adaptive pretraining
+wasfine-tunedontheofficialsharedtaskdata,
+strategy for Arabic MDD using large-scale
+withadditionalaugmentationfromXTTS-v2-
+synthesized recitations featuring varied Ayat speech-phonemesdata.
+segments,speakerembeddings,andtextualper-
+• A targeted augmentation pipeline where we
+turbations to simulate possible human errors.
+Thesystemrankedfirstontheofficialleader- add noise to text, convert the noisy text to
+board,demonstratingthatphoneme-awarepre- phonemesusingMSA-Phonetizer,andgener-
+trainingcombinedwithtargetedaugmentation atecorrespondingspeechformanyspeakers
+yields strong performance in phoneme-level
+usingXTTS-v2(Casanovaetal.,2024).
+mispronunciationdetection.
+• OurmodelranksfirstontheIqra’Eval2025
+1 Introduction benchmarkleaderboard,demonstratingeffec-
+tivenessofourtrainingstrategy.
+Automatic mispronunciation detection and diag-
+2 RelatedWork
+nosis (MDD) plays a key role in computer-aided
+pronunciation learning (CAPL), providing learn-
+2.1 ArabicCAPLandMispronunciation
+ers with objective and scalable feedback on their
+Detection
+pronunciationqualityscore(Kheiretal.,2023). In
+Computer-Assisted Pronunciation Learning
+Arabic, MDD is particularly challenging due to
+(CAPL) systems rely on Mispronunciation
+the language’s complex phonemic inventory, the
+Detection and Diagnosis (MDD) to provide
+presenceofemphaticandpharyngealconsonants,
+automatedfeedbackforlearners(WittandYoung,
+and the semantic role of short vowels (diacritics)
+2000; Eskenazi, 2009). Early MDD approaches
+(AbdouandRashwan,2014). Thesecharacteristics
+often derived pronunciation quality metrics from
+makeaccuratephoneme-leveldetectionespecially
+acoustic likelihoods computed from recognition
+important, as even subtle deviations can signifi-
+results, such as the Goodness of Pronunciation
+cantlychangemeaning.
+(GOP)score(WittandYoung,2000). WhileGOP
+In this work, we describe a system based on
+provides a practical way to detect pronunciation
+a Wav2Vec2-BERT architecture (Baevski et al.,
+deviations, its granularity is limited to the
+2020) that employs a two-stage training strategy:
+phone level and its accuracy can be affected by
+(1)task-adaptivecontinuepretrainingonlargeAra-
+recognition errors. Other research (Bonaventura
+bicspeechdatasets—CommonVoice(Arabicsplit),
+SADA,andMASC—usingphoneme-levelsupervi- 1https://github.com/Iqra-Eval/MSA_phonetiser
+5202
+peS
+72
+]LC.sc[
+1v40532.9052:viXra
+et al., 2000; Raux and Kawahara, 2002) has unitslikeHuBERT(Hsuetal.,2021),w2v-BERT
+enhancedpronunciationmodelingbyincorporating learnsquantizationandcontextmodelinginasin-
+likelypronunciationvariantsintoapronunciation gleend-to-endprocess.
+dictionary,whichcaninvolvemanualspecification Multilingual Wav2Vec-BERT 2.0 extends this
+oferrorpatterns. approachto143languagesusingover4.5million
+Recent years have seen the adoption of deep hours of speech for pretraining (Barrault et al.,
+learning and end-to-end architectures for MDD, 2023). Its large-scale multilingual exposure en-
+enablingsystemstolearnpronunciationerrorpat- ables robust representation of fine phonetic dis-
+terns directly from data (Peng et al., 2022). For tinctions,eveninlow-resourcesettingslikeArabic
+Arabic,MDDposesadditionalchallengesduetoits MDD.ComparedtoWav2Vec2.0,Wav2Vec-BERT
+richconsonantinventory,emphaticandpharyngeal 2.0 incorporates MLM-based contextual model-
+sounds,andtheomissionofshortvowelsinmost ingdirectlyintotheacousticencoder,allowingit
+writtentextandASRsystems(Kheiretal.,2025). to learn longer-range phoneme patterns. For this
+Consequently, slight pronunciation errors—such reason, we used Wav2Vec-BERT 2.0 pretrained
+as mixing up emphatic and non-emphatic conso- weights.
+nants—maychangethemeaningofaword.
+2.3 BenchmarksandSharedTasks
+ArabicMDDresearchhasexploredhandcrafted
+acousticfeatures,CNN-basedclassifiers,andtrans- Iqra’Eval Shared Task (Kheir et al., 2025) repre-
+fer learning from large-scale ASR models (Calık sents a milestone for Arabic MDD by offering a
+etal.,2023;Alrashoudietal.,2025). Severalworks publiclyavailablebenchmark,standardizedevalu-
+have focused on Qur’anic recitation, where pre- ationprotocol,andaleaderboardforreproducible
+cise phoneme articulation is central (Abdou and comparison. SimilartoMGBChallengeforArabic
+Rashwan,2014;AlrumiahandAl-Shargabi,2023; ASR (Ali et al., 2016) and other shared tasks in
+HarereandJallad,2023). (Kheiretal.,2025)pro- speech and Natural Language Processing (NLP),
+vided the first publicly available benchmark for thisbenchmarkhasstimulatedcommunityengage-
+Arabicphoneme-levelMDD,usingQur’anicrecita- mentandmethodologicalinnovation. Throughin-
+tionwithtime-alignedphonemeannotations. tegratingcontrolledevaluationwithphoneme-level
+detection,Iqra’EvaladdressesacriticalgapinAra-
+2.2 Self-SupervisedPhonemeRecognition
+bicCAPLresearchbyestablishingastandardized
+Models
+benchmarkforsystematicevaluation.
+Self-supervisedlearninghassignificantlyadvanced
+phonemerecognition,whichinturnhasimproved 3 Two-StageTraining
+the performance of MDD systems. Wav2Vec-
+We adapted Wav2Vec2-BERT (Barrault et al.,
+BERT2.0model(Baevskietal.,2020)learnscon-
+2023)toourdownstreamtaskviaTwo-Stagetrain-
+textualized speech representations from raw au-
+ing. WecontinuedpretrainingitonArabicspeech-
+diobycombiningaconvolutionalencoderwitha
+phonemspairs(section3.1). Meanwhile,wecon-
+Transformercontextnetwork(Devlinetal.,2019;
+ducted exploratory data analysis to measure the
+Baevskietal.,2019). Itwaspretrainedusingacon-
+alignmentbetweencontinuepretrainingandfine-
+trastiveobjective(Chenetal.,2020;Heetal.,2020)
+tuning (section 3.2). Finally, we utilized training
+overmaskedaudiosegments,thenfine-tunedwith
+setofthetaskaswellasoursyntheticallygenerated
+aConnectionistTemporalClassification(CTC)ob-
+datasetforfine-tuning(section3.3).
+jective(Gravesetal.,2006). Wav2vec2.0achieves
+state-of-the-artperformanceinphonemerecogni- 3.1 AdaptiveContinuePretraining
+tiontasks,makingitwell-suitedforMDD.
+Continue pretraining has shown to be an effec-
+Building on this, Wav2Vec-BERT integrates a
+tivetechniquetoimprovetheperformanceofpre-
+BERT-stylemaskedlanguagemodeling(MLM)ob-
+trained models on languages of interest (Kalyan
+jective(Devlinetal.,2019)withtheWav2Vec2.0
+et al., 2021; Zhou et al., 2024; Fujii et al., 2024;
+framework (Chung et al., 2021). This joint opti-
+Alves et al., 2024). To boost our model, we con-
+mizationlearnsbothquantizedacousticunitsand
+tinued pretraining it on speech-phonemes pairs.
+contextualrelationshipsbetweenthem,producing
+We deployed MSA-phonetizer2 to convert open-
+richerandmorediscriminativephoneticrepresen-
+tations. Insteadofiterativelyre-clusteringdiscrete 2https://github.com/Iqra-Eval/MSA_phonetiser
+sourcedatasetswithspeech-textpairsintospeech- PhonetiserPhoneme InventoryPhoneme
+phonemes pairs, hence adapting it to suite the II0 II
+downstreamtask(AdaptiveContinuePretraining). I0I0 II
+Specifically, our pretraining data is constructed I0 I
+from Common Voice Arabic split (Ardila et al., I1 I
+2019),SADA(Alharbietal.,2024)andMASC(Al- ii0 ii
+Fetyanietal.,2023)datasets. Table1includesstatis- i0i0 ii
+ticsaboutthesedatasets. i0 i
+i1 i
+Dataset size(hours)
+UU0 UU
+CommonVoice(Ar-Split) 157
+U0 U
+SADA 668
+U1 U
+MASC 1,000
+uu0 uu
+u0u0 uu
+Table1: Statisticsofdatasetsusedinouradaptivecon-
+uu1 uu
+tinuepretrainingstage.
+u0 u
+u1 u
+We used Adam optimizer with weight de-
+cay(LoshchilovandHutter,2017). Wesethyper-
+Table2: MappingfromMSAphonetizeroutputtothe
+parametersasfollows: learningrateof1×10−5, trainingdatasetphonemeinventory.
+Linear Decay scheduler, weight decay equals to
+0.01, Adam betas of (0.9,0.999), gradient clip-
+main stages: prepare the noisy text and generate
+pingat1.0,andbatchsizeof32. Wecontinuethe
+correspondingaudiofiles.
+pretrainingfor800k iterations.
+PrepareNoisyText: Wedownloadedthetextof
+3.2 ExploratoryDataAnalysis
+the holy quran and perturbed the text with what
+We have had a hypothesis that there is a discrep-
+we consider to be valid noise. The algorithm to
+ancybetweenpretrainingdataandfine-tuningone.
+generatevalidnoiseisshowninalgorithm1.
+So,weplottedthehistogramofthemostfrequent
+phonemes in both the pretraining and training Algorithm1NoisingAlgorithm
+datasets. As shown in figure 1, the distributions
+1: procedure GENERATENOISYTEXT(text, arabic_chars,
+of phonemes differ notably, particularly for elon- noise_map,max_noise)
+gatedphonemessuchas“aa,”“ii,”“uu,”and“AA.”. 2: target_noise←RandInt(1,max_noise)
+3: new←emptylist;count←0
+This observation confirms the correctness of our
+4: forchintextdo
+hypothesisandhighlightstheimportanceoffurther 5: ifcount>=target_noisethen
+6: Appendch
+fine-tuningondownstreamtask.
+7: elseifUniformRandom(0,1)<p then
+noise
+Prior to fine-tuning, we notice a difference be-
+8: count←count+1
+tweenthephonemeinventoryinthetrainingdataset 9: Choosenoisetype:delete/substitute/insert
+10: ifsubstitutethen
+and the phonemes produced by the MSA phone-
+11: AppendRandChoice(noise_map[ch])
+tizer. WealignthephonemesasshowninTable2. 12: elseifinsertthen
+13: AppendRandChoice(arabic_chars),ch
+14: endif
+15: else
+3.3 Fine-tuning
+16: Appendch
+Aftercontinuingpretraining,weperformedvanilla 17: endif
+18: endfor
+fine-tuning for the model on our “Tuning
+19: returnJoin(new)
+dataset”3.3.1. Weusedthesametrainingparame- 20: endprocedure
+tersasthatofcontinuepretraining.
+3.3.1 Tuningdataset AudioGeneration: Wedownloadedmanyaudio
+Tofurtheralignthemodelwiththetask,weused files for various speakers to ensure the variety of
+the training set provided with the task, and cre- dataandtoavoidoverfitingoversmallsetofspeak-
+atedsyntheticdatasettoincreaseoveralldatasize. ers. Then,wegeneratedspeakerembeddingsusing
+Preparingthesyntheticdatahaswentthroughtwo embedder module in XTTS-v2 (Casanova et al.,
+Figure1: Histogramoftopfrequentphonemesinpseudo-labelledpretrainingandtrainingdatasets
+2024). Finally,weconvertedthenoisytexttoaudio 4.2 QuantativeAnalysis
+filesusingXTTS-v2.
+Table3showstheresultsofoursystemunderdif-
+The resulted dataset is 60 hours of audio files,
+ferentsetups: afteradaptivecontinuepretraining,
+andrepresented30%ofTuningdata.
+fine-tuningontheofficialtrainingdataofthetask,
+While selecting checkpoint for testing, we no-
+and after fine-tuning on our Tuning data. The re-
+ticed a shift in distribution between our valid set
+sults demonstrate that fine-tuning is essential for
+and competition’s test set. Hence, we selected
+optimizingthesystem’salignmentwithQur’anic
+checkpointsavedafter2.5epochsforsubmission
+recitationassessment. Moreimportantly,theyshow
+tobalancegeneralizabilityandgoodperformance
+theeffectivenessofoursyntheticdatageneration
+onthedownstreamtask.
+pipeline, achievingtopperformanceacrossallof
+4 Results oursystems.
+Inthissection,weillustratethemetricsused(sec-
+4.3 QualitativeAnalysis
+tion 4.1), report quantitative results (section 4.2),
+and shows some examples from our qualitative Table 4 presents examples from both the fine-
+analysis(section4.3). tuningontrainingsetonlysetupandthecontinued
+pretraining-one. Because of time constraints and
+4.1 Metrics
+highsimilaritybetweenfine-tuningontrainingset
+Thesystemisevaluatedusingseveralcomplemen- only and on Tuning set, we leave its qualitative
+tarymetrics. First,theCorrectRatemeasuresthe analysisforfuturework. Theresultsindicatethat
+proportionofphonemesthataredetectedcorrectly, the system trained with pretraining alone fails to
+and is defined as 1−PhonemeErrorRate(PER). accurately predict phonemes associated with dia-
+Inaddition, Accuracycapturestheproportionof critics,particularlythe“shadda”. Thislimitationis
+phonemesclassifiedcorrectlyaseitherpronounced likelyduetotherarityofsuchphonemesinthepre-
+correctly or mispronounced. To further distin- trainingdataasdiscussedinsubsection3.1. This
+guish system behavior, True Acceptance (TA) furtherconfirmsthatadaptivecontinuepretraining
+refers to cases where a correct phoneme is cor- wasnotsufficientandthatweneedforfine-tuning
+rectly accepted, while True Rejection (TR) cor- onthetrainingsetofthetask.
+responds to mispronounced phonemes that are
+correctly flagged. Conversely, errors are repre- 5 Conclusion
+sentedbyFalseAcceptance(FA),whenamispro-
+nunciation is missed, and False Rejection (FR), In this work, we illustrated our recipe to adapt
+when a correct phoneme is wrongly flagged. Be- Wav2Vec-BERT 2.0 on speech-to-phoneme task.
+yonddetection,CorrectDiagnosis(CD)evaluates First,adaptivelycontinuedpretrainingitonArabic
+how often the system not only detects a mispro- speech-phonemes corpora. Second, we prepared
+nunciation but also identifies the specific mispro- syntheticdataforfine-tuningphasebygenerating
+nounced phoneme. Finally, the system’s classi- noisy text, convert it to phonemes using MSA-
+ficationqualityissummarizedthroughPrecision, phonetizer,andgeneratecorrespondingspeechfor
+definedas TR ,Recall,definedas TR ,and manyspeakersusingXTTS-v2. Ourmodelscored
+TR+FR TR+FA
+their harmonic mean, the F1-score, computed as firstonIqraEval2025,illustratingtheffectiveness
+2·Precision·Recall. ofourapproach.
+Precision+Recall
+System F1↑ Prec.↑ Rec.↑ CR↑ Acc.↑ TA↑ FR↓ FA↓ CD↑
+pretrainingonly 0.1923 0.1091 0.807 0.5156 0.5117 0.5264 0.4736 0.193 0.4363
+fine-tuning
+trainingdata 0.4561 0.3327 0.7252 0.8714 0.8576 0.8954 0.1046 0.2748 0.568
+Tuningdata 0.4726 0.3713 0.6501 0.8985 0.8701 0.9209 0.0791 0.3499 0.6873
+Table 3: Performance on the Iqra’Eval 2025 leaderboard. CR = Correct Rate, Acc. = Accuracy, TA = True
+Acceptance,FR=FalseRejection,FA=FalseAcceptance,CD=CorrectDiagnosis.
+Ref.AyaSegment Recited Aya Segment PretrainedSystemOutput Fine-tunedSystemOutput
+(cid:233)(cid:16)(cid:19) (cid:74)(cid:11)(cid:9) (cid:211)(cid:11)(cid:11)(cid:13) (cid:64) (cid:128)(cid:11) (cid:65)(cid:170)(cid:11)(cid:15) (cid:74)(cid:12) (cid:9) (cid:203)(cid:64) (cid:209)(cid:12) (cid:186)(cid:12) (cid:74)(cid:10)(cid:130)(cid:15) (cid:17)(cid:11) (cid:170)(cid:11)(cid:9) (cid:10)(cid:75)(cid:12) ( (cid:233)(cid:16)(cid:19)W (cid:74)(cid:11)(cid:9) (cid:211)(cid:11)(cid:11)(cid:13) (cid:64)ith (cid:128)E (cid:12)r (cid:65)r (cid:170)(cid:11)o (cid:15) (cid:74)(cid:12) (cid:9) (cid:203)r (cid:64)) (cid:209)(cid:12) (cid:186)(cid:12) (cid:74)(cid:10)(cid:130)(cid:15) (cid:17)(cid:11) (cid:109)(cid:11)(cid:9) (cid:26)(cid:39) (cid:10)(cid:12)
+ii x $ ii k m l n E aa s m y u x A $$ ii k u m u l nn
+(cid:12)(cid:21)(cid:9) (cid:12)(cid:21)(cid:9)
+(cid:233)(cid:74)(cid:211)(cid:11) (cid:233)(cid:74)(cid:211)(cid:11) n h m n h u E aa s u < a m a n a t a
+n mm i n h u
+(cid:12)(cid:12)(cid:21)(cid:11)(cid:9) (cid:11) (cid:15)(cid:11) (cid:12)(cid:11)(cid:21)(cid:11)(cid:9) (cid:11) (cid:15)(cid:11)
+(cid:89)(cid:74)(cid:46)(cid:170)(cid:75) (cid:188)(cid:65)(cid:75)(cid:10)(cid:13)(cid:11)(cid:64) (cid:89)(cid:74)(cid:46)(cid:170)(cid:75) (cid:188)(cid:65)(cid:75)(cid:10)(cid:13)(cid:11)(cid:64)
+y aa k n E b d < ii y aa k a n a E b a d
+(cid:73)(cid:11) (cid:46) (cid:75)(cid:10)(cid:21) (cid:80)(cid:11) (cid:66)(cid:11) (cid:72)(cid:12) (cid:46) (cid:65)(cid:16) (cid:74)(cid:11) (cid:186)(cid:11) (cid:21) (cid:203)(cid:64) (cid:189)(cid:11) (cid:203)(cid:88)(cid:11)(cid:9) (cid:73)(cid:12) (cid:46) (cid:75)(cid:10)(cid:21) (cid:80)(cid:11) (cid:66)(cid:11) (cid:72)(cid:12) (cid:46) (cid:65)(cid:16) (cid:74)(cid:11) (cid:186)(cid:11) (cid:21) (cid:203)(cid:64) (cid:189)(cid:11) (cid:203)(cid:88)(cid:11)(cid:9) * aa l i k l k t aa b l aa *u aa l i k a l k i t a b u
+(cid:9) (cid:9)
+(cid:11)(cid:233)(cid:74)(cid:10)(cid:175)(cid:11) (cid:11)(cid:233)(cid:74)(cid:10)(cid:175)(cid:11) r ii b f ii h l aa r a y b a f ii h i
+(cid:225)(cid:9)(cid:212)(cid:11) (cid:103)(cid:81)(cid:15)(cid:11) (cid:203)(cid:22)
+(cid:64)
+(cid:225)(cid:9)(cid:212)(cid:11) (cid:103)(cid:80)(cid:15)(cid:11) (cid:80)(cid:15)(cid:11) (cid:81)(cid:15)(cid:11) (cid:203)(cid:22)
+(cid:64)
+a l r H m n l rr rr rr a H m a n i
+Table4: ComparisonBetweenOnlyPretrainedandFine-tunedSystem
+6 Acknowledgment Norah Alrashoudi, Hend Al-Khalifa, and Yousef
+Alotaibi.2025. Improvingmispronunciationdetec-
+We thank the IqraEval organizers(El Kheir et al., tionanddiagnosisfornon-nativelearnersoftheara-
+2025)fortheirsupportandforprovidingcleardoc- biclanguage. DiscoverComputing,28(1):1.
+umentation and tools such as the evaluation API.
+SarahSAlrumiahandAmalAAl-Shargabi.2023. In-
+Wealsoacknowledgethecontributorsoftheopen-
+telligentquranrecitationrecognitionandverification:
+sourcedatasetsweused. Thiseffortwassupported
+Researchtrendsandopenissues. ArabianJournal
+byAppliedInnovationCenter(AIC)‘sHighPer- forScienceandEngineering,48(8):9859–9885.
+formanceComputingfacilities
+DuarteMAlves,JoséPombal,NunoMGuerreiro,Pe-
+droHMartins,JoãoAlves,AminFarajian,BenPe-
+ters,RicardoRei,PatrickFernandes,SwetaAgrawal,
+References
+and 1 others. 2024. Tower: An open multilingual
+SherifMahdyAbdouandMohsenRashwan.2014. A large language model for translation-related tasks.
+computer aided pronunciation learning system for arXivpreprintarXiv:2402.17733.
+teaching the holy quran recitation rules. In 2014
+IEEE/ACS 11th International Conference on Com- RosanaArdila,MeganBranson,KellyDavis,Michael
+puter Systems and Applications (AICCSA), pages Henretty, Michael Kohler, Josh Meyer, Reuben
+543–550.IEEE. Morais, Lindsay Saunders, Francis M Tyers, and
+GregorWeber.2019. Commonvoice: Amassively-
+Mohammad Al-Fetyani, Muhammad Al-Barham,
+multilingual speech corpus. arXiv preprint
+Gheith Abandah, Adham Alsharkawi, and Maha
+arXiv:1912.06670.
+Dawas.2023. Masc: Massivearabicspeechcorpus.
+InIEEE-SLT.
+AlexeiBaevski, SteffenSchneider, andMichaelAuli.
+2019. vq-wav2vec: Self-supervised learning of
+SadeenAlharbi,AreebAlowisheq,ZoltánTüske,Ka-
+discrete speech representations. arXiv preprint
+reemDarwish,AbdullahAlrajeh,AbdulmajeedAl-
+arXiv:1910.05453.
+rowithi, Aljawharah Bin Tamran, Asma Ibrahim,
+Raghad Aloraini, Raneem Alnajim, and 1 oth-
+AlexeiBaevski,YuhaoZhou,AbdelrahmanMohamed,
+ers. 2024. Sada: Saudi audio dataset for arabic.
+andMichaelAuli.2020. wav2vec2.0: Aframework
+In ICASSP 2024-2024 IEEE International Confer-
+forself-supervisedlearningofspeechrepresentations.
+ence on Acoustics, Speech and Signal Processing
+Advancesinneuralinformationprocessingsystems,
+(ICASSP),pages10286–10290.IEEE.
+33:12449–12460.
+AhmedAli,PeterBell,JamesGlass,YacineMessaoui,
+Hamdy Mubarak, Steve Renals, and Yifan Zhang. Loïc Barrault, Yu-An Chung, Mariano Coria Megli-
+2016. The mgb-2 challenge: Arabic multi-dialect oli, David Dale, Ning Dong, Mark Duppenthaler,
+broadcastmediarecognition. pages279–284. Paul-AmbroiseDuquenne,BrianEllis,HadyElsahar,
+JustinHaaheim,and1others.2023. Seamless: Mul- AlexGraves,SantiagoFernández,FaustinoGomez,and
+tilingualexpressiveandstreamingspeechtranslation. JürgenSchmidhuber.2006. Connectionisttemporal
+arXivpreprintarXiv:2312.05187. classification: labellingunsegmentedsequencedata
+withrecurrentneuralnetworks. InProceedingsofthe
+Patrizia Bonaventura, Daniel Herron, and Wolfgang 23rdinternationalconferenceonMachinelearning,
+Menzel.2000. Phoneticrulesfordiagnosisofpro- pages369–376.
+nunciationerrors. InKONVENS2000/Sprachkommu-
+nikation,VorträgedergemeinsamenVeranstaltung AhmadAlHarereandKhloudAlJallad.2023. Quran
+5.KonferenzzurVerarbeitungnatürlicherSprache recitationrecognitionusingend-to-enddeeplearning.
+(KONVENS), 6. ITG-Fachtagung" Sprachkommu- arXivpreprintarXiv:2305.07034.
+nikation",pages225–230.
+KaimingHe,HaoqiFan,YuxinWu,SainingXie,and
+RossGirshick.2020. Momentumcontrastforunsu-
+Sükrü Selim Calık, Ayhan Kucukmanisa, and
+pervisedvisualrepresentationlearning. InProceed-
+Zeynep Hilal Kilimci. 2023. An ensemble-based
+ingsoftheIEEE/CVFconferenceoncomputervision
+frameworkformispronunciationdetectionofarabic
+andpatternrecognition,pages9729–9738.
+phonemes. AppliedAcoustics,212:109593.
+Wei-NingHsu,BenjaminBolte,Yao-HungHubertTsai,
+EdressonCasanova,KellyDavis,ErenGölge,Görkem
+KushalLakhotia,RuslanSalakhutdinov,andAbdel-
+Göknar, Iulian Gulea, Logan Hart, Aya Aljafari,
+rahman Mohamed. 2021. Hubert: Self-supervised
+Joshua Meyer, Reuben Morais, Samuel Olayemi,
+speechrepresentationlearningbymaskedprediction
+and 1 others. 2024. Xtts: a massively multilin-
+ofhiddenunits. IEEE/ACMtransactionsonaudio,
+gualzero-shottext-to-speechmodel. arXivpreprint
+speech,andlanguageprocessing,29:3451–3460.
+arXiv:2406.04904.
+KatikapalliSubramanyamKalyan,AjitRajasekharan,
+TingChen,SimonKornblith,MohammadNorouzi,and andSivanesanSangeetha.2021. Ammus: Asurvey
+Geoffrey Hinton. 2020. A simple framework for oftransformer-basedpretrainedmodelsinnaturallan-
+contrastivelearningofvisualrepresentations. InIn- guageprocessing. arXivpreprintarXiv:2108.05542.
+ternationalconferenceonmachinelearning,pages
+1597–1607.PmLR. Yassine El Kheir, Ahmed Ali, and Shammur Ab-
+sar Chowdhury. 2023. Automatic pronunci-
+Yu-An Chung, Yu Zhang, Wei Han, Chung-Cheng ation assessment–a review. arXiv preprint
+Chiu,JamesQin,RuomingPang,andYonghuiWu. arXiv:2310.13974.
+2021. W2v-bert: Combining contrastive learning
+andmaskedlanguagemodelingforself-supervised Yassine El Kheir, Omnia Ibrahim, Amit Meghanani,
+speechpre-training. In2021IEEEAutomaticSpeech Nada Almarwani, Hawau Olamide Toyin, Sadeen
+RecognitionandUnderstandingWorkshop(ASRU), Alharbi,ModarAlfadly,LamyaAlkanhal,Ibrahim
+pages244–250.IEEE. Selim,ShehabElbatal,and1others.2025. Towards
+a unified benchmark for arabic pronunciation as-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and sessment: Quranic recitation as case study. arXiv
+KristinaToutanova.2019. Bert: Pre-trainingofdeep preprintarXiv:2506.07722.
+bidirectionaltransformersforlanguageunderstand-
+Ilya Loshchilov and Frank Hutter. 2017. Decou-
+ing. In Proceedings of the 2019 conference of the
+pled weight decay regularization. arXiv preprint
+NorthAmericanchapteroftheassociationforcom-
+arXiv:1711.05101.
+putationallinguistics: humanlanguagetechnologies,
+volume1(longandshortpapers),pages4171–4186.
+LinkaiPeng,YingmingGao,BinghuaiLin,Dengfeng
+Ke,YanluXie,andJinsongZhang.2022. Text-aware
+Yassine El Kheir, Amit Meghanani, Hawau Olamide
+end-to-endmispronunciationdetectionanddiagnosis.
+Toyin, Nada Almarwani, Omnia Ibrahim, Youssef
+arXivpreprintarXiv:2206.07289.
+Elshahawy,MostafaShahin,andAhmedAli.2025.
+Iqra’eval: Asharedtaskonqur’anicpronunciation
+AntoineRauxandTatsuyaKawahara.2002. Automatic
+assessment. InProceedingsoftheThirdArabicNat-
+intelligibility assessment and diagnosis of critical
+uralLanguageProcessingConference.Association
+pronunciationerrorsforcomputer-assistedpronunci-
+forComputationalLinguistics.
+ationlearning. InINTERSPEECH,pages737–740.
+Maxine Eskenazi. 2009. An overview of spoken lan- Silke M Witt and Steve J Young. 2000. Phone-level
+guagetechnologyforeducation. Speechcommunica- pronunciationscoringandassessmentforinteractive
+tion,51(10):832–844. language learning. Speech communication, 30(2-
+3):95–108.
+Kazuki Fujii, Taishi Nakamura, Mengsay Loem, Hi-
+rokiIida,MasanariOhi,KakeruHattori,HiraiShota, Da-Wei Zhou, Hai-Long Sun, Jingyi Ning, Han-Jia
+Sakae Mizuki, Rio Yokota, and Naoaki Okazaki. Ye,andDe-ChuanZhan.2024. Continuallearning
+2024. Continual pre-training for cross-lingual llm withpre-trainedmodels: Asurvey. arXivpreprint
+adaptation: Enhancingjapaneselanguagecapabili- arXiv:2401.16386.
+ties. arXivpreprintarXiv:2404.17790.

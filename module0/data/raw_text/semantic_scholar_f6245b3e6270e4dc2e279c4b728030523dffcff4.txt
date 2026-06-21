@@ -1,0 +1,425 @@
+LEGAL-BERT: The Muppets straight out of Law School
+IliasChalkidis†‡ ManosFergadiotis†‡
+ProdromosMalakasiotis†‡ NikolaosAletras ∗ IonAndroutsopoulos†‡
+†DepartmentofInformatics,AthensUniversityofEconomicsandBusiness
+‡InstituteofInformatics&Telecommunications,NCSR“Demokritos”
+∗ComputerScienceDepartment,UniversityofSheffield,UK
+[ihalk,fergadiotis,rulller,ion]@aueb.gr
+n.aletras@sheffield.ac.uk
+Abstract
+BERThasachievedimpressiveperformancein
+several NLP tasks. However, there has been
+limited investigation on its adaptation guide-
+lines in specialised domains. Here we focus
+on the legal domain, where we explore sev-
+eral approaches for applying BERT models to Figure1:ThethreealternativeswhenemployingBERTfor
+downstream legal tasks, evaluating on multi- NLPtasksinspecialiseddomains:(a)useBERToutofthebox,
+ple datasets. Our findings indicate that the
+(b)furtherpre-trainBERT(FP),and(c)pre-trainBERTfrom
+scratch(SC).Allstrategieshaveafinalfine-tuningstep.
+previous guidelines for pre-training and fine-
+tuning, often blindly followed, do not always
+genericcorpora(e.g.,Wikipedia,Children’sBooks,
+generalize well in the legal domain. Thus we
+etc.) BERThasbeenreportedtounder-performin
+proposeasystematicinvestigationoftheavail-
+specialiseddomains,suchasbiomedicalorscien-
+able strategies when applying BERT in spe-
+tific text (Lee et al., 2019; Beltagy et al., 2019).
+cialised domains. These are: (a) use the orig-
+inal BERT out of the box, (b) adapt BERT by Toovercomethislimitationtherearetwopossible
+additionalpre-trainingondomain-specificcor- strategies; either further pre-train (FP) BERT on
+pora, and (c) pre-train BERT from scratch on domain specific corpora, or pre-train BERT from
+domain-specific corpora. We also propose a scratch (SC) on domain specific corpora. Conse-
+broader hyper-parameter search space when
+quently, to employ BERT in specialised domains
+fine-tuning for downstream tasks and we re-
+onemayconsiderthreealternativestrategiesbefore
+lease LEGAL-BERT, a family of BERT models
+fine-tuningforthedownstreamtask(Figure1): (a)
+intendedtoassistlegalNLPresearch,computa-
+tionallaw,andlegaltechnologyapplications. use BERToutofthebox,(b)furtherpre-train(FP)
+BERTondomain-specificcorpora,and(c)pre-train
+BERTfromscratch(SC)ondomainspecificcorpora
+1 Introduction
+withanewvocabularyofsub-wordunits.
+Pre-trainedlanguagemodelsbasedonTransform- In this paper, we systematically explore strate-
+ers (Vaswani et al., 2017), such as BERT (Devlin gies(a)–(c)inthelegaldomain,whereBERTadap-
+et al., 2019) and its variants (Liu et al., 2019; tation has yet to be explored. As with other spe-
+Yangetal.,2019;Lanetal.,2019),haveachieved cialiseddomains,legaltext(e.g.,laws,courtplead-
+state-of-the-artresultsinseveraldownstream NLP ings, contracts) has distinct characteristics com-
+tasks on generic benchmark datasets, such as paredtogenericcorpora,suchasspecialisedvocab-
+GLUE(Wangetal.,2018),SQUAD(Rajpurkaretal., ulary,particularlyformalsyntax,semanticsbased
+2016),andRACE(Laietal.,2017). on extensive domain-specific knowledge etc., to
+Typically,transferlearningwithlanguagemod- theextentthatlegallanguageisoftenclassifiedas
+els requires a computationally heavy step where a‘sublanguage’(Tiersma,1999;Williams,2007;
+thelanguagemodelispre-trainedonalargecorpus Haigh, 2018). Note, however, that our work con-
+andalessexpensivestepwherethemodelisfine- tributesmorebroadlytowardsabetterunderstand-
+tuned for downstream tasks. When using BERT, ingofdomainadaptationforspecialiseddomains.
+thefirststepcanbeomittedasthepre-trainedmod- Ourkeyfindingsare: (i)Furtherpre-training(FP)
+els are publicly available. Being pre-trained on orpre-training BERTfromscratch(SC)ondomain-
+Corpus No.documents TotalSizeinGB Repository
+EUlegislation 61,826 1.9(16.5%) EURLEX(eur-lex.europa.eu)
+UKlegislation 19,867 1.4(12.2%) LEGISLATION.GOV.UK(http://www.legislation.gov.uk)
+EuropeanCourtofJustice(ECJ)cases 19,867 0.6( 5.2%) EURLEX(eur-lex.europa.eu)
+EuropeanCourtofHumanRights(ECHR)cases 12,554 0.5( 4.3%) HUDOC(http://hudoc.echr.coe.int)
+UScourtcases 164,141 3.2(27.8%) CASELAWACCESSPROJECT(https://case.law)
+UScontracts 76,366 3.9(34.0%) SEC-EDGAR(https://www.sec.gov/edgar.shtml)
+Table1:Detailsonthetrainingcorporausedtopre-trainthedifferentvariationsofLEGAL-BERT.Allrepositorieshaveopen
+access,exceptfromtheCaseLawAccessProject,whereaccessisgrantedtoresearchersuponrequest.
+specificcorpora,performsbetterthanusing BERT BERT-BASE, or by pre-training BERT-BASE from
+outoftheboxfordomain-specifictasks;bothstrate- scratch(SC)onadomain-specificcorpus,i.e.,the
+giesaremostlycomparableinthreelegaldatasets. modelisrandomlyinitializedandthevocabulary
+(ii) Exploring a broader hyper-parameter range, wascreatedfromscratch. Improvementswerere-
+comparedtotheguidelinesofDevlinetal.(2019), ported in downstream tasks in both cases. Sung
+canleadtosubstantiallybetterperformance. (iii) etal.(2019)furtherpre-trainedBERT-BASEontext-
+Smaller BERT-basedmodelscanbecompetitiveto booksandquestion-answerpairstoimproveshort
+larger,computationallyheavieronesinspecialised answergradingforintelligenttutoringsystems.
+domains. Mostimportantly,(iv)wereleaseLEGAL- Oneshortcomingisthatallpreviousworkdoes
+BERT, a family of BERT models for the legal do- notinvestigatetheeffectofvaryingthenumberof
+main, intended to assist legal NLP research, com- pre-trainingsteps,withtheexceptionofLeeetal.
+putationallaw,andlegaltechnologyapplications.1 (2019). Moreimportantly,whenfine-tuningforthe
+Thisfamilyincludes LEGAL-BERT-SMALL,alight- downstreamtask,allpreviousworkblindlyadopts
+weight model pre-trained from scratch on legal thehyper-parameterselectionguidelinesofDevlin
+data, which achieves comparable performance to etal.(2019)withoutfurtherinvestigation. Finally,
+larger models, while being much more efficient nopreviousworkconsiderstheeffectivenessand
+(approximately4timesfaster)withasmallerenvi- efficiencyofsmallermodels(e.g.,fewerlayers)in
+ronmentalfootprint(Strubelletal.,2019). specialised domains. The full capacity of larger
+andcomputationallymoreexpensivemodelsmay
+2 RelatedWork
+beunnecessaryinspecialiseddomains,wheresyn-
+taxmaybemorestandardized,therangeoftopics
+Most previous work on the domain-adaptation
+discussedmaybenarrower,termsmayhavefewer
+of BERT and variants does not systematically ex-
+plore the full range of the above strategies and senses etc. We also note that although BERT is
+mainly targets the biomedical or broader scien-
+thecurrentstate-of-the-artinmanylegalNLPtasks
+(Chalkidisetal.,2019c,a,d),nopreviousworkhas
+tific domains. Lee et al. (2019) studied the ef-
+considereditsadaptationforthelegaldomain.
+fectoffurtherpre-training BERT-BASE onbiomed-
+ical articles for 470k steps. The resulting model
+3 LEGAL-BERT:AnewfamilyofBERT
+(BIOBERT)wasevaluatedonbiomedicaldatasets,
+modelsforthelegaldomain
+reporting performance improvements compared
+to BERT-BASE. Increasingtheadditionaldomain- Trainingcorpora: Topre-trainthedifferentvari-
+specificpre-trainingto1Msteps,however,didnot ations of LEGAL-BERT, we collected 12 GB of
+leadtoanyclearfurtherimprovements. Alsentzer diverseEnglishlegaltextfromseveralfields(e.g.,
+et al. (2019) released Clinical BERT and Clini- legislation, court cases, contracts) scraped from
+cal BIOBERT by further pre-training BERT-BASE publiclyavailableresources(seeTable1).
+and BIOBERT, respectively, on clinical notes for LEGAL-BERT-FP: FollowingDevlinetal.(2019),
+150k steps. Both models were reported to out- werunadditionalpre-trainingstepsof BERT-BASE
+perform BERT-BASE. Inotherrelatedwork, Belt- on domain-specific corpora. While Devlin et al.
+agy et al. (2019) released SCIBERT, a family of (2019)suggestedadditionalstepsupto100k,we
+BERT-based models for scientific text, with em- alsopre-trainmodelsupto500ktoexaminetheef-
+phasis on the biomedical domain. Their models fectofprolongedin-domainpre-trainingwhenfine-
+were obtained either by further pre-training (FP) tuningondownstreamtasks. BERT-BASEhasbeen
+pre-trainedforsignificantlymorestepsingeneric
+1Allmodelsandcodeexamplesareavailableat:https:
+//huggingface.co/nlpaueb. corpora(e.g.,Wikipedia,Children’sBooks),thusit
+of EU laws, also suitable for few and zero-shot
+learning. ECHR-CASES (Chalkidis et al., 2019a)
+containscasesfromtheEuropeanCourtofHuman
+Rights (Aletras et al., 2016) and can be used for
+binaryandmulti-labeltextclassification. Finally,
+CONTRACTS-NER (Chalkidisetal.,2017,2019d)
+isadatasetfornamedentityrecognitiononUScon-
+tractsconsistingofthreesubsets,contractheader,
+dispute resolution, and lease details. We repli-
+catetheexperimentsofChalkidisetal.(2019c,a,d)
+whenfine-tuningBERTforalldatasets.5
+Tune your Muppets! As a rule of thumb
+Figure2:TrainlossesforallLEGAL-BERTversions.
+to fine-tune BERT for downstream tasks, De-
+vlin et al. (2019) suggested a minimal hyper-
+ishighlyskewedtowardsgenericlanguage,usinga parameter tuning strategy relying on a grid-
+vocabularyof30ksub-wordsthatbettersuitsthese search on the following ranges: learning rate
+genericcorpora. Nonethelessweexpectthatpro- ∈ {2e−5,3e−5,4e−5,5e−5}, number of train-
+longedin-domainpre-trainingwillbebeneficial. ing epochs ∈ {3,4}, batch size ∈ {16,32} and
+LEGAL-BERT-SC has the same architecture as fixeddropoutrateof0.1. Thesenotwelljustified
+BERT-BASE with12layers, 768hiddenunitsand suggestions are blindly followed in the literature
+12attentionheads(110Mparameters). Weusethis (Lee et al., 2019; Alsentzer et al., 2019; Beltagy
+architecture in all our experiments unless other- et al., 2019; Sung et al., 2019). Given the rela-
+wisestated. Weuseanewlycreatedvocabularyof tivelysmallsizeofthedatasets,weusebatchsizes
+equalsizeto BERT’svocabulary.2 Wealsoexper- ∈ {4,8,16,32}. Interestingly, in preliminary ex-
+iment with LEGAL-BERT-SMALL, a substantially periments,wefoundthatsomemodelsstillunderfit
+smallermodel,with6layers,512hiddenunits,and after 4 epochs, the maximum suggested, thus we
+8attentionheads(35Mparameters, 32%thesize useearlystoppingbasedonvalidationloss,with-
+of BERT-BASE). This light-weight model, trains out a fixed maximum number of training epochs.
+approx.4timesfaster,whilealsorequiringfewer Wealsoconsideranadditionallowerlearningrate
+hardwareresources.3 Ourhypothesisisthatsucha (1e−5) to avoid overshooting local minima, and
+specialisedBERTmodelcanperformwellagainst anadditionalhigherdrop-outrate(0.2)toimprove
+genericBERTmodels,despiteitsfewerparameters. regularization. Figure4(toptwobars)showsthat
+ourenrichedgrid-search(tuned)hasasubstantial
+4 ExperimentalSetup impact in most of the end-tasks compared to the
+default hyper-parameter strategy of Devlin et al.
+Pre-training Details: To be comparable with (2019).6 WeadoptthisstrategyforLEGAL-BERT.
+BERT,wetrain LEGAL-BERTfor1Msteps(approx.
+40epochs)overallcorpora(Section3),inbatches 5 ExperimentalResults
+of256samples,includingupto512sentencepiece
+tokens. WeusedAdamwithlearningrateof1e−4, Pre-trainingResults: Figure2presentsthetrain-
+as in the original implementation. We trained all ing loss across pre-training steps for all versions
+modelswiththeofficialBERTcode4 usingv3TPUs ofLEGAL-BERT. LEGAL-BERT-SCperformsmuch
+with8coresfromGoogleCloudComputeServices. betteronthepre-trainingobjectivesthan LEGAL-
+BERT-SMALL, which was highly expected, given
+Legal NLP Tasks: We evaluate our models on
+thedifferentsizesofthetwomodels. Attheendof
+textclassificationandsequencetaggingusingthree
+itspre-training,LEGAL-BERT-SMALLhassimilar
+datasets. EURLEX57K (Chalkidisetal.,2019b)is
+loss to that of BERT-BASE pre-trained on generic
+alarge-scalemulti-labeltextclassificationdataset
+corpora(arrowinFigure2). Whenweconsiderthe
+2We use Google’s sentencepiece library (https:// additional pre-training of BERT on legal corpora
+github.com/google/sentencepiece.)
+3ConsultAppendixCforacomparisononhardwarere- 5Forimplementationdetails,seeAppendicesAandB.
+sourcesaswellastrainingandinferencetimes. 6IntheleasedetailssubsetofCONTRACTS-NER,theopti-
+4github.com/google-research/bert malhyper-parametersfallintherangesofDevlinetal.(2019).
+Figure3:End-taskresultsondevelopmentdataacrossalldatasetsforLEGAL-BERT-FPvariants.
+Figure4:Perplexities(PPT)andend-taskresultsontestdataacrossalldatasetsandallmodelsconsidered.Thereportedresults
+areaveragesovermultiplerunsalsoindicatedbyaverticalblacklineineachbar.Thetransparentandopaquepartsofeachbar
+showtheminimumandmaximumscoresoftheruns,respectively.AstarindicatesversionsofLEGAL-BERTthatperformbetter
+onaveragethanthetunedBERT-BASE.
+(LEGAL-BERT-FP),weobservethatitadaptsfaster small drop in perplexity (2.7). In ECHR-CASES,
+and better in specific sub-domains (esp. ECHR weagainobservesmalldifferencesinperplexities
+cases, US contracts), comparing to using the full (1.1 drop) and in the performance on the binary
+collectionoflegalcorpora,wherethetrainingloss classification task (0.8% improvement). On the
+doesnotreachthatofLEGAL-BERT-SC. contrary,weobserveamoresubstantialimprove-
+End-taskResults: Figure3presentstheresultsof mentinthemoredifficultmulti-labeltask(2.5%)
+allLEGAL-BERT-FPvariantsondevelopmentdata.
+indicating that the LEGAL-BERT variations bene-
+Theoptimalstrategyforfurtherpre-trainingvaries
+fit from in-domain knowledge. On CONTRACTS-
+acrossdatasets. Thusinsubsequentexperimentson
+NER, thedropinperplexityislarger(5.6), which
+is reflected in the increase in F1 on the contract
+testdata,wekeepforeachend-taskthevariantof
+header(1.8%)anddisputeresolution(1.6%)sub-
+LEGAL-BERT-FPwiththebestdevelopmentresults.
+sets. Intheleasedetailssubset,wealsoobservean
+Figure4showstheperplexitiesandend-taskre-
+sults(minimum,maximum,andaveragesovermul-
+improvement(1.1%). Impressively,LEGAL-BERT-
+tipleruns)ofall BERTvariantsconsidered,nowon
+SMALLiscomparabletoLEGAL-BERTacrossmost
+testdata. PerplexityindicatestowhatextentaBERT
+datasets,whileitcanfitinmostmodernGPUcards.
+This is important for researchers and practition-
+variant predicts the language of an end-task. We
+erswithlimitedaccesstolargecomputationalre-
+expectmodelswithsimilarperplexitiestoalsohave
+sources. Italsoprovidesamorememory-friendly
+similarperformance. Inallthreedatasets,aLEGAL-
+BERT variantalmostalwaysleadstobetterresults
+basisformorecomplex BERT-basedarchitectures.
+For example, deploying a hierarchical version of
+than the tuned BERT-BASE. In EURLEX57K, the
+improvementsarelesssubstantialforall,frequent, BERT for ECHR-CASES (Chalkidis et al., 2019a)
+andfewlabels(0.2%),alsoinagreementwiththe
+leadstoa4×memoryincrease.
+6 ConclusionsandFutureWork I.Chalkidis,I.Androutsopoulos,andA.Michos.2017.
+ExtractingContractElements. InProceedingsofthe
+WeshowedthatthebeststrategytoportBERTtoa International Conference of AI and Law, London,
+newdomainmayvary,andonemayconsidereither UK.
+further pre-training or pre-training from scratch.
+Ilias Chalkidis, Ion Androutsopoulos, and Nikolaos
+Thus,wereleaseLEGAL-BERT,afamilyofBERT
+Aletras. 2019a. Neural Legal Judgment Prediction
+modelsforthelegaldomainachievingstate-of-art inEnglish. InProceedingsofthe57thAnnualMeet-
+resultsinthreeend-tasks. Notably,theperformance ingoftheAssociationforComputationalLinguistics,
+pages4317—-4323,Florence,Italy.
+gainsarestrongerinthemostchallengingend-tasks
+(i.e.,multi-labelclassificationin ECHR-CASESand
+Ilias Chalkidis, Emmanouil Fergadiotis, Prodromos
+contractheader,leasedetailsinCONTRACTS-NER) Malakasiotis, Nikolaos Aletras, and Ion Androut-
+wherein-domainknowledgeismoreimportant. We sopoulos.2019b. Extrememulti-labellegaltextclas-
+sification: A case study in EU legislation. In Pro-
+alsoreleaseLEGAL-BERT-SMALL,whichis3times
+ceedings of the Natural Legal Language Process-
+smallerbuthighlycompetitivetotheotherversions
+ingWorkshop2019,pages78–87,Minneapolis,Min-
+ofLEGAL-BERT. Thus,itcanbeadoptedmoreeas- nesota.AssociationforComputationalLinguistics.
+ilyinlow-resourcetest-beds. Finally,weshowthat
+anexpandedgridsearchwhenfine-tuningBERTfor Ilias Chalkidis, Emmanouil Fergadiotis, Prodromos
+Malakasiotis, and Ion Androutsopoulos. 2019c.
+end-taskshasadrasticimpactonperformanceand
+Large-Scale Multi-Label Text Classification on EU
+thusshouldalwaysbeadopted. Infuturework,we Legislation. In Proceedings of the 57th Annual
+plantoexploretheperformanceof LEGAL-BERT Meeting of the Association for Computational Lin-
+inmorelegaldatasetsandtasks. Wealsointendto guistics,pages6314–6322,Florence,Italy.
+exploretheimpactoffurtherpre-training LEGAL-
+Ilias Chalkidis, Emmanouil Fergadiotis, Prodromos
+BERT-SCandLEGAL-BERT-SMALLonspecificle-
+Malakasiotis, and Ion Androutsopoulos. 2019d.
+galsub-domains(e.g.,EUlegislation). Neural Contract Element Extraction Revisited. In
+ProceedingsoftheDocumentIntellgenceWorkshop
+Acknowledgments collocatedwithNeurIPS2019,Vancouver,Canada.
+This project was supported by the Google Cloud Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of
+Compute(GCP)researchprogram, whilewealso
+Deep Bidirectional Transformers for Language Un-
+usedaGoogleCloudTPUv3-8forfreeprovidedby
+derstanding. ProceedingsoftheAnnualConference
+theTensorFlowResearchCloud(TFRC)program7. of the North American Chapter of the Association
+WearegratefultobothGoogleprograms. for Computational Linguistics: Human Language
+Technologies,abs/1810.04805.
+RupertHaigh.2018. LegalEnglish. Routledge.
+References
+Nikita Kitaev, Łukasz Kaiser, and Anselm Levskaya.
+Nikolaos Aletras, Dimitrios Tsarapatsanis, Daniel
+2020. Reformer: Theefficienttransformer.
+Preo¸tiuc-Pietro, and Vasileios Lampos. 2016. Pre-
+dicting judicial decisions of the European Court of
+Guokun Lai, Qizhe Xie, Hanxiao Liu, Yiming Yang,
+Human Rights: A natural language processing per-
+andEduardHovy.2017. RACE:Large-scaleReAd-
+spective. PeerJComputerScience,2:e93.
+ing comprehension dataset from examinations. In
+Emily Alsentzer, John Murphy, William Boag, Wei- Proceedings of the 2017 Conference on Empirical
+HungWeng,DiJin,TristanNaumann,andMatthew Methods in Natural Language Processing, pages
+McDermott.2019. PubliclyavailableclinicalBERT 785–794, Copenhagen, Denmark. Association for
+embeddings. InProceedingsofthe2ndClinicalNat- ComputationalLinguistics.
+ural Language Processing Workshop, pages 72–78,
+Minneapolis,Minnesota,USA. Zhenzhong Lan, Mingda Chen, Sebastian Goodman,
+Kevin Gimpel, Piyush Sharma, and Radu Soricut.
+Iz Beltagy, Kyle Lo, and Arman Cohan. 2019. SciB- 2019. ALBERT: A Lite BERT for Self-supervised
+ERT:Apretrainedlanguagemodelforscientifictext. Learning of Language Representations. CoRR,
+InProceedingsofthe2019ConferenceonEmpirical abs/1909.11942.
+Methods in Natural Language Processing and the
+9th International Joint Conference on Natural Lan- Jinhyuk Lee, Wonjin Yoon, Sungdong Kim,
+guage Processing (EMNLP-IJCNLP), pages 3606– Donghyeon Kim, Sunkyu Kim, Chan Ho So,
+3611,HongKong,China. and Jaewoo Kang. 2019. BioBERT: a pre-trained
+biomedical language representation model for
+7https://www.tensorflow.org/tfrc biomedicaltextmining. InCoRR.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- Proceedings of the 2016 Conference of the North
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, American Chapter of the Association for Computa-
+Luke Zettlemoyer, and Veselin Stoyanov. 2019. tional Linguistics: Human Language Technologies,
+RoBERTa: A Robustly Optimized BERT Pretrain- pages 1480–1489. Association for Computational
+ingApproach. CoRR,abs/1907.11692. Linguistics.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and A LegalNLPdatasets
+Percy Liang. 2016. Squad: 100,000+ questions
+for machine comprehension of text. arXiv preprint BellowarethedetailsofthelegalNLPdatasetswe
+arXiv:1606.05250. usedfortheevaluationofourmodels:
+Anna Rogers, Olga Kovaleva, and Anna Rumshisky. • EURLEX57K (Chalkidis et al., 2019b) con-
+2020. Aprimerinbertology: Whatweknowabout
+tains57klegislativedocumentsfromEURLEX
+howbertworks. ArXiv,abs/2002.12327.
+withanaveragelengthof727words. Alldocu-
+Victor Sanh, Lysandre Debut, Julien Chaumond, and mentshavebeenannotatedbythePublications
+ThomasWolf.2019. DistilBERT,adistilledversion OfficeofEUwithconceptsfromEUROVOC.8
+ofBERT:smaller,faster,cheaperandlighter.
+Theaveragenumberoflabelsperdocumentis
+Emma Strubell, Ananya Ganesh, and Andrew McCal- approx.5,whilemanyofthemarerare. The
+lum. 2019. Energy and policy considerations for
+dataset is split into training (45k), develop-
+deep learning in NLP. In Proceedings of the 57th
+ment(6k),andtest(6k)documents.
+Annual Meeting of the Association for Computa-
+tionalLinguistics,pages3645–3650,Florence,Italy.
+• ECHR-CASES (Chalkidis et al., 2019a) con-
+Chul Sung, Tejas Dhamecha, Swarnadeep Saha, tainsapprox.11.5kcasesfrom ECHR’spublic
+Tengfei Ma, Vinay Reddy, and Rishi Arora. 2019. database. Foreachcase,thedatasetprovides
+Pre-training BERT on domain resources for short
+a list of facts. Each case is also mapped to
+answer grading. In Proceedings of the 2019 Con-
+articlesoftheHumanRightsConventionthat
+ferenceonEmpiricalMethodsinNaturalLanguage
+Processing and the 9th International Joint Confer- wereviolated(ifany). Thedatasetcanbeused
+ence on Natural Language Processing (EMNLP- forbinaryclassification,wherethetaskisto
+IJCNLP),pages6071–6075,HongKong,China.As-
+identifyiftherewasaviolationornot,andfor
+sociationforComputationalLinguistics.
+multi-labelclassificationwherethetaskisto
+PeterMTiersma.1999. Legallanguage. Universityof identifytheviolatedarticles.
+ChicagoPress.
+• CONTRACTS-NER (Chalkidis et al., 2017,
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+2019d)containsapprox.2kUScontractsfrom
+Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+Kaiser,andIlliaPolosukhin.2017. AttentionIsAll
+EDGAR. Each contract has been annotated
+You Need. In 31th Annual Conference on Neural with multiple contract elements such as ti-
+Information Processing Systems, Long Beach, CA, tle, parties, dates of interest, governing law,
+USA.
+jurisdiction, amounts and locations, which
+Alex Wang, Amanpreet Singh, Julian Michael, Fe- have been organized in three groups (con-
+lix Hill, Omer Levy, and Samuel Bowman. 2018. tractheader,disputeresolution,leasedetails)
+GLUE: A multi-task benchmark and analysis plat- basedontheirpositionincontracts.
+form for natural language understanding. In Pro-
+ceedings of the 2018 EMNLP Workshop Black- B Implementationdetailsandresultson
+boxNLP: Analyzing and Interpreting Neural Net-
+downstreamtasks
+works for NLP, pages 353–355, Brussels, Belgium.
+AssociationforComputationalLinguistics.
+Belowwedescribetheimplementationdetailsfor
+Christopher Williams. 2007. Tradition and change in fine-tuning BERT and LEGAL-BERT on the three
+legal English: Verbal constructions in prescriptive downstreamtasks:
+texts,volume20. PeterLang.
+EURLEX57K: We replicate the experiments of
+ZhilinYang, ZihangDai, YimingYang, JaimeG.Car-
+Chalkidisetal.(2019c),wherealinearlayer
+bonell,RuslanSalakhutdinov,andQuocV.Le.2019.
+withL(numberoflabels)sigmoidactivations
+XLNet: Generalized Autoregressive Pretraining for
+LanguageUnderstanding. CoRR,abs/1906.08237. wasplacedontopofBERT’s[CLS]finalrep-
+resentation. Wefollowthesameconfiguration
+Zichao Yang, Diyi Yang, Chris Dyer, Xiaodong He,
+forallLEGAL-BERTvariations.
+Alex Smola, and Eduard Hovy. 2016. Hierarchical
+AttentionNetworksforDocumentClassification. In 8http://eurovoc.europa.eu/
+ECHR-CASES: We replicate the best method of adoptedbyresearchersandpractitionerswithlim-
+Chalkidisetal.(2019a),whichisahierarchi- itedresources. TowardsthesamedirectionGoogle
+calversionof BERT,whereinitiallyashared releasedseverallightweightversionsofBERT.9
+BERT encodes each case fact independently
+andproducesN factembeddings([CLS]rep-
+resentations). A self-attention mechanism,
+similar to Yang et al. (2016), produces the
+finaldocumentrepresentation. Alinearlayer
+withsoftmaxactivationgivesthefinalscores.
+CONTRACTS-NER Wereplicatetheexperiments
+of Chalkidis et al. (2019d) in all of their
+three parts (contract header, dispute resolu-
+tion,leasedetails). Intheseexperiments,the
+finalrepresentationsoftheoriginal BERTfor
+all(sentencepiece)tokensinthesequenceare
+fedtoalinearCRFlayer.
+WeagainfollowChalkidisetal.(2019c,a,d)in
+thereportedevaluationmeasures.
+C Efficiencycomparisonforvarious
+BERT-basedmodels
+Training Inference
+Model. Params T HU AH MaxBS Speed Speed
+BS=1 BS=max BS=1
+BERT-BASE 110M 12 768 12 6 1.00× 1.00× 1.00×
+ALBERT. 12M 12 768 12 12 1.26× 1.21× 1.00×
+ALBERT-LARGE 18M 24 1024 12 4 0.49× 0.37× 0.36×
+DISTIL-BERT 66M 6 768 12 16 1.66× 2.36× 1.70×
+LEGAL-BERT 110M 12 768 12 6 1.00× 1.00× 1.00×
+LEGAL-BERT-SMALL 35M 6 512 8 26 2.43× 4.00× 1.70×
+Table 2: Comparisonof BERT-basedmodelsfordifferent
+batchsizes(BS)inasingle11GBNVIDIA-2080TI.Resource
+efficiencyofthemodelsmostlyreliesonthenumberofhidden
+units(HU),attentionsheads(AH)andTransformerblocks
+T,ratherthanthenumberofparameters.
+Recently there has been a debate on the over-
+parameterization of BERT (Kitaev et al., 2020;
+Rogersetal.,2020). Towardsthatdirectionsmost
+studiessuggestaparametersharingtechnique(Lan
+etal.,2019)ordistillationofBERTbydecreasing
+the number of layers (Sanh et al., 2019). How-
+ever the main bottleneck of transformers in mod-
+ern hardware is not primarily the total number
+of parameters, misinterpreted into the number of
+stackedlayers. InsteadOutOfMemory(OOM)is-
+suesmainlyhappenasaproductofwidermodels
+in terms of hidden units’ dimensionality and the
+numberofattentionheads,whichaffectsgradient
+accumulation in feed-forward and multi-head at-
+tention layers (see Table 2). Table 2 shows that
+LEGAL-BERT-SMALL despite having 3× and 2×
+the parameters of ALBERT and ALBERT-LARGE
+hasfastertrainingandinferencetimes. Weexpect
+9https://github.com/google-research/
+modelsovercomingsuchlimitationstobewidely bert

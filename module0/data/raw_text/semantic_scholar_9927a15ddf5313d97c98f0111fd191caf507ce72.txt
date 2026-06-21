@@ -1,0 +1,617 @@
+HateBERT: Retraining BERT for Abusive Language Detection in English
+TommasoCaselli ,ValerioBasile ,JelenaMitrovic´ ,MichaelGranitzer
+UniversityofGroningen UniversityofTurin UniversityofPassau
+t.caselli@rug.nl valerio.basile@unito.it
+{jelena.mitrovic, michael.granitzer}@uni-passau.de
+Abstract
+We introduce HateBERT, a re-trained BERT
+model for abusive language detection in En-
+glish. The model was trained on RAL-E,
+a large-scale dataset of Reddit comments in
+English from communities banned for be-
+ing offensive, abusive, or hateful that we
+have curated and made available to the pub-
+lic. We present the results of a detailed Figure1: Abusivelanguagephenomenaandtheirrela-
+comparisonbetweenageneralpre-trainedlan- tionships(adaptedfromPolettoetal.(2020)).
+guagemodelandtheretrainedversiononthree
+English datasets for offensive, abusive lan-
+guage and hate speech detection tasks. In
+est in generating domain-specific BERT-like pre-
+alldatasets,HateBERToutperformsthecorre-
+trainedlanguagemodels,suchasAlBERTo(Polig-
+sponding general BERT model. We also dis-
+cuss a battery of experiments comparing the nano et al., 2019) or TweetEval (Barbieri et al.,
+portabilityofthefine-tunedmodelsacrossthe 2020) for Twitter, BioBERT for the biomedical
+datasets,suggestingthatportabilityisaffected domain in English (Lee et al., 2019), FinBERT
+bycompatibilityoftheannotatedphenomena. for the financial domain in English (Yang et al.,
+2020), and LEGAL-BERT for the legal domain
+1 Introduction
+in English (Chalkidis et al., 2020). We introduce
+HateBERT,apre-trainedBERTmodelforabusive
+Thedevelopmentofsystemsfortheautomaticiden-
+languagephenomenainsocialmediainEnglish.
+tificationofabusivelanguagephenomenahasfol-
+lowedacommontrendinNLP:feature-basedlin- Abusivelanguagephenomenafallalongawide
+earclassifiers(WaseemandHovy,2016;Ribeiro spectrumincluding,a.o.,microaggression,stereo-
+etal.,2018;IbrohimandBudi,2019),neuralnet- typing, offense, abuse, hate speech, threats, and
+workarchitectures(e.g.,CNNorBi-LSTM)(Kshir- doxxing (Jurgensetal.,2019). Currentapproaches
+sagar et al., 2018; Mishra et al., 2018; Mitrovic´ have focus on a limited range, namely offensive
+etal.,2019;SigurbergssonandDerczynski,2020), language,abusivelanguage,andhatespeech. The
+andfine-tuningpre-trainedlanguagemodels,e.g., connections among these phenomena have only
+BERT, RoBERTa, a.o., (Liu et al., 2019; Swamy superficiallybeenaccountedfor,resultinginafrag-
+etal.,2019). Resultsvarybothacrossdatasetsand mented picture, with a variety of definitions, and
+architectures,withlinearclassifiersqualifyingas (in)compatibleannotations(Waseemetal.,2017).
+verycompetitive,ifnotbetter,whencomparedto Polettoetal.(2020)introduceagraphicalvisuali-
+neuralnetworks. Ontheotherhand,systemsbased sation(Figure1)oftheconnectionsamongabusive
+onpre-trainedlanguagemodelshavereachednew languagephenomenaaccordingtothedefinitionsin
+state-of-the-art results. One issue with these pre- previouswork(WaseemandHovy,2016;Fortuna
+trainedmodelsisthatthetraininglanguagevariety and Nunes, 2018; Malmasi and Zampieri, 2018;
+makes them well suited for general-purpose lan- Basile et al., 2019; Zampieri et al., 2019). When
+guageunderstandingtasks,andithighlightstheir itcomestooffensivelanguage,abusivelanguage,
+limits with more domain-specific language vari- andhatespeech,thedistinguishingfactoristheir
+eties. To address this, there is a growing inter- levelofspecificity. Thismakesoffensivelanguage
+the most generic form of abusive language phe- Reddit.
+nomena and hate speech the most specific, with
+RAL-E: the Reddit Abusive Language English
+abusivelanguagebeingsomewhereinthemiddle.
+dataset Reddit is a popular social media outlet
+Such differences are a major issue for the study
+whereusersshareanddiscusscontent. Thewebsite
+of portability of models. Previous work (Karan
+and Sˇnajder, 2018; Benk, 2019; Pamungkas and isorganizedintouser-createdanduser-moderated
+communitiesknownassubreddits,beingdefacto
+Patti,2019;Rizoiuetal.,2019)hasaddressedthis
+on-line communities. In 2015, Reddit strength-
+task by conflating portability with generalizabil-
+eneditscontentpoliciesandbannedseveralsubred-
+ity,forcingdatasetswithdifferentphenomenainto
+dits(Chandrasekharanetal.,2017). Weretrieveda
+homogenousannotationsbycollapsinglabelsinto
+largelistofbannedcommunitiesinEnglishfrom
+(binary)macro-categories. Inourportabilityexperi-
+different sources including official posts by the
+ments,weshowthatthebehaviorofHateBERTcan
+RedditadministratorsandWikipediapages.1 We
+beexplainedbyaccountingforthesedifferencein
+thenselectedonlycommunitiesthatwerebanned
+specificityacrosstheabusivelanguagephenomena.
+forbeingdeemedtohostorpromoteoffensive,abu-
+Our key contributions are: (i.) additional ev-
+sive,and/orhatefulcontent(e.g.,expressingharass-
+idence that further pre-training is a viable strat-
+ment,bullying,inciting/promotingviolence,incit-
+egytoobtaindomain-specificorlanguagevariety-
+ing/promotinghate). Wecollectedthepostsfrom
+orientedmodelsinafastandcheapway;(ii.) there-
+thesecommunitiesbycrawlingapubliclyavailable
+leaseofHateBERT,apre-trainedBERTforabusive
+collection of Reddit comments.2 For each post,
+languagephenomena,intendedtoboostresearchin
+wekeptonlythetextandthenameofthecommu-
+thisarea;(iii.) thereleaseofalarge-scaledataset
+nity. Theresultingcollectioncomprises1,492,740
+ofsocialmediapostsinEnglishfromcommunities
+messagesfromaperiodbetweenJanuary2012and
+bannedforbeingoffensive,abusive,orhateful.
+June2015,foratotalof43,820,621tokens. Thevo-
+2 HateBERT:Re-trainingBERTwith cabularyofRAL-Eiscomposedof342,377types
+AbusiveOnlineCommunities and the average post length is 32.25 tokens. We
+furthercheckthepresenceofexplicitsignalsofabu-
+Further pre-training of transformer based pre-
+sivelanguagephenomenausingalistofoffensive
+trained language models is becoming more and
+words. Weselectedallwordswithanoffensiveness
+morepopularasacompetitive,effective,andfast
+scores equal or higher than 0.75 from Wiegand
+solution to adapt pre-trained language models to
+et al. (2018)’s dictionary. We found that explicit
+newlanguagevarietiesordomains(Barbierietal.,
+offensive termsrepresent 1.2% of the tokens and
+2020;Leeetal.,2019;Yangetal.,2020;Chalkidis
+that only 260,815 messages contain at least one
+et al., 2020), especially in cases where raw data
+offensiveterm. RAL-Eisskewedsincenotallcom-
+are scarce to generate a BERT-like model from
+munitieshavethesameamountofmessages. The
+scratch(Gururanganetal.,2020). Thisisthecase
+listofselectedcommunitieswiththeirrespective
+of abusive language phenomena. However, for
+numberofretrievedmessagesisreportedinTable
+thesephenomenaanadditionalpredicamentwith
+A.1andthetop10offensivetermsareillustrated
+respect to previous work is that the options for
+inTableA.2inAppendixA.
+suitableandrepresentativecollectionsofdataare
+verylimited. Directlyscrapingmessagescontain- CreatingHateBERT FromtheRAL-Edataset,
+ingprofanitieswouldnotbethebestoptionaslots we used 1,478,348 messages (for a total of
+ofpotentiallyusefuldatamaybemissed.Graumas 43,379,350 tokens) to re-train the English BERT
+etal.(2019)haveusedtweetsaboutcontroversial base-uncasedmodel3 byapplyingtheMasked
+topics to generate offensive-loaded embeddings, Language Model (MLM) objective. The remain-
+but their approach presents some limits. On the ing149,274messages(441,271tokens)havebeen
+otherhand,Merendaetal.(2018)haveshownthe used as test set. We retrained for 100 epochs (al-
+effectiveness of using messages from potentially
+1https://en.wikipedia.org/wiki/
+abusive-orientedon-linecommunitiestogenerate
+Controversial_Reddit_communities
+so-calledhateembeddings. Morerecently,Papakyr-
+2https://www.reddit.com/r/datasets/
+iakopoulos et al. (2020) have shown that biased comments/3bxlg7/i_have_every_publicly_
+wordembeddingscanbebeneficial. Wefollowthe available_reddit_comment/
+3We used the pre-trained model available via the hug-
+ideaofexploitingbiasedembeddingsbycreating
+gingfaceTransformerslibrary-https://github.com/
+themusingmessagesfrombannedcommunitiesin huggingface/transformers
+most 2 million steps) in batches of 64 samples, guage annotation to OffensEval 2019. Abusive
+includingupto512sentencepiecetokens. Weused languageisdefinedasaspecificcaseofoffensive
+Adamwithlearningrate5e-5. Wetrainedusing language,namely“hurtfullanguagethataspeaker
+thehuggingfacecode4 ononeNvidiaV100GPU. uses to insult or offend another individual or a
+The result is a shifted BERT model, HateBERT groupofindividualsbasedontheirpersonalquali-
+base-uncased,alongtwodimensions: (i.) lan- ties,appearance,socialstatus,opinions,statements,
+guagevariety(i.e. socialmedia);and(ii.) polarity or actions.” (Caselli et al., 2020, pg. 6197). The
+(i.e.,offense-,abuse-,andhate-orientedmodel). maindifferencewithrespecttooffensivelanguage
+Since our retraining does not change the vo- istheexclusionofisolatedprofanitiesoruntargeted
+cabulary, we verified that HateBERT has shifted messagesfromthepositiveclass. Thesizeofthe
+towards abusive language phenomena by using datasetisthesameasOffensEval2019.Thediffer-
+the MLM on five template sentences of the form encesconcernthedistributionofthepositiveclass
+“[someone] is a(n)/ are [MASK]”.The whichresultsin2,749intrainingand178intest.
+template has been selected because it can trigger
+HatEval (Basile et al., 2019) The English por-
+biasesinthemodel’srepresentations. Wechanged
+tion of the dataset contains 13,000 tweets anno-
+[someone] with any of the following tokens:
+tatedforhatespeechagainstmigrantsandwomen.
+“you”,“she”,“he”,“women”,“men”Althoughnot
+Theauthorsdefinehatespeechas“anycommuni-
+exhaustive,HateBERTconsistentlypresentprofan-
+cation that disparages a person or a group on the
+ities or abusive terms as mask fillers, while this
+basis of some characteristic such as race, color,
+veryrarelyoccurswiththegenericBERT.Table1
+ethnicity,gender,sexualorientation,nationality,re-
+illustratestheresultsfor“women”.
+ligion,orothercharacteristics.”(Basileetal.,2019,
+pg. 54). Onlyhatefulmessagestargetingmigrants
+BERT HateBERT
+and women belong to the positive class, leaving
+“women”
+anyothermessage(includingoffensiveorabusive
+excluded(.075) stu**d(.188)
+against other targets) to the negative class. The
+encouraged(.032) du*b(.128)
+included(.027) id***s(.075) trainingsetiscomposedof10,000messagesand
+thetestcontains3,000. Bothtrainingandtestcon-
+Table 1: MLM top 3 candidates for the templates tainanequalamountofmessageswithrespectto
+“Womenare[MASK.]”. the targets, i.e., 5,000 each in training and 1,500
+eachintest. Thisdoesnotholdforthedistribution
+of the positive class, where 4,165 messages are
+3 ExperimentsandResults presentinthetrainingand1,252inthetestset.
+To verify the usefulness of HateBERT for detect- Alldatasetsareimbalancedbetweenpositiveand
+ingabusivelanguagephenomena,werunasetof negative classes and they target phenomena that
+experimentsonthreeEnglishdatasets. varyalongthespecificitydimension. Thisallowsus
+toevaluateboththerobustenessandtheportability
+OffensEval 2019 (Zampieri et al., 2019) the
+ofHateBERT.
+dataset contains 14,100 tweets annotated for of-
+We applied the same pre-processing steps and
+fensivelanguage. Accordingtothetaskdefinition,
+hyperparameterswhenfine-tuningboththegeneric
+a message is labelled as offensive if “it contains
+BERT and HateBERT. Pre-processing steps and
+any form of non-acceptable language (profanity)
+hyperparameters(TableA.3)aremorecloselyde-
+or a targeted offense, which can be veiled or di-
+tailedintheAppendixB.Table2illustratesthere-
+rect.”(Zampierietal.,2019,pg. 76). Thedataset
+sultsoneachdataset(in-datasetevaluation),while
+issplitintotrainingandtest,with13,240messages
+Table 3 reports on the portability experiments
+intrainingand860intest. Thepositiveclass(i.e.
+(cross-dataset evaluation). The same evaluation
+messageslabeledasoffensive)are4,400intraining
+metricfromtheoriginaltasks,orpaper,isapplied,
+and240intest. Nodevelopmentdataisprovided.
+i.e.,macro-averagedF1ofthepositiveandnegative
+AbusEval (Casellietal.,2020)Thisdatasethas classes.
+been obtained by adding a layer of abusive lan- The in-domain results confirm the validity of
+the re-training approach to generate better mod-
+4https://github.com/huggingface/
+elsfordetectionofabusivelanguagephenomena,
+transformers/tree/master/src/
+transformers with HateBERT largely outperforming the corre-
+Dataset Model MacroF1Pos.class-F1 OffensEval
+Train Model AbusEval HatEval
+2019
+BERT .803±.006 .715±.009
+OffensEval
+HateBERT .809±.008 .723±.012 P R P R P R
+2019
+Best .829 .752
+OffensEvalBERT – –.510 .685.479.771
+BERT .727±.008 .552±.012 2019 HateBERT – –.553 .696.480.767
+AbusEval HateBERT .765±.006 .623±.010
+BERT .776 .420 – –.545.571
+Casellietal.(2020).716±.034 .531 AbusEval
+HateBERT.836 .404 – –.565.567
+BERT .480±.008 .633±.002
+BERT .540 .220.438 .241 – –
+HatEval HateBERT .516±.007 .645±.001 HatEval
+HateBERT.473 .183.365 .191 – –
+Best .651 .673
+Table 4: BERT vs. HateBERT: Portability - Precision
+Table2: BERTvs. HateBERT:in-dataset. Bestscores
+andRecallforthepositiveclass.Rowsshowthedataset
+inbold. ForBERTandHateBERTwereporttheaver-
+usedtotrainthemodelandcolumnsthedatasetusedfor
+agefrom5runsanditsstandarddeviations. Bestcorre-
+testing. Bestscoresareunderlined.
+spondstothebestsystemsintheoriginalsharedtasks.
+Casellietal.(2020)isthemostrecentresultforAbusE-
+val.
+ferencesinFalsePositivesandFalseNegativesfor
+thepositiveclass,measuredbymeansofPrecision
+OffensEval
+Train Model AbusEvalHatEval andRecall,respectively. AsillustratedinTable4,
+2019
+HateBERTalwaysobtainsahigherPrecisionscore
+OffensEvalBERT – .726 .545
+2019 HateBERT .– .750 .547 thanBERTwhenfine-tunedonagenericabusive
+phenomenonandappliedtomorespecificones,at
+BERT .710 – .611
+AbusEval
+HateBERT .713 – .624 averylowcostforRecall. Theunexpectedhigher
+BERT .572 .590 – Precision of HateBERT fine-tuned on AbusEval
+HatEval
+HateBERT .543 .555 – andtestedonOffensEval2019(i.e.,fromspecific
+togeneric)isduetothedatasetssharingsamedata
+Table 3: BERT vs. HateBERT: Portability. Columns
+distribution. Indeed,theresultsofthesamemodel
+show the dataset used for testing. Best macro F1 per
+training/testcombinationareunderlined. againstHatEvalsupportouranalysis.
+4 ConclusionandFutureDirections
+sponding generic model. A detailed analysis per
+classshowsthattheimprovementsaffectboththe This contribution introduces HateBERT base
+positive and the negative classes, suggesting that uncased,5 apre-trainedlanguagemodelforabu-
+HateBERTismorerobust. Theuseofdatafroma sivelanguagephenomenainEnglish. Weconfirm
+differentsocialmediaplatformdoesnotharmthe thatfurtherpre-trainingisaneffectiveandcheap
+fine-tuningstageoftheretrainedmodel, opening strategy to port pre-trained language models to
+uppossibilitiesofcross-fertilizationstudiesacross otherlanguagevarieties. Thein-datasetevaluation
+socialmediaplatforms. HateBERTbeatsthestate- showsthatHateBERTconsistentlyoutperformsa
+of-the-artforAbusEval,achievingcompetitivere- generic BERT across different abusive language
+sults on OffensEval and HatEval. In particular, phenomena, such as offensive language (Offen-
+HateBERTwouldrank#4onOffensEvaland#6 sEval 2019), abusive language (AbusEval), and
+onHatEval,obtainingthesecondbestF1scoreon hate speech (HatEval). The cross-dataset experi-
+thepositiveclass. ments show that HateBERT obtains robust repre-
+Theportabilityexperimentswererunusingthe sentationsofeachabusivelanguagephenomenon
+bestmodelforeachofthein-datasetexperiments. against which it has been fine-tuned. In particu-
+Our results show that HateBERT ensures better lar, the cross-dataset experiments have provided
+portabilitythanagenericBERTmodel,especially (i.) furtherempiricalevidenceontherelationship
+when going from generic abusive language phe- among three abusive language phenomena along
+nomena (i.e., offensive language) towards more thedimensionofspecificity;(ii.) empiricalsupport
+specificones(i.e.,abusivelanguageorhatespeech). tothevalidityoftheannotateddata;(iii.) aprinci-
+Thisbehaviourisexpectedandprovidesempirical pledexplanationforthedifferentperformancesof
+evidence to the differences across the annotated HateBERTandBERT.
+phenomena. WealsoclaimthatHateBERTconsis-
+5HateBERT,thefine-tunedmodel,andtheRAL-Edataset
+tentlyobtainsbetterrepresentationsofthetargeted
+are available at https://osf.io/tbd58/?view_
+phenomena. Thisisevidentwhenlookingatthedif- only=d90e681c672a494bb555de99fc7ae780
+A known issue concerning HateBERT is its thisdataset forfurther pre-training moreecologi-
+bias toward the subreddit r/fatpeoplehate. callyrepresentativeoftheexpressionsofdifferent
+To address this and other balancing issues, we abusive language phenomena in English than the
+retrieved an additional 1˜.3M messages. This useofmanuallyannotateddatasets.
+has allowed us to add 712,583 new messages to The collection of banned subreddits has been
+12 subreddits listed in Table A.1, and identify retrieved from a publicly available collection of
+three additional ones (r/uncensorednews, Reddit, obtained through the Reddit API and in
+r/europeannationalism, and compliancewithReddit’stermsofuse. Fromthis
+r/farright), for a total of 597,609 mes- collection,wegeneratedtheRAL-Edataset. RAL-
+sages. This new data is currently used to extend E will be publicly released (it is accessible also
+HateBERT. at review phase in the Supplementary Materials).
+Future work will focus on two directions: (i.) Whileitsavailabilitymayhaveanimportantimpact
+investigatingtowhatextenttheembeddingrepre- inboostingresearchonabusivelanguagephenom-
+sentationsofHateBERTareactuallydifferentfrom ena, especially by making natural interactions in
+ageneralBERTpre-trainedmodel,and(ii.) inves- online communities available, we are also aware
+tigatingtheconnectionsacrossthevariousabusive of the risks of privacy violations for owners of
+langaugephenomena. the messages. This is one of the reasons why at
+this stage, we only make available in RAL-E the
+Acknowledgements content of the message without metadata such as
+thescreennameoftheauthorandthecommunity
+where the message was posted. Usernames and
+subredditnameshavenotbeenusedtoretrainthe
+models. Thisreducestherisksofprivacyleakage
+fromtheretrainedmodels. Sincethetrainingmate-
+rialcomesfrombannedcommunityitisimpossible
+and impracticable to obtain meaningful consent
+fromtheusers(orredditers). Incompliancewith
+The project on which this report is based was the Association for Internet Researchers Ethical
+funded by the German Federal Ministry of Edu- Guidelines7, we consider that: not making avail-
+cation and Research (BMBF) under the funding abletheusernameandthespecificcommunityare
+code 01—S20049. The author is responsible for theonlyreliablewaystoprotectusers’privacy. We
+thecontentofthispublication. have also manually checked (for a small portion
+ofthemessages)whetheritispossibletoretrieve
+EthicalStatement
+these messages by actively searching copy-paste
+the text of the message in Reddit. In none of the
+In this paper, the authors introduce HateBERT, a
+caseswereweabletoobtainapositiveresult.
+pre-trainedlanguagemodelforthestudyofabusive
+There are numerous benefits from using such
+language phenomena in social media in English.
+modelstomonitorthespreadofabusivelanguage
+HateBERT is unique because (i.) it is based on
+phenomenainsocialmedia. Amongthem,wemen-
+furtherpre-trainingofanexistingpre-trainedlan-
+tionthefollowing: (i.) reducingexposuretoharm-
+guagemodel(i.e.,BERTbase-uncased)rather
+ful content in social media; (ii.) contributing to
+thantrainingitfromscratch,thusreducingtheen-
+the creation of healthier online interactions; and
+vironmental impact of its creation; 6 (ii.) it uses
+(iii.) promotingpositivecontagiousbehaviorsand
+alargecollectionofmessagesfromcommunities
+interactions (Matias, 2019). Unfortunately, work
+thathavebeendeemedtoviolatethecontentpolicy
+in this area is not free from potentially negative
+ofasocialmediaplatform,namelyReddit,because
+impacts. The most direct is a risk of promoting
+ofexpressingharassment,bullying,incitementof
+misrepresentation. HateBERT is an intrinsically
+violence,hate,offense,andabuse. Thejudgment
+biasedpre-trainedlanguagemodel. Thefine-tuned
+onpolicyviolationhasbeenmadebythecommu-
+modelsthatcanbeobtainedarenotovergenerating
+nity administrators and moderators. We consider
+thepositiveclasses,buttheysufferfromthebiases
+inthemanuallyannotateddata,especiallyforthe
+6TheNvidiaV100GPUweusedissharedandithasa
+maximumnumberofcontinuousreservedtimeof72hours. offensivelanguagedetectiontask(Sapetal.,2019;
+Intotal,ittook18daystocompletethe2millionretraining
+steps. 7https://aoir.org/reports/ethics3.pdf
+Davidsonetal.,2019). Furthermore,wethinkthat References
+suchtoolsmustalwaysbeusedunderthesupervi-
+Francesco Barbieri, Jose Camacho-Collados, Luis Es-
+sion of humans. Current datasets are completely
+pinosa Anke, and Leonardo Neves. 2020. TweetE-
+lackingtheactualcontextofoccurrenceofamess- val: Unifiedbenchmarkandcomparativeevaluation
+sageandtheassociatedmeaningnuancesthatmay for tweet classification. In Findings of the Associ-
+accompanyit,labellingthepositiveclassesonlyon ationforComputationalLinguistics: EMNLP2020,
+pages1644–1650,Online.AssociationforComputa-
+thebasisofsuperficiallinguisticcues. Thedeploy-
+tionalLinguistics.
+mentofmodelsbasedonHateBERT“inthewild”
+withouthumansupervisionrequiresadditionalre- Valerio Basile, Cristina Bosco, Elisabetta Fersini,
+searchandsuitabledatasetsfortraining. Debora Nozza, Viviana Patti, Francisco Manuel
+We see benefits in the use of HateBERT in re- Rangel Pardo, Paolo Rosso, and Manuela San-
+guinetti. 2019. SemEval-2019 task 5: Multilin-
+searchonabusivelanguagephenomenaaswellas
+gualdetectionofhatespeechagainstimmigrantsand
+in the availability of RAL-E. Researchers are en-
+womenintwitter. InProceedingsofthe13thInter-
+couragedtobeawareoftheintrinsicbiasednature national Workshop on Semantic Evaluation, pages
+ofHateBERTandofitsimpactsinreal-worldsce- 54–63, Minneapolis, Minnesota, USA. Association
+narios. forComputationalLinguistics.
+Michaela Benk. 2019. Data Augmentation in Deep
+Learning for Hate Speech Detection in Lower Re-
+sourceSettings. Ph.D.thesis,Universita¨tZu¨rich.
+TommasoCaselli,ValerioBasile,JelenaMitrovic,Inga
+Kartoziya, and Michael Granitzer. 2020. I feel of-
+fended,don’tbeabusive! implicit/explicitmessages
+inoffensiveandabusivelanguage. InProceedingsof
+The 12th Language Resources and Evaluation Con-
+ference, pages6193–6202, Marseille, France.Euro-
+peanLanguageResourcesAssociation.
+IliasChalkidis,ManosFergadiotis,ProdromosMalaka-
+siotis, Nikolaos Aletras, and Ion Androutsopoulos.
+2020. LEGAL-BERT: The muppets straight out of
+lawschool. InFindingsoftheAssociationforCom-
+putational Linguistics: EMNLP 2020, pages 2898–
+2904, Online. Association for Computational Lin-
+guistics.
+Eshwar Chandrasekharan, Umashanthi Pavalanathan,
+AnirudhSrinivasan,AdamGlynn,JacobEisenstein,
+and Eric Gilbert. 2017. You can’t stay here: The
+efficacy of reddit’s 2015 ban examined through
+hate speech. Proceedings of the ACM on Human-
+ComputerInteraction,1:1–22.
+Thomas Davidson, Debasmita Bhattacharya, and Ing-
+mar Weber. 2019. Racial bias in hate speech and
+abusivelanguagedetectiondatasets. InProceedings
+oftheThirdWorkshoponAbusiveLanguageOnline,
+pages 25–35, Florence, Italy. Association for Com-
+putationalLinguistics.
+PaulaFortunaandSe´rgioNunes.2018. Asurveyonau-
+tomaticdetectionofhatespeechintext. ACMCom-
+putingSurveys(CSUR),51(4):85.
+Leon Graumas, Roy David, and Tommaso Caselli.
+2019. Twitter-basedPolarisedEmbeddingsforAbu-
+siveLanguageDetection. In20198thInternational
+Conference on Affective Computing and Intelligent
+Interaction Workshops and Demos (ACIIW), pages
+1–7.
+Suchin Gururangan, Ana Marasovic´, Swabha Pushkar Mishra, Helen Yannakoudakis, and Ekaterina
+Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey, Shutova. 2018. Neural character-based composi-
+and Noah A. Smith. 2020. Don’t stop pretraining: tion models for abuse detection. In Proceedings
+Adapt language models to domains and tasks. In of the 2nd Workshop on Abusive Language Online
+Proceedings of the 58th Annual Meeting of the (ALW2), pages 1–10, Brussels, Belgium. Associa-
+Association for Computational Linguistics, pages tionforComputationalLinguistics.
+8342–8360, Online. Association for Computational
+Linguistics. Jelena Mitrovic´, Bastian Birkeneder, and Michael
+Granitzer. 2019. nlpUP at SemEval-2019 task 6:
+Muhammad Okky Ibrohim and Indra Budi. 2019. A deep neural language model for offensive lan-
+Multi-labelHateSpeechandAbusiveLanguageDe- guage detection. In Proceedings of the 13th Inter-
+tectioninIndonesianTwitter. InProceedingsofthe national Workshop on Semantic Evaluation, pages
+ThirdWorkshoponAbusiveLanguageOnline,pages 722–726, Minneapolis, Minnesota, USA. Associa-
+46–57. tionforComputationalLinguistics.
+David Jurgens, Libby Hemphill, and Eshwar Chan-
+Endang Wahyu Pamungkas and Viviana Patti. 2019.
+drasekharan.2019. Ajustandcomprehensivestrat-
+Cross-domain and cross-lingual abusive language
+egyforusingNLPtoaddressonlineabuse. InPro-
+detection: A hybrid approach with deep learning
+ceedings of the 57th Annual Meeting of the Asso-
+and a multilingual lexicon. In Proceedings of the
+ciation for Computational Linguistics, pages 3658–
+57th Annual Meeting of the Association for Com-
+3666, Florence, Italy. Association for Computa-
+putationalLinguistics: StudentResearchWorkshop,
+tionalLinguistics.
+pages363–370.
+Mladen Karan and Jan Sˇnajder. 2018. Cross-domain
+OrestisPapakyriakopoulos,SimonHegelich,JuanCar-
+detection of abusive language online. In Proceed-
+los Medina Serrano, and Fabienne Marco. 2020.
+ingsofthe2ndWorkshoponAbusiveLanguageOn-
+Bias in word embeddings. In FAT* ’20: Confer-
+line(ALW2),pages132–137,Brussels,Belgium.As-
+enceonFairness,Accountability,andTransparency,
+sociationforComputationalLinguistics.
+Barcelona,Spain,January27-30,2020,pages446–
+Rohan Kshirsagar, Tyrus Cukuvac, Kathy McKeown, 457.ACM.
+andSusanMcGregor.2018. Predictiveembeddings
+forhatespeechdetectionontwitter. InProceedings Fabio Poletto, Valerio Basile, Manuela Sanguinetti,
+of the 2nd Workshop on Abusive Language Online CristinaBosco,andVivianaPatti.2020. Resources
+(ALW2), pages 26–32, Brussels, Belgium. Associa- andBenchmarkCorporaforHateSpeechDetection:
+tionforComputationalLinguistics. a Systematic Review. Language Resources and
+Evaluation,54(3):1–47.
+Jinhyuk Lee, Wonjin Yoon, Sungdong Kim,
+Donghyeon Kim, Sunkyu Kim, Chan Ho So, Marco Polignano, Pierpaolo Basile, Marco de Gem-
+and Jaewoo Kang. 2019. BioBERT: a pre- mis, and Giovanni Semeraro. 2019. Hate speech
+trained biomedical language representation model detection through alberto italian language under-
+for biomedical text mining. Bioinformatics, standing model. In Proceedings of the 3rd Work-
+36(4):1234–1240. shoponNaturalLanguageforArtificialIntelligence
+co-located with the 18th International Conference
+Ping Liu, Wen Li, and Liang Zou. 2019. NULI at
+of the Italian Association for Artificial Intelligence
+SemEval-2019 task 6: Transfer learning for offen-
+(AIIA 2019), Rende, Italy, November 19th-22nd,
+sive language detection using bidirectional trans-
+2019,volume2521ofCEURWorkshopProceedings.
+formers. In Proceedings of the 13th Interna-
+CEUR-WS.org.
+tionalWorkshoponSemanticEvaluation,pages87–
+91, Minneapolis, Minnesota, USA. Association for
+ManoelHortaRibeiro,PedroHCalais,YuriASantos,
+ComputationalLinguistics.
+Virg´ılio AF Almeida, and Wagner Meira Jr. 2018.
+Characterizing and detecting hateful users on twit-
+Shervin Malmasi and Marcos Zampieri. 2018. Chal-
+ter. In Twelfth International AAAI Conference on
+lengesindiscriminatingprofanityfromhatespeech.
+WebandSocialMedia.
+JournalofExperimental&TheoreticalArtificialIn-
+telligence,30(2):187–202.
+Marian-Andrei Rizoiu, Tianyu Wang, Gabriela Fer-
+JNathanMatias.2019. Preventingharassmentandin- raro, and Hanna Suominen. 2019. Transfer learn-
+creasinggroupparticipationthroughsocialnormsin ingforhatespeechdetectioninsocialmedia. arXiv
+2,190onlinesciencediscussions. Proceedingsofthe preprintarXiv:1906.03829.
+NationalAcademyofSciences,116(20):9785–9789.
+MaartenSap,DallasCard,SaadiaGabriel,YejinChoi,
+FlavioMerenda,ClaudiaZaghi,TommasoCaselli,and and Noah A. Smith. 2019. The risk of racial bias
+Malvina Nissim. 2018. Source-driven Representa- in hate speech detection. In Proceedings of the
+tions for Hate Speech Detection. In Proceedings 57th Annual Meeting of the Association for Com-
+ofthe5thItalianConferenceonComputationalLin- putational Linguistics, pages 1668–1678, Florence,
+guistics(CLiC-it2018),Turin,Italy. Italy.AssociationforComputationalLinguistics.
+Gudbjartur Ingi Sigurbergsson and Leon Derczynski. AppendixA
+2020. Offensive Language and Hate Speech De-
+tection for Danish. In Proceedings of the 12th
+Language Resources and Evaluation Conference. Subreddit Numberofposts
+ELRA.
+apewrangling 5
+Steve Durairaj Swamy, Anupam Jamatia, and Bjo¨rn beatingfaggots 3
+Gamba¨ck. 2019. Studying generalisability across
+blackpeoplehate 16
+abusive language detection datasets. In Proceed-
+chicongo 15
+ingsofthe 23rdConferenceonComputational Nat-
+ural Language Learning (CoNLL), pages 940–950, chimpmusic 35
+Hong Kong, China. Association for Computational didntdonuffins 22
+Linguistics. fatpeoplehate 1465531
+funnyniggers 29
+Zeerak Waseem, Thomas Davidson, Dana Warmsley,
+and Ingmar Weber. 2017. Understanding abuse: A gibsmedat 24
+typologyofabusivelanguagedetectionsubtasks. In hitler 297
+Proceedings of the First Workshop on Abusive Lan- holocaust 4946
+guageOnline,pages78–84.
+kike 1
+Zeerak Waseem and Dirk Hovy. 2016. Hateful sym- klukluxklan 1
+bols or hateful people? predictive features for hate milliondollarextreme 9543
+speech detection on twitter. In Proceedings of the misogyny 390
+NAACL Student Research Workshop, pages 88–93,
+muhdick 15
+San Diego, California. Association for Computa-
+nazi 1103
+tionalLinguistics.
+niggas 86
+Michael Wiegand, Josef Ruppenhofer, Anna Schmidt, niggerhistorymonth 28
+and Clayton Greenberg. 2018. Inducing a lexicon
+niggerrebooted 5
+ofabusivewords–afeature-basedapproach. InPro-
+niggerspics 449
+ceedingsofthe2018ConferenceoftheNorthAmer-
+ican Chapter of the Association for Computational niggersstories 75
+Linguistics: Human Language Technologies, Vol- niggervideos 311
+ume1(LongPapers),pages1046–1056. niglets 27
+pol 80
+Yi Yang, Mark Christopher Siy UY, and Allen Huang.
+2020. Finbert: A pretrained language model for fi- polacks 151
+nancialcommunications. sjwhate 10080
+teenapers 23
+Marcos Zampieri, Shervin Malmasi, Preslav Nakov,
+whitesarecriminals 15
+Sara Rosenthal, Noura Farra, and Ritesh Kumar.
+2019. SemEval-2019task6: Identifyingandcatego-
+A.1: Distribution of messages per banned community
+rizing offensive language in social media (OffensE-
+composingtheRAL-Edataset.
+val). InProceedingsofthe13thInternationalWork-
+shop on Semantic Evaluation, pages 75–86, Min-
+neapolis, Minnesota, USA.AssociationforCompu-
+tationalLinguistics.
+Profanity Frequency
+fucking 52,346
+shit 49,012
+fuck 44,627
+disgusting 15,858
+ass 15,789
+ham 13,298
+bitch 10,661
+stupid 9,271
+damn 7,873
+lazy 7427
+A.2: Top10profanitiesinRAL-Edataset.
+Pre-processingbeforepre-training
+• allusers’mentionshavebeensubstitutedwith
+aplaceholder(@USER);
+• allURLshavebeensubstitutedwithawitha
+placeholder(URL);
+• emojis have been replaced with text (e.g.
+→ :pleading face:) using Python
+emojipackage;
+• hashtagsymbolhasbeenremovedfromhasth-
+tags(e.g. #kadiricinadalet→kadiricinadalet);
+• extrablankspaceshavebeenreplac§edwith
+asinglespace;
+• extrablanknewlineshavebeenremoved.
+AppendixB
+Pre-processing before fine-tuning For each
+dataset,wehaveadoptedminimalpre-processing
+steps. Inparticular:
+• allusers’mentionshavebeensubstitutedwith
+aplaceholder(@USER);
+• allURLshavebeensubstitutedwithawitha
+placeholder(URL);
+• emojis have been replaced with text (e.g.
+→ :pleading face:) using Python
+emojipackage;
+• hashtagsymbolhasbeenremovedfromhasth-
+tags(e.g. #kadiricinadalet→kadiricinadalet);
+• extrablankspaceshavebeenreplacedwitha
+singlespace.
+Hyperparameter Value
+Learningrate 1e-5
+TrainingEpoch 5
+Adamepsilon 1e-8
+Maxsequencelength 100
+Batchsize 32
+Num. warmupsteps 0
+A.3: Hyperparamters for fine-tuning BERT and Hate-
+BERT.

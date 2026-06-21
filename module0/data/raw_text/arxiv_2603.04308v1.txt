@@ -1,0 +1,722 @@
+Activation Outliers in Transformer Quantization:
+Reproduction, Statistical Analysis, and Deployment
+Tradeoffs
+Pranav Kumar Kaliaperumal
+M.S. Computer Science
+University of Colorado Denver
+Aurora, Colorado, USA
+pranavkumar.kaliaperumal@ucdenver.edu
+Abstract—Post-trainingquantization(PTQ)oftransformersis data moves through the model’s residual connections. These
+known to suffer from severe accuracy degradation due to struc- outliers stretch the range of activation values, which causes
+tured activation outliers, as originally analyzed by Bondarenko
+the standard min-max scaling approach to devote most of the
+et al. (EMNLP 2021) in work associated with Qualcomm AI
+availabledynamicrangetojustafewdimensions.Inturn,this
+Research.Inthisstudy,weprovideafullyreproducibleempirical
+reproduction and systems-level extension of that phenomenon compresses the majority of activations into a small number of
+in BERT-base fine-tuned on QNLI. In this study, we carefully integer values, increasing the quantization error.
+reproduce and analyze cases where PTQ fails in BERT-base Eventhoughthisissueisbecomingmorewidelyrecognized,
+models fine-tuned on QNLI, ensuring that our results can be
+there are still several important questions that need to be
+fully replicated. When we apply global W8A8 quantization, the
+answered:
+validation accuracy sharply declines from 89.66
+We explore several strategies to address this problem. Using • How consistently do activation outliers reproduce across
+mixed precision PTQ, we are able to bring the accuracy back training seeds and deployment conditions?
+close to its original level (89.42
+• To what extent does residual amplification drive quanti-
+Our deployment profiling on an RTX 3050 GPU shows that
+zation instability?
+there are only minor differences in latency and memory usage
+between the various methods (median latency is around 58–59 • How do mitigation strategies compare under real deploy-
+ms;VRAMusageisabout484–486MB).Thisfindingemphasizes ment constraints (latency, VRAM, model size)?
+how crucial it is to consider the underlying hardware when • Can a simpler calibration strategy recover performance
+evaluating these approaches.
+without increasing runtime complexity?
+Takentogether,ourresultsshowthatthemainreasonforPTQ
+failure in transformers is the dominance of certain channels, This work does not propose a new quantization algorithm.
+whichbecomesmoresignificantasyougodeeperintothemodel Instead, it aims to rigorously reproduce, quantify, and extend
+due to the residual connections. To effectively address this, it the empirical findings of Bondarenko et al. by incorporating
+is necessary to use mitigation strategies that allocate precision
+depth-wise statistical measurements and deployment-oriented
+based on channel structure, rather than relying only on scalar
+profilingundercontrolledexperimentalconditions.Wepresent
+clipping.
+a reproducible, systems-level study of how activation outliers
+I. INTRODUCTION cause PTQ to fail in BERT-base models on the QNLI dataset.
+We show how naive W8A8 quantization leads to accuracy
+Transformer models have become the standard in natural
+collapse, analyze how activation statistics change at different
+languageprocessing,butusingtheminreal-worldapplications
+modeldepths,andassessthreedifferentstrategiesforaddress-
+is still challenging due to their high computational and mem-
+ing these issues:
+orydemands.Post-trainingquantization(PTQ)isanappealing
+waytomakethesemodelssmallerandfasterwithoutrequiring 1) Mixed precision PTQ,
+retraining.However,whenPTQisappliedinastraightforward 2) Per-Embedding-Group (PEG) quantization with permu-
+manner—especially to the activations—transformers often ex- tation,
+perience a unique kind of failure. Specifically, using full 3) Apercentile-basedactivationcalibrationextension(pro-
+W8A8 quantization tends to cause a much larger drop in posed).
+accuracy compared to what is seen in convolutional neural Unlike earlier studies that mainly focus on restoring ac-
+networks. curacy, we also evaluate each approach in terms of real-
+Recent research points to the fact that this accuracy loss is worlddeploymentmetrics,suchasmedianandhigh-percentile
+not just a result of random noise from quantization. Instead, latency,peakVRAMusage,andmodelsizewhenrunonRTX
+it is caused by what are known as structured activation 3050 hardware.
+outliers—certainactivationvaluesthatstandoutandpersistas Our main findings can be summarized as follows:
+6202
+raM
+4
+]GL.sc[
+1v80340.3062:viXra
+• Structuredactivationoutlierspersistacrossresidualpath-
+ways and amplify with depth. xˆ=s(q−z) (2)
+• Naive W8A8 PTQ collapses under uniform scaling.
+The quantization error, which measures the difference be-
+• PEG restores accuracy but introduces modest complexity
+tween the true activation and its quantized approximation, is
+overhead.
+given by:
+• Mixedprecisionisrobustbutreducescompressiongains.
+• Percentile-basedcalibrationfailstorecoveraccuracy,sug-
+gesting that dominant channels encode structured signal ϵ(x)=x−xˆ (3)
+rather than noise.
+A. Min-Max Scaling Under Heavy-Tailed Distributions
+A. Positioning and Contribution Relative to Prior Work When symmetric min-max scaling is used, the scale factor
+The phenomenon of structured activation outliers in trans- s is determined by:
+former quantization was first systematically analyzed by Bon-
+max(|x|)
+darenko et al. (EMNLP 2021), in research associated with s= (4)
+2b−1−1
+QualcommAIResearch.That workdemonstratedthatasmall
+subsetofembeddingdimensionscandominateactivationmag- If the activation values follow a heavy-tailed distribution,
+nitude, leading to severe degradation under naive W8A8 post- meaning that:
+training quantization.
+The present study builds directly upon that foundation. P(|x|>t)∼t−α, α<4, (5)
+Ratherthanproposinganewquantizationalgorithm,thiswork
+then a small number of extreme activation values will
+contributes:
+dominate max(|x|).
+• A fully reproducible experimental pipeline validating the
+Let δ represent the proportion of extreme outliers in the
+W8A8 collapse in BERT-base under controlled calibra-
+distribution. As a result, the effective resolution available for
+tion conditions.
+mostactivationvalues(thebulkofthedistribution)isreduced
+• Depth-wise statistical characterization of activation be-
+by a factor roughly proportional to:
+havior, including kurtosis growth, variance amplification,
+and top-1% energy concentration. σ
+ρ= bulk (6)
+• Systematicablationofmitigationstrategies(mixedpreci- max(|x|)
+sion and per-embedding-group quantization) under iden-
+As max(|x|) grows larger because of rare outliers, ρ ap-
+tical evaluation settings.
+proaches zero. This means most of the activation values end
+• Deployment-oriented profiling (latency percentiles, peak
+up squeezed into a small number of quantization bins.
+VRAM, serialized model size) to assess practical trade-
+offs on consumer GPU hardware.
+B. Error Amplification in Residual Architectures
+By combining statistical analysis with deployment eval-
+Each transformer layer computes its output as:
+uation, this work provides a systems-level clarification of
+when and why activation-driven quantization collapse occurs,
+h =h +f (h ) (7)
+extending prior findings into a reproducible and practically l+1 l l l
+grounded framework.
+In the quantized version of the network, this computation
+This study sheds light on the statistical and systems-level
+becomes:
+reasons behind PTQ failures in transformers and offers prac-
+tical advice for deploying these models when resources are hˆ =hˆ +f(cid:92) (h ) (8)
+l+1 l l l
+limited.
+Let ϵ =h −hˆ denote the quantization error at layer l.
+l l l
+II. PROBLEMFORMULATION
+Then error propagation satisfies:
+Let x ∈ R represent the activation values at transformer
+layer l, where these values are drawn from some distribution ϵ =ϵ +ϵ (9)
+l+1 l fl
+D . In uniform affine quantization, each activation x is con-
+l
+verted into an integer value q as follows: Therefore,
+(cid:16)x(cid:17) l−1
+q =round +z (1) (cid:88)
+s ϵ l = ϵ fk (10)
+Here,sstandsforthequantizationscale,z isthezero-point k=0
+offset, and b is the bit width (for example, b=8 corresponds If the error ϵ includes a structured bias—such as that
+fk
+to INT8 quantization). introduced by distorted scaling from outliers—this error will
+To recover the approximate original value from the quan- accumulate more and more as the model gets deeper.
+tized integer, we use the following dequantization formula: Additionally, the variance of the error increases as:
+B. Training Configuration
+l−1
+(cid:88) The fine-tuning process uses the following configuration:
+Var[ϵ ]= Var[ϵ ] (11)
+l fk
+• Optimizer: AdamW
+k=0
+• Learning rate: 5×10−5
+When uniform scaling is affected by heavy-tailed outliers, • Linear warmup schedule
+Var[ϵ fk] becomes much larger compared to what is typically • Batch size: 8
+seen in convolutional networks, where the activation distribu- • Maximum sequence length: 128
+tions are more well-behaved. • Weight decay: 0.01
+• Gradient clipping: 1.0
+C. Structured Channel Dominance
+• Number of epochs: consistent with GLUE baseline con-
+Empiricalevidenceshowsthatnotallactivationdimensions vergence
+are equally heavy-tailed. Instead, certain embedding dimen- We use a fixed random seed (1000, unless noted otherwise)
+sions d consistently contribute much more to the overall for training, and enforce deterministic CUDA behavior when
+i
+variance: possible to make sure our results are reproducible.
+We save model checkpoints every 500 steps and evaluate
+performanceattheseintervals.Thefinalmodelfilesarestored
+Var(x )≫Var(x ) (12)
+di dj
+in:
+for just a small subset of indices i.
+runs/fp32_seed1000/out/
+Let I denote top-p
+C. Quantization Protocol
+(cid:88) (cid:88)
+Var(x )≫ Var(x ) (13) Weapplypost-trainingquantization(PTQ)tothefine-tuned
+di dj
+FP32 checkpoint. All PTQ variants in our study share the
+i∈I j∈/I
+following setup:
+As a result, uniform global scaling forces the entire activa-
+• Calibration on the training split
+tion tensor to fit these dominant channels, which lowers the
+• Static activation range estimation
+resolution for the vast majority of dimensions.
+• Per-tensor affine quantization unless otherwise specified
+• INT8 weight quantization for all methods
+D. Core Failure Mechanism
+For activation calibration, we use the following strategies:
+Putting all these factors together, we see that PTQ failure
+• Min-max scaling (W8A8 baseline)
+in transformers using naive W8A8 quantization is caused by:
+• Layer-selective FP16 retention (Mixed Precision)
+1) Heavy-tailed activation distributions. • Per-embedding-group scaling (PEG)
+2) Persistent structured dominant channels. • Percentile-based range estimation (Proposed)
+3) Residual accumulation amplifying quantization bias. Forthepercentilecalibrationmethod,thescaleiscalculated
+4) Uniform global scaling misallocating dynamic range. as:
+This understanding suggests that we need more structured
+percentile (|x|)
+mitigation strategies—ones that either separate out the dom- s= 99.9 (14)
+127
+inant channels or reduce the influence of outliers during
+calibration. Allcalibrationisperformedininferencemode,withoutany
+gradient updates.
+III. EXPERIMENTALSETUP The quantized models are saved in:
+runs/_seed1000/out/
+A. Model and Dataset
+WecarryoutourexperimentsusingtheBERT-base-uncased D. Deployment Profiling Methodology
+model (with 110 million parameters), which we fine-tune We profile deployment performance under consistent run-
+on the QNLI task from the GLUE benchmark. QNLI is a time conditions:
+binary sentence-pair classification problem based on question
+• Hardware: NVIDIA RTX 3050 (6GB VRAM)
+answering, and it includes:
+• CUDA 12.1
+• 104,743 training examples • PyTorch 2.2.2 with CUDA support
+• 5,463 validation examples • Batch size: 8
+The main metric we use for evaluation is the accuracy on • Sequence length: 128
+the validation set. We measure latency using the following procedure:
+All experiments start from a fine-tuned FP32 baseline 1) 100 warmup iterations (excluded)
+model. This approach helps us isolate the effects of quanti- 2) 500 timed inference iterations
+zation. 3) CUDA events for start/end timing
+4) p50 and p95 latency computed B. Mixed Precision PTQ
+Peak VRAM usage is tracked using CUDA memory mon- Themixedprecisionapproachkeepscertainlayersinhigher
+itoring during inference. We calculate model size as the total precision (FP16), while quantizing the rest of the layers to
+size of the saved weight files, not counting extra checkpoint INT8.
+files. In our implementation, we retain FP16 precision for:
+Deployment metrics are saved to: • Feed-forward network (FFN) output projections
+runs/results/deploy_profile.csv • Residual summation inputs
+• Attention output projections
+E. Automation and Artifact Generation All other linear layers are quantized to use INT8 weights
+and activations.
+All experiments can be run using a single entry point:
+This strategy selectively protects the layers that are most
+python oneclick/run_all.py vulnerable to activation range distortion, while still providing
+some compression benefits.
+The experimental pipeline performs the following steps: Mixed precision increases the memory footprint compared
+1) Trains FP32 baseline (if not already present) to W8A8, but leads to much more stable accuracy.
+2) Applies each PTQ variant
+C. Per-Embedding-Group Quantization (PEG)
+3) Aggregates accuracy results
+4) Profiles deployment metrics Toaddresstheproblemofstructuredchanneldominance,we
+5) Generates LaTeX-ready tables and figures divide the embedding dimensions into K groups (with K =
+3 as the default). Each group is assigned its own activation
+Summary results are saved in:
+scaling factor:
+runs/results/method_metrics.csv
+(cid:18) (cid:19)
+x
+runs/results/deploy_profile.csv q =round g (17)
+paper/accuracy_table.tex g s g
+paper/deploy_table.tex where
+This design ensures that every step, from raw training to max(|x |)
+paper artifact generation, is exactly reproducible. s g = 2b−1−g 1 (18)
+This approach separates dominant embedding dimensions
+IV. QUANTIZATIONMETHODS
+from the rest of the distribution.
+We evaluate four post-training quantization (PTQ) strate- 1) Permutation Strategy: We also use a permutation strat-
+gies, each applied to a fine-tuned FP32 BERT-base model. egy that reorders embedding dimensions before grouping.
+While all methods convert weights to INT8, the way they By sorting dimensions based on their activation magnitude
+quantize activations varies, as described below. statistics and distributing them across groups, we prevent
+Unless otherwise specified, we use static calibration, affine outliers from being concentrated in any single group.
+symmetric quantization, and per-tensor activation scaling for After quantization, we invert the permutation so that the
+all methods. functional behavior of the model remains unchanged.
+PEGaddsasmallamountofbookkeepingoverheadbutstill
+A. W8A8 Baseline (Uniform PTQ) allows integer arithmetic to be used during inference.
+The baseline method uses global min-max affine quantiza- D. Percentile-Based Calibration (Proposed)
+tion for both weights and activations:
+Instead of relying on min-max scaling, this method esti-
+(cid:16)x(cid:17) mates the activation scale by setting a high-percentile thresh-
+q =round (15)
+old:
+s
+with scale percentile (|x|)
+s= p (19)
+2b−1−1
+max(|x|)
+s= (16) with default p=99.9.
+2b−1−1
+This method reduces the impact of extreme outliers while
+where b=8. still using a single global scale across the tensor.
+Activation ranges are estimated using calibration data col- Unlike PEG or mixed precision, percentile calibration:
+lected in inference mode. With this approach, all embedding • Requires no architectural modification
+dimensions and layers are treated the same way. • Preserves single-scale per tensor
+Althoughthismethodisstraightforwardandeasytodeploy, • Adds no runtime cost
+it is very sensitive to structured activation outliers. • Maintains compatibility with integer-only inference
+TABLEI TABLEII
+VALIDATIONACCURACYONQNLI LATENCY,VRAM,ANDSERIALIZEDMODELSIZE
+Method Accuracy(%) ∆vsFP32 Method p50(ms) p95(ms) VRAM(MB) Size(MB)
+FP32 89.66 – FP32 58.38 59.08 483.7 417.7
+W8A8 54.33 -35.33 W8A8 58.61 59.13 485.5 418.3
+MixedPrecision 89.42 -0.24 MP-PTQ 58.77 59.55 486.3 418.3
+PEG(K=3,P) 66.12 -23.54 PEG 58.97 59.81 486.3 419.6
+Percentile 50.54 -39.12 Percentile 59.12 59.77 486.3 418.3
+The tradeoff is that some rare, extreme values may be needs—soclippingthemorcompressingthemtooaggressively
+clipped. However, our results show that clipping a small frac- can damage the model’s ability to represent the task.
+tionofactivationscangreatlyimprovetheeffectiveresolution Mixed precision works well because it preserves those key
+for most values. channelsbynotcompressingthem.PEGhelpsbygivingbetter
+resolution to different groups, but it still can’t completely
+E. Implementation Consistency
+isolate the dominant channels from the rest.
+For consistency, all methods: The percentile method is easy to implement, but these
+• Use identical calibration datasets results show that clipping needs to be done with great care;
+• Apply static quantization (no runtime range updates) if the threshold is too aggressive, it can end up removing
+• Retainidenticalinferencebatchsizeandsequencelength information that is crucial for the model’s accuracy.
+• Serialize models in the same format for size comparison Taken together, these findings confirm that transformers are
+sensitive to activation quantization in a way that is different
+This ensures that any differences we observe are due only
+from convolutional networks. As a result, strategies that are
+to the quantization strategies themselves, not to differences in
+aware of channel structure arenecessary to preserve accuracy.
+implementation.
+V. ACCURACYRESULTS
+VI. DEPLOYMENTPROFILING
+We assess how each quantization strategy affects runtime
+TableIsummarizesthevalidationaccuracyresultsonQNLI
+and memory usage by running inference with a batch size of
+for each quantization strategy, using FP32 as the baseline for
+8 and a sequence length of 128 on an NVIDIA RTX 3050
+comparison.
+GPU (6GB VRAM).
+A. Observations
+A. Latency Analysis
+A few key patterns stand out from the results:
+Surprisingly, using INT8 quantization does not lead to any
+• Naive W8A8 collapse. Applying uniform INT8 activa-
+noticeable improvements in latency on the RTX 3050. All the
+tion quantization leads to a dramatic drop in accuracy
+methodswetestedhavesimilarmedianlatency(around58–59
+by 35.33 points, which clearly demonstrates how much
+ms), and there is very little difference in the higher-percentile
+activation range distortion can harm performance.
+latency as well.
+• Mixed precision robustness. Keeping certain layers in
+This unexpected result can be explained by several factors:
+FP16 almost fully recovers the original accuracy (with
+justa-0.24drop),suggestingthatquantizationsensitivity • PyTorch execution primarily dispatches to optimized
+FP32 CUDA kernels.
+is driven by a small number of crucial layers.
+• PEGpartialrecovery.Usingper-embedding-groupscal- • The RTX 3050 does not provide strong Tensor Core
+acceleration benefits for small-batch INT8 transformer
+ing performs better than naive W8A8, but accuracy still
+inference in this configuration.
+drops by 23.54 points. This means that simply grouping
+channels is not enough to completely address the impact • Kernel launch overhead dominates arithmetic savings at
+batch size 8.
+of structured outliers.
+• Percentileinstability.Surprisingly,percentilecalibration As a result, simply reducing arithmetic precision does not
+at p = 99.9 makes performance even worse (a drop actually make inference faster in this deployment scenario.
+of -39.12), showing that aggressive clipping at high
+B. VRAM Usage
+percentiles can cut out activation values that are actually
+Peak VRAM usage is also nearly the same for all methods
+important for the model’s understanding, not just noise.
+(about 484–486 MB). This suggests that:
+B. Implications
+• Activationbuffersdominatememoryfootprintatruntime.
+These results make it clear that failures in transformer • INT8 weight storage alone does not significantly reduce
+activationquantizationarenotjustaboutrare,extremeoutliers. peak allocated CUDA memory.
+Instead, it seems that the channels with the largest activations • Framework-level tensor representations may still allocate
+actuallyholdimportant,meaningfulinformationthatthemodel in FP32 internally.
+This finding highlights an important point: even though TABLEIII
+quantizationreducesthenumberofbitsneededforparameters, DEPTH-WISEACTIVATIONOUTLIERSTATISTICS(FP32)
+it does not always lower memory usage at runtime unless the
+Layer MeanVariance Kurtosis Top-1%Energy
+inference kernels are specifically optimized for it.
+Embeddings(0) 0.25 9 0.15
+Layer1 0.32 14 0.21
+C. Serialized Model Size
+Layer2 0.38 41 0.29
+Thereareonlyminimaldifferencesinthesizesofthesaved Layer4 0.46 73 0.37
+Layer10 0.55 135 0.49
+(serialized) model files:
+Layer11 0.58 271 0.55
+Pooler(12) 0.54 73 0.53
+• FP32: 417.7 MB
+• INT8 variants: 418–419 MB
+The reason for this limited reduction is that:
+C. Heavy-Tailed Behavior
+• Checkpoint serialization includes metadata.
+Kurtosis rises dramatically with depth, reaching 271 by
+• Certain tensors remain in higher precision.
+Layer 11. For comparison, a Gaussian distribution has a
+• Storage format does not strictly enforce 4× reduction in
+kurtosis of 3, so values above 100 signal extremely heavy-
+all components.
+tailed distributions.
+So, although quantization in theory reduces the precision
+This finding confirms that transformer activations are far
+of computations and parameters, the actual deployment ben-
+fromthelight-tailedassumptionsthatuniformmin-maxquan-
+efits depend a lot on the hardware and how the software is
+tization relies on.
+implemented.
+D. Structured Energy Concentration
+D. Systems-Level Implications
+Thefractionoftotalactivationenergyheldbythetop1%of
+Together, these results underscore a key systems takeaway:
+channels increases from 15% at the embedding layer to 55%
+Quantization alone does not guarantee deployment at Layer 11. This means that:
+speedup. Hardware support and kernel implementa-
+tion determine realized gains. (cid:88) (cid:88)
+x2 ≈0.55 x2 (20)
+i j
+On this particular GPU, activation quantization mainly
+i∈top-1% j
+influencesthenumericalbehaviorofthemodel,notthespeed.
+This means that when considering quantization, it’s important As a result, just a small subset of embedding dimensions
+to weigh both accuracy and hardware capabilities together. ends up dominating the overall activation magnitude.
+Toactuallyachievefasterinferencetimes,itwouldprobably Thiskindofstructureddominanceexplainswhyglobalmin-
+benecessarytousehardware-awarequantizationorspecialized max scaling fails: the dynamic range is set by a handful of
+INT8-optimized inference engines (like TensorRT or ONNX extreme channels, which forces the other 99% of dimensions
+Runtime with INT8 support). into a narrow range.
+VII. STATISTICALOUTLIERANALYSIS E. Connection to Quantization Collapse
+Tobetterunderstandhowactivationoutliersbehave,weana- Taking all these observations together:
+lyzeFP32activationsfromafine-tunedcheckpoint,examining • Variance grows with depth (residual amplification).
+a64-sampleslicefromthevalidationset.Foreachtransformer • Kurtosis increases sharply (heavy tails).
+layer, we calculate: • Energy concentrates in a small subset of dimensions.
+• Mean per-dimension variance With uniform affine scaling, the scaling factor is set by
+• Kurtosis (fourth standardized moment) max(|x|)—that is, by the most extreme channels. As a result,
+• Top-1 most activations get mapped to fewer quantization levels,
+which increases quantization error and leads to the severe
+A. Depth-Wise Activation Statistics accuracy drop seen with W8A8 quantization.
+Table III presents a summary of key statistics for several These statistics strongly support the idea that transformer
+representative layers. PTQfailureismainlydrivenbystructuredchanneldominance,
+not just random noise.
+B. Variance Amplification
+VIII. ABLATIONSTUDY
+The average activation variance roughly doubles from the
+early layers (starting at 0.25) to the deeper layers (reaching We carry out a series of controlled ablation experiments to
+0.58). This supports the idea that residual accumulation in- pinpointwhichfactorshavethegreatestimpactonquantization
+creases the scale of activations as depth increases. robustness.
+A. Percentile Threshold Sensitivity • Percentile calibration adds no runtime cost but fails to
+restore accuracy.
+To test the sensitivity of the proposed calibration method,
+we vary the percentile threshold p as follows: • INT8arithmeticalonedoesnotyieldmeasurablespeedup
+on RTX 3050 hardware.
+• p=99.0
+• p=99.5 So, when evaluating mitigation strategies, it’s important to
+• p=99.9 consider both their ability to fix statistical issues and their
+• p=99.99 effectiveness in improving efficiency on actual hardware.
+For all thresholds tested, the validation accuracy stays
+around 50.54 E. Key Insight from Ablations
+Observation: Percentile clipping fails to restore accuracy
+The results from these ablation experiments make it clear:
+in this setting.
+Interpretation: The dominant channels probably carry se- Transformer PTQ failure is driven more by struc-
+mantically meaningful information instead of just rare noise. turedchanneldominancethanbyrareextremescalar
+When even 0.01 outliers.
+This supports our earlier conclusion that activation outliers
+Simple percentile clipping is not enough. To maintain
+in transformers are structured and functional, not just random
+accuracy, you need channel-aware strategies, such as mixed
+anomalies.
+precision or more granular grouping.
+B. PEG Grouping Strategy
+We test PEG with permutation using different group counts IX. DISCUSSION
+(K = 2,3,4), and observe a highly non-linear relationship
+This study sheds light on how and why post-training ac-
+between K and accuracy:
+tivation quantization fails in transformers, and it thoroughly
+• K =2: 49.46
+examines which mitigation strategies actually work in real-
+• K =3: 66.12
+world deployment scenarios.
+• K =4: 86.18
+These results suggest that PEG’s effectiveness depends on
+A. Failure of Naive W8A8
+whether the grouping is fine-grained enough to isolate the
+dominant channels. When there are too few groups (K =2),
+Using naive global W8A8 PTQ leads to a major drop in
+the dominant dimensions still distort the scale estimation
+performance: validation accuracy falls from 89.66
+for their group, causing the other dimensions to collapse.
+This dramatic collapse matches what the statistical analysis
+Increasing to K = 4 gives enough separate scale factors
+shows: as you go deeper into the network, kurtosis increases
+to protect information in the less dominant channels while
+sharply (up to 271 at Layer 11), and the top 1
+keeping the influence of outliers in check.
+ThedatamakeitclearthatW8A8failureisnotjustaresult
+C. Mixed Precision Layer Sensitivity of random noise, but comes from structured distortion of the
+dynamic range.
+Mixed precision, which keeps certain layers in FP16,
+achieves 89.42
+This finding indicates that quantization sensitivity is highly B. Effectiveness of PEG Grouping
+localized within the network. By protecting just the feed-
+Per-Embedding-Group (PEG) quantization shows that ad-
+forwardoutputprojectionsandresidualpathways,themodel’s
+justing the range with channel awareness can partly prevent
+expressiveness can be preserved.
+collapse. Using K = 3 groups (with permutation), accuracy
+Combined with the statistical findings:
+rises to 66.12
+• Heavy-tailed activation distributions
+However, the ablation over group count reveals a highly
+• Depth-wise kurtosis explosion
+non-linear relationship:
+• Concentrated channel energy
+weinferthatsomelayersserveasbottleneckswherequanti- • K =2: 49.46
+zation error gets amplified. Mixed precision succeeds because • K =3: 66.12
+it avoids compressing these critical layers. • K =4: 86.18
+ThebigjumpinperformanceatK =4suggeststhathaving
+D. Accuracy–Efficiency Tradeoff
+enough groups lets the dominant channels be put into their
+Looking at both Table I and Table II, we see: own quantization scales. If you use too few groups (K =2),
+• Mixed precision restores accuracy but does not improve the dominant channels still distort how the scale is set for the
+latency. group. So, how well PEG works really depends on whether
+• PEG partially recovers accuracy with minimal runtime thegroupingisfine-grainedenoughtoseparateoutthosehigh-
+overhead. energy channels seen in the statistical analysis.
+C. Mixed Precision Robustness X. LIMITATIONS
+Mixed precision PTQ gets very close to the original perfor- Whilethisstudypresentsacarefulandreproducibleanalysis
+mance, with 89.42 of activation outliers under PTQ, there are several limitations
+This result shows that quantization sensitivity is mostly that affect how broadly the results can be applied.
+concentrated in a few critical layers—especially the feed-
+A. Model Scale
+forwardoutputsandresidualpathways.Bykeepingthoseparts
+All experiments were carried out using
+in FP16, the model avoids amplifying quantization errors as
+bert-base-uncased fine-tuned on QNLI, and no
+they accumulate through the residual connections.
+larger transformer models or decoder-only large language
+Together with the findings about kurtosis and energy con-
+models (LLMs) were included. The biggest model we tested
+centration, this suggests that only a handful of layers serve as
+was about 418 MB (FP32 checkpoint-39000).
+amplification bottlenecks for quantization noise.
+Activationstatistics,theconcentrationofoutliers,andquan-
+D. Percentile Calibration Limitations tization sensitivity may be very different for much larger
+The proposed percentile-based calibration method was models with greater depth and width. Therefore, any attempt
+tested at several thresholds (p = 99.0,99.5,99.9,99.99), but to apply these findings to billion-parameter LLMs should be
+all of them ended up with about 50.54 done cautiously.
+Even though percentile clipping cuts out the most extreme B. Hardware Scope
+activation values when setting the scale, the statistics show
+All latency and memory measurements were made on
+that thesedominant channels actually containimportant infor-
+a single consumer-grade NVIDIA RTX 3050 GPU (6 GB
+mation, not just noise. Clipping as little as 0.01
+VRAM). The deployment metrics reported (p50 ≈ 58–59 ms,
+Thisreinforcestheideathatactivationoutliersintransform-
+VRAM ≈ 484–486 MB) are specific to this hardware setup.
+ers are structured and play a functional role.
+No experiments were conducted on:
+E. Deployment Tradeoffs • Data center GPUs (e.g., A100, H100)
+Deploymentprofilingshowsthatthereareonlysmalldiffer- • CPU-only inference
+ences in runtime across methods on the RTX 3050 platform: • Mobile NPUs or edge accelerators
+• INT8-optimizedinferencekernelswithtensor-coreaccel-
+• Latency p50 ranges from 58.38 ms (FP32) to 59.12 ms
+eration
+(Percentile).
+ThismeansthatthelackofspeedupfromINT8quantization
+• VRAM usage ranges from 483.67 MB to 486.29 MB.
+in our results might be due to this particular hardware, not
+• Model size ranges from 417.67 MB (FP32) to approxi-
+because quantization itself can’t provide gains.
+mately 419 MB.
+C. Task and Seed Diversity
+INT8 arithmetic doesn’t actually make inference faster in
+this setup, probably because the hardware doesn’t accelerate All tests were performed on just one downstream task
+INT8operationsmuchandkerneloverheaddominatesthetotal (QNLI from GLUE) and used a single random seed (1000).
+computation time. Also, the reduction in model size is small, Whilethismakestheresultshighlyreproducible,itlimitswhat
+hintingthatthewayweightsaresavedorthecheckpointformat we can say about how the findings generalize to other tasks.
+itself limits how much can be compressed. We did not evaluate other GLUE tasks, run multi-task
+So,thebenefitsofquantizationreallyneedtobeconsidered experiments, or test with different random seeds. As a result,
+in light of the hardware you’re using. Just having statistical we do not know how sensitive the results are to the choice of
+robustnessisn’tenoughtoensurethatdeploymentwillbemore task or to random initialization.
+efficient.
+D. Distributed and Large-Scale Training
+F. Synthesis of Findings All experiments used a single GPU and did not involve
+Looking across all experiments, the evidence points to a distributed training or model parallelism. There were no tests
+clear takeaway: with multiple GPUs or large batch sizes.
+Additionally, we only tested post-training quantization
+Transformer PTQ failure is driven primarily by
+(PTQ) approaches. We did not explore quantization-aware
+structured channel dominance and depth-wise am-
+training (QAT) or hybrid fine-tuning strategies in this work.
+plification, not by rare scalar outliers.
+Mitigation strategies that either preserve or isolate the E. Statistical Sampling Scope
+dominant channels—like mixed precision or finely-grained Outlier statistics were calculated using a 64-sample valida-
+PEG—are effective. In contrast, scalar clipping strategies tion slice from the FP32 checkpoint. While this was enough
+like percentile calibration fail because they mistakenly treat to reveal heavy-tailed behaviors (with kurtosis up to 271 and
+structured, meaningful signal as noise. top-1
+These findings underscore how important it is to design Although the trends match what has been seen in previous
+quantization methods that are channel-aware, especially for research, using a larger sample could help provide a more
+transformers. detailed picture of channel dominance.
+F. Implications of These Constraints C. Formal Analysis of Residual Amplification
+Because of these limitations, the conclusions of this work Whileweshowedthroughexperimentsthatactivationshave
+should be interpreted as: heavy tails and kurtosis grows with depth, we did not develop
+A controlled empirical study of activation-driven a formal mathematical theory to explain these trends.
+PTQ failure in BERT-base under consumer-GPU In particular:
+deployment conditions. • Kurtosis grows from approximately 9 (embeddings) to
+Future research will need to look at larger models, more 271 (Layer 11).
+diverse tasks, and hardware-aware quantization to see how • Top-1
+well these findings hold up in broader settings. These observations point to the idea that residual accumu-
+lation may amplify structured parts of the signal, much like
+XI. FUTUREWORK
+what happens with repeated biased perturbations.
+This study focuses on understanding activation-driven PTQ
+Future work could pursue:
+failure in a controlled setting, but there are several clear
+• Analyticalmodelingofresidualamplificationunderaffine
+directions for extending this work based on our experiments
+quantization.
+and findings.
+• Stabilityboundsonquantizationerrorpropagationacross
+A. Scaling to Decoder-Only and LLM Architectures layers.
+All experiments here used bert-base-uncased, with • Spectral analysis of dominant channel evolution with
+depth.
+models up to about 418 MB and evaluation only on QNLI
+(seed 1000). We did not test decoder-only models (such as • Connectionsbetweenchanneldominanceandrepresenta-
+tional sparsity.
+LLaMA) or very large, billion-parameter transformers.
+Because we saw kurtosis and channel energy increase Building a formal framework would strengthen the theo-
+sharply in deeper layers, it is likely that even larger models retical foundation for designing activation-aware quantization
+with more layers and wider hidden sizes could show even methods.
+stronger structured channel dominance.
+D. Task and Robustness Generalization
+Future work should:
+All our tests used QNLI with a single random seed (1000).
+• Replicate the statistical outlier analysis at LLM scale.
+Testing on more GLUE tasks, a variety of random seeds,
+• Evaluate PEG group-count scaling relative to hidden
+and possibly data from other domains would help assess how
+dimension size.
+robust our findings are across different scenarios.
+• Measure whether mixed precision remains sufficient at
+These experiments would show whether structured channel
+greater depth.
+dominance is something that depends on the specific task, or
+Running these larger-scale experiments would help us un-
+if it’s a general property of the model architecture.
+derstandwhetheractivationcollapsegetsworselinearly,super-
+linearly, or eventually levels off as model size grows.
+E. Toward Channel-Adaptive Quantization
+B. Hardware-Aware Quantization and Edge Deployment Our ablation results—especially the big improvement from
+All deployment profiling was done on a single consumer 66.12
+NVIDIA RTX 3050 GPU, with latency between about 58–59 A promising next step is to explore adaptive grouping
+ms and VRAM usage from 484–486 MB for all methods. In strategies, such as:
+this setup, quantized models did not show any real speedup. • Data-driven grouping based on channel energy.
+This suggests that just compressing the math is not • Dynamic scale allocation proportional to variance contri-
+enough—you also need hardware support for INT8 or spe- bution.
+cialized kernel fusion for low-precision inference to see real • Hybrid mixed precision for top-ranked channels only.
+gains. These methods could help maintain high accuracy while
+Future research directions include: keeping the extra precision cost low.
+• Profiling on NPUs and mobile edge SoCs.
+• Evaluating tensor-core INT8 acceleration on data center XII. CONCLUSION
+GPUs. This work presents a careful and fully reproducible inves-
+• Per-operator quantization policies tailored to hardware tigation into why post-training quantization (PTQ) often fails
+backends. in transformer models. Across all experiments, the evidence
+• Kernel-levelfusionstrategiesforquantizedresidualpath- clearly shows that naive activation quantization fails mainly
+ways. because of structured channel dominance, not just occasional
+A hardware-focused evaluation would help determine if extreme values.
+these channel-aware quantization strategies actually lead to When global W8A8 PTQ is applied, validation accuracy
+practical improvements, especially on edge devices. drops sharply from 89.66
+Channel-aware grouping (PEG) is highly sensitive to how [6] E. Frantar and D. Alistarh, “Gptq: Accurate post-training quantization
+finely channels are grouped: with K = 2, accuracy drops to for generative pre-trained transformers,” International Conference on
+LearningRepresentations(ICLR),2023.
+49.46
+[7] G. Xiao, J. Fan, L. Zhu, T. Chen, Z. Nasrullah, H. Ghasemzadeh,
+On the other hand, percentile-based calibration is not effec- H.Zhang,andH.Shi,“Smoothquant:Accurateandefficientpost-training
+tive, with accuracy staying around 50.54 quantizationforlargelanguagemodels,”ProceedingsoftheInternational
+ConferenceonMachineLearning(ICML),2023.
+Our statistical analysis of FP32 activations shows that the
+[8] Z. Yao, Z. Dong, Z. Li, R. Mazumder, Z. Sun, and A. Gholami,
+data have heavy tails, a property that becomes more pro- “Zeroquant:Efficientandaffordablepost-trainingquantizationforlarge-
+nounced in deeper layers: kurtosis reaches 271 in late layers, scaletransformers,”AdvancesinNeuralInformationProcessingSystems
+(NeurIPS),2022.
+and the top 1
+[9] P. Bhandare, S. Jain, R. Krishna, S. Pushkarna, and N. Dutt, “Bit-
+Deployment profiling also shows that having a statistically level gradient sparsity for post-training quantization,” arXiv preprint
+robust quantization scheme is not enough to guarantee prac- arXiv:2009.11189,2020.
+tical efficiency. On the RTX 3050 GPU we tested, latency
+(median about 58–59 ms) and peak VRAM usage (about
+484–486 MB) barely change across quantization methods,
+and model size stays around 418–420 MB. In this setup,
+INT8arithmeticdoesnotactuallymakeinferencefaster,which
+emphasizes the need to consider hardware when evaluating
+quantization methods.
+Bringing all these results together, we see that:
+Transformer PTQ failure is primarily driven by
+structured channel dominance amplified through
+residual depth, and effective mitigation requires
+channel-awareprecisionallocationratherthanscalar
+clipping alone.
+This study clarifies the reasons for activation quantiza-
+tion collapse, identifies what is needed for recovery through
+systematic ablation experiments, and offers a reproducible,
+deployment-focused framework for future research on trans-
+former quantization.
+REPRODUCIBILITYSTATEMENT
+Code and logs available at:
+https://github.com/pranavkkp4/TransQuant-Edge
+Includes:
+• One-click runner
+• Automatic aggregation
+• Environment specification
+REFERENCES
+[1] Y. Bondarenko, M. Nagel, and T. Blankevoort, “Understanding and
+overcoming the challenges of efficient transformer quantization,” in
+Proceedings of the 2021 Conference on Empirical Methods in Natural
+LanguageProcessing(EMNLP),2021,pp.7947–7969.
+[2] B.Jacob,S.Kligys,B.Chen,M.Zhu,M.Tang,A.Howard,H.Adam,
+andD.Kalenichenko,“Quantizationandtrainingofneuralnetworksfor
+efficient integer-arithmetic-only inference,” in Proceedings of the IEEE
+ConferenceonComputerVisionandPatternRecognition(CVPR),2018,
+pp.2704–2713.
+[3] M.Nagel,R.A.Amjad,M.vanBaalen,C.Louizos,andT.Blankevoort,
+“Data-freequantizationthroughweightequalizationandbiascorrection,”
+inProceedingsoftheIEEE/CVFInternationalConferenceonComputer
+Vision(ICCV),2020,pp.1325–1334.
+[4] T.Dettmers,M.Lewis,Y.Belkada,andL.Zettlemoyer,“Llm.int8():8-bit
+matrix multiplication for transformers at scale,” in Advances in Neural
+InformationProcessingSystems(NeurIPS),2022.
+[5] M.Nagel,M.vanBaalen,T.Blankevoort,R.A.Amjad,andC.Louizos,
+“Up or down? adaptive rounding for post-training quantization,” arXiv
+preprintarXiv:1911.07190,2019.

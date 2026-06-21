@@ -1,0 +1,845 @@
+www.nature.com/npjdigitalmed
+ARTICLE OPEN
+Med-BERT: pretrained contextualized embeddings on large-
+scale structured electronic health records for disease prediction
+✉ ✉
+LailaRasmy 1,3,YangXiang 2,3 , Ziqian Xie1,3, CuiTao1 and DeguiZhi 1
+Deeplearning(DL)-basedpredictivemodelsfromelectronichealthrecords(EHRs)deliverimpressiveperformanceinmanyclinical
+tasks.Largetrainingcohorts,however,areoftenrequiredbythesemodelstoachievehighaccuracy,hinderingtheadoptionofDL-
+basedmodelsinscenarioswithlimitedtrainingdata.Recently,bidirectionalencoderrepresentationsfromtransformers(BERT)and
+relatedmodelshaveachievedtremendoussuccessesinthenaturallanguageprocessingdomain.ThepretrainingofBERTonavery
+largetrainingcorpusgeneratescontextualizedembeddingsthatcanboosttheperformanceofmodelstrainedonsmallerdatasets.
+Inspired byBERT, wepropose Med-BERT, whichadapts theBERTframework originally developedfor thetextdomain tothe
+structured EHRdomain. Med-BERT isa contextualized embeddingmodelpretrained on a structured EHRdataset of 28,490,650
+patients.Fine-tuningexperimentsshowedthatMed-BERTsubstantiallyimprovesthepredictionaccuracy,boostingtheareaunder
+thereceiveroperating characteristics curve (AUC) by1.21–6.14%intwo disease prediction tasks fromtwo clinicaldatabases. In
+particular, pretrained Med-BERT obtainspromising performances on tasks withsmall fine-tuning training sets andcan boostthe
+AUCbymorethan20%orobtainanAUCashighasamodeltrainedonatrainingsettentimeslarger,comparedwithdeeplearning
+modelswithout Med-BERT. Webelievethat Med-BERT willbenefit disease prediction studies withsmalllocal training datasets,
+reducedatacollection expenses, and acceleratethepace ofartificialintelligence aided healthcare.
+npjDigital Medicine (2021) 4:86 ; https://doi.org/10.1038/s41746-021-00455-y
+INTRODUCTION numerousvariations29,33–39.BERThasalsobeenembracedbythe
+Artificial intelligence (AI)-aided disease prediction has undergone clinicaldomain33,34,40.However,thesemodelswerepretrainedon
+considerable development in recent years1–3. At present, it can clinicaltextand are onlyforclinical NLPtasks.
+improvetheprecisionofdiagnosis,enablediseasepreventionby StructuredEHR,asaprimaryinputsourcefordiseaseprediction,
+early warning, streamline clinical decision making, and reduce
+offersrichandwell-structuredinformationthatreflectsthedisease
+healthcare costs4–7. Powerful AI tools, advanced conventional progression of each patient and is one of the most valuable
+machine learning8–10, and deep learning11–14 approaches also resources for health data analysis41,42. Adapting the transfer
+havebeenwidelyappliedinclinicalpredictivemodelingandhave learning framework to structured EHR is a natural idea based on
+gainednumeroussuccesses.Givenenoughtrainingsamples,deep theanalogybetweennaturallanguagetextandEHR,i.e.,bothare
+learning models can achieve comparable or even better sequentialmodalitiesfortokensfromalargevocabulary.However,
+performance than domain experts in the diagnosis of certain aone-to-onemappingbetweentheelementsofnaturallanguage
+diseases15–19. One prerequisite of typical deep learning-based andstructured EHRis not available.
+methods is the availability of large and high-quality annotated ThereisagrowingliteratureontransferlearningforEHR.Some
+datasets, which are used to model the underlying complex researchers directly repurpose internal layers of trained deep
+semanticsoftheinputdomainasmuchaspossibleandtoavoid models (e.g., RNN) for an existing task to a new task43 but these
+under-fitting of model training20,21. Big EHR data, however, often transfer learning might be too tightly coupled with specific tasks
+are not accessible for numerous reasons, including the limited and its generalizability has not been well established. For the
+number of cases for new or rare conditions; difficulty in data pretraining style transfer learning, previous studies on structured
+cleaning and annotation, especially if collected from different EHRshowedsomesuccesses44,45buttheymainlyfocusedonstatic
+sources;andgovernanceissuesthathinderthedataacquisition22. embeddings such as word2vec24 and GloVe25, which failed to
+Transfer learningwas developed to address the issue whereby capture deepcontext information.
+some representations were first pretrained on large volumes of In this work, we choose the BERT framework, including its
+unannotated datasets and then further adapted to guide other architecture and its training methodology, for training models on
+tasks23.Arecenttrendintransferlearningistouseself-supervised largeEHRdata.Notably,othercontextualizedpretrainedembedding
+learning over large general datasets to derive a general purpose frameworks from the NLP domain, such as ULMFiT46 and ELMo26,
+pretrainedmodelthatcapturestheintrinsicstructureofthedata, couldalsobetestedintheEHRdomain.However,wechooseBERT
+whichcanbeappliedtoaspecifictaskwithaspecificdatasetby inthisworkbecauseitiswidelyadoptedwithprovensuccess.
+fine-tuning. This pretraining fine-tuning paradigm has been To the best of our knowledge, there are only two relevant
+proven to be extremely effective in natural language processing studies in the literature of the clinical domain: BEHRT47 and G-
+(NLP)24–30 and, recently, computer vision31,32. Bidirectional enco- BERT48. These models, however, have the following limitations.
+der representations from transformers (BERT) is one of the most BEHRTaimstodeveloppretrainedmodelstopredicttheexistence
+popular models for handling sequential inputs, e.g., text, with of any medical codes in certain visits. It uses positional
+1School of Biomedical Informatics, University of Texas Health Science Center at Houston, Houston, TX, USA. 2Peng Cheng Laboratory, Shenzhen, China. 3These authors
+✉
+contributedequally:LailaRasmy,YangXiang,ZiqianXie. email:xiangy@pcl.ac.cn;Degui.Zhi@uth.tmc.edu
+PublishedinpartnershipwithSeoulNationalUniversityBundangHospital
+;,:)(0987654321
+L.Rasmyetal.
+2
+Table1. ComparisonofMed-BERTwithBEHRTandG-BERTfrommultipleperspectives.
+Criteria BEHRT G-BERT Med-BERT
+Typeofinputcode Calibercodefordiagnosis SelectedICD-9codefordiagnosis ICD-9+ICD-10codefordiagnosis
+developedbyacollegeinLondon +ATCcodeformedication
+Vocabularysize 301 <4K 82K
+Pretrainingdatasource CPRD(primarycaredata)63 MIMICIII(ICUdata)64 CernerHealthFacts(generalEHR)
+Inputstructure Code+visit+ageembeddings Codeembeddingsfromontology Code+visit+codeserialization
++visitembeddings embeddings
+Pretrainingsampleunit Patient’svisitsequence Singlevisit Patient’svisitsequence
+Totalnumberofpretrainingpatients 1.6M 20K 20M
+Averagenumberofvisitsforeach Notreportedbut>5 <2 8
+patientforpretraining
+Pretrainingtask MaskedLM ModifiedMaskedLM MaskedLM+predictionof
+prolongedlengthofstayinhospital
+Evaluationtask Diagnosiscodepredictionin Medicationcodeprediction Diseasepredictionsaccordingto
+differenttimewindows strictinclusion/exclusioncriteria
+Totalnumberofpatientsin 699K,391K,and342Kfor 7K 50K,20K,and20Kforthreetask
+evaluationtasks differenttimewindows cohorts
+embeddingstodistinguishdifferentvisitsandaddsanagelayerto codes. Within each visit, we defined serialization embeddings to
+imply temporal orders. The authors’ definition of the area under denotetherelativeorderofeachcode,whereasneitherBEHRTnor
+thereceiveroperatingcharacteristics(AUC),however,wasanon- G-BERT introduced code ordering within a visit. In addition, we
+standard one, making it difficult to compare their results with designed a domain-specific pretraining task prediction of pro-
+previous studies. G-BERT applied a graph neural network (GNN) longed length of stay in hospital (Prolonged LOS), which is a
+model to expand the context of each clinical code through popular clinical problem that requires contextual information
+ontologies and jointly trained the GNN and BERT embeddings. It modeling to evaluate the severity of a patient’s health condition
+modified the masked language model (Masked LM) pretraining according to the disease progression and requires no human
+task into domain-specific ones, including maximizing the gap annotation.Weexpectthattheadditionofthistaskcanhelpthe
+between the existing and non-existing codes and using different modeltolearnmoreclinicalandmorecontextualizedfeaturesfor
+typesofcodestopredicteachother.However,G-BERT’sinputsare eachvisit sequenceand facilitate certain tasks.
+allsingle-visitsamples,whichareinsufficienttocapturelong-term The usefulness of the pretrained Med-BERT was evaluated by
+contextual information in EHR. In addition, the size of their fine-tuning on the following two disease prediction tasks: the
+pretraining dataset is not large, making it difficult to evaluate its predictionofheartfailureamongpatientswithdiabetes(DHF)and
+fullpotential.Furthermore,neitherBEHRTnorG-BERTusesdisease the prediction of onset of pancreatic cancer (PaCa), using three
+prediction tasks as the evaluation of their pretrained model by patient cohorts from two different EHR databases, Cerner Health
+fine-tuning. Facts® and Truven Health MarketScan®. These tasks are different
+To alleviate the aforementioned issues and to evaluate a fromthepretraining prediction tasks(Masked LMand Prolonged
+pretrained contextualized embedding model specific to disease LOS) and, thus, are good evaluation tasks to test the general-
+prediction, we designed Med-BERT, an adaption of the BERT izabilityofthepretrainedmodel.Inaddition,wechosethesetasks
+methodologyforthestructuredEHRmodality.Med-BERTistrained becausetheycapturemorecomplexitythanmerelytheexistence
+on structured diagnosis data coded using the International of certain diagnosis codes, and are based on established
+Classification of Diseases (ICD) codes, unlike the original BERT phenotyping algorithms that further integrate multiple pieces of
+andmostofitsvariationsthatweretrainedonfreetext.Notethat informationbeyond diagnosiscodes,such asconstraints ontime
+wecanalsoincludeothertypesofcodessuchasmedicationsand window,diagnosisoccurrencetimes,medications,andlaboratory
+laboratory tests, and weleaveits investigation asfuture work. testvalues.
+We compare Med-BERT with BEHRT and G-BERT in Table 1. Fine-tuning experiments were conducted for the following
+Remarkably,Med-BERThasamuchlargervocabularyandamuch purposes: (1) to test the performance gains by adding Med-BERT
+on three state-of-the-art predictive models; (2) to compare Med-
+larger pretraining cohort than the other two models, which help
+BERT with a pretrained non-contextualized embedding, the
+to provide a reality check of EHR BERT-based models. The larger
+cohort size and longer visit sequences in Med-BERT’s pretraining clinical word2vec-style embedding45; and (3) to see how much
+setwillgreatlybenefitthemodelinlearningmorecomprehensive Med-BERT would contribute to disease predictions with different
+fine-tuning training sizes.
+contextual semantics. We also believe that, by using a large and
+Ourprimarycontributions aresummarized as follows:
+publicly accessible vocabulary, i.e., ICD-9 and ICD-10, and
+pretraining the model on a multi-institutional dataset (Cerner), (1) Thisworkisthefirstproof-of-conceptdemonstrationthata
+Med-BERT will likely be easily deployable to different institutions BERT-style model for structured EHR can deliver a mean-
+andclinicalscenarios.Further,amongallthesepretrainedmodels, ingful performance boost in real-world-facing predictive
+onlyMed-BERThasbeensuccessfullycross-testedbyafine-tuning modelingtasks.
+taskonan external datasource (Truven). (2) We innovatively designed a domain-specific cross-visit
+Similar to BEHRT and G-BERT, Med-BERT made several pretraining task that is prevalent among EHR data and is
+modifications to the overall BERT methodology to fit the EHR effective incapturing contextual semantics.
+data modality. Med-BERT used code embeddings to represent (3) Thisworkisthefirstdemonstrationofsignificantlyboosted
+eachclinicalcode,visitembeddingstodifferentiatevisits,andthe performance over state-of-the-art methods on multiple
+transformer structure to capture the intercorrelations between clinicaltasks with phenotyped cohorts.
+npjDigitalMedicine(2021) 86 PublishedinpartnershipwithSeoulNationalUniversityBundangHospital
+;,:)(0987654321
+L.Rasmyetal.
+3
+(4) ThisworkisthefirstthatpresentsthegeneralizabilityofEHR The data modality ofstructured EHR
+BERT models by boosting the performance in a dataset We define structured EHR data of each patient as a sequence of
+(Truven) other thanthetraining dataset (Cerner). visits, each as a list of codes. This is a classic formulation
+(5) The performance boost of Med-BERT is observed across all commonly used in the literature12,49–51. The codes within a visit
+sample sizes, demonstrating the enabling power of canbeeitherorderedorunordered.Ifunordered,theEHRdatafor
+pretrained models for clinical tasks for which only limited
+eachpatientcanbereducedtoasequenceofsets.TheMed-BERT
+training dataare available.
+frameworkcanhandlebothorderedandunorderedcodesinsidea
+(6) We provided a visualization tool to demonstrate the
+visit.Inthispaper,wehaveaccesstothepriorityofthediagnosis
+dependency semantics in EHRs, facilitating the interpret-
+codes as coded by billers, e.g., the primary diagnosis is mostly
+abilityof themodel. assignedthefirstpriorityfollowedbythesecondmostimportant
+(7) We made our pretrained models and code available,
+diagnosis and so on, and thus we encode that information to
+enabling itsapplications byother researchers.
+introduceorder.
+Both structured EHR and natural language text are sequential
+data with tokens. Therefore, the data modality of EHR are similar
+to text in many ways. However, EHR data have distinct
+characteristics (Fig. 2). A direct comparison between the data
+RESULTS
+modalities of the structured EHR data with the natural language
+Datasource textis shownin Table3.
+We extracted our cohorts from two databases: Cerner Health
+Facts® (version 2017) (Cerner) and Truven Health MarketScan® Med-BERTarchitecture
+(Truven). Cerner is a de-identified EHR database that consists of
+In this work, we utilized essentially the same transformer
+over 600 hospitals and clinics in the United States. It represents architecture as that in the original BERT paper29, including multi-
+over 68 million unique patients and includes longitudinal data levelembeddingsandbidirectionaltransformers.Wealsoadopted
+from 2000 to 2017. The Truven Health MarketScan® Research similarpretrainingtechniques(samelossfunctiononmaskingand
+Database (version 2015) is a de-identified patient level claims classification pretraining tasks). Still, given the semantic differ-
+dataset.Itrepresentsover170millionpatientsfrom2011to2015 encesbetweenEHRandtext,adaptingtheBERTmethodologyto
+from commercial insurance, Medicare supplemental claims, and structured EHR is non-trivial. For example, while the input
+Medicaidclaims. modality of the original BERT was a 1-D sequence of words, our
+OurpretrainingcohortforMed-BERTisconsistingof28million inputmodalityisstructuredEHRwhichisrecordedinamultilayer
+patients extracted from Cerner (Fig. 1). For model evaluation, we and multi-relational style. There are no clear rules on how to
+extracted three phenotyped cohorts, two of which were from flattenthestructuredEHRintoa1-Dsequenceandhowtoencode
+Cerner(DHF-CernerandPaCa-Cerner)andonefromTruven(PaCa- the “structures” of the structured EHR in the BERT transformer
+Truven). The descriptive analysis of these cohorts is shown in architecture.Inaddition,itisunclearhowtoorganizetheEHRdata
+Table2,see “Methods”:Cohort definition fordetails. efficiently to match the structured inputs of a pretrained model
+Patients with Diagnosis Exclude Patients with wrong
+Cerner HealthFacts® Information dates [196,319] Pretraining Cohort
+Patients [68,696,329] [39,398,846] Exclude Patients with <3 [28,490,650]
+unique diagnosis codes
+[10,711,877]
+Fig. 1 Selection pipeline for the pretraining cohort from Cerner HealthFacts. The flow starts from left to right. Number of patients is
+betweensquarebrackets.
+Table2. Descriptiveanalysisofthecohorts.
+Characteristic Pretraining DHF-Cerner PaCa-Cerner PaCa-Truven
+Cohortsize(n) 28,490,650 672,647 29,405 42,721
+Percentofpatientswiththeeventa 15% 14% 0.07% 0.06%
+Averageageonlast/indexencounter(std) 41 61 65 63
+Gender—Male(%) 45% 47% 45% 48%
+Race
+White(%) 68% 72% 77% NA
+AfricanAmerican(%) 15% 16% 13%
+Asian/PacificIslander(%) 2% 2% 2%
+AfricanAmerican(%) 2% 2% 1%
+Averagenumberofvisitsperpatient 8 17 7 19
+Averagenumberofcodesperpatient 15 33 14 18
+Vocabularysize 82,603 26,427 13,071 7002
+ICD-10codes(%) 33.8% 13.3% 20.7% 0%
+aTheeventforpretrainingisaprolongedhospitalization>7days.TheeventforDHF-Cerneristhedevelopmentofheartfailurefordiabeticpatients.Theevent
+forPaCa-CernerandPaCa-Truvenisthediagnosisofpancreaticcancerandthepercentisfromthedatasettotalpopulation.
+PublishedinpartnershipwithSeoulNationalUniversityBundangHospital npjDigitalMedicine(2021) 86
+L.Rasmyetal.
+4
+Fig.2 AnexampleofstructuredEHRdataofahypotheticalpatientasitwouldbeavailablefromatypicalEHRsystem(e.g.,Cerneror
+Truven).Forthispatient,fourvisitswithdatesandencountertypesareorganizedaccordingtochronologicalorderatthebottom.Detailed
+informationincludingdemographicandmedicalcodeswithtimestampsareshownabove.Notethatnotallinformationisrecorded,asin
+real-worldEHRrecordingsystem.
+Table3. ComparisonofcharacteristicsofEHRdataversusNaturallanguagedata.
+Criteria Naturallanguage EHR
+Tokengranularity Thebasictokenisaword,whichisacompressedsemantic Thebasictokenisaclinicalcode,whichcanrepresentan
+unitinlanguageandcanexpresssomebasicmeaning.But integratedsemanticunit,e.g.,adiseasedescription,a
+inmanycases,anintegratedsemanticunit(e.g.,anamed drug,oraprocedure.
+entityoraprepositionalphrase)requiresthecombinationof
+multipletokens.
+Syntactic:Hierarchical Aparagraph(document)containsmultiplesentences,anda Morecomplex,apatient’sinformationcontainsmultiple
+structure sentencecontainsmultiplewords. visits,andavisitcontainsmultiplecodesofdifferent
+categories.
+Syntactic: Simpleandclear. Thevisitsaresortedsequentiallyaccordingtotimebutthe
+Sequentialorder codeswithinavisitmaybeunorderedorwithcertain
+prioritizedorders.
+Semantic Dependencyrelationsamongsentences(e.g.,discourse Dependencyrelationshipsarenotalwaysclear,e.g.,
+relations)aswellaswordswithineachsentence(e.g., adjacentvisitsmaybeoflittlerelevanceowingtolarge
+syntacticdependency,semanticroles)areclear. timeintervals.
+Timeinterval Regular,onebetweenadjacentwords. Usuallynoexplicitintervalsbetweencodes,andirregular
+intervalsbetweenadjacentvisits.
+Datacompleteness Relativelycompleteforregulartextssuchaswritten Usuallyincompleteandsometimeserroneousduetothe
+language. natureofEHR.
+Sequencelength Withinarelativelynarrowrange:themaximumsequence Morevariable:apatient’smedicalrecordscaninclude
+lengthofwordsinasentencerarelyreachesahundred. anywherefromonetohundredsofvisits.Inasinglevisit,a
+patientcanhavehundredsofmedicalcodes.
+suchasBERT,andwhataretheappropriatedomain-specifictasks wasnotinvolvedinourtasks(asexplainedinthenextsubsection).
+forpretraining. We reasoned that the visit embeddings can separate well each
+Figure 3 introduced our design of the Med-BERT embedding visitandthatadding[SEP]wouldonlyberedundant.InBERT,the
+layerstoaccommodatethenewmodality.Specifically,threetypes token [CLS] was used mainly to summarize the information from
+of embeddings were taken as inputs for Med-BERT. These the two sentences. However, EHR sequences are usually much
+embeddings were projected from diagnosis codes, the order of longer;e.g.,asequencemaycontaintenormorevisits,andsimply
+codeswithineachvisit,andthepositionofeachvisitandnamed, usingonesummarizationtokenwillinevitablyleadtoinformation
+respectively, code embeddings, serialization embeddings, and loss. Therefore, for the classification tasks, either our prolonged
+visit embeddings. Code embeddings are the low-dimensional LOSpretraining task orthedownstream disease prediction tasks,
+representations ofeachdiagnosiscode;serializationembeddings where the information of a long-range sequence is usually
+denote the relative order, in our case, the priority order, of each needed, we added a feed-forward layer (FFL) to the sum of the
+code in each visit; and visit embeddings are used to distinguish outputfromallofthecodeswithinvisitstorepresentasequence,
+insteadofusingonlyasingletoken.Ofcourse,itisalsopossibleto
+eachvisit inthesequence.
+UnlikeBERT,wedidnotusethespecifictokens[CLS]and[SEP] useanRNNpredictionlayerinsteadofasimpleFFLontopofMed-
+BERT.
+at the input layer. Our choice is mainly due to the differences in
+the input formats of EHR and text. In BERT, only two adjacent
+sentences are fed for each input sample, and the token [SEP] PretrainingMed-BERT
+servesasaseparatorofthetwosentencesforthepretrainingtask We utilized the same optimization algorithm and recommended
+of next sentence prediction. Next sentence prediction, however, hyperparameters (see “Implementation details”) of the original
+npjDigitalMedicine(2021) 86 PublishedinpartnershipwithSeoulNationalUniversityBundangHospital
+Input Code Embedding
+Med-BERT Embedding + …
+Serialized Embedding
+Transformer Layer (op +(cid:2)onal) 1 2 3 4 5 6 7 8 9 … n-3n-2n-1 n
+…
+Output Visit Embedding 1 1 1 1 1 2 2 2 2 k k k k
+BERTmodel29duringourMed-BERTpretrainingphase.Wetrained fromthepretrainedmodel,andthentheparametersofboththe
+the parameters of the Med-BERT model parameters on the Med-BERTpartandthepredictionheadwereupdatedbygradient
+diagnosisinformationofacohortof20millionpatientsusingthe descent.Theinputofthemodelwasdatafromadisease-specific
+followingtasks.
+trainingcohort,whichwereferredtoasthefine-tuningcohort.To
+understand the added values by the pretrained Med-BERT
+Masked language model (Masked LM). This task was directly (especially theusefulness of bigtraining data), wecompared the
+inheritedfromtheoriginalBERTpaper,whichwasusedtopredict results of fine-tuning the pretrained model and the untrained
+theexistenceofanycode,givenitscontext.Indetail,therewasan model (same architecture with a randomly initialized token+
+80% chance that a code was replaced by [MASK], a 10% chance segment+position embedding layers and the multi-head trans-
+thatthecodewasreplacedby arandomcode,andanother 10% formerlayers).Allmodelswerefine-tunedonavalidationset(part
+chance that it was kept unchanged. This task is the core of the of the fine-tuning cohort) and the reported numbers are the
+contextualizedembeddingmodel. results onthetest set.
+Prediction of prolonged length of stay (Prolonged LOS) in hospital.
+Evaluation ofMed-BERT
+For the classification task, instead of using the question–answer
+We conducted evaluations on two disease prediction tasks on
+pairs as in BERT, we decided to choose a clinical problem with a
+three cohorts from two databases. The two tasks are DHF and
+relativelyhighprevalenceinourpretrainingdatasetandonethat
+is not disease-specific to ensure better generalizability of our PaCa.WeusedCernerforbothtasks,formingtheDHF-Cernerand
+PaCa-Cerner cohort; and used Truven for only the pancreatic
+pretrainedmodel.Thethreemostcommonlyusedquality-of-care
+cancer prediction task, forming the PaCa-Truven cohort, for
+indicators, mortality, early readmission, and Prolonged LOS in
+generalizability evaluation. The detailed cohort definitions are
+hospitalwereselectedandtested.Throughcomparison,wefound
+presented in the “Methods” section. Unlike BEHRT and G-BERT,
+that the mortality and the early readmission tasks are relatively
+whoseevaluationtasksaresimplythepredictionofcertaincodes
+easy: the model quickly converges to >99% accuracy. Therefore,
+which are similar to the tasks in pretraining, our definition of
+we chose prolonged LOS, the task of assessing each patient for
+disease prediction tasks is more complex, as it requires the
+whetheranincidentofprolongedhospitalvisit(LOS>7days)had
+phenotyping from multiple perspectives, e.g., the existence of
+everoccurredthroughouttheentireEHRsequenceofthepatient,
+asapretrainingtask.Weusedthissimplifiedversionofprolonged certaindiagnosiscodes,drugprescriptions,procedures,laboratory
+LOS prediction by targeting at the patient level rather than the
+testresults,and,sometimes,thefrequencyofeventsinpredefined
+visitleveltoreducethepretrainingcomplexity.Also,similartothe time windows. Therefore, we claim that our evaluation tasks are
+Masked LM task, we are not aiming to define a real future more realistic (compared with BEHRT) and more helpful in
+predictingtask duringthepretraining phase. establishingthegeneralizability ofMed-BERT.
+WefoundthattheprolongedLOStaskforpretrainingleverages Forallthreetasks,weconductedthreeexperiments:(1)Ex-1:to
+thebidirectionalstructureofMed-BERT.AprolongedLOSnotonly evaluate how Med-BERT can contribute to state-of-the-art
+reflects the patient’s health status recorded in the past visits but methods; (2) Ex-2: to compare Med-BERT with one state-of-the-
+also has an impact on the subsequent visits. On the other hand, artstaticclinicalword2vec-styleembedding,t-W2V(trainedonthe
+taskssuchasdiseaseonsetprediction ormortalityalwayswillbe full Cerner cohort)45; and (3) Ex-3: to investigate how much the
+terminatedatthelastvisitofthepatientsequence,theinputdata pretrained model can help in transfer learning with various
+ofwhich canbe constructed inonlyone direction. training samplesizes.
+Foreachfine-tuningtask,werandomlyselectedasubsetofthe
+ApplyingMed-BERTfordownstreampredictiontasksbyfine- original cohort and further split it into training, validation, and
+testingsetswiththeratioof7:1:2.Sincewehaveenoughpatients
+tuning
+that are not included in the pretraining, we prioritized the
+Med-BERT, similar to BERT, follows the pretraining fine-tuning
+assignmentofsamplestothetestsettoensurethatourtestsets
+paradigm. The pretrained model itself only generates contextua-
+did not include any patient previously included in the Med-BERT
+lized embedding for each input token. The model outputs a
+pretrainingset.Forperformancemeasurement,weusedtheAUC
+general purpose embedding and does not directly output any
+asourprimaryevaluationmetric,whichhasbeenwidelyadopted
+prediction labels. For any specific downstream prediction task, a by many previous studies of disease prediction12,14,52. Additional
+classificationlayer(predictionhead)needstobeaddedontopof
+performance evaluation metrics are reported in Supplementary
+theMed-BERTmodel.Onecanuseasimplepredictionheadsuch Tables1 and2.
+as FFL on top of the sequential output from the final Med-BERT ForEx-1,toevaluatetheaugmentedpowerofpretrainedMed-
+layer. For EHR predictive models, a commonly used prediction BERT on top of state-of-the-art base models, we compare the
+headis theRNNrolling overtheoutput of token embeddings. performancesofthebasemodelsonlyandtheperformanceofthe
+During fine-tuning, following the original BERT, we attached a base models on top of Med-BERT. We use GRU53, Bi-GRU54, and
+prediction head on top of the Med-BERT architecture. The RETAIN12 as our base recurrent neural networks (RNN) models.
+parameters of the Med-BERT part were loaded and initialized WhileGRUswereshowntobeverycompetitivebaselinemodels,
+90.959_9DCI 9.918E_9DCI 1.327_9DCI 0.487_9DCI 9.327_9DCI 19.973_9DCI 0.487_9DCI 1.937_9DCI 31.863_9DCI 9.05R_01DCI 50R_01DCI 0.22R_01DCI 9.20J_01DCI
+L.Rasmyetal.
+5
+Fig.3 Med-BERTstructure.TheleftpartisaschemeoftheoverallMed-BERTarchitecture,themiddlepartdetailstheindividualcomponents
+oftheMed-BERTembeddinglayer,andtherightpartisanexampleofEHRdatausedineachembeddinglayer.
+PublishedinpartnershipwithSeoulNationalUniversityBundangHospital npjDigitalMedicine(2021) 86
+L.Rasmyetal.
+6
+wealsoincludedRETAIN,apopulardiseasepredictionmodelwith BERT_onlyandGRU+Med-BERT.Foreachbasemodel,addingt-
+double GRUs with attention. We also presented the results by W2V(exceptGRU)willgenerallyachievebetterresults,butadding
+using Med-BERT only; i.e., only FFL was added on top of the last Med-BERTimprovestheresultsmuchfurther.Itisremarkablethat
+layer of Med-BERT. This Med-BERT only model will provide an thosepowerfuldeeplearning-basedmodels,suchasGRU,Bi-GRU,
+evaluationbeyondRNN-basedmodels.Inaddition,toevaluatethe and RETAIN that already obtain over 0.83 on AUC with relatively
+effectofpretrainingusingbigdata,wecomparetheperformance large training data, e.g., 50K samples, adding Med-BERT still
+of pretrained Med-BERT with the untrained Med-BERT architec- makes aconsiderable performance boost.
+ture. For the sake of completeness, we also included L2- ForPaCa-Cerner,similartrendsalsowereobserved,wherebyBi-
+regularized logistic regression (L2LR) and random forest (RF), GRU+Med-BERT, Med-BERT_only, and GRU+Med-BERT gener-
+two popular non-deep learning methods, using standard multi- ally outperform methods without Med-BERT and adding Med-
+hotinput format, asbaseline models. BERTenhanced theAUCs ofthe basemodels by 1.62–6.14%. For
+For Ex-2, to compare Med-BERT against static embeddings, we PaCa-Truven, the best AUC was obtained by GRU+Med-BERT,
+chose the t-W2V model. Our decision to use t-W2V to represent whereas the other Med-BERT-related models also have better
+non-contextualized static embeddings was based on a previous resultsthanthosewithoutMed-BERT. Onthis Truvendataset, we
+study45 where different static embedding techniques including still observe performance gains of 1.96–3.78%, although the
+word2vec24,fasttext55,andpointwisepositivemutualinformation- average improved AUCs appear to be a bit lower than those on
+singular value decomposition56 were compared and t-W2V was PaCa-Cerner. Nevertheless, it is reassuring to see that Med-BERT
+found to perform best in the evaluated disease prediction task. can be generalized well to a different dataset whose data
+Notably,Glove25isacompetentalternativeofword2vec(w2c)for distributions might be quite different from Cerner, the one it
+staticEHRconceptembeddingbutitwasdocumentedashavinga waspretrained on.
+comparableperformancewithw2c.Therefore,weselectedt-W2V As an ablation experiment, we also made a comparison
+asourbaselineforstaticembeddingforthesakeofconvenience. betweentheresultofpretrainedMed-BERTandthatofuntrained
+ForEx-3,toevaluatethevalue-addedofMed-BERTwithvarious Med-BERT, where “untrained” means we did not feed the model
+fine-tuning training sizes, we selected samples with increasing with large EHR for a self-supervised pretraining but only took
+sizes from the training data for each cohort for fine-tuning. advantageofitsstructure.Table4showsthatuntrainedMed-BERT
+Intuitively,thepretrainedmodelwouldbemorehelpfulwhenthe performs much worse than Med-BERT only and does not even
+training size is smaller, as it helps inject a broader scope of outperform the baseline method of logistic regression (LR) for
+knowledge. PaCa prediction tasks. Therefore, we can conclude that the
+For Ex-1 and Ex-2, where we used the full fine-tuning training pretraining phase plays a more important role for the boosted
+cohorts,wereportedtheaverageAUCandstandarddeviationfor performance. Cases where untrained Med-BERT does not outper-
+each model, based on ten runs with randomly initialized form the baseline LR are likely due to overfitting, although we
+prediction head weights. For all iterations in Ex-3, we conducted usedthestandardpracticeofbothearlystoppinganddropoutto
+arandombootstrapsamplingtentimesandreportedtheaverage reducethelikelihoodofoverfittingduringthemodeltraining.This
+AUC andstandard deviation for eachcohort. ispossiblyduetothefactthattheuntrainedMed-BERTisanover-
+parameterizedmodel(around17millionparameters)withahuge
+Performance boost ofMed-BERTon fine-tuning tasks numberofconfigurations,soitmightoverfittothetrainingdata57.
+On the other hand, the pretrained model started with a good
+Table 4 presents the AUCs for Ex-1 on the three fine-tuning
+configuration that is robust to a very large dataset for the
+evaluationtasks.Thetrendsofadditionalperformanceevaluation
+pretraining, and thusislikely to generalizewell.
+metrics(SupplementaryTables1and2)arelargelyconsistentwith
+It is a standard practice that the pretrained BERT model is not
+that of AUC shown in Table 4 and Fig. 4. For DHF-Cerner, it is
+usedonitsownforprediction,ratherapredictionheadisneeded
+notable that Bi-GRU+Med-BERT and RETAIN+Med-BERT obtain
+for the fine-tuning tasks29. Since Med-BERT is an unsupervised
+the best results and perform comparably, followed by Med-
+pretraining model, fine-tuning should be done with certain
+configurations for different tasks, especially on the input data
+Table4. AverageAUCvaluesandstandarddeviations(inparentheses) formats.However,inTable4,weobservedthataMed-BERTmodel
+forthedifferentmethodsforthethreeevaluationtasks. withonlyanFFLontopofthelastlayer(Med-BERT_only(FFL))can
+also obtaincompetitive performances.
+Model DHF-Cerner PaCa-Cerner PaCa-Truven In Fig. 4 we show how much Med-BERT can help boost the
+prediction performance of the base deep learning models by
+GRU 83.93(0.13) 78.26(0.84) 78.17(0.21)
+incorporating contextual information through pretraining. In the
+GRU+t-W2V 83.95(0.24) 80.08(1) 77.54(0.27) line chart of DHF-Cerner, we notice that, without Med-BERT, it is
+GRU+Med-BERT 85.14(0.06) 82.13(0.24) 80.37(0.12) difficultforGRUonlytohaveanAUCexceeding0.65whengiven
+Bi-GRU 82.82(0.17) 76.09(0.61) 76.79(0.29) fewer than 1000 training samples. The addition of Med-BERT,
+Bi-GRU+t-W2V 84.23(0.06) 79.35(0.27) 77.44(0.22) however,greatlyincreasestheAUCsbyabout20%andhelpsthe
+modelto reach0.75, evenwhen training on500 samples. For Bi-
+Bi-GRU+Med-BERT 85.39(0.05) 82.23(0.29) 80.57(0.21)
+GRU, considerable improvements also can be observed, but they
+RETAIN 83.28(0.16) 79.68(0.32) 78.02(0.19) arenotashighasthoseforGRU.ForRETAIN,Med-BERTseemsto
+RETAIN+t-W2V 84.98(0.02) 81.8(0.17) 79.46(0.18) be more helpful when the training set contains more than
+RETAIN+Med-BERT 85.33(0.09) 81.3(0.55) 79.98(0.17) 500samples.
+For PaCa-Cerner, large improvements by adding Med-BERT to
+Med-BERT_only(FFL) 85.18(0.12) 81.67(0.31) 79.98(0.26)
+GRUandBi-GRUweredemonstratedforalmostalltrainingsizes.In
+untrainedMed-BERTonly 82.76(0.13) 75.16(0.77) 75.9(0.18)
+particular, for Bi-GRU, Med-BERT enables the AUC to reach 0.75
+LogisticRegression(LR)a 81.01(0) 79.94(0) 77.28(0) when training on only 300 samples. The charts for PaCa-Truven
+RandomForest(RF)a 81.88(0.08) 79.48(0.31) 77.00(0.12) show similar trends, but the overall AUC values are lower
+compared to those on PaCa-Cerner when training on smaller
+aLR and RF input is one hot representation while other models using
+samplesizes.
+embeddings.
+LR, a popular non-DL machine learning algorithm, serves
+ThenumbersinboldfaceindicatethehighestAUROCpertask.
+consistently as a competitive baseline model, especially on small
+npjDigitalMedicine(2021) 86 PublishedinpartnershipwithSeoulNationalUniversityBundangHospital
+L.Rasmyetal.
+7
+Fig.4 ComparisonofpredictionAUCforthetestsetsbytrainingondifferentsizesofdataonvariouscohortsbetweenthemethodswith
+orwithoutthepretrainedMed-BERTlayer.Logisticregression(LR)resultsareincludedasabaseline.aCohort:DHF-Cerner,method:GRU;
+bcohort:DHF-Cerner,method:bidirectionalGRU;ccohort:DHF-Cerner,method:RETAIN;dcohort:PaCa-Cerner,method:GRU;ecohort:PaCa-
+Cerner, method: bidirectional GRU; f cohort: PaCa-Cerner, method: RETAIN; g cohort: PaCa-Truven, method: GRU; h cohort: PaCa-Truven,
+method:bidirectionalGRU;icohort:PaCa-Truven,method:RETAIN.Theshadowsindicatethestandarddeviations.
+PublishedinpartnershipwithSeoulNationalUniversityBundangHospital npjDigitalMedicine(2021) 86
+L.Rasmyetal.
+8
+Fig.5 Exampleofdifferentconnectionsofthesamecode,“type2diabetesmellitus”,indifferentvisits.aThefirstvisit,bthesecondvisit.
+ConnectionlinesfromthecodeintheleftpaneltothecodeintherightpanelindicateattentionsoftheMed-BERTmodel.Coloroftheline
+indicatesindividualattentionhead,andintensityofthelineindicatesattentionweights.
+datasets. Indeed, for smaller training sizes as 500 or less in our For the final couple of layers, the attention patterns become
+experiment, L2LR showed decent performances. However, Med- diffusedand difficult tointerpret.
+BERT outperforms L2LR in all prediction tasks when the sample Figure 5 is an example of the same code in different visits,
+sizeisover 1000. showingdifferentattentionpatterns.Thisdemonstratestheability
+of Med-BERT to learn contextualized representations. The earlier
+codefortype2DMfocusesmainlyonthecodeforthelong-term
+Visualization of attention patternsin Med-BERT
+use of insulin within the same visit, but the later diabetes code
+Med-BERT not only offers improvement for prediction accuracy focusesontheinsulincode,bothinthecurrentandtheprevious
+but also enables prediction interpretation. It is interesting and visits. This could potentially indicate that the model learns the
+meaningful to explore how the pretrained model has learned temporal relationship between visits through the segment
+usingthecomplexstructureandahugevolumeofdata.Weshow embedding.MoreexamplesareprovidedinSupplementaryFig.3.
+several examples of how codes are connected with each other The attention patterns of the fine-tuned model are different.
+according to the attention weights from the transformer layers, The fine-tuned models express distinct task-dependent patterns
+thecorecomponent of Med-BERT. across different layers, showing the generalizability and adapt-
+Thebertviztool58wasadaptedandimprovedtobettervisualize ability of the model for learning different levels of knowledge in
+the attention patterns in each layer of the pretrained model. We real-world scenarios. Figure 6 provides an example of the Med-
+added“SEP”tokensbetweenvisitsonlyforvisualizationpurposes. BERTmodelfine-tunedontheDHF-Cernerdatasetwithattention
+Weobserved distinct patternsin different layersof themodel. In convergingontoseveralrelatedcodesinthesecondlayer.Figure
+the pretrained model, among the six layers of the BERT 7isanexampleoftheattentionpatterninthefourthlayerofthe
+transformer model, the connections of the first two layers are Med-BERT model fine-tuned on the PaCa-Cerner dataset, captur-
+mostlysyntactic,someattentionheadsarerestrictedwithinavisit, ing the relevant correlation between diagnosis codes. Additional
+and some point to the same codes across different visits. In the visualization patterns can be seen in Supplementary Fig. 3. We
+middletwolayers,somemedicallymeaningfulattentionpatterns believe that these kinds of visualization patterns can help us to
+thatcapturecontextualandvisit-dependentinformationemerge. better understand the inner mechanism of the neural network
+npjDigitalMedicine(2021) 86 PublishedinpartnershipwithSeoulNationalUniversityBundangHospital
+L.Rasmyetal.
+9
+Fig.6 ExampleofthedependencyconnectionsintheDHF-Cernercohort.Connectionlinesfromthecodeintheleftpaneltothecodein
+the right panel indicate attentions of the Med-BERT model. Color of the line indicates individual attention head, and intensity of the line
+indicatesattentionweights.
+Fig.7 ExampleofthedependencyconnectionsinthePaCa-Cernercohort.Connectionlinesfromthecodeintheleftpaneltothecodein
+the right panel indicate attentions of the Med-BERT model. Color of the line indicates individual attention head, and intensity of the line
+indicatesattentionweights.
+modelandtobuildtrustingandbettercommunicationsofhealth Deep learning-based predictive models usually require at least
+information. thousands of samples. These models need to learn complex
+semantics through feeding samples that convey different under-
+lying disease progressions and variational context information so
+DISCUSSION that they can be capable of dealing with intricate unseen cases.
+Med-BERT shows its power in helping to improve the prediction However, most deep learning algorithms are insufficient in
+performanceonmultipletaskswithdifferentconfigurations,andit modeling the data comprehensively due to their limitation in an
+is particularly effective in the “extreme transfer learning” in-depthunderstandingoftheinputs.Pretrainedmodelscanwell
+paradigms, i.e., fine-tuning on only several hundreds of samples. addressthisissuebyusingmoresophisticatedstructurestobetter
+PublishedinpartnershipwithSeoulNationalUniversityBundangHospital npjDigitalMedicine(2021) 86
+L.Rasmyetal.
+10
+capture the complex semantics of inputs, behaving as a knowl- ThisisconsistentwiththeliteraturethatLRremainsacompetitive
+edge container, and injecting the knowledge into new tasks. predictive model for small training sample sizes in a number of
+Similar to pretrained models on other domains, Med-BERT, by studies14.LRbenefitsfromitssimpleandshallowstructure,which
+using its bidirectional transformer and deep structure as well as ismucheasiertofitbasedonevenonlyafewsamplescompared
+big data, also have been shown in this study to be extremely with the complex structure and immense parameter space of
+helpfulwhen transferringto newtasks. deep learning models. However, this advantage is gradually
+MaskedLMandProlongedLOSweredesignedandincludedto weakened as the training size grows. Therefore, for practice, we
+reinforce the modeling of contextual information and to help would recommend the use of Med-BERT fine-tuning for the
+collectsequentialdependencies.Labelsforbothcanbegenerated scenarioswherethetrainingsamplesizeissufficientlylarge(e.g.,
+in an unsupervised way, i.e., without human annotations. In n>500).
+Masked LM, the goal is to predict a masked code using the ThevocabularyofthecurrentversionofMed-BERTistheunion
+sequential information from the forward and the backward of ICD-9 and ICD-10 codes with 82,000 tokens. Compared with
+directions. In Prolonged LOS, the goal is to determine whether a BEHRT and G-BERT, our vocabulary has broader coverage and is
+patientisassociatedwithanyvisitthatisaprolongedstay,which widelyadoptedinpractice.Webelievethatitwillgreatlyfacilitate
+also relies on cumulative contexts. We believe that, by including the transferability of the model, as ICD is a global health
+the prediction tasks from both the code level and the patient information standard recommended by the World Health
+(sequence) level, Med-BERT can further strengthen the represen- Organization and is used by different institutions from over 100
+tationlearningof EHRsequences fromdifferent granularities. countries around the world. This can be demonstrated in our
+Intuitively, a better parameter initialization of deep learning PaCa-Truven evaluation, in which we tested our models’ efficacy
+modelscouldleadtobetterperformanceandfasterconvergence. usinga cohort extracted froma healthinsurance dataset.
+However, these benefits would gradually diminish with the In this work, we chose BERT, an advanced contextualized
+growth of training samples. We consider 50 and 20K as embedding methodology in NLP, for EHR modality. However,
+acceptablescalesofsamplesfortrainingsatisfactory(converging) therearealternativeideas:suchasULMFiT46,ELMo26GPTs27,28,59,
+deep learning models. When we added Med-BERT, however, etc. It is probably necessary to evaluate these alternatives for
+considerableimprovementsalsocouldbeobserved.Forexample, pretrainingandfine-tuningonEHR.Wewillleaveitasfuturework.
+RETAIN obtains satisfactory performances on all the three tasks, There are still several limitations of the current work. First, we
+but adding Med-BERT brings further improvements by usedonlythediagnosisinformationintheICDformat.Second,we
+1.62–2.05%. In addition, for GRU and Bi-GRU, whose model didnotincludethelengthoftimeintervalsbetweenvisitsinthis
+structuresaresimplerthanthatofRETAIN,theimprovementscan
+study,whichmaycausesometemporalinformationloss.Third,we
+bemuchlarger,whichbringthesesimplemodelstoacomparable
+did not fully explore the order of concepts within each visit, and
+level of or even better than RETAIN. Further, according to the
+the current setting based on code priorities might not be
+resultsofMed-BERT_only,whichalsoachievesgoodperformance, sufficiently reliable. In the future, more research on designing
+we may conclude that Med-BERT will potentially release
+different pretraining tasks will be conducted, and different types
+researchers from developing complex models for disease predic- offine-tuningtasksbeyonddiseasepredictionalsowillbetested.
+tion problems.
+Wealsoplantoincludeothersources,suchastime,medications,
+SimilartoMed-BERT,staticembeddingmethodt-W2Valsocan
+procedures, and laboratory tests, as inputs of Med-BERT. In
+serve as a good performance booster to the base deep learning addition, task-specific visualizations and interpretations are other
+models. However, the improvements of t-W2V are smaller
+areas thatwe planto explore.
+compared to Med-BERT in most cases. A probable explanation is
+In conclusion, we proposed Med-BERT, a contextualized
+that t-W2V has limitations in modeling long-sequential informa-
+embedding model pretrained on a large volume of structured
+tion, considering its shallow structure and the limited size of the
+EHR data, and further evaluated the model in disease prediction
+context window which cannot be guaranteed to act well in all tasks. Domain-specific input formats and pretrained tasks were
+situations.
+designed. Extensive experiments demonstrated that Med-BERT
+In practice, Med-BERT will significantly help to reduce the
+has the capacity to help boost the prediction performance of
+burden of data labeling, which can be seen through comparing
+baseline deep learning models on different sizes of training
+the sizes of training samples required to achieve certain AUC
+samples and can obtain promising results. The visualization
+levels.Ex-3provedtheeffectivenessoftransferringMed-BERTinto
+realisticdiseasepredictiontasks.MostofthechartsinFig.4reflect moduleenabledustolookdeeperintotheunderlyingsemantics
+of the data and working mechanisms of the model, in which we
+that Med-BERT can substantially boost the performance of base
+models on small samples. For example, in the first sub-chart of observed meaningful examples. Those examples were further
+verified by clinical experts, indicating that Med-BERT can capture
+PaCa-CernerinFig.4,ifwedrawahorizontallineacrossthey-tick
+of0.75,wewillseearequirementof1000samplesforGRU+Med- the semantics among EHRs during both pretraining and fine-
+tuning. Methodologically, our work establishes thefeasibility and
+BERTandover10,000samplesforGRUonly.Similarly,wecansee
+the Bi-GRU+Med-BERT trained on 5000 samples can provide usefulness of contextualized embedding of structured EHR data.
+Practically, our pretrained model enables training powerful deep
+slightly better performance than Bi-GRU only trained on more
+learningpredictivemodels with limitedtraining sets.
+than50,000samples asappears inSupplementary Table2A.
+Thus,Med-BERTbroughtthemodelperformanceonparwitha
+training set almost ten times larger. The data acquisition cost of
+METHODS
+these over 9000 samples, which sometimes can be quite
+Med-BERTpretraining cohort
+expensive, will be substantially saved by using Med-BERT. In this
+situation, with Med-BERT, researchers and clinicians are able to Cerner Health Facts® (version 2017) is a de-identified EHR database that
+consistsofover600hospitalsandclinicsintheUnitedStates.Itrepresents
+quickly get a general and acceptable understanding of the
+over68millionuniquepatientsandincludeslongitudinaldatafrom2000
+progressionsofnewdiseasesbeforecollectingenoughannotated
+to 2017. The database consists of patient-level data, including demo-
+samples.
+graphics,encountermeta-information,diagnoses,procedures,labresults,
+Admittedly, although Med-BERT empowers deep learning
+medication orders, medication administration, vital signs, microbiology,
+models throughout all training sample sizes tested, Med-BERT surgical cases, other clinical observations, and health systems attributes.
+powered models still do not outperform the non-deep learning DatainHealthFacts®areextracteddirectlyfromtheEMRsofhospitalswith
+baselinemodelLRforthesmallesttrainingsamplesizes(n<500). which Cerner has a data use agreement. Encounter meta-information
+npjDigitalMedicine(2021) 86 PublishedinpartnershipwithSeoulNationalUniversityBundangHospital
+L.Rasmyetal.
+11
+includes the identification of pharmacy, clinical and microbiology Similarly,weextractedaPaCacohortfromTruvenHealthMarketScan®
+laboratory, and admission and billing information from affiliated patient Research Databases for evaluation purposes. The Truven Health Market-
+care locations. All admissions, medication orders and dispensing, Scan®ResearchDatabases(version2015)areafamilyofresearchdatasets
+laboratory orders, and specimens are date and time-stamped, providing thatfullyintegratede-identifiedpatient-levelhealthdata (medical,drug,
+atemporalrelationshipbetweentreatmentpatternsandclinicalinforma- and dental), productivity (workplace absence, short- and long-term
+tion.TheCernerCorporationhasestablishedHealthInsurancePortability disability, and workers’ compensation), laboratory results, health risk
+and Accountability Act-compliant operating policies to establish de- assessments, hospital discharges, and electronic medical records into
+identificationforHealthFacts®. datasets available for healthcare research. It captures person-specific
+Duringthedatapreprocessingphaseforpretraining,foreachpatientin clinical utilization, expenditures, and enrollment across inpatient, out-
+the cohort, we organized the visits in a temporal order and ranked the patient, prescription drug, and carve-out services. The annual medical
+diagnosis codes within each visit according to three criteria: (1) the databasesincludeprivatesectorhealthdatafrom~350payers.Historically,
+diagnosis was flagged as present on admission; (2) the diagnosis was more than 20 billion service records are available in the MarketScan
+capturedduringthevisit(e.g.,hospitalization)oronlyatthebillingphase; databases. These data represent the medical experience of insured
+and (3) the diagnosis priority is provided by the Cerner database, employees and their dependents for active employees, early retirees,
+indicating some priorities of the diagnoses, e.g., principal/secondary
+ConsolidatedOmnibusBudgetReconciliationActcontinues,andMedicare-
+diagnosis(thepriorityisprovidedbythedatabase,butitmightnotbea
+eligible retirees with employer-provided Medicare Supplementary plans.
+perfectpriorityranking)
+MostofthediagnosiscodesinTruvenareICD-9codes,astheversionof
+For each visit, we extracted the diagnosis codes (represented by ICD,
+the database that we used is 2015, but the implementation of ICD-10
+Ninth Revision, Clinical Modification (ICD-9) and ICD, Tenth Revision, startedinOctober201561.
+ClinicalModification(ICD-10))andthelengthofstayinhospital.Wethen
+rankedthecodesineachvisitaccordingtotheabovethreecriteriaand
+determinedtheorderbyusing(1)→(2)→(3)insequence. Weobserved Implementation details
+onlyverylimitedperformancegains,however,byaddingthecodeorder For the transformer architecture of Med-BERT, we used six layers, six
+during the evaluation, compared with randomly scattering the codes. attentionheads,andahiddendimensionof192(L=6,H=192,A=6).We
+Hence, we set it as a placeholder here and assume that more effective setthefeed-forward/filtersizetobe64.
+orderscouldbedefinedinthefuture. Forpretraining,wesetthemaximumsequencelengthas512tokens.We
+Patientswithfewerthanthreediagnosiscodesintheirrecordsaswellas maskedonediagnosiscodeperpatientduringMaskedLM.Weusedthe
+thosewithwrongrecordedtimeinformation, e.g.,dischargedatebefore default BERT optimizer, AdamWeight decay optimizer. We used the
+admission date, were removed from the population. In total, we had recommendedlearningrateof5e−5,andadropoutrateof0.1.Weused
+28,490,650 unique patients (Fig. 1), which were further separated into theTensorFlowcodeoftheoriginalBERTfromhttps://github.com/google-
+training,valid,andtestingsetsbytheratioof7:1:2onboththepretraining research/bert(February2019version).WeusedasingleNvidiaTeslaV100
+andevaluationphases. GPUof32GBgraphicsmemorycapacity,andwetrainedthemodelfora
+weekfor morethan 45millionsteps, forwhich eachstep consistsof 32
+Diabetes heart failurecohort (DHF) patients(batchsize).
+Weoriginallyidentified3,668,780patientswithatleastoneencounterwith Before fine-tuning, we first converted the pretrained model to the
+adiabetesdiagnosis,basedontheassociatedICD-9/10codes.Wedecided
+PyTorchversion,usingtheHuggingFacepackage(version2.3)62.Forfine-
+to exclude patients with any history of diabetes insipidus, gestational tuning,weutilizedourestablishedcodebasehttps://github.com/ZhiGroup/
+diabetes, secondary diabetes, neonatal diabetes mellitus (DM), or type I pytorch_ehr for the implementation of BERT_only, GRU, bi-GRU, and
+DMfromourcohort,aswefocusonpatientswithtypeIIDMandneedto
+RETAINmodelswithminormodificationtoimplementmultilayerembed-
+avoidanychanceofwrongcoding,takingintoconsiderationthatmostof dingsinsteadofvisit-levelembeddings.WeusedtheAdamoptimizerand
+theEHR dataarebasedonusermanualentriesand thatthereisahigh
+alearningrateof1e−5formostofthemodelsexceptforunidirectional
+associatedchanceofdataentrymistakes.Forthesamereason,wedecided GRU with static embedding for which a learning rate of 0.001 was
+to includepatients who have more than one encounterwith a diabetes associatedwiththebestresults.Fortheevaluationtasks,weusedNvidia
+diagnosis code. In addition, for type II DM patients, we verified that the GeForceRTX2080TiGPUsof12GBmemory.
+patients’A1Creadingis≥6.5orthattheyaretakinganantidiabeticagent, ForL2LRandRF,weusedthescikit-learnpackageversion0.24.Weused
+including metformin, chlorpropamide, glimepiride, glyburide, glipizide,
+thedefaulthyperparametersforboththeLRandtheRFclassifiers.
+tolbutamide,tolazamide,pioglitazone,rosiglitazone,sitagliptin,saxagliptin,
+alogliptin,linagliptin,repaglinide,nateglinide,miglitol,acarbose,orinsulin. Onethicaldata use related to this manuscript
+Forthesecases,weidentifiedpatientswithincidencesof heartfailure The IBM® MarketScan® Research Databases (Formerly, Truven®) contain
+(HF) (using ICD-9 code equivalents, such as 428, or in 404.03, 404.13,
+individual-level,de-identified,healthcareclaimsinformationfromemploy-
+402.11,404.11,402.01,404.01,402.91,398.91,404.93,and404.91,orICD-10
+ers,healthplans,hospitals,andMedicareandMedicaidprograms.Thedata
+code equivalents, such as I50%, or in I11.0, I09.81, I13.2, I97.13, I97.131,
+I13.0,andI97.130).Inaddition,weverifiedthattheeligiblecasesareeither
+inHealthFacts®areextracteddirectlyfromtheEMRofhospitalswithwhich
+Cernerhasadatauseagreement.BothIBMandCernerCorporationhave
+prescribed a diuretic agent, had high B-type natriuretic peptide or had
+been subjected to relevant procedures, including dialysis or an artificial establishedHealthInsurancePortabilityandAccountabilityAct-compliant
+heart-associated procedure following60. We included only those patients operating policies to establish de-identification for IBM® MarketScan®
+whoreportedHFatleast30daysaftertheirfirstencounterwithatypeII Research Databases and Health Facts®. The use of IBM®MarketScan®
+DMcodeandexcludedpatientswithonlyoneHFencounter.
+ResearchDatabasesandCernerHealthFacts®mandatescompliancewith
+Furtherdatacleaningincludedtheexclusionofpatientswithincorrect
+allvendorcontractualobligations;ofspecificethicalrelevanceisthelegally
+orincompletedata,forexample,patientswhowererecordedasexpiredin bindingdirectivethatnouserofthesedatamayattempttore-identifythe
+betweentheirfirstencounterandourevent(firstHFencounterforcasesor de-identified data. As an additional safeguard, at an institutional level,
+lastencounterforcontrols)aswellaspatientswhoareyoungerthan18 UTHealth researchers employing the IBM® MarketScan® Research Data-
+years old at their first diabetes diagnosis. The final cohort is shown in basesand CernerHealthFacts® for theirstudies aresubject tooversight
+SupplementaryFig.1andincludes39,727casesand632,920controls. and approval by the Committee for the Protection of Human Subjects
+(UTHSC-H IRB) under protocol HSC-SBMI-13-0549. The use of the IBM®
+MarketScan®ResearchDatabasesandCernerHealthFacts®forthisstudyis
+Pancreatic cancercohort (PaCa)
+coveredbytheapprovalbytheCommitteefortheProtectionofHuman
+UsingICD-9codesthatstartwith157andICD-10codesthatstartwithC25, Subjects(UTHSC-HIRB)underprotocolHSC-SBMI-13-0549.
+weoriginallyidentifiedaround45,000pancreaticcancerpatientsfromthe
+Cerner Health Facts dataset, of which 11,486 cases of individuals of 45
+years or older did not report any other cancer disease before their first Reporting summary
+pancreatic cancer diagnosis were eligible for inclusion in this cohort. FurtherinformationonresearchdesignisavailableintheNatureResearch
+FurtherdetailsofthecohortdefinitionareshowninSupplementaryFig.2. ReportingSummarylinkedtothisarticle.
+PublishedinpartnershipwithSeoulNationalUniversityBundangHospital npjDigitalMedicine(2021) 86
+L.Rasmyetal.
+12
+DATAAVAILABILITY 23. Pan,S.J.&Yang,Q.Asurveyontransferlearning.IEEETrans.Knowl.DataEng.22,
+ThedatathatsupportthefindingsofthisstudyareavailablefromtheDataService 1345–1359(2009).
+Office at the University of Texas Health Science Center at Houston School of 24. Mikolov,T.,Sutskever,I.,Chen, K.,Corrado, G.S.&Dean,J. Distributed repre-
+BiomedicalInformatics(SBMI)butrestrictionsapplytotheavailabilityofthesedata, sentationsofwordsandphrasesandtheircompositionality.InAdvancesinNeural
+whichwereusedunderlicensefromthedataprovider.
+InformationProcessingSystems,3111–3119(NIPS,2013).
+25. Pennington, J., Socher, R. & Manning, C. D. Glove: global vectors for word
+representation. In Proceedings of the 2014 Conference on Empirical Methods in
+CODEAVAILABILITY NaturalLanguageProcessing(EMNLP),1532–1543(ACL,2014).
+26. Peters,M.etal.DeepContextualizedWordRepresentations.inProceedingsofthe
+To facilitate reproducibility and benefit other EHR-based studies, we shared our
+2018ConferenceoftheNorthAmericanChapteroftheAssociationforComputa-
+sourcecodeaswellasourvisualizationtoolonhttps://github.com/ZhiGroup/Med-
+tional Linguistics: Human Language Technologies, Volume 1 (Long Papers),
+BERT.Thepretrainedmodelsareavailablefromtheauthorsuponrequestandwith 2227–2237(ACL,2018).
+permissionoftheSBMIDataServiceOffice.
+27. Radford, A., Narasimhan, K., Salimans, T. & Sutskever, I. Improving language
+understandingbygenerativepre-training.https://s3-us-west-2.amazonaws.com/
+Received:27May2020; Accepted: 14April 2021; openai-assets/researchcovers/languageunsupervised/
+languageunderstandingpaper.pdf(2018).
+28. Radford,A.etal.Languagemodelsareunsupervisedmultitasklearners.OpenAI
+Blog1,9(2019).
+29. Devlin, J., Chang, M.-W., Lee, K. & Toutanova, K. BERT: Pre-training of Deep
+REFERENCES Bidirectional Transformers for Language Understanding. in Proceedings of the
+2019ConferenceoftheNorthAmericanChapteroftheAssociationforComputa-
+1. Jiang,F.etal.Artificialintelligenceinhealthcare:past,presentandfuture.Stroke
+tional Linguistics: Human Language Technologies, Volume 1 (Long and Short
+Vasc.Neurol.2,230–243(2017).
+Papers),4171–4186(ACL,2019).
+2. Yu, K.-H., Beam, A. L. & Kohane, I. S. Artificial intelligence in healthcare. Nat.
+30. Yang, Z. et al. XLNet: Generalized Autoregressive Pretraining for Language
+Biomed.Eng.2,719–731(2018).
+Understanding. In Advances in Neural Information Processing Systems 32,
+3. Chen,M.,Hao,Y.,Hwang,K.,Wang,L.&Wang,L.Diseasepredictionbymachine 5754–5764(NIPS,2019).
+learningoverbigdatafromhealthcarecommunities.IEEEAccess5,8869–8879
+31. Chen,T.,Kornblith,S.,Norouzi,M.&Hinton,G.ASimpleFrameworkforCon-
+(2017).
+trastive Learning of Visual Representations. In International Conference on
+4. Wang,H.etal.Predictinghospitalreadmissionviacost-sensitivedeeplearning. MachineLearning,1597–1607(ICML,2020).
+IEEE/ACMTrans.Comput.Biol.Bioinforma.15,1968–1978(2018).
+32. Sun,C.,Myers,A.,Vondrick,C.,Murphy,K.&Schmid,C.VideoBERT:AJointModel
+5. Davenport,T.&Kalakota,R.Thepotentialforartificialintelligenceinhealthcare.
+for Video and Language Representation Learning. In Proceedings of the IEEE
+FutureHealthc.J.6,94(2019). InternationalConferenceonComputerVision,7464–7473(IEEE,2019).
+6. Lysaght, T., Lim, H. Y., Xafis, V. & Ngiam, K. Y. AI-assisted decision-making in
+33. Lee,J.etal.BioBERT:apre-trainedbiomedicallanguagerepresentationmodelfor
+healthcare.AsianBioeth.Rev.11,299–314(2019).
+biomedicaltextmining.Bioinformatics36,1234–1240(2020).
+7. Ahmed,Z.,Mohamed,K.,Zeeshan,S.&Dong,X.Artificialintelligencewithmulti-
+34. Alsentzer,E.etal.PubliclyAvailableClinicalBERTEmbeddings.InProceedingsof
+functional machine learning platform development for better healthcare and the2ndClinicalNaturalLanguageProcessingWorkshop,72–78(ACL,2019).
+precision medicine. Database 2020, baaa010 (2020). https://doi.org/10.1093/
+35. Zhang, Z. et al. ERNIE: Enhanced Language Representation with Informative
+database/baaa010.
+Entities.InProceedingsofthe57thAnnualMeetingoftheAssociation forCom-
+8. Manogaran,G.&Lopez,D.Healthdataanalyticsusingscalablelogisticregression putationalLinguistics,1441–1451(ACL,2019).
+withstochasticgradientdescent.Int.J.Adv.Intell.Paradig.10,118–132(2018).
+36. Lan, Z. et al. ALBERT: A Lite BERT for Self-supervised Learning of Language
+9. Keerthika, T. & Premalatha, K. An effective feature selection for heart disease
+Representations. In International Conference on Learning Representations (ICLR,
+predictionwithaidofhybridkernelSVM.Int.J.Bus.Intell.DataMin.15,306–326
+2019).
+(2019).
+37. Adhikari,A.,Ram,A.,Tang,R.,Hamilton,W.L.&Lin,J.ExploringtheLimitsof
+10. Sadek,R.M.etal.Parkinson’sdiseasepredictionusingartificialneuralnetwork. Simple Learners in Knowledge Distillation for Document Classification with
+Int.J.AcademicHealthMed.Res.3,1–8(2019).
+DocBERT.InProceedingsofthe5thWorkshoponRepresentationLearningforNLP,
+11. Payan,A.&Montana,G.PredictingAlzheimer’sdisease:aneuroimagingstudy 72–77(ACL,2020).
+with 3D convolutional neural networks. Preprint at http://arxiv.org/abs/
+38. Pires, T., Schlinger, E. & Garrette, D. How Multilingual is Multilingual BERT? In
+1502.02506(2015).
+Proceedings of the 57th Annual Meeting of the Association for Computational
+12. Choi, E. et al. RETAIN: An Interpretable Predictive Model for Healthcare using Linguistics,4996–5001(ACL,2019).
+ReverseTimeAttentionMechanism.Adv.NeuralInf.Process.Syst.29,3504–3512
+39. Beltagy,I.,Lo,K.&Cohan,A.SciBERT:apretrainedlanguagemodelforscientific
+(2016)
+text.InProceedingsofthe2019ConferenceonEmpiricalMethodsinNaturalLan-
+13. Choi,E.,Bahadori,M.T.,Schuetz,A.,Stewart,W.F.&Sun,J.DoctorAI:Predicting
+guageProcessingandthe9thInternationalJointConferenceonNaturalLanguage
+ClinicalEventsviaRecurrentNeuralNetworks.InMachineLearningforHealthcare Processing(EMNLP-IJCNLP),3606–3611(ACL,2019).
+Conference,301–318(MLHC,2016).
+40. Huang,K.,Altosaar,J.&Ranganath,R.ClinicalBert:modelingclinicalnotesand
+14. Rajkomar,A.etal.Scalableandaccuratedeeplearningwithelectronichealth
+predicting hospital readmission. Preprint at http://arxiv.org/abs/1904.05342
+records.NPJDigitalMed.1,18(2018).
+(2019).
+15. Esteva,A.etal.Dermatologist-levelclassificationofskincancerwithdeepneural
+41. Jha,A.K.etal.UseofelectronichealthrecordsinUShospitals.N.Engl.J.Med.
+networks.Nature542,115–118(2017).
+360,1628–1638(2009).
+16. Poplin, R. et al. Prediction of cardiovascular risk factors from retinal fundus 42. Blumenthal, D. & Tavenner, M. The “meaningful use”regulation for electronic
+photographsviadeeplearning.Nat.Biomed.Eng.2,158(2018). healthrecords.N.Engl.J.Med.363,501–504(2010).
+17. Coudray,N.etal.Classificationandmutationpredictionfromnon–smallcelllung
+43. Gupta, P., Malhotra, P., Narwariya, J., Vig, L. & Shroff, G. Transfer learning for
+cancerhistopathologyimagesusingdeeplearning.Nat.Med.24,1559–1567(2018).
+clinicaltimeseriesanalysisusingdeepneuralnetworks.J.Healthc.Inform.Res.4,
+18. Chung, S. W. et al. Automated detection and classification of the proximal 112–137(2020).
+humerusfracturebyusingdeeplearningalgorithm.ActaOrthop.89,468–473
+44. Beam,A.L.etal.ClinicalConceptEmbeddingsLearnedfromMassiveSourcesof
+(2018). MultimodalMedicalData.Pac.Symp.Biocomput.25,295–306(2020).
+19. Shen, J. et al. Artificial intelligence versus clinicians in disease diagnosis: sys-
+45. Xiang,Y.etal.Time-sensitiveclinicalconceptembeddingslearnedfromlarge
+tematicreview.JMIRMed.Inform.7,e10010(2019).
+electronichealthrecords.BMCMed.Inf.Decis.Mak.19,58(2019).
+20. Sun,C.,Shrivastava,A.,Singh,S.&Gupta,A.InProceedingsoftheIEEEInterna- 46. Howard,J.&Ruder,S.UniversalLanguageModelFine-tuningforTextClassifi-
+tionalConferenceonComputerVision,843–852.
+cation.InProceedingsofthe56thAnnualMeetingoftheAssociationforCompu-
+21. Cho,J.,Lee,K.,Shin,E.,Choy,G.&Do,S.Howmuchdataisneededtotraina tationalLinguistics(Volume1:LongPapers),328–339(ACL,2018).
+medicalimagedeeplearningsystemtoachievenecessaryhighaccuracy?Pre- 47. Li,Y.etal.BeHRt:transformerforelectronicHealthRecords.Sci.Rep.10,1–12
+printathttps://arxiv.org/abs/1511.06348(2015).
+(2020).
+22. Gentil, M.-L. et al. Factors influencing the development of primary care data
+48. Shang,J.,Ma,T.,Xiao,C.&Sun,J.Pre-trainingofGraphAugmentedTransformers
+collection projects from electronic health records: a systematic review of the
+for Medication Recommendation. In Proceedings of the Twenty-Eighth Interna-
+literature.BMCMed.Inform.Decis.Mak.17,139(2017). tionalJointConferenceonArtificialIntelligence,5953–5959(IJCAI,2019).
+npjDigitalMedicine(2021) 86 PublishedinpartnershipwithSeoulNationalUniversityBundangHospital
+L.Rasmyetal.
+13
+49. Ma, F. et al. Dipole: Diagnosis Prediction in Healthcare via Attention-based HeartAssociationunderawardnumber19GPSGC35180031andpartlysupportedby
+BidirectionalRecurrentNeuralNetworks.InProceedingsofthe23rdACMSIGKDD theCancerPreventionandResearchInstituteofTexas(CPRIT)GrantRP170668.LRis
+International Conference on Knowledge Discovery and Data Mining, 1903–1911 supportedbyUTHealthInnovationforCancerPreventionResearchTrainingProgram
+(ACM,2017). Pre-Doctoral Fellowship (CPRIT Grant RP160015). The content is solely the
+50. Xiao,C.,Ma,T.,Dieng,A.B.,Blei,D.M.&Wang,F.Readmissionpredictionviadeep responsibility ofthe authors anddoes notnecessarily representtheofficialviews
+contextualembeddingofclinicalconcepts.PLoSONE13,e0195024(2018). oftheCancerPreventionandResearchInstituteofTexas.
+51. Xiang,Y.etal.Asthmaexacerbationpredictionandriskfactoranalysisbasedona
+time-sensitive, attentive neural network: retrospective cohort study. J. Med.
+InternetRes.22,e16981(2020). AUTHORCONTRIBUTIONS
+52. Baytas, I. M. et al. Patient Subtyping via Time-Aware LSTM Networks. In Pro- LR,YX,andZXareco-firstauthors.DZinitializedtheconceptualizationoftheproject.
+ceedingsofthe23rdACMSIGKDDInternationalConferenceonKnowledgeDiscovery LR,YX,ZX,andDZdesignedthemethods.LRledtheimplementationofthemethods,
+andDataMining,65–74(ACM,2017).
+withsubstantialinputsfromYXandZX.YXandDZledthedesignofexperiments.LR
+53. Chung, J., Gulcehre, C., Cho, K. & Bengio, Y. Empirical evaluation of gated
+conductedtheexperimentsandproducedresults.ZXledthevisualization.YX,LR,
+recurrent neural networks on sequence modeling. In NIPS 2014 Workshop on
+and DZ led the writing, with substantial inputs from ZX and CT. YX, DZ, and CT
+DeepLearning,December2014(NIPS,2014).
+supervisedtheexecutionoftheproject.
+54. Zhao, R. et al. Machine health monitoring using local feature-based gated
+recurrentunitnetworks.IEEETrans.Ind.Electron.65,1539–1548(2017).
+55. Bojanowski, P., Grave, E., Joulin, A. & Mikolov, T. Enriching word vectors with COMPETINGINTERESTS
+subwordinformation.Trans.Assoc.Comput.Linguist.5,135–146(2017).
+Theauthorsdeclarenocompetinginterests.
+56. Levy,O.,Goldberg,Y.&Dagan,I.Improvingdistributionalsimilaritywithlessons
+learnedfromwordembeddings.Trans.Assoc.Comput.Linguist.3,211–225(2015).
+57. Erhan,D.etal.WhyDoesUnsupervisedPre-trainingHelpDeepLearning?J.Mach.
+Learn.Res.11,625–660(2010). ADDITIONAL INFORMATION
+58. Vig,J.AMultiscaleVisualizationofAttentionintheTransformerModel.InPro- Supplementary information The online version contains supplementary material
+ceedings of the 57th Annual Meeting of the Association for Computational Lin- availableathttps://doi.org/10.1038/s41746-021-00455-y.
+guistics:SystemDemonstrations,37–42(ACL,2019).
+59. Brown,T.etal.LanguageModelsareFew-ShotLearners.Adv.NeuralInf.Process. CorrespondenceandrequestsformaterialsshouldbeaddressedtoY.X.orD.Z.
+Syst.33,1877–1901(2020).
+60. Hicks,K.A.etal.2017Cardiovascularandstrokeendpointdefinitionsforclinical Reprints and permission information is available at http://www.nature.com/
+trials.J.Am.Coll.Cardiol.71.9,1021–1034(2018). reprints
+61. ICD-10|CMS.http://www.cms.gov/Medicare/Coding/ICD10(lastaccessedMay2021).
+62. Wolf, T. et al. Transformers: State-of-the-Art Natural Language Processing. In Publisher’snoteSpringerNatureremainsneutralwithregardtojurisdictionalclaims
+Proceedings of the 2020 Conference on Empirical Methods in NaturalLanguage inpublishedmapsandinstitutionalaffiliations.
+Processing:SystemDemonstrations(2020),38–45(ACL,2020)..
+63. Herrett,E.etal.Dataresourceprofile:clinicalpracticeresearchdatalink(CPRD).
+Int.J.Epidemiol.44,827–836(2015).
+64. Johnson,A.E.etal.MIMIC-III,afreelyaccessiblecriticalcaredatabase.Sci.Data3,
+160035(2016). Open Access This article is licensed under a Creative Commons
+Attribution 4.0 International License, which permits use, sharing,
+adaptation,distributionandreproductioninanymediumorformat,aslongasyougive
+ACKNOWLEDGEMENTS appropriatecredittotheoriginalauthor(s)andthesource,providealinktotheCreative
+Commonslicense,andindicateifchangesweremade.Theimagesorotherthirdparty
+Wearegratefulforourcollaborators,DavidAguilar,MD,MasayukiNigo,MD,and
+Bijun S. Kannadath, MBBS, MS, for the helpful discussions on cohorts’ definitions
+materialinthisarticleareincludedinthearticle’sCreativeCommonslicense,unless
+andresults’evaluation.Thisresearchwasundertakenwiththeassistanceofresources indicatedotherwiseinacreditlinetothematerial.Ifmaterialisnotincludedinthe
+article’sCreativeCommonslicenseandyourintendeduseisnotpermittedbystatutory
+and services from the School of Biomedical Informatics Data Service, which is
+supported in part by CPRIT Grant RP170668. Specifically, we would like to regulationorexceedsthepermitteduse,youwillneedtoobtainpermissiondirectly
+acknowledge the use of Cerner Health Facts® and the IBM Truven MarketScan™ fromthecopyrightholder.Toviewacopyofthislicense,visithttp://creativecommons.
+org/licenses/by/4.0/.
+datasetsaswellastheassistanceprovidedbytheUTHealthSBMIDataServiceteam
+toextractthedata.TheNvidiaGPUhardwareispartlysupportedthroughXiaoqian
+Jiang’sUTStarAward.WearealsogratefultotheNVIDIACorporationforsupporting
+©TheAuthor(s)2021
+ourresearchbydonatingaTeslaGPU.CTandDZaresupportedbytheAmerican
+PublishedinpartnershipwithSeoulNationalUniversityBundangHospital npjDigitalMedicine(2021) 86

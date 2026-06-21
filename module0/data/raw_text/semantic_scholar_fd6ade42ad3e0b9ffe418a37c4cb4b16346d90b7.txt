@@ -1,0 +1,600 @@
+Data Contamination: From Memorization to Exploitation
+InbalMagar RoySchwartz
+SchoolofComputerScienceandEngineering,TheHebrewUniversityofJerusalem,Israel
+{inbal.magar,roy.schwartz1}@mail.huji.ac.il
+Abstract
+Pretrained language models are typically
+trainedonmassiveweb-baseddatasets,which
+are often “contaminated” with downstream
+testsets. Itisnotcleartowhatextentmodels
+exploitthecontaminateddatafordownstream
+tasks.Wepresentaprincipledmethodtostudy
+this question. We pretrain BERT models on
+joint corpora of Wikipedia and labeled down-
+streamdatasets,andfine-tunethemontherel-
+evant task. Comparing performance between
+samples seen and unseen during pretraining
+enables us to define and quantify levels of
+memorization and exploitation. Experiments
+Figure1: WepretrainBERTonWikipediaalongwith
+with two models and three downstream tasks
+boththelabeledtrainingandtestsets(denotedseen)of
+showthatexploitationexistsinsomecases,but
+adownstreamtask(e.g.,SST).Then,wefine-tunethis
+in others the models memorize the contami-
+model on the same training set for that task. We com-
+nated data, but do not exploit it. We show
+pare performance between samples seen and unseen
+thatthesetwomeasuresareaffectedbydiffer-
+during pretraining to quantify levels of memorization
+entfactorssuchasthenumberofduplications
+andexploitationoflabelsseeninpretraining.
+of the contaminated data and the model size.
+Ourresultshighlighttheimportanceofanalyz-
+ing massive web-scale datasets to verify that
+progressinNLPisobtainedbybetterlanguage remainsuncleartowhatextentdatacontamination
+understandingandnotbetterdataexploitation. affectsdownstreamtaskperformance.
+Thispaperproposesaprincipledmethodology
+to address this question in a controlled manner
+1 Introduction
+(Fig. 1). We focus on classification tasks, where
+Pretrained language models are getting bigger instancesappearinthepretraincorpusalongwith
+and so does their capacity to memorize data theirgoldlabels. Wepretrainamaskedlanguage
+from the training phase (Carlini et al., 2021). A modeling(MLM)model(e.g.,BERT;Devlinetal.,
+rising concern regarding these models is “data 2019)onageneralcorpus(e.g.,Wikipedia)com-
+contamination”—whendownstreamtestsetsfind bined with labeled training and test samples (de-
+their way into the pretrain corpus. For instance, notedseentestsamples)fromadownstreamtask.
+Dodgeetal.(2021)examinedfivebenchmarksand We then fine-tune the model on the same labeled
+foundthatallhadsomelevelofcontaminationin training set, and compare performance between
+the C4 corpus (Raffel et al., 2020); Brown et al. seen instances and unseen ones, where the latter
+(2020)flaggedover90%ofGPT-3’sdownstream areunobservedinpretraining. Wedenotethediffer-
+datasets as contaminated. Eliminating this phe- encebetweenseenandunseenasexploitation. We
+nomenonischallenging,asthesizeofthepretrain alsodefineameasureofmemorizationbycompar-
+corpora makes studying them difficult (Kreutzer ingtheMLMmodel’sperformancewhenpredict-
+etal.,2022;Birhaneetal.,2021),andevendedupli- ingthemaskedlabelforseenandunseenexamples.
+cationisnotstraightforward(Leeetal.,2021). It Westudytheconnectionbetweenthetwomeasures.
+2202
+raM
+51
+]LC.sc[
+1v24280.3022:viXra
+We apply our methodology to BERT-base and highest probability to the gold label (among the
+large,andexperimentwiththreeEnglishtextclas- candidatelabelset);giventheinstancetext(e.g.,I
+sificationandNLIdatasets. Weshowthatexploita- love it! [MASK]).memisdefinedasthedif-
+tionexists,andisaffectedbyvariousfactors,such ferenceinMLMaccuracybythepretrainedmodel
+as the number of times the model encounters the (beforefine-tuning)betweenseenandunseen.4
+contamination,themodelsize,andtheamountof memisinspiredbyrecentworkonfactualprob-
+Wikipediadata. Interestingly,weshowthatmemo- ing, which uses cloze-style prompts to asses the
+rizationdoesnotguaranteeexploitation, andthat amount of factual information a model encodes
+factors such as the position of the contaminated (Petronietal.,2019;Zhongetal.,2021). Similarly
+data in the pretrain corpus and the learning rate to these works, mem can be interpreted as lower
+affectthesetwomeasures. Weconcludethatlabels boundonmemorizationofcontaminatedlabels.
+seenduringpretrainingcanbeexploitedindown-
+expl isameasureofexploitation: thedifference
+streamtasksandurgeotherstocontinuedeveloping
+intaskperformancebetweenseenandunseen.
+bettermethodstostudylarge-scaledatasets. Asfar
+asweknow,ourworkisthefirstworktostudythe
+memandexplarecomplementarymeasuresfor
+levelofexploitationinacontrolledmanner. the gains from data contamination; mem is mea-
+suredafterpretraining,andexplafterfine-tuning.
+2 OurMethod: AssessingtheEffectof Aswewishtoexploredifferentfactorsthatinflu-
+ContaminationonTaskPerformance enceexpl,itisalsointerestingtoseehowtheyaf-
+fectmem,particularlywhethermemleadstoexpl
+Tostudytheeffectofdatacontaminationondown-
+andwhetherexplrequiresmem. Interestingly,our
+streamtaskperformance,wetakeacontrolledap-
+resultsindicatethatthesemeasuresarenotneces-
+proachtoidentifyandisolatefactorsthataffectthis
+sarilytied.
+phenomenon. Weassumethattestinstancesappear
+inthepretraincorpuswiththeirgoldlabels,1 and Pretraining design choices Simulating lan-
+that the labeled training data is also found in the guagemodelpretrainingunderanacademicbudget
+pretraincorpus.2 Wedescribeourapproachbelow. isnotaneasytask. Toenabledirectcomparisons
+WepretrainanMLMmodelonageneralcorpus between different factors, we pretrain medium-
+combinedwithadownstreamtaskcorpus,contain- sized models (BERT-{base,large}) on relatively
+inglabeledtrainingandtestexamples. Wesplitthe small corpora (up to 600M tokens). We recog-
+testsetintotwo,addingoneparttothepretraincor- nizethatsomeoftheresultsinthispapermaynot
+pus(denotedseen),leavingtheotherunobserved generalizetolargermodels,trainedonmoredata.
+duringpretraining(unseen). Forexample,weadd However, as data contamination is a prominent
+thefollowingSST-2instance(Socheretal.,2013): problem,webelieveitisimportanttostudyitsef-
+I love it! 1 3 fectsunderlabconditions. Wehopetoencourage
+otherresearchgroupstoapplyourmethodatlarger
+Wethenfine-tunethemodelonthesamelabeled
+scales.
+trainingset,andcompareperformanceontheseen
+and unseen test sets. As both test sets are drawn
+3 WhichFactorsAffectExploitation?
+randomlyfromthesamedistribution,differences
+in performance indicate that the model exploits
+We study the extent to which pretrained models
+thelabeledexamplesobservedduringpretraining
+can memorize and exploit labels of downstream
+(Fig.1). Thiscontrolledmanipulationallowsusto
+tasksseenduringpretraining,andthefactorsthat
+definetwomeasuresofcontamination:
+affect this phenomenon. We start by examining
+mem is a simple measure of explicit memoriza- howmanytimesamodelshouldseethecontami-
+tion. WeconsidertheMLMtaskofassigningthe nateddatainordertobeabletoexploitit.
+WepretrainBERT-baseonMLMusingacom-
+1Ourfocusisonclassificationtasks,butourmethodcan
+binedcorpusofEnglishWikipedia(60Mtokens),
+similarlybeappliedtoothertasks,e.g.,questionanswering.
+2Werecognizethattheseassumptionsmightnotalways and increasing numbers of SST-5 copies (Socher
+hold;e.g.,thedatamightappearunlabeled.Suchcases,while
+interesting,arebeyondthescopeofthispaper. 4Otherdefinitionsofmemorization,suchasrelativelog-
+3Onecouldimagineotherformats,e.g.,thelabelcoming perplexityofasequence,havebeenproposed(Carlinietal.,
+before(ratherthanafter)thetext. Preliminaryexperiments 2019,2021).Asweareinterestedincomparingthemodel’s
+withthisformatshowedverysimilarresults. abilitytopredictthecorrectlabel,weusethisstrictmeasure.
+Figure 2: SST-5 mem and expl rise under different
+conditions.Left:increasednumberofdataoccurrences.
+Right:increasedproportionofmaskingthelabeltoken.
+Figure3: memandexplofBERT-{base,large}ondif-
+ferent tasks. We increase the size of clean data while
+fixingtheamountofcontaminateddata.6 explvalues
+etal.,2013). Tofacilitatethelargenumberofex-
+areaveragedacrosstenrandomtrials,shadedareacor-
+perimentsinthispaper,werandomlydownsample
+respondstooneSD.Dottedlinesaremem/explbase-
+SST-5tosubsetsof1,000training,seenandunseen
+lines of BERT-{base,large} pretrained on uncontami-
+instances. Wetrainforoneepoch,duetothepracti- nateddata.
+caldifferencebetweenthenumberoftimesthetask
+dataappearsinthecorpusandthenumberoftimes
+In the following, we fix the number of con-
+themodelseesit. Forexample,ifacontaminated
+taminated data copies to 100 and modify other
+instanceappearsinthecorpusonce,butthemodel
+conditions—thesizeoftheWikipediadataandthe
+istrainedfor50epochs,theninpracticethemodel
+modelsize(base/large). Wealsoexperimentwith
+encountersthecontaminatedinstance50timesdur-
+twoadditionaldownstreamtasks: SST-2andSNLI
+ingtraining. Furtherexplorationofthedifference
+(Bowmanetal.,2015). Allotherexperimentalde-
+betweenthesetwonotionsisfoundinApp.A.See
+tailsremainthesame. Fig.3showsourresults.
+App.Dforexperimentaldetails. Wedescribeour
+resultsbelow.
+Memorization does not guarantee exploitation
+Perhaps the most interesting trend we observe is
+Exploitationgrowswithcontaminateddatadu-
+theconnectionbetweenmemandexpl. Lowmem
+plicates Both mem and expl levels increase in
+values (10% or less)lead to no expl, but higher
+proportiontothecontaminateddata,reaching60%
+memvaluesdonotguaranteeexpleither. Forex-
+mem and almost 40% expl when it appears 200
+ample,trainingBERT-basewith600MWikipedia
+times(Fig.2,left). Thissuggestsadirectconnec-
+tokensandSST-5dataleadsto15%memlevel,but
+tionbetweenbothmemandexplandthenumber
+lessthan1%expl. Theseresultsindicatethemem
+oftimesthemodelseestheselabels. Thisfinding
+aloneisnotasufficientconditionforexpl.
+isconsistentwithseveralconcurrentworks,which
+show similar connections in GPT-based models.
+Modelandcorpussizesmatter Acrossallthree
+These works study the impact of duplication of datasets and almost all corpora sizes, mem levels
+trainingsequenceonregenerationofthesequence
+of BERT-large are higher then BERT-base. This
+(Carlinietal.,2022;Kandpaletal.,2022),andthe
+is consistent with Carlini et al. (2021)’s findings
+effect on few-shot numerical reasoning (Razeghi
+that larger models have larger memorization ca-
+etal.,2022). Oneexplanationforthisphenomenon pacity. Also,weobservethatmemlevels(though
+istheincreaseintheexpectednumberoftimesla- not necessarily expl) of SST-5 are consistently
+belsaremaskedduringpretraining.5 Tocheckthis,
+highercomparedtotheotherdatasets. Thismight
+wepretrainBERT-basewith100copiesofSST-5
+beduetothefactthatitisaharderdataset(a5-label
+andvaryingprobabilitiesofmaskingthelabel. Our
+dataset, compared to 2/3 for the other two), with
+results(Fig.2,right)showthatthehigherthisprob-
+lowerstate-of-the-artresults, sothemodelmight
+ability, the higher mem and expl values. These
+haveweakerabilitytocaptureotherfeatures.
+resultsmotivateworksondeduplication(Leeetal.,
+Much like memorization, exploitation is also
+2021),especiallyconsideringthatcasuallanguage
+affected by the size of the model, as well as the
+models(e.g.,GPT;Radfordetal.,2019)aretrained
+amount of additional clean data. We observe
+usingnexttokenpredictionobjective,andsoevery
+roughlythesametrendsforallthreedatasets,but
+wordinitsturnismasked.
+6TrainingofBERT-largemodelswith60Mtokensdidnot
+5FollowingBERT,wemaskeachtokenwith15%chance. converge,thereforetheyarenotpresented.
+Figure4:SST-5memandexplwhencontaminationis
+insertedindifferentstagesofpretraining,usingalinear
+learningratedecay,andaconstantlearningrate.
+Figure5: SST-5memandexplvaluesdropasthepre-
+not for the two models. For BERT-base, 2–6%
+trainingbatchsizeincreases.
+explisfoundforlowamountsofcleandata,but
+graduallydecreases. ForBERT-large,thetrendis
+opposite: explisobservedstarting300Mandcon- lowerLR,tohaveasmalleraffectonthemodel’s
+weights,thuslessmemorized. Fig.4(left)indeed
+tinuestogrowwiththeamountofexternaldata,up
+shows that late contamination leads to no expl
+to2–4%. Thisindicatesthatlargermodelsbenefit
+(though mem levels remain relatively high). To
+morefromadditionaldata.
+Wenextexploreotherfactorsthataffectexpl. separate the LR from the contamination timing,
+we repeat that experiment with a constant LR of
+Unlessstatedotherwise,weuseBERT-base(60M
+2.77e-5(midwayofthelineardecay). Fig.4(right)
+Wikipediatokens,100copiesofSST-5).
+showsthatinthelaststage,bothmeasuresincrease
+Early contamination leads to high exploitation comparedtotheLRdecaypolicy. AstheLRiscon-
+Doesthepositionofthecontaminateddatainthe stant,thisindicatesthatbothLRandcontamination
+pretrainingcorpusmatter? Toanswerthis,wepre- timingmightaffectlabelmemorization.
+trainthemodelwhileinsertingcontaminateddata
+Largebatchsizeduringpretrainingreducesex-
+indifferentstagesofpretraining: atthebeginning
+ploitation Similartolearningrate,thebatchsize
+(inthefirstthird), themiddle, ortheend. Ourre-
+can also mediate the influence that each instance
+sults (Fig. 4, left) show that early contamination
+hasonthemodelsweights. WepretrainBERT-base
+leads to high expl (up to 17%), which drops as
+several times with increasing batch sizes.8 Our
+contaminationisintroducedlater.7 Incontrast,the
+experiments show that as we decrease the batch
+highestmemlevelsappearwhencontaminationis
+size, both measures increases (Fig. 5). In the ex-
+insertedinthemiddleofthetraining. Wealsoob-
+tremecaseofbatchsize=2,memreaches49%,and
+serve that in early contamination mem levels are
+expl reaches 14%. This phenomenon might be
+lower thenexpl. Thisisrathersurprising,since
+explainedbyeachtraininginstancehavingalarger
+themodelhascertainlevelofmemorizationofthe
+impactonthegradientupdateswithsmallbatches.
+labels(asexpressedbyexpl),butitdoesnotfully
+utilize these memories in the MLM task of mem. A good initialization matters Carlini et al.
+Thissuggeststhatinearlycontamination,thelower (2019)showedthatmemorizationhighlydepends
+boundthatmemyieldsonmemorizationisnottight.
+on the choice of hyperparameters. We observe a
+Themodelmighthavean“implicit”memoriesof similartrend—expldependsontherandomseed
+thelabels,whicharenottranslatedtogainsinthe used during fine-tuning. These results are also
+MLMtaskofpredictingthegoldlabel(mem). Dis- consistent with prior work that showed that fine-
+tinguishingbetweenimplicitandexplicitmemory tuningperformanceissensitivetotheselectionof
+ofLMsisanimportantquestionforfuturework. therandomseed(Dodgeetal.,2020). Carefulin-
+We note that different stages of training also vestigation reveals that some random seeds lead
+yielddifferentlearningrates(LRs). Inourexperi- togoodgeneralization,asobservedbyunseenper-
+mentswefollowBERT,usinglinearLRdecaywith formance, while others lead to high exploitation:
+warmup. When considering the top three seeds (averaged
+Wemightexpectinstancesobservedlater,with across experiments) for expl—two out of those
+7Otherdatasetsshowasimilartrend,seeFig.6,App.C. 8Weupdateaftereachbatch(nogradientaccumulation).
+seedsarealsointheworstthreeseedsforgeneral- tuningperformance. Ourmethodallowstoquantify
+ization. Thisindicatesatradeoffbetweengeneral- the explicit memorization of labels from the pre-
+izationandexploitation. Futureworkwillfurther trainingphaseandtheirexploitationinfine-tuning.
+studytheconnectionbetweentheseconcepts. To Recentyearshaveseenimprovementsinprompt-
+supportsuchresearch,wepubliclyreleaseourex- based methods for zero- and few-shot learning
+perimentalresults.9 (Shin et al., 2020; Schick and Schütze, 2021; Gu
+etal.,2021). Theseworksarguethatmaskedlan-
+4 RelatedWork
+guage models have an inherent capability to per-
+formclassificationtasksbyreformulatingthemas
+Memorization in language models has been ex-
+fill-in-the-blanksproblems.
+tensivelystudied,butthereisfarlessresearchon
+We have shown that given that the language
+datacontaminationandtheextentmodelsexploit
+model has seen the gold label, it is able to mem-
+thecontaminationfordownstreamtasks. Mostre-
+orize and retrieve that label under some condi-
+latedtoourworkisBrownetal.(2020)’spost-hoc
+tions. Prompt-tuning methods, which learn dis-
+analysisofGPT-3’scontamination. Theyshowed
+crete prompts (Shin et al., 2020) or continuous
+that in some cases there was great difference in
+ones (Zhong et al., 2021), might latch on to the
+performance between ‘clean’ and ‘contaminated’
+memorized labels, and further amplify this phe-
+datasets,whileinothersnegligible. However,they
+nomenon. Thisfurtherhighlightstheimportance
+couldnotperformacontrolledexperimentdueto
+ofquantifyingandmitigatingdatacontamination.
+the high costs of training their models. As far as
+we know, our work is the first work to study the
+Acknowledgements
+levelofexploitationinacontrolledmanner.
+Severalconcurrentworksexploredrelatedques- We wish to thank Yarden Shoham Tal, Michael
+tionsonmemorizationorutilizationoftrainingin- Hassid, Yuval Reif, Deborah Elharar, Gabriel
+stances. TheseworksmostlyuseGPT-basedmod- StanovskyandJesseDodgefortheirfeedbackand
+els. Carlinietal.(2022)showedthatmemorization insightful discussions. We also thank the anony-
+oflanguagemodelsgrowswithmodelsize,training mousreviewersfortheirvaluablecomments. This
+dataduplicates, andthepromptlength. Theyfur- work was supported in part by the Israel Science
+therfoundthatmaskedlanguagemodelsmemorize Foundation(grantno. 2045/21)andbyaresearch
+anorderofmagnitudelessdatacomparedtocausal giftfromtheAllenInstituteforAI.
+language model. This finding hints that exploita-
+tionlevelsmightbeevenhigheronthelatter. Kand-
+References
+paletal.(2022)showedthatsuccessofprivacyat-
+tacksonlargelanguagemodels(astheoneusedin Giusepppe Attardi. 2015. Wikiextractor. https://
+Carlinietal.,2021)islargelyduetoduplicationin github.com/attardi/wikiextractor.
+commonlyusedweb-scrapedtrainingsets. Specif-
+Abeba Birhane, Vinay Uday Prabhu, and Em-
+ically, they found that the rate at which language
+manuel Kahembwe. 2021. Multimodal datasets:
+models regenerate training sequences is superlin- misogyny, pornography, and malignant stereotypes.
+earlyrelatedtoaduplicationofthesequenceinthe arXiv:2110.01963.
+corpus. Lastly,Razeghietal.(2022)examinedthe
+Samuel R. Bowman, Gabor Angeli, Christopher Potts,
+correlations between model performance on test
+and Christopher D. Manning. 2015. A large anno-
+instancesandthefrequencyoftermsfromthosein- tatedcorpusforlearningnaturallanguageinference.
+stancesinthepretrainingdata. Theyexperimented In Proceedings of the 2015 Conference on Empiri-
+calMethodsinNaturalLanguageProcessing,pages
+with numerical deduction tasks and showed that
+632–642,Lisbon,Portugal.AssociationforCompu-
+modelsareconsistentlymoreaccurateoninstances
+tationalLinguistics.
+whosetermsaremoreprevalent.
+TomB.Brown,BenjaminMann,NickRyder,Melanie
+5 DiscussionandConclusion Subbiah, Jared Kaplan, Prafulla Dhariwal, Arvind
+Neelakantan,PranavShyam,GirishSastry,Amanda
+Wepresentedamethodforstudyingtheextentto Askell, Sandhini Agarwal, Ariel Herbert-Voss,
+Gretchen Krueger, Tom Henighan, Rewon Child,
+whichdatacontaminationaffectsdownstreamfine-
+Aditya Ramesh, Daniel M. Ziegler, Jeffrey Wu,
+9https://github.com/schwartz-lab-NLP/ Clemens Winter, Christopher Hesse, Mark Chen,
+data_contamination Eric Sigler, Mateusz Litwin, Scott Gray, Benjamin
+Chess, Jack Clark, Christopher Berner, Sam Mc- Nikhil Kandpal, Eric Wallace, and Colin Raffel.
+Candlish, Alec Radford, Ilya Sutskever, and Dario 2022. Deduplicating training data mitigates pri-
+Amodei.2020. Languagemodelsarefew-shotlearn- vacy risks in language models. arXiv preprint
+ers. InAdvancesinNeuralInformationProcessing arXiv:2202.06539.
+Systems33: AnnualConferenceonNeuralInforma-
+tion Processing Systems 2020, NeurIPS 2020, De- Julia Kreutzer, Isaac Caswell, Lisa Wang, Ahsan Wa-
+cember6-12,2020,virtual. hab,DaanvanEsch,NasanbayarUlzii-Orshikh,Al-
+lahsera Tapo, Nishant Subramani, Artem Sokolov,
+Nicholas Carlini, Daphne Ippolito, Matthew Jagielski, Claytone Sikasote, Monang Setyawan, Supheak-
+KatherineLee,FlorianTramer,andChiyuanZhang. mungkol Sarin, Sokhar Samb, Benoît Sagot, Clara
+2022. Quantifying memorization across neural lan- Rivera, Annette Rios, Isabel Papadimitriou, Sa-
+guagemodels. arXiv:2202.07646. lomeyOsei,PedroOrtizSuarez,IroroOrife,Kelechi
+Ogueji, Andre Niyongabo Rubungo, Toan Q.
+Nicholas Carlini, Chang Liu, Úlfar Erlingsson, Jernej Nguyen, Mathias Müller, André Müller, Sham-
+Kos,andDawnSong.2019. Thesecretsharer:Eval- suddeen Hassan Muhammad, Nanda Muhammad,
+uating and testing unintended memorization in neu- Ayanda Mnyakeni, Jamshidbek Mirzakhalov, Tapi-
+ral networks. In Proceedings of the 28th USENIX wanashe Matangira, Colin Leong, Nze Lawson,
+Conference on Security Symposium, SEC’19, page Sneha Kudugunta, Yacine Jernite, Mathias Jenny,
+267–284,USA.USENIXAssociation. Orhan Firat, Bonaventure F. P. Dossou, Sakhile
+Dlamini, Nisansa de Silva, Sakine Çabuk Ballı,
+Nicholas Carlini, Florian Tramer, Eric Wallace,
+Stella Biderman, Alessia Battisti, Ahmed Baruwa,
+Matthew Jagielski, Ariel Herbert-Voss, Katherine
+AnkurBapna,PallaviBaljekar,IsraelAbebeAzime,
+Lee, Adam Roberts, Tom Brown, Dawn Song, Ul-
+Ayodele Awokoya, Duygu Ataman, Orevaoghene
+farErlingsson,AlinaOprea,andColinRaffel.2021.
+Ahia,OghenefegoAhia,SwetaAgrawal,andMofe-
+Extractingtrainingdatafromlargelanguagemodels.
+toluwaAdeyemi.2022. QualityataGlance:AnAu-
+InUSENIXSecuritySymposium.
+ditofWeb-CrawledMultilingualDatasets. Transac-
+tions of the Association for Computational Linguis-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+tics,10:50–72.
+Kristina Toutanova. 2019. BERT: Pre-training of
+deep bidirectional transformers for language under-
+Katherine Lee, Daphne Ippolito, Andrew Nystrom,
+standing. In Proceedings of the 2019 Conference
+Chiyuan Zhang, Douglas Eck, Chris Callison-
+of the North American Chapter of the Association
+Burch, and Nicholas Carlini. 2021. Deduplicat-
+for Computational Linguistics: Human Language
+ing training data makes language models better.
+Technologies, Volume 1 (Long and Short Papers),
+arXiv:2107.06499.
+pages4171–4186,Minneapolis,Minnesota.Associ-
+ationforComputationalLinguistics.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Jesse Dodge, Gabriel Ilharco, Roy Schwartz, Ali
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Farhadi, Hannaneh Hajishirzi, and Noah Smith.
+RoBERTa: Arobustlyoptimizedbertpretrainingap-
+2020. Fine-tuning pretrained language models:
+proach. arXiv:1907.11692.
+Weight initializations, data orders, and early stop-
+ping.
+Ilya Loshchilov and Frank Hutter. 2019. Decou-
+Jesse Dodge, Maarten Sap, Ana Marasovic´, William pled weight decay regularization. In 7th Inter-
+national Conference on Learning Representations,
+Agnew,GabrielIlharco,DirkGroeneveld,Margaret
+Mitchell, and Matt Gardner. 2021. Documenting
+ICLR2019,NewOrleans,LA,USA,May6-9,2019.
+large webtext corpora: A case study on the colos- OpenReview.net.
+sal clean crawled corpus. In Proceedings of the
+2021 Conference on Empirical Methods in Natural Fabio Petroni, Tim Rocktäschel, Sebastian Riedel,
+LanguageProcessing,pages1286–1305,Onlineand Patrick Lewis, Anton Bakhtin, Yuxiang Wu, and
+Punta Cana, Dominican Republic. Association for AlexanderMiller.2019. Languagemodelsasknowl-
+ComputationalLinguistics. edge bases? In Proceedings of the 2019 Confer-
+ence on Empirical Methods in Natural Language
+Yuxian Gu, Xu Han, Zhiyuan Liu, and Minlie Huang. Processing and the 9th International Joint Confer-
+2021. PPT: Pre-trainedprompt tuning for few-shot ence on Natural Language Processing (EMNLP-
+learning. arXiv:2109.04332. IJCNLP),pages2463–2473,HongKong,China.As-
+sociationforComputationalLinguistics.
+Suchin Gururangan, Ana Marasovic´, Swabha
+Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey, Alec Radford, Jeffrey Wu, Rewon Child, David Luan,
+and Noah A. Smith. 2020. Don’t stop pretraining: DarioAmodei,andIlyaSutskever.2019. Language
+Adapt language models to domains and tasks. In modelsareunsupervisedmultitasklearners.
+Proceedings of the 58th Annual Meeting of the
+Association for Computational Linguistics, pages Colin Raffel, Noam Shazeer, Adam Roberts, Kather-
+8342–8360, Online. Association for Computational ine Lee, Sharan Narang, Michael Matena, Yanqi
+Linguistics. Zhou, Wei Li, and Peter J. Liu. 2020. Exploring
+thelimitsoftransferlearningwithaunifiedtext-to- epochs appears seen expl
+text transformer. Journal of Machine Learning Re- 1 10 10 2.07%
+search,21(140):1–67. 5 10 50 6.87%
+Yasaman Razeghi, Robert L Logan IV, Matt Gardner, Table 1: expl results of two models which were
+andSameerSingh.2022. Impactofpretrainingterm trainedoncorpuswith10contaminatedSST-5appear-
+frequencies on few-shot reasoning. arXiv preprint
+ances.
+arXiv:2202.07206.
+Timo Schick and Hinrich Schütze. 2021. It’s not just epochs appears seen expl
+size that matters: Small language models are also 5 10 50 6.87%
+few-shotlearners. InProceedingsofthe2021Con- 1 50 50 7.73%
+ferenceoftheNorthAmericanChapteroftheAsso-
+ciationforComputationalLinguistics: HumanLan- Table2: explresultsoftwomodelswhichweresaw
+guage Technologies, pages 2339–2352, Online. As- thecontamination50times.
+sociationforComputationalLinguistics.
+Taylor Shin, Yasaman Razeghi, Robert L. Logan IV,
+A TwoNotionsof“Occurences”
+EricWallace,andSameerSingh.2020. AutoPrompt:
+Eliciting Knowledge from Language Models with
+AsnotedinSec.3,thenumberoftimesaninstance
+Automatically Generated Prompts. In Proceed-
+ings of the 2020 Conference on Empirical Methods appearsinthecorpusisadifferentnotionthanthe
+in Natural Language Processing (EMNLP), pages numberoftimesthemodelseesitduringtraining.
+4222–4235, Online. Association for Computational The latter also takes into account the number of
+Linguistics.
+training epochs. For example, if an instance ap-
+pearsinthecorpusonce,butthemodelistrained
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, ChristopherD.Manning, AndrewNg, and for50epochs,thanpracticallythemodelseesit50
+Christopher Potts. 2013. Recursive deep models times. Inthefieldonmemorizationanddatacon-
+forsemanticcompositionalityoverasentimenttree-
+tamination,itismostlycommontoreportthenum-
+bank. In Proceedings of the 2013 Conference on
+beroftimesaninstanceappearsinthecorpus(Car-
+EmpiricalMethodsinNaturalLanguageProcessing,
+pages1631–1642,Seattle,Washington,USA.Asso- linietal.,2021;Brownetal.,2020). However,the
+ciationforComputationalLinguistics. followingexperimentsemphasizestheimportance
+ofaccountingforthenumberoftimesasampleis
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+seen. Inthefirstexperimentwefixthenumberof
+Chaumond, ClementDelangue, AnthonyMoi, Pier-
+ric Cistac, Tim Rault, Remi Louf, Morgan Funtow- timesthecontaminationappearsinthecorpus(10
+icz, Joe Davison, Sam Shleifer, Patrick von Platen, copies),andchangethenumberoftimesitisseen.
+Clara Ma, Yacine Jernite, Julien Plu, Canwen Xu,
+Wedosobyperformingsecond-stage-pretraining
+Teven Le Scao, Sylvain Gugger, Mariama Drame,
+(Gururangan et al., 2020; Zhang and Hashimoto,
+Quentin Lhoest, and Alexander Rush. 2020. Trans-
+formers: State-of-the-art natural language process- 2021)onacombinedcorpusofWikipediaand10
+ing. InProceedingsofthe2020ConferenceonEm- copiesofSST-5. Wetrainonemodelforoneepoch,
+pirical Methods in Natural Language Processing:
+and the other for 5 epochs. Results are shown in
+SystemDemonstrations,pages38–45,Online.Asso-
+Tab.1. Inthesecondexperimentwefixthenumber
+ciationforComputationalLinguistics.
+oftimesthemodelseesSST-5,andchangethenum-
+Tianyi Zhang and Tatsunori B. Hashimoto. 2021. On beroftimesitappearsinthecorpus. Wedosoby
+the inductive bias of masked language modeling: performingsecond-stage-pretrainingforoneepoch
+From statistical to syntactic dependencies. In Pro-
+onacombinedcorpusofWikipediaandchanging
+ceedingsofthe2021ConferenceoftheNorthAmer-
+ican Chapter of the Association for Computational numberofcopiesofSST-5. Resultsareshownin
+Linguistics: Human Language Technologies, pages Tab.2.
+5131–5146, Online. Association for Computational We observe that expl levels of the models
+Linguistics.
+which saw the contamination 50 times are rather
+ZexuanZhong,DanFriedman,andDanqiChen.2021. similar. Onthecontrary,expllevelsofthemodel
+Factual probing is [MASK]: Learning vs. learning which saw the data 10 times is 5% lower. These
+torecall. InProceedingsofthe2021Conferenceof results indicate the number of times contamina-
+the North American Chapter of the Association for
+tionisseenduringtraininghavegreatinfluenceon
+ComputationalLinguistics: HumanLanguageTech-
+expl. In the main experiments presented in this
+nologies,pages5017–5033,Online.Associationfor
+ComputationalLinguistics. paperwetrainforoneepochinordertoeliminate
+thedifferencebetweenthetwonotion(appearsvs. D ExperimentalDetails
+seen).
+Originally, BERT model was trained on Masked
+Language Modelling (MLM) task and Next Sen-
+B SameRatio,Differentexpl tence Prediction task (NSP; Devlin et al., 2019).
+However,Liuetal.(2019)showedthatremoving
+InSec.3wehaveseentheexplandmemgrows theNSPlossdoesnotimpactthedownstreamtask
+withthenumberofcontaminationoccurrencesin performancesubstantially. Thereforewepretrain
+thecorpus. Oneexplanationfortheresultsinisthat bothBERTmodels(-baseand-large,bothuncased)
+therisingratiobetweenthecontaminatedcorpus ontheMLMtaskonly.
+and the full corpus leads to increased mem. We
+conduct experiments in which we keep the ratio
+betweenthetwofixedwhileincreasingtheirabso-
+lutesizes. Wekeepconstantratioof1:10between
+thenumberofinstances(inWikipediasetwecon-
+siderlinesasinstances)inthedatasets. Todoso,
+we adjust both the size of Wikipedia and the du-
+plications of SST-5 train and seen test sets in the
+corpus. Forexample,toachievetotalcorpussized
+1M we use 9k instances from Wikipedia and 50
+copies of SST-5 (which yields 1k samples). We
+focus on BERT-base and SST-5 task and follow
+thebasicexperimentsetupandhyperparametersof Figure7: Keepingsameratioof1:10betweencontam-
+ourmainexperiments(Sec.3). Ourresults(Fig.7) inateddatatototalcorpusbyincreasingboththenum-
+showthatthismanipulationleadstoincreasedmem, berofSST-5copiesandthesizeofWikipedia.
+indicating the importance of the total number of
+occurrencesofthetaskdata. Wikipedia Data We extracted and pre-
+processedtheApril21’EnglishWikipediadump.
+Weusedthewikiextractortool(Attardi,2015). In
+C PositionofContaminationMatters
+ordertomeasuretheeffectofcontaminationwhen
+contaminateddataisshuffledacrossthepretraining
+WepretrainBERT-basemodelwhileinsertingcon-
+corpus,wedividedcleanWikipediatextintolines
+taminated data in different stages of pretraining.
+(instanceswhichwereoriginallyseparatedbynew
+We discuss the experiment in Sec. 3. Results on
+linesymbol).
+SST-2andSNLIcanbefoundinFig.6.
+Experimental Details for Sec. 3 All models
+were trained with the following standard proce-
+dureandhyperparameters. Specificexperimental
+adjustmentswillbediscussedlater. Wepretrained
+BERT models using huggingface’s (Wolf et al.,
+2020)run_mlmscriptformaskedlanguagemodel-
+ing. Weusedheadssized64(calculatedas: hidden
+dimension divided by the number of heads) with
+standardarchitectureasimplementedintransform-
+ers library. We used a combined corpus of 60M
+tokensofWikipediaalongwith100copiesofthe
+downstream corpus. Due to computational limi-
+tations, we limited the training sequences to 128
+tokens. Wepretrainedfor1epochandusedbatch
+sizeof32tofiton1GPU.Wetrainedwithalearn-
+Figure 6: mem and expl when contamination is in- ing rate of 5e-5. We apply linear learning rate
+serted in different stages of pretraining, using a linear warmupforthefirst10%stepsofpretrainingand
+learningratedecay,andaconstantlearningrate. linearlearningratedecayfortherest. Wefine-tune
+the models on 1,000 samples of the downstream
+corpora(SST-2,SST-5andSNLI).
+We fine-tune for 3 epochs using batch size of
+8. WeuseAdamW(LoshchilovandHutter,2019)
+optimizerwithlearningrateof2e-5anddefaultpa-
+rameters: β =0.9,β =0.999,(cid:15)=1e-6,withbias
+1 2
+correctionandwithoutweightdecay. Weaverage
+theresultsovertenrandomtrials. Asbaselineswe
+usepretrainedBERT-baseandBERT-largeandfine-
+tunethemasdescribedabove. Accuracyresultson
+theunseentestsetsareshowninTab.3.
+task size 60M 150M 300M 450M 600M baseline
+base 34.07 34.18 35.57 35.76 37.05 45.35
+SST-5
+large 33.76 32.93 34.3 37.1 48.28
+base 72.26 74.78 75.96 75.17 76.5 87.15
+SST-2
+large 70.49 73.5 73.76 73.85 89.29
+base 46.66 48.65 54.53 57.17 58.16 68
+SNLI
+large 47.58 49.61 55.53 59.05 67.11
+Table 3: Accuracy of unseen test set for main experi-
+mentinSec.3.
+Intheexperimentofcontaminationindifferent
+stages of training, we divided the entire corpus
+(cleanandcontaminated)into3equalsizesections,
+makingsurethatallthecontaminateddataappears
+entirelyinoneofthosesections. Wedisabledthe
+randomsamplerandshuffledeachsectionindividu-
+ally. Werefertothesectionsas‘first’,‘middle’and
+‘last’ according to the order they appear in train-
+ing. Allourexperimentswereconductedusingthe
+followingGPUs: RTX2080Ti,QuadroRTX6000,
+A10andA5000.
+Experimental Details for App. A We con-
+ductedsecond-stage-pretrainingbycontinuingto
+updateBERT-baseweights. Weusedbatchsizeof
+32andlearningrateof5e-5. Learningrateschedul-
+ing, optimizationandfine-tuningarethesameas
+standardproceduredescribedabove.

@@ -1,0 +1,600 @@
+The Hidden DNA of LLM-Generated JavaScript: Structural
+Patterns Enable High-Accuracy Authorship Attribution
+NorbertTihanyi BilelCherif RichardA.Dubniczky
+TechnologyInnovationInstitute TechnologyInnovationInstitute EötvösLorándUniversity
+AbuDhabi,UnitedArabEmirates AbuDhabi,UnitedArabEmirates Budapest,Hungary
+norbert.tihanyi@tii.ae bilel.cherif@tii.ae richard@dubniczky.com
+MohamedAmineFerrag TamásBisztray∗
+UnitedArabEmiratesUniversity UniversityofOslo
+AlAin,UnitedArabEmirates Oslo,Norway
+mohamed.ferrag@uaeu.ac.ae tamasbi@ifi.uio.no
+Abstract Inhumancodeattribution,typicallyonlylimitedsamplesperau-
+Inthispaper,wepresentthefirstlarge-scalestudyexploringwhether thorareavailable[1,11],whilelargelanguagemodels(LLMs)allow
+JavaScriptcodegeneratedbyLargeLanguageModels(LLMs)canre- thegenerationofvirtuallyunlimited,task-specificdatasetsformap-
+vealwhichmodelproducedit,enablingreliableauthorshipattribu- pingtheircodingstyle.However,becausemanyLLMsaretrained
+tionandmodelfingerprinting.WiththerapidriseofAI-generated onoverlappingcodecorpora[25],theymayinheritabroadmixture
+code,attributionisplayingacriticalroleindetectingvulnerabili- ofstylisticandstructuralcharacteristics.Withthegrowingpres-
+ties,flaggingmaliciouscontent,andensuringaccountability.While enceofAI-generatedcontentonline,researchershavealsoraised
+AI-vs-humandetectionusuallytreatsAIasasinglecategorywe concernsaboutrecursivetrainingandeventualstyleconvergence
+showthatindividualLLMsleaveuniquestylisticsignatures,even amongmodels[27,35].Ifsuchconvergenceoccurs,model-levelat-
+among models belonging to the same family or parameter size. tribution,orevenmodelfamilydetectionmaybecomeincreasingly
+Tothisend,weintroduceLLM-NodeJS,adatasetof50,000Node.js difficult.
+back-endprogramsfrom20largelanguagemodels.Eachhasfour Big-techleaderspredictthatAIwillsoongeneratemostofour
+transformedvariants,yielding250,000uniqueJavaScriptsamples sourcecode[4,5,28].Thus,robustattributioninLLMsisurgently
+andtwoadditionalrepresentations(JSIRandAST)fordiversere- neededforcriticaldomainslikesoftwareforensics,malwareanaly-
+searchapplications.Usingthisdataset,webenchmarktraditional sis,cybercrimeinvestigations,andacademicintegrity[30].Recent
+machinelearningclassifiersagainstfine-tunedTransformeren- workbyBisztrayetal.[6]showsthatdifferentLLMsleavedis-
+codersandintroduceCodeT5-JSA,acustomarchitecturederived tinguishablefingerprintswhenwritingCcode,achieving94.5%
+fromthe770M-parameterCodeT5modelwithitsdecoderremoved accuracyintellingapartCcodegeneratedbyfiveleadingLLMs.
+andamodifiedclassificationhead.Itachieves95.8%accuracyon Thesefindingshighlightthatattributionresearchmustextend
+five-classattribution,94.6%onten-class,and88.5%ontwenty-class beyond the binary AI-vs-human setting to richer tasks such as
+tasks,surpassingothertestedmodelssuchasBERT,CodeBERT,and model-levelattribution,family-levelattribution,co-authorshipat-
+Longformer.Wedemonstratethatclassifierscapturedeeperstylistic tribution,obfuscation-robustattribution,andmalware/threatactor
+regularitiesinprogramdataflowandstructure,ratherthanrelying attribution.Thesetasksdiffernotonlyindatasetaccessibilitybut
+onsurface-levelfeatures.Asaresult,attributionremainseffective alsointheirsensitivitytomodelevolution,asLLMfingerprintscan
+evenaftermangling,commentremoval,andheavycodetransforma- changerapidlywiththeintroductionofnewmodels.
+tions.Tosupportopenscienceandreproducibility,wereleasethe In[6],codestylometryfocusedondistinguishingCcodeamong
+LLM-NodeJSdataset,GoogleColabtrainingscripts,andallrelated fiveLLMfamilies(Claude-3.5,DeepSeek-v3.1,Gemini-2.5,GPT-
+materialsonGitHub:https://github.com/LLM-NodeJS-dataset. 4.1, LLaMA-3.3-70B). Extending this line of work, we focus on
+JavaScript—aflexible,dynamicallytypedlanguagewhosediverse
+stylesandwidespreadtoolingmakeattributionmorechallenging.
+Keywords
+Wefurtherinvestigatewhetherstylometricattributionispossible
+AI-generated,codestylometry,LLM,authorshipattribution
+withinthesamemodelfamily(GPT-4o,GPT-4o-mini,GPT-4.1,GPT-
+5,gpt-oss)andexplorescalingtolargerclassificationtasks(10–20
+1 Introduction
+classes).Tothisend,weintroducethefirstdiverseAI-generated
+Authorshipattribution[22,24],oftenreferredtoasstylometry,is JavaScriptdatasetforauthorshipattributionandaddressthefol-
+thetaskofdeterminingtheauthorofadocument,text,orpieceof lowingresearchquestions:
+sourcecodebyanalyzingstylisticandstructuralfeatures.Inmost
+existingstudiesonhumanversusAIauthorship,theAI-generated
+categoryisrepresentedbyasinglemodel[9,19,29,33]or,atbest,
+asmallsetofmodels[8],therebylimitingtherobustnessofthe
+resultingmethods[31].
+∗Correspondingauthor
+1
+5202
+voN
+03
+]RC.sc[
+2v39401.0152:viXra
+TihanyiN.,CherifB.,DubniczkyR.A.,FerragM.A.,BisztrayT.
+Figure1:Theseven-stepmethodologyforLLMauthorshipattributioninJavaScriptcode.
+LLM JavaScript Authorship Attribution Framework
+JAVASCRIPTS VARIANTS
+APPLIED LLMs POST PROCESSING
+g mpt in-5 i- g np at n-5 o- gpt-4o gp mt- in4o i- gp 1t 2-o 0Bss-
+D RU EP ML OIC VA AT LE S CY HN ET CA KX
+JA MV IA NS IFC IER DIPT
+a.
+MT AE NR GS LE ER D
+b.
+O JAB VF AU SS CC RA IT PE TD
+c.
+4
+mixtral- codestral- gemini-2.0- gemini-2.5- gemma-3-
+PRL OL MM PT
+8x7b 2508 flash flash-lite 27B O JB AF VU
+A
+D S SE C C- A RT IPE TD
+d.
+JAVA AS SC TRIPT
+e.
+JAVA JS SC IRRIPT
+f.
+TEMPLATE1 5
+grok-3- grok-code- llama-3.1 llama-3.3 llama-4 NODEJS
+mini fast-1 8B 70B scout CODE 3 TRAINING
+phi-4-
+dee vp 3s .1eek- reas po lun sing- qwe 7n B-2.5 cq ow de en r- -2 3. 25 B- q cw oe dn e- r3-
+CROSS-
+LL DM A- TN AO SD EE TJS
+2 VAC LIH DE AC TK ION EV AM LO UD AE TL ION TM RL A / I NL IL NM G 6
+7
+RQ1:Whichmachinelearningandtransformer-basedapproaches GPT-5-mini,GPT-oss-120b)andnearly90%for20-classat-
+achieve the most robust performance for black-box, model-level tribution.
+JavaScriptsourcecodeattribution? • Robustnesstocodevariants:Attributionremainsaccu-
+rateonminified(91%),terser-mangled(93%),anddeobfus-
+RQ2:Whatsignalsdodeep-learningmethodsexploittodistinguish
+betweendifferentmodels? cated(85%)code,whileobfuscationlowersaccuracydueto
+tokeninflation.Theseresultsshowthatclassifiersrelyon
+Toanswerthesequestions,wefollowthemethodologyshownin deeperstructuralsignals—suchasASTstructureanddata-
+Figure1.Onahighlevel,ourpipelinebeginswithpromptcreation flowgraphs—ratherthanshallowstylisticfeaturesexplored
+forback-endNode.jscodingtasksandcodegenerationfrom20state- inpriorwork
+of-the-artLLMs.Theoutputsaresyntax-checked,deduplicated, • Openscience:Tosupportreproducibility,wereleasethe
+andtransformedintomultipleJavaScriptvariants.Thesearethen LLM-NodeJSdatasetalongwithallGoogleColabnotebooks
+usedtotrainbothtraditionalMachineLearning(ML)modelsand andtrainingscriptsontheprojectGitHubpage:https://
+transformer-basedmodelsforauthorshipattribution,whichare github.com/LLM-NodeJS-dataset.
+subsequentlyevaluatedandvalidatedonanindependentdataset.
+ThedetailedmethodologyisintroducedinSection3. KeyTakeaway
+Inthispaper,wepresentthefollowingkeycontributions:
+ThekeyinsightofourworkisthatindividualLLMsleave
+• LLM-NodeJSdataset:Wereleaseapublicdatasetof50,000 distinctive,structurallygroundedfingerprints,enabling
+syntacticallycorrectandexecutableNode.jsback-endpro- reliablemodel-levelattributionbeyondtraditionalAI-vs-
+grams,expandedwithfouradditionalcodevariants(mini- humandetection.AsAI-generatedcodebecomesstan-
+fied,mangled,obfuscated,deobfuscated),resultingin250,000
+dard,thekeyquestionshiftsfromwhetheritwas
+JavaScript samples. Covering 20 state-of-the-art models writtenbyAItowhichAIproducedit,highlightingthe
+anddiversewebtasks,thedatasetalsoincludestwoaddi- needtotreatthe“AI-generated”categoryasdiverserather
+tionalrepresentationsJavaScriptIntermediateRepresenta- thanuniformlyrepresentingitwithonemodel.
+tion(JSIR)andAbstractSyntaxTree(AST),providingthe
+firstlarge-scalefoundationforawiderangeofJavaScript
+Therestofthepaperisorganizedasfollows.Section2reviews
+research,notlimitedtocodeauthorship.
+relatedwork.Section3outlinesthemethodsusedtoconstructthe
+• Classifier evaluation: Using the LLM-NodeJS dataset,
+datasetandtotraintheclassifiers.Section4presentsexperimen-
+webenchmarktraditionalMLclassifiers(RandomForest,
+talresults,Section5discusseslimitationsandfuturework,while
+XGBoost,KNN,LogisticRegression,LinearSVM)andfine-
+Section6concludesthepaper.
+tunedtransformers(i.e.,BERT,CodeBERT,Longformer),
+includingacustomCodeT5-Authorshipmodelwithamod-
+ifiedclassificationheadandremoveddecoderlayers.We 2 RelatedWork
+showthatJavaScriptattributionishighlyeffective,achiev- Thissectionreviewsauthorshipattributionmethodsforsource
+ingover95%accuracyacrossfivemodelswithinthesame code,organizedbytechniquefamily.Wethendiscussbenchmark
+GPTfamily(GPT-4.1,GPT-4o,GPT-4o-mini,GPT-5-nano, datasetsandtasks.
+2
+TheHiddenDNAofLLM-GeneratedJavaScript:StructuralPatternsEnableHigh-AccuracyAuthorshipAttribution
+2.1 Authorshipattributionarchitectures 2.3 Datasets,BenchmarksandTasks
+2.1.1 TraditionalMachineLearning. Authorshipattributionhas Authorshipattributiondependsondiverselabeledcorpora.Widely
+longbeenframedassupervisedclassification,mappingcodefea- useddatasetsforhumanattributionincludeGoogleCodeJam,Code-
+turesintovectorsforclassifierssuchaslogisticregression,naïve forces,GitHubOSS,POJ-104,andBigCloneBench[1–3,7,11].Yet,
+Bayes,SVMs,ortreeensembles[20].Thesemethodsarecheapand classifiersdesignedfornaturallanguagereportedlyperformpoorly
+interpretablebutrelyonfeatureengineeringandlagbehinddeep onsourcecode[31].ForAIvs.humanattribution,moststudies
+learninginaccuracy[6]. treatAIasasingle-modelcategory[8,23].Bothstudiesfocusexclu-
+sivelyonmachinelearningmethodsandreportstrongresultson
+2.1.2 DeepLearning. Neuralmodelslearndirectlyfromcode,cap-
+binaryclassificationofAIvs.human-writtenCcode(F1≈0.91and
+turingstylistichierarchiesthatmanualfeaturesmiss[42].Abuhamad
+Accuracy≈92%).However,theirevaluationislimitedtoGPT-4as
+etal.achieved92.3%accuracyon8,903authorsinGoogleCodeJam
+thesolesourceofAI-generatedcode.Theonlylarge-scaleAIvs.AI
+withanRNN+RandomForesthybrid,alsoshowingrobustnessto
+studyisbyBisztrayetal.[6],whointroducetheLLM-AuthorBench
+obfuscation[2].Suchmodelsscalebettertothousandsofauthors
+dataset(32k Cprograms). Theyachieve 95%accuracyindistin-
+butrequirelargelabeleddata.
+guishingfiveLLMs,withtransformersconsistentlyoutperforming
+2.1.3 Pre-trainedandGenerativeModels. Pre-trainedmodels(i.e., traditionalMLmethods.
+BERT,CodeBERT,RoBERTa)learncontextualembeddingsfrom
+largecodecorpora,yieldingstate-of-the-artattributionwithmini- 3 Methodology
+malmanualfeatures[13,16,41].Fine-tunedCodeT5variantsachieve The first part of our methodology involves constructing a new
+strongaccuracyevenacrosscloselyrelatedauthors[21]. supportingdataset,LLM-NodeJS,toaddressthelackofsyntacti-
+GenerativeLLMs(e.g.,GPT-4)supportzero/few-shotattribution, callycorrectandlabeledLLM-generatedJavaScriptcodeinexisting
+reaching65–69%onhundredsofauthors[12].Beyondhumancode, literature.
+Bukhari et al. distinguished AI- from human-written C code at
+92%[8],whileIdialuetal.reportedF1≈0.91forGPT-4vs.human 3.1 DatasetCreation-TheLLM-NodeJSdataset
+Python[23],thoughmosttreatAIasasingle-sourceclass.Bisztray
+Wedesignedasetof250complexback-endNode.jstasksinspired
+etal.extendedthistotheAI-vs-AIsetting,withamodifiedCodeT5
+byreal-worldscenariosencounteredbyprofessionaldevelopers.
+surpassing95%accuracyacrossfiveLLMsfromdifferentmodel
+Formally,let
+families[6].
+Together,theseresultsshowbothhumanandmachinecodeleave
+T ={𝑇 1,𝑇 2,...,𝑇 250}
+denotethesetoftasks.Eachtask𝑇 isdecomposedintoacollection
+detectablestylisticsignatures. 𝑖
+ofsmallersubtasks,𝑇 𝑖 = {𝑡 𝑖1,𝑡 𝑖2,...,𝑡 𝑖𝑚𝑖},where𝑚 𝑖 isthenum-
+berofsubtasksintask𝑇.Thesesubtasksrepresentfunctionally
+2.2 CodeRepresentation 𝑖
+meaningfulcomponents(e.g.,writingaGitHubuploader,creatinga
+2.2.1 FeatureEngineeringApproaches. Earlyworkfingerprinted URLshortenerservicewithalocalSQLitedatabase)andintroduce
+authorsvialexicalcues(keywords,punctuation),formattinghabits,
+substantialstructuralandstylisticdiversity,ensuringthatnotwo
+andsoftwaremetrics[38].Caliskan-Islametal.introducedtheCode
+generatedprogramsintheLLM-NodeJSdatasetareidentical.
+StylometryFeatureSet(CSFS)[11].Whileeffectiveonhumansub-
+All generated JavaScript implicitly uses strict mode and ES6
+jects,hand-craftedfeaturesdegradeunderobfuscation,adversarial
+importsinsteadofrequire.Forexample,onetaskinvolvedcreating
+edits,orIDEsuggestions[26,32,36].
+aJWTvalidatorservicethatverifiesRSA-signedtokensandreturns
+2.2.2 GraphandStructuralRepresentations. Graphscapturestruc- aJSONstatus,comprisingdozensofsmallersubtasks.Foreachtask
+turalandsemanticstyle.ASTsencodesyntax[17],whileProgram 𝑇 𝑖 ∈ T,wegenerated𝑘 = 10independentimplementationsper
+DependenceGraphs(PDGs)andControlFlowGraphs(CFGs)high- model,yielding
+lightdependenciesandcontrolflow.Bogomolovetal.usedAST
+|D𝑚|=𝑘×|T|=10×250=2,500
+path–basedclassifiers(PbRF,PbNN)toreach98%oncuratedsets
+samplespermodel𝑚.AcrosstwentyLLMsspanningeightmodel
+butsawsharpdropsonrealisticcorpora[7].Graph-basedfeatures
+families (c.f. Figure 1), this resulted in a total of 50,000 unique
+aremorerobusttoformattingchangesthanstylometry[18,20].
+programs.OnlyJavaScriptsnippetsthatweresyntacticallycorrect
+2.2.3 ObfuscatedCodeAttribution. Staticstylisticfeaturesarefrag- andpassed"node –check"commandwereincludedinthedataset.
+ileunderobfuscation[26,32,36],butsyntaxandAST-basedmeth- To assess the effect of obfuscation on attribution accuracy, we
+odsremaineffective[11].OneStudyachieved∼93%accuracyeven createdsixvariantsofeachsample:
+onobfuscatedcodeusingdeeplearning[1].
+(1) JavaScriptMinified–whitespace,comments,andformatting
+2.2.4 ExecutionandBinary-LevelApproaches. Dynamicanalysis removed.
+leveragesruntimetraces(systemcalls,memory,performance)to
+(2) TerserMangled-identifiersshortenedsystematicallyviaTerser.
+(3) ObfuscatedJavaScript-transformedusingtechniquessuchas
+revealalgorithmicsignaturesresistanttosuperficialedits[40].How-
+control-flowflatteningorstringencoding.
+ever,sandboxingiscostlyandmostlylimitedtomalwareforen-
+(4) De-ObfuscatedJavaScript-partiallyrestoredversionsimproving
+sics[14,15,37].Attributionalsoextendstobinaries:stylisticmark- readabilitythroughidentifierrecoveryandreformatting.
+ersoftensurvivecompilation[20,34],anddespitecompilervari- (5) JavaScriptJSIR-intermediaterepresentationforprogramanaly-
+ability,accuracyremainsabovechance[15]. sisandattribution.
+3
+TihanyiN.,CherifB.,DubniczkyR.A.,FerragM.A.,BisztrayT.
+(6) JavaScriptAST-structuredtreerepresentationcapturingsyntax trainingtimeto111minutes,withonlya1–3%accuracydrop,which
+andhierarchy. isstillacceptablegiventhesubstantialtrainingtimegain.
+Thedatasetincludesthevalidatedoriginalprogramsplusfour
+syntacticallycorrectvariants(minified,mangled,obfuscated,de- 4 ExperimentalResults
+obfuscated),comprisingatotalof250,000JavaScriptsamples,as Toanswerourresearchquestions,weconductedourexperiments
+wellastwoadditionalrepresentations(JSIRandAST)thatsupport intwostages.Thefirstisgearedtowardsresearchquestion1,where
+awiderangeofJavaScriptanalysisresearch. weinvestigatewhichmachinelearningandtransformer-basedar-
+chitecturesperformbestinattributingJavaScriptcode(alongwith
+3.2 SelectedModelsforDatasetEvaluation theobfuscatedversions)totheoriginalgeneratormodel.
+Next,weaimtoinvestigateifattributionperformanceholdseven
+Thesecondstepofouranalysisfocusedonevaluatingthreedifferent
+whentherearemoreclasses,andwhethertherearecertainmodels,
+approaches:(i)traditionalMLalgorithms,(ii)transformer-based
+thataretoosimilartoeach-othertobeaccuratelydistinguished.
+encoder-onlymodels,and(iii)acustommodelwithamodified
+architecture. These methods were applied to the newly created
+4.1 Datasetdiversityanalysis
+datasettoassesstheirperformance.
+Beforestartingtheclassificationprocess,weassessedthedataset’s
+3.2.1 TraditionalMLAlgorithms. Asabaseline,weevaluatedfive diversity.Asdiscussedinthemethodologysection,eachtaskis
+differenttraditionalMLalgorithmsonstylometricrepresentations
+posedtentimestothesamemodel,enablingustomeasurevari-
+ofJavaScriptcode,including𝑘-NN,LogisticRegression,RandomFor-
+abilityinthegeneratedJavaScriptprograms.Toquantifythisdi-
+est,LinearSVM,andXGBoost.Thepipelineincludespre-processing,
+versity—both within and across model families—we used three
+featureextraction,andtraining.Eachprogramwasvectorizedusing
+CodeBLEU components:N-grammatch(lexicaloverlapontokens,
+TF–IDFovertokenswithavocabularycapof400,emphasizinglexi-
+identifiers,andkeywords),Syntaxmatch(structuraloverlapvia
+calandcontrol-flowpatternsknowntocapturestylisticcues[10,11].
+ASTs), and Dataflow match (semantic overlap via variable de-
+Performancewasevaluatedusingaccuracy,precision,F1score,and
+pendenciesanddata/controlflow,e.g.,Jaccardoverdependency
+trainingtime.Sinceourdatasetisbalanced,recalldoesnotprovide
+graphs).Table1reportsmediansimilaritiesforGPT-4o,GPT-5,and
+additionalinformation.
+Gemini.Wesummarizeintra–vs.–intermodelseparationbythe
+averagegapΔ((cid:205)intra-modelmedians-(cid:205)inter-modelmedians).
+3.2.2 Transformer-basedModels. Weevaluatethreeencoder-only
+architectures[39],includingBERT,CodeBERT,andLongformer.En-
+Lowersimilarityindicategreaterdiversityinthecode,whereasforΔ
+codermodelsaretypicallyfavoredforclassification,whiledecoder highervaluesreflectstrongerdiscriminativepowerbetweenmodels.
+modelsarepreferredforgenerationwithlongcontext.
+All transformer fine-tuning experiments were optimized for Table1:MedianCodeBLEUSimilaritiesandIntra–InterGaps
+NVIDIAA100(80GB)GPUs.Batchsizes,gradientaccumulation, forJavaScriptPrograms
+andmixed-precisionsettingswereadjustedtofullyutilizeavail-
+ablememorywhileavoidingoverflow.Inparticular,trainingwas
+ModelPair N-gramMatch SyntaxMatch DataflowMatch
+performedinbf16precisionwithfusedAdamWoptimizationand
+cosinerestartsforlearningratescheduling.ForBERT,weusedan Intra-ModelComparisons
+effectivebatchsizeof32(achievedthrough16×2gradientaccumu- Gemini×Gemini 0.29 0.58 0.40
+lation),whereasLongformerleverageditslargercontextwindow
+GPT-4o×GPT-4o 0.29 0.60 0.46
+withabatchsizeof32andnoaccumulation.
+GPT-5×GPT-5 0.16 0.60 0.35
+3.2.3 CustomCodeT5-JSAArchitecture. In[6],theauthorstrans-
+Inter-ModelComparisons
+formedCodeT5+(770Mparameters)intoanencoder-onlymodel
+Gemini×GPT-4o 0.09 0.49 0.31
+byremovingthedecoderlayerandattachingalightweightclassifi-
+cationhead(H1)consistsof: Gemini×GPT-5 0.03 0.43 0.16
+GPT-4o×GPT-5 0.01 0.38 0.11
+Linearlayer → GELU → Dropout(0.2) → Linearlayer
+Forthetenandtwentyclassscenariotheabovesettinghasstarted Intra-ModelAvg. 0.25 0.59 0.40
+droppingaccuracy,thereforeherewerevisedtheclassificationhead: Inter-ModelAvg. 0.04 0.43 0.19
+Gap(Δ) 0.20 0.16 0.21
+Dropout(0.2) → Linearlayer → Tanh → Dropout(0.2) → Linearlayer
+InbothsettingsthelastlayerisfollowedbySoftmaxactivationto 4.1.1 KeyResults. Dataflowsimilarityprovidesthestrongestdis-
+produceclassprobabilities.ReplacingtheGELUactivationlayer crimination between same and cross-model pairs, representing
+withTanhandintroducinganinitialdropoutlayerimprovedstabil- theclearestmodel-specificsignalatthesemanticlevel.Programs
+ityandoverallaccuracy.Forexampleonthedeobfuscatedtwenty comparedwithinthesamemodelaresemanticallyaligned(e.g.,
+classscenarioaccuracyjumpedfrom72%to79.94%. GPT-4o×GPT-4omedian0.46),whereascross-familypairscanbe
+Intermsofoptimisation,iffullFP32isused,thetrainingtime markedlydivergent(GPT-4o×GPT-5median0.11).N-gramsimi-
+is958minutes,whereasswitchingtobfloat16reducesthe20-class larityshowsacomparablegapbutissensitivetosurface-leveledits.
+4
+TheHiddenDNAofLLM-GeneratedJavaScript:StructuralPatternsEnableHigh-AccuracyAuthorshipAttribution
+Syntaxyieldsthesmallestgap,notbecauseitlacksdiscriminative datasetconsistsof12,500JavaScriptprograms(5×2,500),splitinto
+power,butbecausestructuralpatternsarerelativelystableacross 80%trainingand20%validation.Inthissetting,BERT achieved
+𝐵
+tasks. 97.9%accuracy,F1,andprecision/recall,confirmingthatLLMsfrom
+differentfamiliesexhibitdistinctandlearnablestylisticsignaturesin
+4.1.2 Implicationsforattribution. Theseresultsindicatethatmodel
+JavaScriptcodegeneration,justlikeinC.Sincewealreadyachieved
+attributionwillbemostreliablewhengroundedindeepersemantic
+veryhighaccuracyinthisscenario,weshiftedourfocustoamore
+andstructuralsignalsratherthansurface-levelcues.Evenwhen
+challenging problem, where all five models belong to the same
+stylisticfeaturesareobfuscatedorlexicalpatternsaltered,theun-
+family.
+derlyinglogicandstructuralorganizationofcodeoftenremain
+detectable.Dataflowsimilaritythusprovidesthemostobfuscation-
+4.2.2 Five-ClassAttributionforSameModelFamilies. Next,wetest
+resilientindicatorofmodelidentity,capturingconsistentreasoning
+five-classattributionwithGPTvariantsonly.Here,BERT still
+𝐵
+anddependencypatterns.Syntaxsimilarityofferscomplementary
+attains90.2%accuracy,indicatingthatevencloselyrelatedLLMs
+stability,reflectingstructuralregularitiesthatpersistdespitesuper-
+leavedetectablestylisticfingerprints.Foracompletecomparisonof
+ficialtransformations,whilen-gramsimilarity—althoughhighly
+modelperformanceonthistask,seethesummaryTable2.Because
+discriminativeincleanconditions—degradesrapidlyunderlexical
+weobserveanapproximate8%dropinaccuracycomparedtothe
+variation.
+differentmodelfamilyclassificationtask,weevaluatedarangeof
+4.1.3 Tokenlengthdistribution. Figure2showsthedistribution modelstodeterminethebestachievableperformance.
+oftokenizedsequencelengthsinourdataset,whichinformsar- Figure3suggeststhatmosterrorsarisefromconfusionbetween
+chitecturechoice:shorttomedium-lengthcontextsfitwellwithin closelyrelatedvariantsofthesamerelease(likeGPT-4ovs.GPT-
+encoder-onlymodels. 4o-mini,oramongGPT-5variants),whilearchitecturallydistinct
+versionscanbedistinguishedmoreeasily.
+Variants of the same model likely share similar pre-training
+corporaandcomputebudgets.WehypothesizethattheirSupervised
+Fine-Tuning(SFT)andReinforcementLearningfromHumanFeedback
+(RLHF) pipelines are also largely aligned. For example, GPT-4o
+andGPT-4o-minimayhavebeentrainedprimarilyonmid-2023
+data,whileGPT-5variantslikelyincorporateearly-2025GitHub
+snapshotsandmorediversecodingexamples,alongwithrefined
+SFTandRLHFstages.
+AsAI-generatedcodebecomesincreasinglywidespread,itre-
+mainsuncertainwhethermodelstyleswillconvergeintoauni-
+formpatternorremaindistinguishablethroughcontinuedhuman-
+engineeringinterventions.Wepredictthatassystemsapproach
+AGI,modelswillco-adaptandself-optimize,graduallyblurring
+stylisticboundaries.Nonetheless,architecturalandtokenization
+Figure2:TokenizedDatasetStatistics,wherePXmarksthat
+Xpercentageofsamplesfallbelowthattokencount.
+Inpractice,trade-offsbetweencontextlength,attentionmecha-
+nism,andpretrainingobjectivesdeterminehoweffectivelystylis-
+ticsignalsarecaptured.Priorwork[6]findsthatrepresentation
+quality can outweigh raw context window size. For example, a
+512-tokenmodifiedCodeT5outperformsLongformer(whichhasa
+largercontext-window).
+4.2 JavaScriptAuthorshipAttribution
+Here,wepresentourkeyfindingsacrossdifferentscenarios:(i)
+5-classattribution,(ii)10-classattribution,and(iii)20-classattribu-
+tion.
+4.2.1 Five-ClassAttributionforDifferentModelFamilies. Wefirst
+gpt- gpt- gpt- gpt- gpt-
+replicatethesetupof[6],wherethebaseBERTmodelachievedan 4o 4o-mini 5-mini 5-nano oss-120b
+accuracyof0.92onafive-wayattributiontaskassigningCprogram Predicted
+codetooneoffivegeneratorLLMsfromdistinctmodelfamilies.
+Ourselectedmodelsaregpt-5-mini,gemini-2.5-flash-lite,
+qwen-2.5-coder-32b,llama-3.3-70b,anddeepseek-v3.1.This
+lautcA
+-tpg
+-tpg
+-tpg
+-tpg
+-tpg
+o4
+inim-o4
+inim-5
+onan-5
+b021-sso
+399 99 0 1 1
+400
+60 439 0 1 0
+300
+0 0 469 25 6
+200
+4 0 14 470 12
+100
+9 1 4 8 478
+0
+Figure3:Confusionmatrixforfive-classattributionwithin
+theGPTfamilyusingBERT𝐵 onjs_original
+5
+TihanyiN.,CherifB.,DubniczkyR.A.,FerragM.A.,BisztrayT.
+Table2:5/10/20classattributionbyJavaScriptVariant(differentmodelfamilies)
+5-Class(GPTfamilyonly) 10-Class 20-Class
+ModelName Type Parameters
+Acc(%) Prec(%) F1 Time Acc(%) Prec(%) F1 Time Acc(%) Prec(%) F1 Time
+ORIGINALJAVASCRIPTRESULTS
+CodeT5-JSA LLM 95.76 95.89 95.76 28:15 93.60 93.76 93.58 55:58 85.95 86.52 85:68 111:29 Layers:24,Token:512
+Longformer𝐵 LLM 94.28 94.38 94.28 127:23 93.62 92.79 92.65 262:25 86.79 86.95 86.69 507:52 Layers:12,Token:2048
+CodeBERT LLM 94.28 94.40 94.27 07:00 91.88 92.11 91.86 13:15 85.87 86.22 85.74 25:08 Layers:12,Token:512
+BERT𝐵 LLM 90.24 90.75 90.21 06:54 89.56 89.76 89.55 13:07 81.99 82.35 81.93 24:55 Layers:12,Token:512
+XGBoost ML 88.72 88.76 88.74 00:49 86.60 86.67 86.46 02:23 75.78 75.73 75.62 08:31 Estimators:400
+RandomForest ML 86.24 86.27 86.25 00:35 81.20 81.85 80.75 01:15 68.25 68.28 67.19 02:56 Trees:400
+LinearSVM ML 82.64 82.60 82.60 00:01 76.44 75.83 75.83 00:02 58.97 58.17 57.73 00:12 MaxIteration:2000
+LogisticRegression ML 80.40 80.44 80.40 00:10 73.82 73.19 73.33 00:14 56.43 55.61 55.71 00:15 MaxIteration:2000
+KNN ML 71.32 71.41 71.21 00:01 60.74 61.49 59.99 00:01 48.03 49.70 46.34 00:01 Neighbors:5
+MANGLEDJAVASCRIPTRESULTS
+CodeT5-JSA LLM 90.02 90.2 90.03 28:16 89.68 89.85 89.64 55:58 83.61 83.74 83.41 112:02 Layers:24,Token:512
+Longformer𝐵 LLM 89.56 89.67 89.56 127:46 89.58 89.87 89.69 253:41 80.78 81.02 80.56 507:23 Layers:12,Token:2048
+CodeBERT LLM 89.28 89.54 89.26 06:55 89.36 89.89 89.40 13:00 81.28 81.49 81.13 25:26 Layers:12,Token:512
+BERT𝐵 LLM 86.44 86.81 86.40 06:34 86.24 86.46 86.30 12:58 76.61 76.70 76.47 25:07 Layers:12,Token:512
+XGBoost ML 86.48 86.51 86.49 00:51 84.80 84.87 84.68 150.54 73.29 73.08 73.04 595.40 Estimators:400
+RandomForest ML 83.04 83.05 82.99 00:31 79.72 80.55 79.31 68.30 66.93 66.88 65.98 168.78 Trees:400
+LinearSVM ML 79.08 79.03 78.97 00:01 74.78 74.59 74.31 2.67 55.77 54.79 54.27 15.28 MaxIteration:2000
+LogisticRegression ML 76.88 76.80 76.79 00:11 71.60 71.27 71.17 16.60 53.68 52.82 52.91 21.45 MaxIteration:2000
+KNN ML 67.84 67.92 67.55 00:00 57.74 58.77 56.83 0.01 45.39 45.91 43.20 0.01 Neighbors:5
+DEOBFUSCATEDJAVASCRIPTRESULTS
+CodeT5-JSA LLM 89.92 90.40 89.86 28:12 89.78 90.00 89.78 56:08 79.94 79.79 79.60 112:44 Layers:24,Token:512
+Longformer𝐵 LLM 88.32 88.42 88.32 127:14 88.76 89.14 88.84 254:13 78.15 78.02 77.87 508:35 Layers:12,Token:2048
+CodeBERT LLM 86.76 86.78 86.74 06:41 84.50 84.60 84.33 13:17 75.46 75.33 75.03 25:16 Layers:12,Token:512
+BERT𝐵 LLM 84.08 84.26 84.08 06:55 82.58 82.84 82.63 12:34 72.61 72.64 72.40 24:44 Layers:12,Token:512
+XGBoost ML 86.48 86.53 86.49 00:51 83.16 83.28 83.00 156.11 72.98 72.88 72.80 504.17 Estimators:400
+RandomForest ML 83.44 83.47 83.41 00:30 79.22 80.06 78.78 65.69 66.35 66.51 65.42 166.82 Trees:400
+LinearSVM ML 78.64 78.58 78.52 00:01 73.56 73.34 73.03 2.63 54.76 53.39 53.12 13.91 MaxIteration:200
+LogisticRegression ML 77.76 77.72 77.67 00:08 71.40 71.10 70.96 14.59 53.43 52.44 52.66 19.42 MaxIteration:2000
+KNN ML 70.28 70.30 70.06 00:00 60.40 61.47 59.64 0.01 47.63 48.05 45.63 0.01 Neighbors:5
+differencesareexpectedtopreservesomedegreeofdistinguisha- remainingefficient,illustratingafavorablebalancebetweenac-
+bility,ifnotthroughcodestyle,thenthroughhigher-levelmoral, curacyandruntime.Surprisingly,onmangledanddeobfuscated
+ethical,orpolicybiasesimpartedbytheircreators. JavaScriptcodeXGBoostmanagedtooutperformtheBert𝐵 model
+onseveraloccasions.
+4.2.3 TenandTwenty-ClassAttribution. Astheattributiontask
+expandsfromfivetotenandtwentyclasses,overallaccuracyde- 4.2.4 DifferentJavaScriptVariants. Toassessrobustness,weevalu-
+creasesacrossallmodels.Transformer-basedencoders(CodeT5-JSA, ateattributiononterser-mangledanddeobfuscatedcode(Table2).
+Longformer𝐵,CodeBERT)consistentlyoutperformclassicalMLbase- SinceperformanceonmangledandminifiedJavaScriptwasnearly
+linesacrossallsettings. identical,wereportresultsforthemangledvariantonly.Although
+Amongallmodels,CodeT5-JSAshowsthebestoverallperfor- thesetransformationseliminatekeystylisticcues—suchasvariable
+mance,maintaining94%accuracyintheten-classsetupandabove andfunctionnames—accuracyremainshigh.Thisindicatesthat
+88%inthetwenty-classcasefortheoriginalJavaScript.Longformer𝐵 surface-levelfeatureslikenamingpatternsortokenfrequenciesare
+achievescomparableresultsbutatsubstantiallyhighercomputa- nottheprimarydriversofattribution.Instead,theclassifiersexploit
+tionalcost.TraditionalMLclassifierssuchasXGBoostandRandom deeperstructuralandsemanticregularitiesthatpersistthrough
+Forestremaincompetitiveyetdegrademorerapidlyasclasscount codetransformations.Whencodeisdeobfuscated,accuracyrecov-
+increases,andlinearmethods(SVM,LogReg)fallbelow60%attwenty erssubstantially,confirmingthatrestoringsyntacticstructureis
+classes.XGBoostconsistentlyoutperformedotherMLmodelswhile sufficienttoreestablishmostdiscriminativepatterns.
+6
+TheHiddenDNAofLLM-GeneratedJavaScript:StructuralPatternsEnableHigh-AccuracyAuthorshipAttribution
+Theseresultsextendtheobservationsof[6]fromCtoJavaScript, • Ethicalandpracticalconsiderations:Attributionsys-
+demonstrating that attribution remains feasible both when the temsmaybevulnerabletodeliberate“stylespoofing”or
+numberofmodelsscale,andwithdifferenttransformations.Even adversarialevasion.Futureworkshouldinvestigatethese
+aslexicalinformationisdeliberatelysuppressed,model-specific risksanddevelopsafeguardsforresponsibleuseincode
+signaturespersistthroughstructuralanddataflowpatterns.Overall, forensicsandAIprovenancedetection.
+thesefindingsconfirmthatattributiongroundedinsemanticand
+syntacticorganizationremainstractableandrobustevenunder 6 Conclusion
+aggressiveobfuscationandfine-grainedclassexpansion.
+WeintroducedtheLLM-NodeJSdataset,acorpusof250,000vali-
+datedNode.jsprogramscomprising50,000originalJavaScriptpro-
+4.3 Cross-checkValidation grams,eachwithfourvariants(minified,terser-mangled,obfus-
+cated,anddeobfuscated),alongwithadditionalASTandJSIRrep-
+AllJavaScriptsamplesintheLLM-NodeJSdatasetweregenerated
+resentationsforeverysample.Usingthisdataset,wecompared
+throughOpenRouter.ai.Toensurethatthisservicedoesnotwa-
+classicalMLalgorithmswithfine-tunedTransformerencoders(e.g.,
+termarkitsoutputs,wecreatedanewdatasetof500JavaScript
+BERT,CodeBERT,andLongformer)aswellasacustommodified
+samplescorrespondingtocompletelyunseentasks.Thesesamples,
+architecturebasedonthe770M-parameterCodeT5model.
+whichincludeNode.js–specificprograms,weregeneratedusing
+the original OpenAI API—entirely independent from the Open-
+• RQ1:CanwereliablyattributeJavaScriptprograms
+Router.aiservice—anddonotoverlapwiththe50,000samplesused
+totheirgeneratingLLM?
+fortrainingorevaluation.
+Answer: Yes. On original JavaScript, CodeT5-JSA at-
+Were-evaluatedthefive-classclassifierusingCodeBERTonthe
+tains95.8%accuracyinthefive-wayGPT-onlysetting,
+originalJavaScriptvariant.Itmaintainedhighattributionperfor-
+94.6%ontheten-classtask,and88.5%ontwentyclasses
+mance,withonlya1–2%dropcomparedtotheresultsobserved
+(Table2).Performanceonterser-mangled,minified,and
+inourexperiments.Thisconfirmsthatattributiongeneralizeswell
+deobfuscatedcoderemainsclose(typicallysingle-digit
+topreviouslyunseencodedistributions.Thevalidationdatasetis
+drops),indicatingthatattributiondoesnotdependpri-
+publiclyreleasedasCROSS_CHECK_DATASET.jsononGitHub.
+marilyonsurfacenamingorformatting.
+5 LimitationsandFutureWork • RQ2:Whatsignalsdothemodelsrelyon?
+Thisstudyleavesseveralopenquestionsthatpointtopromising Answer:Deeperstructuralandsemanticcuesare
+directionsforfutureresearch: just as important as style. Our similarity analysis
+showsthatdataflowprovidestheclearestsame-vs.-cross
+• Modelscaleandarchitectures:Ourexperimentswere modelseparation,alongwithn-gram,however,theab-
+limitedtomoderate-sizedTransformerencoderssuchas senceofthelatterstillallowsaccurateattribution.These
+BERTandCodeT5.Largerorextended-contextarchitec- explaintherobustnessofattributiononmangled/mini-
+turescapableofprocessingJSIRandASTvariantswerenot fiedcodeandtherecoveryafterdeobfuscation:classifiers
+exploredduetocomputationalconstraints.Futurework exploitpersistentlogic,dependencystructure,andcon-
+shouldexaminehowmodelsize,contextlength,anddecoder- trol/dataflowratherthansuperficiallexicalfeatures.
+onlyarchitecturesaffectattributionaccuracy.Wedidnot
+conductexperimentsonASTandJSIRrepresentations,but Overall,ourresultsdemonstratethatLLM-generatedJavaScript
+madethesevariantsavailablefortheresearchcommunity. carriespersistent,model-specificfingerprintsthatremaindetectable
+• Languageanddatadiversity:Thedatasetisrestrictedto acrossfamilies,classscales(tenandtwentyclasses),andcommon
+JavaScript,whereaspriorworkexaminedC[6].Extending codetransformations.Whileaccuracynaturallydeclinesasstylis-
+attributiontootherlanguages(C++,Rust,Python,Java)or ticboundariesnarrow,semanticallygroundedsignalscontinueto
+tocross-languagesetups—trainingononelanguageand supportreliableattribution.
+testingonanother—wouldhelpdeterminethegeneralityof
+modelfingerprints.Broaderdatasetscoveringvariedcoding References
+domainsandpromptstyleswouldalsostrengthenexternal [1] MohammedAbuhamad,TamerAbuHmed,AzizMohaisen,andDaeHunNyang.
+validity,asweonlyfocusedonweb-deveopment. 2018.Large-ScaleandLanguage-ObliviousCodeAuthorshipIdentification.In
+• Attributiongeneralization:Inthemulti-classsetting,the P Sero cuce re itd yin (g Cs Co Sft ’h 1e 8)2 .0 A18 ssA oC ciM atS ioIG nS fA oC rCC oo mnf per ue tn ince go MnC aco hm inp eu rte yr ,a Nn ed wC Yo om rm k,u Nni Yc ,a Uti Son As
+,
+classifierassumesthatallsamplesoriginatefromthe20 101–114. doi:10.1145/3243734.3243738
+studiedLLMs.Futureworkshouldexploreopen-setrecog- [2] MohammedAbuhamad,TamerAbuhmed,DavidMohaisen,andDaehunNyang.
+2021.Large-scaleandRobustCodeAuthorshipIdentificationwithDeepFeature
+nition and continual learning to handle unseen models,
+Learning. ACMTrans.Priv.Secur.24,4(July2021),23:1–23:35. doi:10.1145/
+aswellastemporaldriftstudiestoassessthestabilityof 3461666
+fingerprintsasLLMsevolve. [3] BanderAlsulami,EdwinDauber,RichardHarang,SpirosMancoridis,andRachel
+Greenstadt.2017.SourceCodeAuthorshipAttributionUsingLongShort-Term
+• Interpretabilityandrobustness.Attributionrobustness MemoryBasedNetworks.InComputerSecurity–ESORICS2017,SimonN.Foley,
+shouldbetestednotonlyundersimplecodetransforma- DieterGollmann,andEinarSnekkenes(Eds.).SpringerInternationalPublishing,
+tions,butunderadversarialmodificationsliketranspilation, Cham,65–82. doi:10.1007/978-3-319-66402-6_6
+[4] SamAltman.2025. SamAltmansaysAIisdoing50%ofcodingincompa-
+control-flowrewriting. nies. https://www.indiatoday.in/technology/news/story/sam-altman-says-
+7
+TihanyiN.,CherifB.,DubniczkyR.A.,FerragM.A.,BisztrayT.
+ai-is-doing-50-percent-coding-in-companies-warns-students-about-career- [22] BaixiangHuang,CanyuChen,andKaiShu.2025.AuthorshipAttributioninthe
+choices-2696937-2025-03-21. Accessed:2025-09-09. EraofLLMs:Problems,Methodologies,andChallenges.doi:10.48550/arXiv.2408.
+[5] DarioAmodei.2025. VibeCodingIsComingforEngineeringJobs. https: 08946arXiv:2408.08946[cs]version:2.
+//www.wired.com/story/vibe-coding-engineering-apocalypse. Accessed:2025- [23] OseremenJoyIdialu,NobleSajiMathews,RungrojMaipradit,JoanneMAtlee,
+09-09. andMeiNagappan.2024.Whodunit:ClassifyingCodeasHumanAuthoredor
+[6] TamasBisztray,BilelCherif,RichardADubniczky,NilsGruschka,Bertalan GPT-4generated-AcasestudyonCodeChefproblems.InProceedingsofthe21st
+Borsos,MohamedAmineFerrag,AttilaKovacs,VasileiosMavroeidis,andNorbert InternationalConferenceonMiningSoftwareRepositories.394–406.
+Tihanyi.2025.IKnowWhichLLMWroteYourCodeLastSummer:LLMgenerated [24] PatrickJuola.2006. Authorshipattribution. Found.TrendsInf.Retr.1,3(Dec.
+CodeStylometryforAuthorshipAttribution. arXivpreprintarXiv:2506.17323 2006),233–334. doi:10.1561/1500000005
+(2025). [25] Kocetkov,DenisandKumar,DivyanshuandShoeb,AbuAwalMdandothers.
+[7] EgorBogomolov,VladimirKovalenko,YuriiRebryk,AlbertoBacchelli,andTimo- 2022. TheStack:3TBofPermissivelyLicensedSourceCode. HuggingFace
+feyBryksin.2021.AuthorshipAttributionofSourceCode:ALanguage-Agnostic Dataset. https://huggingface.co/datasets/bigcode/the-stackAccessed:2025-09-
+ApproachandApplicabilityinSoftwareEngineering.InProceedingsofthe29th 09.
+ACMJointEuropeanSoftwareEngineeringConferenceandSymposiumonthe [26] ChristopherMcKnightandIanGoldberg.2018.StyleCounsel:Seeingthe(Ran-
+FoundationsofSoftwareEngineering(ESEC/FSE’21).AssociationforComputing dom)ForestfortheTreesinAdversarialCodeStylometry.InACMWorkshopon
+Machinery,Athens,Greece,932–944. doi:10.1145/3468264.3468606 PrivacyintheElectronicSociety(WPES).ACM,Toronto,ON,Canada,138–142.
+[8] SufiyanBukhari,BenjaminTan,andLorenzoDeCarli.2023.DistinguishingAI- [27] MelanieMitchell.2023.DataContaminationandModelCollapseinAISystems.
+andHuman-GeneratedCode:ACaseStudy.InProceedingsofthe2023Workshop AIMagazine44,4(2023),358–364.doi:10.1002/aaai.12123
+onSoftwareSupplyChainOffensiveResearchandEcosystemDefenses(Copenhagen, [28] SatyaNadella.2025. Asmuchas30%ofMicrosoftcodenowwrittenbyAI,
+Denmark)(SCORED’23).AssociationforComputingMachinery,NewYork,NY, CEOSatyaNadellasays.https://nypost.com/2025/04/30/business/microsoft-ceo-
+USA,17–25. doi:10.1145/3605770.3625215 satya-nadella-says-30-of-code-now-written-by-ai. Accessed:2025-09-09.
+[9] LuanaBulla,AlessandroMidolo,MisaelMongiovì,andEmilianoTramontana. [29] PhuongT.Nguyen,JuriDiRocco,ClaudioDiSipio,RiccardoRubei,Davide
+2024.EX-CODE:ARobustandExplainableModeltoDetectAI-GeneratedCode. DiRuscio,andMassimilianoDiPenta.2024.GPTSniffer:ACodeBERT-based
+Information15,12(2024). doi:10.3390/info15120819 classifiertodetectsourcecodewrittenbyChatGPT. JournalofSystemsand
+[10] AylinCaliskan,FabianYamaguchi,EdwinDauber,RichardHarang,Konrad Software214(Aug.2024),112059. doi:10.1016/j.jss.2024.112059
+Rieck,RachelGreenstadt,andArvindNarayanan.2018. WhenCodingStyle [30] PaulW.OmanandCurtisR.Cook.1989.ProgrammingStyleAuthorshipAnalysis.
+SurvivesCompilation:De-anonymizingProgrammersfromExecutableBinaries. InProceedingsofthe17thAnnualACMComputerScienceConference(CSC’89).
+InProceedings2018NetworkandDistributedSystemSecuritySymposium.Internet AssociationforComputingMachinery,NewYork,NY,USA,320–326.
+Society,SanDiego,CA,15pages. doi:10.14722/ndss.2018.23304 [31] WeiHungPan,MingJieChok,JonathanLeongShanWong,YungXinShin,
+[11] AylinCaliskan-Islam,RichardHarang,AndrewLiu,ArvindNarayanan,Clare YeongShianPoon,ZhouYang,ChunYongChong,DavidLo,andMeiKuan
+Voss,FabianYamaguchi,andRachelGreenstadt.2015. De-anonymizingpro- Lim.2024.Assessingaidetectorsinidentifyingai-generatedcode:Implications
+grammersviacodestylometry.InProceedingsofthe24thUSENIXConference foreducation.InProceedingsofthe46thinternationalconferenceonsoftware
+onSecuritySymposium(Washington,D.C.)(SEC’15).USENIXAssociation,USA, engineering:softwareengineeringeducationandtraining.1–11.
+255–270. [32] ErwinQuiring,AlwinMaier,andKonradRieck.2019.Misleadingauthorship
+[12] SoohyeonChoi,YongKiamTan,MarkHuasongMeng,MohamedRagab,Soumik attributionofsourcecodeusingadversariallearning.InProceedingsofthe28th
+Mondal,DavidMohaisen,andKhinMiMiAung.2025. ICanFindYouin USENIXConferenceonSecuritySymposium(SantaClara,CA,USA)(SEC’19).
+Seconds!LeveragingLargeLanguageModelsforCodeAuthorshipAttribution. USENIXAssociation,USA,479–496.
+doi:10.48550/arXiv.2501.08165arXiv:2501.08165[cs]version:1. [33] MusfiqurRahman,SayedHassanKhatoonabadi,AhmadAbdellatif,andEmad
+[13] ZhangyinFeng,DayaGuo,DuyuTang,NanDuan,XiaochengFeng,MingGong, Shihab.2024. AutomaticDetectionofLLM-generatedCode:ACaseStudyof
+LinjunShou,BingQin,TingLiu,DaxinJiang,andMingZhou.2020.CodeBERT: Claude3Haiku.doi:10.48550/arXiv.2409.01382arXiv:2409.01382[cs]version:1.
+APre-TrainedModelforProgrammingandNaturalLanguages.doi:10.48550/ [34] NathanRosenblum,XiaojinZhu,andBartonP.Miller.2011.WhoWroteThis
+arXiv.2002.08155arXiv:2002.08155[cs]. Code?IdentifyingtheAuthorsofProgramBinaries.InComputerSecurity–
+[14] AlbertoFerrante,EricMedvet,FrancescoMercaldo,JelenaMilosevic,andCor- ESORICS2011,VijayAtluriandClaudiaDiaz(Eds.).Springer,Berlin,Heidelberg,
+radoAaronVisaggio.2016. SpottingtheMaliciousMoment:Characterizing 172–189. doi:10.1007/978-3-642-23822-2_10
+MalwareBehaviorUsingDynamicFeatures.In201611thInternationalConference [35] IliaShumailov,YarinGal,VitalyShmatikov,NicolasPapernot,andRossAnderson.
+onAvailability,ReliabilityandSecurity(ARES).IEEE,Salzburg,Austria,372–381. 2023.TheCurseofRecursion:TrainingonGeneratedDataMakesModelsForget.
+doi:10.1109/ARES.2016.70 NatureMachineIntelligence5(2023),1411–1422.doi:10.1038/s42256-023-00782-5
+[15] JasonGray,DanieleSgandurra,LorenzoCavallaro,andJorgeBlascoAlis.2024. [36] LucySimko,LukeZettlemoyer,andTadayoshiKohno.2018.Recognizingand
+IdentifyingAuthorshipinMaliciousBinaries:Features,Challenges&Datasets. ImitatingProgrammerStyle:AdversariesinProgramAuthorshipAttribution.
+ACMComput.Surv.56,8,Article212(April2024),36pages. doi:10.1145/3653973 InProceedingsonPrivacyEnhancingTechnologies(PETS),Vol.2018.127–144.
+[16] DayaGuo,ShuoRen,ShuaiLu,ZhangyinFeng,DuyuTang,ShujieLiu,Long doi:10.1515/popets-2018-0007
+Zhou,NanDuan,AlexeySvyatkovskiy,ShengyuFu,MicheleTufano,ShaoKun [37] QigeSong,YongzhengZhang,LinshuOuyang,andYigeChen.2022. BinMLM:
+Deng,ColinClement,DawnDrain,NeelSundaresan,JianYin,DaxinJiang,and BinaryAuthorshipVerificationwithFlow-awareMixture-of-SharedLanguage
+MingZhou.2021. GraphCodeBERT:Pre-trainingCodeRepresentationswith Model.In2022IEEEInternationalConferenceonSoftwareAnalysis,Evolution
+DataFlow.doi:10.48550/arXiv.2009.08366arXiv:2009.08366[cs]. andReengineering(SANER).IEEEComputerSociety,LosAlamitos,CA,USA,
+[17] DixiaoGuo,AnminZhou,LiangLiu,ShanLiao,andLeiZhang.2022.AMethod 1023–1033. doi:10.1109/SANER53432.2022.00120
+ofSourceCodeAuthorshipAttributionBasedonGraphNeuralNetwork.In [38] NorbertTihanyi,TamasBisztray,MohamedAmineFerrag,RidhiJain,andLu-
+Proceedingsof2021ChineseIntelligentAutomationConference,ZhidongDeng casC.Cordeiro.2024.HowsecureisAI-generatedcode:alarge-scalecomparison
+(Ed.).SpringerSingapore,Singapore,645–657. oflargelanguagemodels.EmpiricalSoftwareEngineering30,2(Dec.2024),47.
+[18] DixiaoGuo,AnminZhou,LiangLiu,ShanLiao,andLeiZhang.2022.AMethod doi:10.1007/s10664-024-10590-1
+ofSourceCodeAuthorshipAttributionBasedonGraphNeuralNetwork.In [39] AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,
+Proceedingsof2021ChineseIntelligentAutomationConference,ZhidongDeng AidanN.Gomez,ŁukaszKaiser,andIlliaPolosukhin.2017.Attentionisallyou
+(Ed.).Springer,Singapore,645–657. doi:10.1007/978-981-16-6372-7_70 need.InProceedingsofthe31stInternationalConferenceonNeuralInformation
+[19] AndreaGurioli,MaurizioGabbrielli,andStefanoZacchiroli.2025. IsThis ProcessingSystems(LongBeach,California,USA)(NIPS’17).CurranAssociates
+You,LLM?RecognizingAI-writtenProgramswithMultilingualCodeStylome- Inc.,RedHook,NY,USA,6000–6010.
+try.In2025IEEEInternationalConferenceonSoftwareAnalysis,Evolutionand [40] NingfeiWang,ShoulingJi,andTingWang.2018. IntegrationofStaticand
+Reengineering(SANER).IEEEComputerSociety,LosAlamitos,CA,USA,394–405. DynamicCodeStylometryAnalysisforProgrammerDe-anonymization.In
+doi:10.1109/SANER64311.2025.00044 Proceedingsofthe11thACMWorkshoponArtificialIntelligenceandSecurity
+[20] XieHe,ArashHabibiLashkari,NikhillVombatkere,andDilliPrasadSharma.2024. (AISec’18).AssociationforComputingMachinery,NewYork,NY,USA,74–84.
+AuthorshipAttributionMethods,Challenges,andFutureResearchDirections: doi:10.1145/3270101.3270110
+AComprehensiveSurvey. Information15,3(March2024),131. doi:10.3390/ [41] YueWang,WeishiWang,ShafiqJoty,andStevenC.H.Hoi.2021. CodeT5:
+info15030131Number:3Publisher:MultidisciplinaryDigitalPublishingInstitute. Identifier-awareUnifiedPre-trainedEncoder-DecoderModelsforCodeUnder-
+[21] JeremyHowardandSebastianRuder.2018. UniversalLanguageModelFine- standingandGeneration.doi:10.48550/arXiv.2109.00859arXiv:2109.00859[cs].
+tuningforTextClassification.InProceedingsofthe56thAnnualMeetingofthe [42] SarimZafar,MuhammadUsmanSarwar,SaeedSalem,andMuhammadZubair
+AssociationforComputationalLinguistics(Volume1:LongPapers),IrynaGurevych Malik.2020. LanguageandObfuscationObliviousSourceCodeAuthorship
+andYusukeMiyao(Eds.).AssociationforComputationalLinguistics,Melbourne, Attribution. IEEEAccess8(2020),197581–197596. doi:10.1109/ACCESS.2020.
+Australia,328–339.doi:10.18653/v1/P18-1031 3034932
+8

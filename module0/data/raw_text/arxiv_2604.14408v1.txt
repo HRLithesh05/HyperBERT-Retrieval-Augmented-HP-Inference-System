@@ -1,0 +1,1094 @@
+ToxiShield: Promoting Inclusive Developer Communication
+through Real-Time Toxicity Filtering
+MDAWSAFALAMANINDYA,BangladeshUniversityofEngineeringandTechnology,Bangladesh
+SHOWVIKBISWAS,BangladeshUniversityofEngineeringandTechnology,Bangladesh
+ANINDYAIQBAL,BangladeshUniversityofEngineeringandTechnology,Bangladesh
+JAYDEBSARKER,UniversityofNebraskaOmaha,USA
+AMIANGSHUBOSU,WayneStateUniversity,USA
+Toxicinteractionsduringcodereviewscanundermineteamworkandhinderproductivityinsoftwareen-
+gineering(SE)teams.Whilepriorstudiesexploretoxicitydetectionandempiricalinvestigation,theylack
+real-timedetoxificationtoolstosupporttheSEcommunity.Toaddressthisgap,wepresentToxiShield,a
+browserextensionforGitHubpullrequeststhatisbuiltusingthreemodules:i)ToxicityFilter–toidentify
+whetheratextistoxic,ii)Communicationcoach–tofacilitatejust-in-timefine-grainedtoxicitycategoriza-
+tionwithexplanations,andiii)TheReframer–thatgeneratesarevised,constructivealternativeofatoxic
+text.Foreachmodule,wetrainedandevaluatedmultipledeeplearningandLargeLanguageModels(LLMs)
+toidentifythebestchoice.ABERT-basedbinarydetectionmodel,trainedon38,761codereviewsamples,
+achieves98%accuracyandanF1-scoreof97%andistheselectedonefortheToxicityFiltermodule.Forthe
+CommunicationCoach,prompt-tunedClaude3.5Sonnetachievedthebestperformancewith39%𝑀𝐶𝐶and
+42%𝐹1inmulticlasstoxicityclassificationwithdetailedreasoning.ForReframer,weevaluatedfiveLLMs
+usingafine-tuningstrategyonadatasetof10,120codereviewcomments.Thefine-tunedLlama3.2model
+achieves95.27%styletransferaccuracy,97.03%fluency,67.07%contentpreservation,andan84%J-score.
+WefurthervalidatedToxiShieldthroughahumanevaluationusingtheTechnologyAcceptanceModelwith
+10participants,confirmingitsperceivedusefulnessandeaseofadoption.ToxiShieldsetsabenchmarkfor
+advancingconstructivecommunicationinsoftwareengineering,drivinginclusivityandhealthiercollaboration
+inopen-sourcecommunities.
+CCSConcepts:•Softwareanditsengineering→Collaborationinsoftwaredevelopment;•Collabora-
+tioninsoftwaredevelopment→Detoxification.
+AdditionalKeyWordsandPhrases:toxicity,opensourcesoftware,textstyletransfer,codereview
+ACMReferenceFormat:
+MdAwsafAlamAnindya,ShowvikBiswas,AnindyaIqbal,JaydebSarker,andAmiangshuBosu.2026.Tox-
+iShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering.Proc.ACM
+Softw.Eng.3,FSE,ArticleFSE123(July2026),23pages.https://doi.org/10.1145/3808130
+1 Introduction
+SuccessfulOpenSourceSoftware(OSS)projectsrequirestrongcoordinationandteamworkamong
+contributors[46,50].Developersprimarilycollaborateusingtext-basedchannels,includingmailing
+lists,codereviews,versioncontrolsystems,andbugtrackers.Despitethisneedforcollaboration,
+Authors’ContactInformation:MdAwsafAlamAnindya,BangladeshUniversityofEngineeringandTechnology,,Bangladesh,
+1505114.maaa@ugrad.cse.buet.ac.bd;ShowvikBiswas,BangladeshUniversityofEngineeringandTechnology,,Bangladesh,
+1805068@ugrad.cse.buet.ac.bd; Anindya Iqbal, Bangladesh University of Engineering and Technology, , Bangladesh,
+anindya@cse.buet.ac.bd;JaydebSarker,UniversityofNebraskaOmaha,,USA,jsarker@unomaha.edu;AmiangshuBosu,
+WayneStateUniversity,,USA,amiangshu.bosu@wayne.edu.
+ThisworkislicensedunderaCreativeCommonsAttribution-NonCommercial-NoDerivatives4.0InternationalLicense.
+©2026Copyrightheldbytheowner/author(s).
+ACM2994-970X/2026/7-ARTFSE123
+https://doi.org/10.1145/3808130
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+6202
+rpA
+51
+]ES.sc[
+1v80441.4062:viXra
+FSE123:2 Anindyaetal.
+ToxiShield Original Review Updated Review
+No Accept
+Write a Code
+Review in Is Toxic
+GitHub PR Yes Classify Toxicity Text Detoxification
+Subcategories and Reasoning
+Mod 1:
+Code Reviewer
+Toxicity Filter Mod 2: Communication Coach Mod 3: The Reframer
+Fig.1. MotivationalWorkflowofToxiShield
+researchindicatesthatcommunicationwithinOSScommunitiesfrequentlybecomesunprofessional
+andtoxic[10,21,28,39,43–45].
+This hostility produces severe consequences. It creates significant barriers for new partici-
+pants[39]andcausesactivecontributorstoleavetheproject[43].Furthermore,toxicinteractions
+disproportionatelyaffectminorityandjuniordevelopers[17].Suchbehaviorleadstoemotional
+distress and burnout, which subsequently diminish developer productivity [38, 39]. Over time,
+these interpersonal conflicts degrade the overall health of the community by undermining di-
+versity [17, 28] and sustaining ongoing disputes [8, 38]. Consequently, this toxic environment
+ultimatelycompromisesthequalityofthesoftwareproduced[28].
+Tocountertheseissues,manyOSSprojectshaveadoptedCodesofConduct(CoC)toencourage
+respectful environments; however, their practical impact remains limited [2, 31]. The primary
+obstacleisenforcement.Currentmoderationtypicallyreliesonmanualvalidation,alabor-intensive
+processthatisunsustainableforlarge-scalecommunities[28].Theinadequacyofmanualmodera-
+tionhasspurredthedevelopmentofautomatedsystemsdesignedtoidentifyandmitigateharmful
+discourse.Consequently,agrowingbodyofSoftwareEngineering(SE)researchfocusesoncreating
+toolstodetectnotonlyoverttoxicity[39,42,45]butalsonuancedantisocialbehaviors,including
+incivility[14,38],destructivecriticism[17],sexism[6,47],andpushback[8].
+Nevertheless,existingapproachesformanagingtoxicinteractionsinOSSareprimarilyreactive.
+Theyoperateonaposthocbasis,usingclassifierstoflagproblematictextforlaterreviewand
+removal[45].Thisdelayiscriticalbecause,bythetimeaninterventionoccurs,significantdamage
+tocontributorrelationshipsmayhavealreadybeendone[38,56].Tofostergenuinelyhealthiercom-
+munication,aparadigmshiftisnecessaryfromreactiveflaggingtoproactiveprevention.Inspired
+byreal-timegrammarcheckersinplatformslikeGrammarly,weaimtodevelopatoolintegrated
+directlyintodevelopers’communicationchannels.Thistoolwouldnotonlyflagpotentiallytoxic
+textduringcompositionbutalsoprovideactionablefeedback,explainingwhythetextisproblematic
+andsuggestingneutralorcivilalternatives.WhilerecentworkbyRahmanetal.movedinthis
+directionbydevelopingacustomizedText-to-TextTransferTransformer(T5)modeltorephrase
+uncivilcomments,theirsolutionhastwomajorlimitations.First,itlacksthereal-timeintegration
+necessaryforproactivemoderation.Second,andmoreimportantly,itfailstoexplainitsreasoning.
+Thisexplanatorycapabilityisessentialforfosteringlong-termbehavioralchangeandhelpingusers
+navigatetheculturalnuancesoftoxiccommunication[25].
+Toaddresstheselimitations,weproposeToxiShield,acomprehensiveframeworkdesigned
+toproactivelydetectandmitigatetoxicityinSEcommunication,withaspecificfocusoncode
+reviewinteractions.Unlikeposthocsolutions,ToxiShieldoperatesinreal-timeasadeveloperdrafts
+feedback.Thesystemidentifiesandmitigatespotentialtoxicitythroughathree-stageprocess,as
+illustratedinFigure1,comprisingthefollowingkeymodules.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:3
+Module 1: Toxicity Filter: Acting as the first line of defense, this module performs a binary
+classificationtodistinguishbetweentoxic’andnon-toxic’codereviewcomments.Whenacomment
+isflaggedastoxic,thefilterautomaticallytriggersadownstreamworkflow,routingtheproblematic
+texttospecializedmodulesforgranularanalysisandremediation.
+Module 2: Communication Coach: The Communication Coach functions as an automated
+pedagogicalagentaimedatfosteringlong-termbehavioralimprovement.Uponreceivingacomment
+identifiedastoxic,itconductsadetailedanalysistoclassifythetextintospecificsubcategoriesof
+toxicity,suchasInsult,Threat,orObscenity.Themodulethengeneratesatargetedexplanation
+detailingpreciselywhythecommentisproblematic,therebytransformingastandardmoderation
+eventintoaconstructivelearningopportunityfortheuser.
+Module3:TheReframer:Thismoduleservesasagenerativeremediationassistantdesignedto
+detoxifyharmfuldiscourse.Whenacommentisflagged,TheReframeranalyzestheauthor’score
+intentandgeneratesarevised,constructivealternativethatpreservesthetechnicalmessagewhile
+adheringtoprofessionalstandards.Thissuggestedrevisionispresentedtotheuseralongsidea
+briefrationale,explainingthespecificchangesmadeandwhythenewversionismoreeffectivefor
+maintainingacollaborativeenvironment.
+Toidentifytheoptimalarchitectureforeachmodule,wetrainedandevaluatedmultiplemachine
+learningmodels.Ourevaluationrevealsthatfortheprimarydetectiontask,lightweightmodelsoffer
+superiorperformance,surpassingevenLargeLanguageModels(LLMs)suchasGPT-4o.Specifically,
+theBERT-base-uncased modelachievedthehighestperformanceforbinarytoxictextdetection,
+attaininganaccuracyof98%andan𝐹1-scoreof97%.Forthemoregranulartaskofclassifying
+toxicitysubcategories,Claude3.5Sonnetyieldedthebestoverallresults,achievingamacro𝐹1-
+score of 42% (average 𝐹1-score of 75%) and a macro Matthews Correlation Coefficient (MCC)
+of39%(averageMCCof66%).Finally,regardingdetoxification,ourfine-tunedLlama3.2model
+outperformedotherstate-of-the-artLLMs,achievingaJ-Scoreof84%.Beyondrawmetrics,these
+techniquessuccessfullygeneratedhigh-qualityrationalesforthesuggestedchanges,demonstrating
+the efficacy of language models in addressing complex linguistic challenges. We validated our
+approachthroughacomprehensiveevaluationcomprisingbothautomatedmetricsanduserstudies
+toensurethegeneratedalternativesmaintainedtheoriginalcontextandintentwhileeffectively
+reducingtoxicity.Auserstudyinvolving10softwaredevelopers,evaluatedviatheTechnology
+AcceptanceModel(TAM),confirmedacrossfourkeymetricsthatourextensioneffectivelyaidsin
+reducingtoxicityincodereviews.Thekeycontributionsofthisstudyareasfollows:
+• Acurateddatasetoftoxiccodereviewspairedwiththeircorrespondingnon-toxicalternatives.
+• Arobustmulticlasstoxicityclassifiercapableofcategorizingspecifictypesoftoxicity.
+• Thedevelopmentof ToxiShield,abrowserextension-basedtoolforcodereviewdetoxification.
+Ourreplicationpackage,includingcode,data,andexperimentalresults,isavailableat[1].
+Theremainderofthispaperisorganizedasfollows.Sections2,3,and4detailthedesignand
+evaluationofthethreecoremodulesofToxiShield,respectively.Section5presentstheresultsof
+ourintegrateduserevaluation.WediscussourfindingsinSection6,addressthreatstovalidityin
+Section7,reviewrelatedworksinSection8,andconcludethepaperinSection9.
+2 Module1:ToxicityFilter
+Arobustbinarytoxicitydetectorservesasthefoundationalentrypointofourpipeline,actingas
+acriticalfilterforallincomingcomments.Effectivebinaryfiltrationisessentialtopreventthe
+downstreamclassificationanddetoxificationmodulesfrombeinginundatedwithnon-toxiccontent,
+thereby optimizing computational efficiency and ensuring system responsiveness. While prior
+researchhasintroducedbinarytoxicitydetectorsfortheSEdomain[38,39,45],theseapproaches
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:4 Anindyaetal.
+Toxic
+Initial Dataset Toxicity Score
+for Filtering (0 to 1) Non-Toxic: 28,641
+Toxic: 10,120
+15 M PR Retrained ToxiCR Stratified Sampling Manual Annotation Compiled Final Toxicity Non-toxic
+Comments Using Toxicity Scheme Detection Dataset Detection Model
+Fig.2. WorkflowoftheToxicityFilterModulewhere15MPRcommentsareselectedfrom[44].
+oftenprioritizeofflineclassificationaccuracyoverthelatencyconstraintsrequiredforseamless
+integration into real-time developer workflows. For instance, the current state-of-the-art tool,
+ToxiCR[45],achievesstrongperformancemetrics(88.9%F1-score,95.8%accuracy);however,recent
+studiesindicatethatitsefficacydiminisheswhenprocessingnuancedorsarcasticexpressions[38],
+whicharecommonincollaborativecodingenvironments.Consequently,theprimaryobjectiveof
+thismoduleistoaccuratelyclassifycodereviewcommentsaseithertoxicornon-toxic,addressing
+these limitations. Figure 2 illustrates the methodology adopted for Module 1, the design and
+evaluationofwhicharedetailedinthefollowingsubsections.
+2.1 DatasetConstruction
+ConceptualizationofToxicityinCodeReviews.RecentresearchwithintheOSScommunity
+hasdocumentedabroadspectrumofantisocialbehaviors,rangingfromgeneraltoxicity[28,45]
+tospecificmanifestationssuchasdestructivecriticism[17],pushback[8],andincivility[13].In
+thiswork,wetargettoxicitywithincodereviews.Weadopttheoperationaldefinitionoftoxicity
+provided by Sarker et al. [44], whose taxonomy synthesizes prior SE findings [13, 28, 45] into
+11distinctcategories.Therefore,withinthecontextofthisstudy,atextisconsideredtoxicifit
+fallsintooneofthefollowingcategories:Profanity,Trolling,Insult,Self-deprecation,Entitlement,
+IdentityAttack,Threats,Obscenity,Arrogance,Flirtation,orObject-DirectedToxicity.Consequently,
+behaviorssuchassarcasmandcondescensionarenotdesignatedastoxicsolelyonthebasisoftheir
+expression,asthesebehaviorsmayservebenignsocialfunctionsorlackastandardizeddefinition
+inSEtaxonomies.Wethereforelabelthemastoxicinourbinarydatasetonlywhentheymeetthe
+definitionalcriteriaforoneofthe11coresubcategories.Forexample,thecomment“Grandma,
+whatlonglinesyouhave?” isclassifiedastoxicnotmerelyduetoitssarcastictone,butbecauseit
+constitutesaveiledinsultdevoidofconstructivefeedback.
+DatasetSelectionTothebestofourknowledge,thelargestexistingbinarytoxicitydatasetinthe
+SEdomainistheToxiCRcorpus[45],whichcontains19,651codereviewcomments.However,this
+datasetexhibitsasignificantclassimbalance;itisheavilyskewedtowardsprofanity(comprising
+nearlyhalfofthesamples),leavingotherformsoftoxicityunderrepresented.Furthermore,alter-
+nativedatasetswithtoxicitylabelsarelimitedinscale[9,39].Toconstructamorediverseand
+representativedataset,weleveragedthecorpusfromarecentstudybySarkeret al.[44],which
+mined101millioncommentsacross2,828GitHub-basedOSSprojects.Aligningwithourspecific
+focusoncodereviews,weisolatedPullRequest(PR)commentsfromthisrepository.Afterexcluding
+86millionissuecomments,wewereleftwithapproximately15millionPRcomments.
+DatasetFilteringGiventhesparsityoftoxiccommentsinOSSdiscussions[37,43],automated
+classificationisessentialforefficientlarge-scaledatasetcuration.Toimprovedetectioncapabilities,
+weretrainedtheToxiCRmodelusingacompositedatasetmergingtheSarkeret al.corpus(19,651
+samples)[45]andtheRahmanetal.dataset(4,700samples)[38].Thisretrainingprocesssignificantly
+enhancedthemodel’srobustnessandcalibrationregardingthenuancesofcodereviewdiscourse.
+Wethendeployedthisretrainedmodelacrossthe15millionPRcomments,generatingaprobability
+score(0to1)foreachentry.WhilethestandardToxiCRframeworkclassifiestextastoxicata
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:5
+Table1. DatasetAnnotationwithExamples:10,120toxicand28,641nontoxicsamplesinthefinaldataset.
+Probability ExampleofPRcomments Rationale
+0.10≤p<0.28 Pleasetrytounderstandthecodeyou’recom- Represents Condescension
+mentingon. (ImplicitToxicity)
+0.28≤p<0.46 Oh,it’scalledTrainwreck.Surprisedyouhave RepresentsSarcasm
+younotheardofit?
+0.46≤p<0.64 youarealiar!? Insultingcomment
+0.64≤p<0.82 That’sjustwacky.AsIsaidintheissuereport, Expresses Object-Directed
+bizarrethatitwouldevenmiscompileindebug Toxicity(DismissiveTone)
+modeinMSVC.
+0.82≤p≤1.0 Yep,fuckthosetechnomancers,alwayshated. ExpressesProfanity
+thresholdof≥ 0.5[45],priorworkindicatesthisthresholdyieldsahighfalsenegativeratefor
+underrepresentedtoxicityclasses[38].Consequently,weexpandedourcandidatesearchspace
+toincludeprobabilitiesrangingfrom0.10to1.0.Thisbroaderrangeallowsustocaptureamore
+diversespectrumoftoxicityinherenttocodereviews.
+DatasetLabelingTomitigatepotentiallabelingbias,twoannotatorsweretrainedontheconcep-
+tualframeworkdetailedinSection2.1.Weemployedastratifiedsamplingstrategy,dividingthe
+unlabeleddataintofivedistinctbinsbasedonthetoxicityprobability(𝑝)assignedbythemodel
+(seeTable1).Becausethemodeltendstoassignhighprobabilitiesprimarilytoexplicittoxicity
+(e.g.,profanity),thisstratificationenabledustosystematicallytargetimplicitorsubtletoxicity
+inthelower-probabilitybins.Fromeachbin,thefirstannotatormanuallyreviewedentriesuntil
+2,100toxicsampleswereidentified,resultinginaninitialcorpusof10,500candidates.Asecond
+annotatorindependentlyvalidatedtheseselections,removing380instancesdeemednon-toxic.
+Thisrigorousvalidationprocessyieldedafinal,high-qualitydatasetof10,120toxicsamples.
+Non-toxicSamplesTocompilethenon-toxiccomponentofthedataset,werandomlyselected
+30,000 samples from the pool of 15 million PR comments, which were subsequently reviewed
+and confirmed as non-toxic by the first annotator. To further ensure data purity, we applied a
+keyword-basedfilteringprocesstothesecandidates,removing1,359samplescontainingexplicit
+profanity.Thisrigorousvalidationyieldedafinalsetof28,641non-toxicsamples.Combiningthese
+withourtoxiccorpusresultedinacomprehensivedatasetof38,761samples,comprising10,120
+toxicand28,641non-toxicPRreviews.Crucially,byselectingsamplesacrossthefullspectrum
+ofToxiCR’s[45]probabilitydistribution,wemitigatetheriskofinheritingthemodel’sexisting
+biasesinoursubsequentevaluation.
+2.2 ModelTraining
+ToidentifytheoptimalarchitectureforToxiShield’sToxicityFilter,weevaluatedadiversesetof
+candidatemodels,detailedinTable2,usingthedatasetdescribedinSection2.1.Ourselection
+strategyencompassedbothMaskedLanguageModels(MLMs)andLargeLanguageModels(LLMs).
+Specifically,wefine-tunedBERT-base-uncased [7]andXtreme-DistilBERT [30],andincorporated
+thepre-trainedToxiCRmodel[45]toserveasadomain-specificbaseline.Additionally,weem-
+ployedGPT-4oandGPT-3.5asLLM-baseddetectors,followingthebenchmarkingmethodology
+ofRahmanetal.[38].Fortheexperimentalsetup,thedatasetwaspartitionedintotraining(80%),
+validation (10%), and testing (10%) sets. We initialized the MLMs with their publicly available
+pre-trainedweightsandappendedatask-specificclassificationheadtoeach.Inputsequenceswere
+tokenizedwithamaximumlengthof128tokens.Fine-tuningwasconductedover12epochsusing
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:6 Anindyaetal.
+Table2. Performanceofbinarytoxicitydetectionmodels.Boldindicatesthehighestscorepermetric.
+Non-toxic Toxic
+Models Accuracy
+𝑃 𝑅 𝐹1 𝑃 𝑅 𝐹1
+0 0 0 1 1 1
+BERT-base-uncased(fine-tuned) 0.98 0.99 0.99 0.98 0.96 0.97 0.98
+Microsoft/XtremeDistilBert(fine-tuned) 0.98 0.98 0.98 0.97 0.93 0.95 0.98
+GPT-4o(prompted) 0.84 0.99 0.91 0.96 0.48 0.64 0.86
+ToxiCR(off-the-shelf) 0.95 0.89 0.92 0.74 0.87 0.80 0.87
+alearningrateof2×10−5,abatchsizeof128,andaweightdecayof0.01,withtheobjectiveof
+minimizingbinarycross-entropyloss.Toensurerobustness,weapplied10-foldstratifiedcross-
+validationwithinthetrainingsplitandmonitoredper-epochvalidationperformancetoselectthe
+checkpointthatmaximizedthetoxic-classF1-scoreforfinaltesting.
+2.3 ModelEvaluation
+Toevaluateourdetectionmodels,weemployedstandardclassificationmetrics:precision,recall,
+accuracy,andtheF1-score.Giventhecriticalnecessityofaccuratelyidentifyingtoxiccontentin
+codereviews,wedesignatedtheF1-scoreofthetoxicclassasourprimaryperformancemetric.
+Table2presentsacomparativeperformanceanalysisofourfine-tunedmodels,BERT-base-uncased
+andXtreme-DistilBERT,againstestablishedbaselines,includingtheoff-the-shelfToxiCRmodel
+andazero-shotpromptedGPT-4o.Amongtheevaluatedarchitectures,thefine-tunedBERT-base-
+uncasedmodeldemonstratedsuperiorperformance,achievingthehighestprecision(0.98)andrecall
+(0.96),withatoxic-classF1-scoreof0.97.Xtreme-DistilBERT followedcloselywithanF1-scoreof
+0.95.TheseresultsunderscoretherobustnessofBERT-base-uncased inidentifyingtoxicdiscourse.
+Consequently,weselecteditasthedefaultdetectionengineforToxiShield’sToxicityFiltermodule.
+2.4 ErrorAnalysisofToxicityFilterModule
+Weconductedanerroranalysisonourbestmodel,BERT-base-uncased,whichmisclassified59of
+3,877testsamples(23FalsePositive(FPs),36FalseNegatives(FNs)).Usinganopen-codingapproach
+basedonestablishedSEresearch[45,47],twoauthorscategorizedthesefailuresintofourtypes.
+i) Pragmatic and Contextual Misinterpretation: The model often failed to detect sarcasm,
+passive-aggressiveness,andmockery,accountingformostmisclassifications(65%ofFPs,81%of
+FNs).Positivewordsfrequentlymaskedtoxicintent,causingFNs.Forinstance,themodelprioritized
+“hilarious”overthemockingtonein:“Thismeansyoucanmakepizza-flavouredicecream,youtell
+methatisn’tahilariousnotion”.Conversely,itdetectedFPsbyover-indexingonnegativewords
+duringvalidtechnicalcriticism,incorrectlyflagging:“thisthingisstilljustterrible,averageof9s”.
+ii)Domain-SpecificTerminologyMisinterpretation:Theseerrorsarisewhenstandardtechni-
+calidentifiers,jargon,orreferencesaremisidentifiedasgeneralEnglishprofanityoraggression.
+Thiscategoryaccountedfor26%ofFPsand11%ofFNs.APRcomment“convertanal.autoname
+into‘int’”,whichwasincorrectlyflaggedastoxic(FP).Themodelfailedtorecognize“anal”asa
+standardabbreviationfor“analysis”withinthesoftwaredomaincontext.
+iii) Misinterpretation of Self-Deprecation: The model occasionally conflated benign self-
+deprecation, a common, non-toxic behavior in code reviews [22, 28, 44, 45], with hostility (9%
+ofFPs,5%ofFNs).Forinstance,itincorrectlyflagged“idigit.willdowhenI’mnotdrunk”(FP),
+likelyreactingtothekeyword“drunk”ratherthanthehumor.
+iv)ObfuscationandTokenizationFailures:Weidentifiedasingleinstance(3%ofFNs)where
+themodelfailedduetoadversarialtextmodificationdesignedtoevadefilters.Thecomment“Yes
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:7
+thereis,iju-FUCK.”wasclassifiedasnon-toxic(FN).Inthiscase,theinsertionofspacesbetween
+charactersobfuscatedtheprofanity,causingatokenizationfailurethatpreventedaccuratedetection.
+KeyFinding1:Fine-tunedBERT-base-uncaseddemonstratedthebestperformanceindetecting
+toxicandnon-toxiccommentsforcodereviewtext,whentrainedonournewdataset.
+3 Module2:CommunicationCoach
+TheCommunicationCoachisanautomatedpedagogicalmoduledesignedtoaddressthenuances
+oftoxicbehaviorinsoftwareengineering.Becausetoxicityencompassesdiverseformslikeinsults
+andentitlement[28,44],binaryclassificationoftenoversimplifiestheproblemandobscuresspecific
+harmsthatdisproportionatelyaffectunderrepresentedgroups[11].Movingbeyondsimpleflagging
+upondetection(Section2),CommunicationCoachclassifiesthecommentintoasubcategoryand
+providestargetedexplanatoryfeedback.Thisgranularapproachtransformsstandardmoderation
+intoaconstructivelearningopportunity,fosteringtransparencyandlong-termbehavioralchange.
+Thefollowingsectionsdetailthedesignandevaluationofthismulti-classclassificationmodule.
+3.1 DatasetforToxicitySubcategories
+PriorSEstudieshaveidentifiedvarioussubcategoriesoftoxicity[9,28,44].Amongthese,Sarkeret
+al.[44]offerthemostcomprehensivetaxonomy,identifying11distincttoxicitytypesinGitHubpull
+requests.Giventhescarcityoffine-grainedannotateddata,weutilizedtheirdatasetof600samples,
+whichcontains532verifiedtoxicinstances.Tocreateabalanceddistributionforinference,we
+supplementedthiscorewith600non-toxiccommentsdrawnfromourbaselinedataset(Section2).
+Theresultingmulticlassdatasetcomprises1,200codereviewcomments(532toxicsamplesand
+668 non-toxic samples) spanning 12 distinct categories, including the non-toxic class. Among
+the532toxicsamples,140instancesarelabeledwithtwodistinctsubcategories(e.g.,Profanity
+andInsult),andthreeinstancesarelabeledwiththreesubcategories,consistentwiththeprimary
+labelingschemaofSarkeret al.[44].Weexplicitlypreservetheseoverlappingannotations,thereby
+formulatingtheproblemasamulti-label,multi-classclassificationtask[5].
+3.2 Prompt-basedDesignForLLMs
+Toclassifytoxicitysubcategories,weleveragedLLMs,whichhavedemonstratedstrongperfor-
+manceinprompt-basedmulti-classtasks[16,48,52].WhileourdetectionmodulereliesonMLMs
+forcomputationalefficiency(Section2),wetransitionedtoLLMsforthisphasetoexploittheir
+generativereasoningcapabilities.Weevaluatedstate-of-the-artmodelsfromtheOpenAI,Claude,
+and Llama families, employing iterative prompt optimization to maximize classification accu-
+racy[18,40,48,52].
+ApivotaldesigndecisioninthisphasewastheadoptionofIn-ContextLearning (prompting)
+overfine-tuningmodelslikeLlama3.2.Thischoicewasdrivenbytheseveredatascarcityinherent
+to fine-grained toxicity classification. Robust fine-tuning necessitates a substantial volume of
+diverseexamplestoensuregeneralization.However,oursubcategorydatasetcontainsonly532
+toxicinstancesdistributedacross11distinctcategories,withlong-tailclassessuchasArrogance
+andObscenitycontainingnegligiblesamples.Suchalimitedvolumeisinsufficientforfine-tuning
+multi-billionparametermodelswithoutinducingsevereoverfitting[20,49].Consequently,we
+leveraged prompt engineering, a strategy that has demonstrated efficacy in both general toxic
+textclassification[18,40]andrecentSE-specificmulticlasstasks[6].Thisapproachenablesus
+toharnessthesophisticatedreasoningcapabilitiesofLLMswhilecircumventingthehighdata
+requirementsofparameteroptimization.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:8 Anindyaetal.
+ChoiceofLLMs:WeconductedacomprehensiveevaluationofLLMsinourdataset.Ourmodel
+selectionincludesthreefamiliesofmodels,coveringbothproprietaryandopen-sourcesystems:
+GPT4o-mini,GPT4o,Claude3.5Sonnet,Claude3.7Sonnet,Llama3.170B,andLlama3.370B.
+PromptSchemaandComponents:Tooperationalizethesubcategoryclassificationapproach,
+wedesignedpromptscapableofclassifyingcommentsintosingleormultipletoxicitycategoriesor
+identifyingthemasnon-toxic.Thestructureofourbaselinepromptisdefinedasfollows:
+ElementsofBasicPromptforMulticlassClassification
+(1) RoleClarification:YouareamaintainerofanOSSproject.Yourtaskistoclassifythe
+subcategoriesoftoxicity.
+(2) TaskAssignment:Pleaseassignoneormoretoxicitycategoriestotheinputcomment
+andtoprovideabriefrationale(step-by-step).
+(3) ContextualizedDefinitions&Few-ShotExamples:Tomitigatesemanticdrift,we
+providedconcise,iterativelyrefineddefinitionsforall11subcategories(e.g.,Identity
+Attack, Entitlement). Each definition was paired with at least one domain-specific
+exampletoillustratetheboundarybetweentechnicalfeedbackandtoxicity.
+(4) ClassificationGuidelines:Ifthecommentisnottoxic,respondwith“Non-Toxic”and
+asupportingexplanation.
+(5) Output Format Specification: Respond in XML format:
+<response> {response} </response> <category> {category} </category>.
+Nowclassifythefollowingcomments.
+ThispromptisstructuredintofivestrategiccomponentsdesignedtooptimizeLLMperformance:
+(i)roleclarification,(ii)taskassignment,(iii)categorydefinitionssupplementedbyrepresentative
+examples,(iv)explicitoperationalguidelines,and(v)astrictXMLoutputspecification.Wedesignate
+thisinitialconfigurationasPrompt1,whichservesasthebaselineforsubsequentiterativerefine-
+ments.Consistentwithourbinaryclassificationframework(Section2),wealignoursubcategory
+definitionsdirectlywiththetaxonomyestablishedbySarkeret al.[44].Comprehensivedetails
+regardingthepromptarchitectureanditsevolutionareprovidedinourreplicationpackage[1].
+PromptOptimizationandIterativeRefinementPromptengineeringhasemergedasacritical
+disciplineformaximizingLLMperformanceindomain-specifictasks[41],significantlyreducing
+thecognitiveloadondevelopers[23].WithinToxiShield,weimplementedaunifiedprompting
+framework across two key modules: (i) The Communication Coach (Section 3), which assigns
+specifictoxicitysubcategories,and(ii)TheReframer(Section4),whichrewritestoxiccommentsinto
+professionalalternatives.Ourapproachisgroundedinthreecoreprinciples:structuredreasoning,
+iterativevalidationagainstquantitativemetrics,andschema-constrainedoutputs.
+First,toenhancethemodel’sinferentialcapabilities[24],weadoptedChain-of-Thought(CoT)
+prompting[54].Thistechniquedecomposesthecomplextasksofclassificationanddetoxification
+intodiscrete,logicalsteps.Specificallyforclassification,CoTcompelsthemodeltoarticulatethe
+rationalebehindaspecificlabel,therebyimprovingbothaccuracyandinterpretability.Second,to
+mitigatehallucinationsandreducevariabilityintoxicitysubcategoryclassification,weemployeda
+systematic,iterativepromptoptimizationstrategy.Aligningwithestablishedmethodologiesfor
+prompt-based multi-class classification [6, 18, 40, 48, 52], we refined our prompts through five
+distinct evolutionary stages (Figure 3). This evolution progressed from generic instructions to
+precise,persona-anchoreddirectives.Weexplicitlyconditionedthemodeltoadoptthepersona
+ofanexperiencedOSSmaintainer,ensuringitcoulddistinguishconstructivetechnicalcriticism
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:9
+Added behavior- Linguistic nuance Concrete lexical guidance Additional cues and
+Basic Prompt based definitions and handling (e.g. sarcasm) with profanity list and hard examples for rare
+explicit overlap rules and lexical cues classification constraints categories
+Stage 1 Stage 2 Stage 3 Stage 4 Stage 5
+Fig.3. CommunicationCoach:IterativePromptEvolution
+fromactualtoxicity.Ateachstage,performancewasrigorouslyassessedagainstavalidationset
+usingtheMatthewsCorrelationCoefficient(MCC),ametricwidelyrecognizedforitsrobustness
+inmulti-classclassificationtasks[6].WespecificallyselectedGPT-4oforthepromptoptimization
+phasebecauseitsadvancedinstruction-followingcapabilitiesmakeitanidealengineforstructuring
+complexclassificationtasks.Thefivestagesinourpromptoptimizationareasfollows.
+• Stage1–TheBaseline(Zero-Shot):Wecommencedwithafoundationalzero-shotpromptthat
+providedonlyclassnamesandhigh-levelclassificationinstructions.Thisstageestablisheda
+performancebaseline,evaluatingthemodel’sinherentcapabilitiespriortotheintroductionof
+domain-specificguidance(Section3.2).
+• Stage2–OperationalDefinitions(ObservableCues): Manualanalysisrevealedthatthemodel
+struggledwithabstractdefinitions.Consequently,were-framedtheprompttoprioritizeobserv-
+ablebehavioralcues.Keyiterationsincluded:(i)replacingabstractdefinitionswithactionable,
+behavior-basedcriteriaforeachsubcategory;(ii)integratingcanonicalfew-shotexamplesto
+ground the model’s understanding of complex classes; (iii) explicitly distinguishing overlap-
+pingcategories(e.g.,Insult vs.Trolling)toresolveedgecases;and(iv)imposingstrictoutput
+constraintstoensureparsingreliabilityonthefulltestset.
+• Stage3–DetectingSubtleNuance:Toaddressthemodel’sdifficultyindetectingimplicittoxicity,
+werefinedtheprompttocapturesubtlenuancessuchascondescensionandsarcasm.Iterations
+involved:(i)explicitlydefiningSarcasmandIronytopreventtheliteralinterpretationofpositive
+wordsinnegativecontexts;(ii)introducinginitiallexicalmarkersforstrongsentiment;and(iii)
+expandingconstraintstoaccountforvariationsinoffensiveslangandnon-standardprofanity.
+• Stage4–LexicalandRule-BasedConstraints:WhileStage3improvedtonedetection,themodel
+still missed toxicity driven by specific vocabulary. We addressed this by integrating lexical
+resourcesandlogicrules:(i)embeddingacuratedlistofprofanitytermsashigh-probability
+toxicity indicators; (ii) incorporating an Anger List (e.g., capitalization patterns, aggressive
+punctuation)todetectheightenedemotionalstates;(iii)applyingnegativeconstraintstoreduce
+falsepositivesarisingfromtechnicaldisagreements;and(iv)implementingcriticallogicrules
+(e.g.,IF profanity is used positively, DO NOT label as Insult)toenforceconsistency.
+• Stage5–RareCategoryRefinement:EvaluationsofStage4indicatedpersistentunder-performance
+inrarecategories,specificallyArrogance(𝑁 =5)andIdentity-Attack(𝑁 =17).Weperformedtar-
+getedrefinementbyexpandingthesedefinitionswithgranularcuesandadditionalrepresentative
+examplestoimproverecall.
+Weselectedthefinalpromptbasedonvalidationperformancewhilepreservingthebasicprompt
+components.Table3detailstheiterativeevolutionofourpromptdesignwiththeGPT-4omodel,
+highlightingtheperformancebottlenecksencountered,thespecificrefinementsapplied,andthe
+resultingtrajectoryofthemodel’sperformance.Fromthepromptevolution,weobservedthat
+Stage4achievedthebestmacroMCCscore,eventhoughitmissedonerarecategory,“Arrogance”.
+Wehaveusedthisbestpromptforfurthervalidationofothermodels.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:10 Anindyaetal.
+Table3. PromptRefinementwithMacroMCCscoresforCommunicationCoach
+Stg. Example MisclassificationReason MCC
+1 Let’s just remove this for now Prompthasonlyabstractdefinitionsand“kill" 0.31
+... kill all the commented-out ismisclassifiedasathreat.
+source.
+2 Helluva test. I had to look at Promptdoesnotcontainexplicitinstructions 0.30
+it for a while before it oozed tohandlesarcasm.
+through.Nicejob!
+3 @Imagebardfeckoff Promptdoesnotidentify“feck"asaprofane 0.31
+wordduetoamisspelling,anditnothavinga
+listofcommonlymisspelledprofanities.
+4 Go ahead and merge this non- Promptdoesnothavecuesinitthatcanhelp 0.37
+sense.Icanworkaroundit. themodeldetectsubtlehintsofarrogance.
+5 Ohboythisissexy:smiley_cat: Promptmisinterpretscommentasobscenedue 0.35
+tothepresenceof“sexy",acommonmarker
+forsexualcontent,anditsdefinitionofanob-
+scenecommenthavinganysexualcontentor
+referencestosexualacts.
+Table4. ComparisonofLLMsforMulti-ClassClassificationForBestModelinEachFamily
+Precision Recall F1 MCC
+ModelName EM Avg Macro Avg Macro Avg Macro Avg Macro
+GPT4o 0.69 0.72 0.41 0.77 0.42 0.74 0.40 0.65 0.37
+Claude3.5Sonnet 0.63 0.74 0.44 0.75 0.42 0.75 0.42 0.66 0.39
+Llama3.370B 0.61 0.69 0.43 0.74 0.36 0.71 0.37 0.60 0.34
+3.3 EvaluationofCommunicationCoach
+EvaluationMetricWemeasuredmulticlassmodelperformanceusingexactmatch(EM),precision,
+recall,F1,andMCCscoresundertwoaggregations:(i)Avg(aggregateoverallinstances)and(ii)
+Macro(unweightedaverageacross12caegories),aspresentedinTable4.
+EvaluationResultsTable4presentsthemulti-classclassificationperformanceoftheleading
+models from each LLM family (GPT-4o, Claude 3.5 Sonnet, and Llama 3.3 70B). For this final
+evaluation,weutilizedtheoptimalprompt(Stage4)identifiedinTable3andemployeddeterministic
+decoding(temperature=0)toensurereproducibility.Overall,Claude3.5Sonnetdemonstratedthe
+mostbalanceddetectioncapabilityacrossthe12categories,achievingthehighestMacroF1-score
+(0.42)alongsideaMacroMCCof0.39.GPT-4operformedcompetitively(MacroF1:0.40,MCC:
+0.40),whileLlama3.370Bexhibitedlowerefficacy(MacroF1:0.37,MCC:0.34).Interestingly,while
+Claudeprovidedsuperiorbalanceacrossminorityclasses,GPT-4ofavoredexactmatchaccuracy0.69.
+ThesefindingshighlightconsiderablevariabilityinhowcontemporaryLLMshandleimbalanced,
+multi-labeltoxicitycategorization.
+3.4 ErrorAnalysisofCommunicationCoach
+ConfusionMatrixToassessthedetectionperformanceofthebestmodel(Claude3.5Sonnet)with
+themostoptimizedpromptonmulticlassclassification,weconductedanevaluationinFigure4.To
+rigorouslyresolvetheambiguityinthemulti-labelgroundtruthforthisanalysis,ahumanrater
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:11
+Non-Toxic
+Profanity
+Insult
+Trolling
+OD toxicity
+SD
+Entitlement
+ID attack
+Threats
+Obscenity
+Flirtation
+Arrogance
+Non-Toxic Profanity Insult Trolling
+OD
+toxicity SD Entitlement
+ID
+attack Threats Obscenity Flirtation Arrogance
+Predicted Label
+lebaL
+eurT
+605 3 9 14 10 16 3 1 2 0 0 5
+2 168 21 0 47 2 2 1 0 2 0 0
+11 16 36 5 11 1 2 1 4 1 0 0
+21 11 14 11 10 0 0 1 1 0 0 1
+20 7 5 4 10 0 1 1 0 1 0 0
+6 4 1 1 2 8 0 0 0 0 0 0
+1 3 5 2 4 0 2 0 0 0 0 0
+2 3 3 0 1 0 0 8 0 0 0 0
+3 2 2 0 2 0 0 0 3 0 0 0
+0 1 1 0 1 0 0 1 0 2 0 0
+1 0 0 0 0 0 0 0 0 1 2 0
+1 0 1 0 0 0 0 0 0 0 0 0
+Fig.4. ConfusionMatrixforCommunicationCoach,whereSDrepresentsSelfDeprecation,IdentityAttack
+representsIDAttack.Valuesinthediagonal(greenershades)arecorrectclassifications.
+manuallyassignedthesinglemostappropriatelabeltoeachsample(i.e.,totalsamplesize:1200)from
+thebestmodel’soutput.Theresultsrevealasharpcontrast:whileexplicitcategorieslikeProfanity
+(168/245) and Non-Toxic (605/668) proved highly robust, the model struggled with ambiguous
+and rare classes. A primary failure mode occurred in Object-Directed Toxicity (OD Toxicity),
+whichwasfrequentlymisclassifiedasNon-Toxic,Profanity,Insult,orTrolling,indicatingdifficulty
+distinguishingtechnicalfrustrationfromactualtoxicity.Furthermore,extremedatasparsityin
+rareinterpersonaltraitssuchasArrogance(𝑁 =2)andEntitlement(𝑁 =17)severelyhindered
+detection,underscoringacriticalneedfordatasetexpansionandrefinedcategorydefinitions.
+ManualEvaluation:Tocomplementourquantitativemetricsandreal-worldperformance,we
+conductedamanualevaluationofourbest-performingmulticlassmodel,Claude3.5Sonnet.Two
+authors independently reviewed a random sample of 100 instances (44 non toxic and 56 toxic
+samples) drawn from the full dataset of 1,200, categorizing each prediction into one of three
+outcomes: correct, where the model correctly identified a comment as non-toxic or its exact
+subcategory,alternate,wheretheeitherpartiallypredictedormisclassifiedtheground-truthlabels,
+andincorrect,whereamodelmisclassifiedatoxiccommentasnon-toxicorviceversa.Inter-rater
+reliability,measuredviaCohen’s𝜅,was0.66,indicatingsubstantialagreement[26].Ofthe100
+evaluatedinstances(44arenon-toxicand56aretoxic),58werecorrectlyclassified,25werestrictly
+misclassified, and 17 were assigned an alternate toxic label. Our annotators also evaluated the
+model’sgeneratedexplanationsforitsclassifications.Themodelperformedparticularlywellat
+identifyingandjustifyingoverttoxicity.Forinstance,whencorrectlyclassifying“andthatFUCKIN
+BRANCH NAME” as Profanity, the model accurately explained it as “Explicit use of profanity
+("FUCKIN")toemphasizeapointaboutabranchname”.However,themodelstruggledwithnuanced
+oroverlappingsubcategories.Forexample,“FriggingloveyouNiki.Seriously”wasmisclassified
+asnon-toxicdespiteitsoriginalFlirtationlabel.Interestingly,themodel’sexplanationaccurately
+recognizedthetextas“Highlyinformalandaffectionatelanguage”yetitstillappliedanon-toxic
+label.Similarly,“howdareuaccusemeoftryingtofreeloadoffotherppl”wasflaggedasInsultand
+Trolling,thoughitwasoriginallylabeledasThreat.Theseinstancesdemonstratethatwhilethe
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:12 Anindyaetal.
+Style Transfer
+Style Transfer Metrics
+10,120 Teacher Model 10,120 Detoxification
+Toxic Comments Toxic + Non-Toxic Pairs Model Detoxified Comment
+Fig.5. TheReframer:Ateachermodelisusedtocreateaparalleldataset,whichisusedtotrainastudent
+detoxificationmodelwithiterativeprompting.
+modelreliablydetectsgeneraltoxicityandgenerateslogicalrationales,itoccasionallystrugglesto
+resolvetheblurredboundariesbetweencloselyrelatedinterpersonaltoxicities.
+KeyFinding2: Claude3.5Sonnetachievesbestperformanceonmulticlasstoxicityclassification
+with0.39MCCand0.42F1score.However,fornuancedordata-sparsetoxicitytypes,modelsfail
+tocapturesubcategoriesefficiently,whichrequiresamorebalanceddataset.
+4 Module3:TheReframer
+Whileflaggingtoxicityisaprerequisiteformitigation[2,44],interventionsthatfocussolelyon
+detectionriskstigmatizecontributorswithoutofferingapathtoimprovement.Incollaborative
+developerworkflows,itisfarmoreeffectivetoguideuserstowardconstructivealternativesthan
+tosimplyrejecttheircontributions.However,achievingeffectivereal-timedetoxificationisnon-
+trivial;itrequiresaprecisebalancebetweenneutralizinghostilityandpreservingsemanticfidelity,
+ensuringthatthetechnicalsubstanceofthefeedbackremainsintact.Toaddressthischallenge,we
+developedaspecializeddetoxificationmodulethatautomaticallyrephrasestoxiccommunication
+inOSSenvironments.
+4.1 EvaluatingDetoxification
+FollowingthemethodologyestablishedbyOstheimeretal.[34],weemployedfourcomplementary
+metrics to evaluate the efficacy of our detoxification models in capturing the critical trade-off
+amongneutralizingtoxicity,preservingtechnicalintent,andmaintaininglinguisticfluency.
+Style Transfer Accuracy (DETOX): This metric quantifies the model’s success in stripping
+toxicityfromthetext.WeutilizedToxiCR[45]tocomputetoxicityprobabilityscoresforboththe
+originalanddetoxifiedsamples,calculatingthenetpercentagereduction.Astheprimaryobjective
+ofourtoolismitigation,highstyleaccuracyservesasthecriticalindicatorofsuccess.
+Fluency(FL):Weevaluatedthegrammaticalcorrectnessandnaturalnessofthedetoxifiedoutput
+usingapre-trainedCoLA(CorpusofLinguisticAcceptability)classifier[53].Highfluencyscores
+indicatethattherephrasedcommentsaresyntacticallysoundandreadable,aprerequisitefortheir
+acceptanceinprofessionaldeveloperworkflows.
+ContentPreservation(PRESERVE):Toassesssemanticfidelity,weutilizedtheembedding-based
+similaritymetricproposedbyWietinget al.[55].Byencodingboththeoriginalanddetoxified
+comments into paraphrastic sentence embeddings and computing their cosine similarity, this
+method captures conceptual equivalence rather than mere word overlap. Unlike rigid lexical
+metricssuchasBLEU[35],thisapproacheffectivelycreditsvalidparaphrases,ensuringthatthe
+technicalmeaningofthecodereviewremainsintactafterdetoxification.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:13
+J-Score:Toprovideaholisticperformancebenchmark,wecalculatedJ-Score,definedasthehar-
+monicmeanofContentPreservation,Fluency,andStyleAccuracy.J-Scoreensureshighperformance
+inonearea(e.g.,detoxification)isnotachievedattheexpenseofothers(e.g.,semanticloss).
+4.2 DatasetConstructionviaKnowledgeDistillation
+WeformulatethedetoxificationofcodereviewsasaTextStyleTransfer(TST)task,specifically
+aimingtoshiftthestylisticattributefromtoxicto‘neutral’or‘professional’whilerigorouslypre-
+servingtechnicalsemantics.EffectiveTSTrequiresaparallelcorpusthatpairseachtoxiccomment
+withafaithful,non-toxicrewrite,enablingmodelstolearncontentpreservationalongsidetoxicity
+reduction[15,36].However,suchacorpusdoesnotexistforthesoftwareengineeringdomain.
+Toaddressthisscarcity,weemployedateacher-studentknowledgedistillationframework[19]to
+synthesizeahigh-qualityparalleldataset.
+Teacher-Generated Parallel Data: We utilized the 10,120 toxic comments identified in our
+filteringphase(Table1)asthesourcedata.Togeneratetheirnon-toxiccounterparts,weleveraged
+multiplestate-of-the-artLLMsactingas“teacher”models.Theseteacherswerepromptedtorewrite
+eachtoxiccommentintoarespectfulalternative,strictlyadheringtotheoriginaltechnicalintent.
+This process yielded several candidate parallel datasets, one per teacher model. To select the
+optimaltrainingbasisforourdownstream(student)models,weevaluatedeachteacher-generated
+datasetusingthequantitativemetricsdefinedinSection4.1.Theteachermodelthatmaximized
+theaggregateJ-Scorewasselectedtoconstructthefinalparallelcorpus.
+PromptEngineeringforDataSynthesis:Thequalityoftheparalleldatasetisdirectlydependent
+ontheefficacyoftheteacher’sprompt.Weiterativelyrefinedthesetemplatesagainstourevaluation
+metrics until achieving stable performance. Detailed prompts are provided in our replication
+package[1].Weoptimizedourpromptsusingseveralkeystrategiestoensureconsistencyand
+semanticfidelity:
+• Chain-of-Thought(CoT)andFew-ShotLearning:Tomitigatehallucinationandimprovereasoning,
+weemployedCoTpromptingcombinedwithfew-shotexamples.Thisguidedtheteachermodels
+tofirstanalyzethetoxicelementsandthensystematicallyreconstructthesentence,ensuringthe
+technicalcoreremainedintact.
+• StructuredOutputConstraints:Tofacilitateautomatedparsingandintegration,weenforceda
+strictoutputschema.Theteachermodelswereinstructedtogenerateresponsesinastandard-
+izedformat,suchas:“Detoxified: <rewritten comment>; Rationale: <explanation of
+changes>”.Thisstructureminimizedoutputvariabilityandensuredeveryrewrittencomment
+wasaccompaniedbyanexplanation,acriticalfeatureofToxiShield’spedagogicalapproach.
+TeacherModelEvaluation:Toassessthequalityofdatasetsgeneratedbythecandidateteacher
+models,wesampled500detoxifiedpairsfromeachdataset.Weevaluatedthemusingthemetrics
+introducedinSection4.1.Foreachdataset,wereporttheaveragescoresacrossthesemetricsalong
+withtheoverallJ-score,whichsummarizestheirtrade-offs.Table5showstheevaluationmetrics
+ofthefourcandidateteachermodelsusedinourstudy.Whileallteachermodelsdemonstrated
+strongdetoxificationcapabilities,theirperformancevariedinstrikingabalancebetweenmeaning
+preservation and fluency. Among them, GPT 4o-05-13 achieved the highest J-score of 88.14%,
+indicatingthebestoverallbalanceacrossmetrics.Wethereforeselectedthedatasetgeneratedby
+thismodelasthefinalparallelcorpusfortrainingthestudentmodels.
+4.3 DetoxificationModelTraining
+FollowingtheidentificationofGPT-4o-2024-05-13asthesuperiorteachermodel,weutilizedits
+generated parallel corpus to fine-tune a lightweight, open-source student LLM. This student
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:14 Anindyaetal.
+Table5. Translationmetricsforteachermodelsusedtogenerateparalleldatasets
+Model DETOX(%) FL(%) PRESERVE(%) J-Score(%)
+OpenAIGPT3.5Turbo 91.74 98.81 71.01 85.46
+OpenAIGPT4o-05-13 96.17 99.01 73.86 88.14
+Claude3 97.50 98.73 57.41 79.36
+Llama3-70B 96.90 95.08 65.51 83.10
+Table6. Performancecomparisonofdetoxificationmodels
+Model DETOX(%) FL(%) PRESERVE(%) J-Score(%)
+GPT-4omini(off-the-shelf) 96.35 98.36 65.14 83.57
+Llama3.18B 91.95 98.03 66.42 83.03
+Phi3.5 94.16 96.48 64.77 82.36
+Gemma22B 87.59 94.49 68.47 81.96
+Qwen2.5Instruct7B 94.88 98.66 65.98 83.73
+GPT-3.5FT([38]off-the-shelf) 88.50 99.31 59.38 78.51
+Llama3.23B 95.27 97.03 67.07 84.00
+model serves as the core inference engine for ToxiShield’s detoxification module. To optimize
+computational efficiency without compromising model performance, we employed Low-Rank
+Adaptation(LoRA)[20].Thefine-tuningprocessconsistedof10epochsusingaStratified8:2train:
+testsplitofthe10,120samples,employing10epochswithalearningrateof2×10−4,aweight
+decayof0.01,and5warm-upsteps.Alltrainingprocedureswereexecutedonacloudinstance
+equippedwithasingle24GBNVIDIARTX4090GPU.Toensurereproducibilityandminimize
+stochasticity,weenforceddeterministicgenerationparametersacrossallexperiments(temperature
+=0.0,maximumoutputlength=256tokens).Thisstrictcontrolallowsustoattributeperformance
+variationsdirectlytomodelarchitectureandpromptdesignratherthanrandomsamplingnoise.
+4.4 DetoxificationModelEvaluation
+Weevaluatedtheperformanceofourdistilledstudentmodelsusingtheidenticalmetricsetapplied
+intheteacherphase,ensuringdirectcomparability.Table6summarizestheresultsacrossseven
+distinct LLM architectures. While the student models generally yielded lower raw scores than
+theirteachercounterparts,severaldemonstratedexceptionaltrade-offsbetweentoxicityreduction
+andsemanticpreservation.Mostnotably,Llama3.23Bemergedasthetop-performingcandidate,
+achievingthehighestaggregateJ-Scoreof84.00%.Thismodeleffectivelybalancedstrongstyle
+transferaccuracy(95.27%)andfluency(97.03%)withrespectablecontentpreservation(67.07%).
+Qwen2.5Instruct7BfollowedcloselywithaJ-Scoreof83.73%,whiletheproprietaryGPT-4omini
+achievedacomparable83.57%.Intermsofspecificcomponentmetrics,Gemma22Bachievedthe
+highestcontentpreservation(68.47%)butsufferedfromlowerstyletransferaccuracy(87.59%),
+whereasPhi3.5excelledintoxicityreduction(94.16%)butlaggedincontentpreservation(64.77%).
+GiventhattheJ-Score,theharmonicmeanofthesemetrics,isthestandardbenchmarkforTST
+tasks,theseresultsconfirmLlama3.23Bastheoptimalchoice.Crucially,thisfindinghighlights
+thataspecialized,small-parameteropen-sourcemodelcanoutperformlargerproprietarymodels
+likeGPT-4ominiwhenfine-tunedfordomain-specificdetoxification.
+ErrorAnalysisofBestPerformingModel:Tovalidateourmodelperformance,wemanually
+validatethemisclassificationofourmodel.Specifically,wefocusonwhereourmodelfailedto
+rephrasethetoxiccomments.Welabeledadetoxifiedcommentasmisclassifiedifitisscored0.5or
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:15
+abovebyToxiCR.Thebestperformingmodel,Llama3.23Bproduced78misclassificationsoutof
+2018detoxifiedcommentsinthetestset.Weclassifytheseinstancesintofourcategories.
+• NameError:ThistypeoferroroccurredwhenToxiCRflaggedotherwisebenigncommentsas
+toxicduetothepresenceofprofanesubstringswithinusernames.Specifically,sixsuchinstances
+wereobserved,accountingfor7.69%ofthetotalmisclassifications.Forexample,thecomment
+“@warunalakshitha,doweneedtoescapethedots?"wasincorrectlylabeledastoxicbecausethe
+usernamecontainedasubstringthatmatchedaprofaneword.
+• Context Error: The most prevalent category of errors is Context error, with 29 occurrences.
+Commentsoftenhadtoxictextasnamesofvariables,files,orfolders.Ourmodeldidnotrephrase
+them, as rephrasing them would change the context entirely. For example, “I’d change it to
+‘is_disgusting_for‘,asthecurrentnameimpliesthattheitemitselfisdisgustedbysomeonepicking
+itup."wasidentifiedastoxicduetothevariablenamecontainingtheworddisgusting.
+• GeneralError:Generalerrorsareclassifiedasthoseinstanceswhereourmodelfailedtoremove
+toxicity.Forinstance,“Resonatorswon’tbeshittypickaxesnow?That’sgreat!"whereourmodel
+failedtodetoxifyit.Thereare20samplesofthiscategoryinoursample.
+• ToxiCRError:TheseweresolelyduetotheToxicityFiltermodulemisclassifyingadetoxified
+commentastoxic.Therewere23suchcases.Forexample,‘::’isC++code.Anotherexampleis
+‘Device.enumerat-ed_found’? wasidentifiedastoxicbyToxiCR.
+ManualValidationToquantifyannotationreliability,twoauthorsindependentlyratedarandom
+sampleof100detoxifiedcommentsona1–5Likertscaleacrossthreedimensions(MinimalChange,
+Context Preservation, Communication Style), following Rahman et al. [38]. According to our
+evaluationwiththis100samples,theaveragescoreofminimalchangeis4.35,ContextPreservation
+is4.16,andCommunicationStyleis4.48,whichindicatesahigherperformanceofourReframer
+modelforourdataset.Wecomputedquadratic-weightedCohen’s𝜅 foreachdimensiontorespect
+theordinalscale,obtaining𝜅 =0.82forMinimalChange,𝜅 =0.72forContextPreservation,and
+𝜅 = 0.77 for Communication Style. Following Landis & Koch [26], these correspond to almost
+perfectagreementforMinimalChangeandsubstantialagreementforContextPreservationand
+CommunicationStyle,indicatingstrongconsistencyinourmanualdetoxificationevaluation.
+KeyFinding3:Llama3.23ByieldedthehighestoverallJ-Score(84%),effectivelyoutperforming
+theotherevaluatedmodelsinpreservingfluencyandmeaningwhiledetoxifyingtext.
+5 UserEvaluationofToxiShieldwithIntegratedBrowserExtension
+We developed a browser extension (Figure 6) designed to detect and mitigate toxic comments
+withinGitHubpullrequestsinreal-time.Leveragingafullyon-devicearchitecture,thetoolop-
+eratesviaatwo-stagepipeline:first,afine-tuneddetectionmodelmonitorsinputasitistyped;
+second,uponidentifyingtoxicity,alocalizedLLMgeneratesanon-toxicalternativealongsidean
+explanatoryrationale.Whenacommentisclassifiedasnon-toxic,thetooltakesnoactionand
+thecommentproceedstosubmissionunchanged.Thislocal-firstdesignensuresuserprivacyand
+eliminatesrelianceoncostlyexternalAPIs.Toenablethislightweightdeployment,weexported
+ourtrainedmodelstotheONNXformat,ensuringcross-platformportability.Furthermore,we
+appliedquantizationtechniquestosignificantlyreducemodelsizeandaccelerateinference.These
+optimizationsarecriticalforachievingthelowlatencyrequiredforareal-timeuserexperience
+withoutcompromisingdetectionaccuracy.
+5.1 ParticipantRecruitmentandSurvey
+FollowingInstitutionalReviewBoardapproval,werecruited10professionalsoftwaredevelopers
+fromtheUnitedStatesandBangladeshtoevaluatethetool’susabilityinareal-worldsetting.To
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:16 Anindyaetal.
+Fig.6. BrowserExtensiontointegrateToxiShieldwithGitHub-basedpullrequestreviews
+Table7. CompleteTAMSurveyResults
+Construct/Statement Mean SD
+PerceivedUsefulness(PU)
+Thetoolprovidesvaluablefeaturesrelevanttomywork 3.80 0.78
+Usingthistoolmakesiteasiertocompletemytasks 3.40 0.69
+Thetoolsavesmetimeinmydailyworkroutine 3.00 1.05
+PerceivedEaseofUse(PEOU)
+Thebrowserextensionwaseasytouse 4.30 0.95
+Icaneasilynavigatethetooltofinddifferentuser-friendlyfeatures 4.00 0.67
+Theuserinterfaceofthetoolisintuitiveanduser-friendly 4.00 0.67
+Thetoolprovidesclearandhelpfulerrormessageswhenneeded 3.40 0.52
+AttitudeTowardUse(ATU)
+Overallsatisfaction(1–10scale) 7.83 1.83
+BehavioralIntentiontoUse(BI)
+Iwouldrecommendthistooltomycolleagues 3.50 1.22
+ensureproficiency,participantsattendedatutorialsessionwheretwoauthorsdemonstratedthe
+installationandfunctionalityofthebrowserextension.Thestudyemployedatwo-weeklongitudinal
+design,duringwhichparticipantsintegratedthetoolintotheirdailyworkflows.Crucially,tostrictly
+prioritizeuserprivacy,wedeliberatelyrefrainedfromcollectingtelemetryorusagelogs.Atthe
+conclusionofthestudy,participantscompletedacomprehensivesurveyconsistingofbothLikert-
+scaleitems andopen-endedquestions. Regarding usagefrequency, threeparticipantsreported
+usingthetoolfrequently,fiveoccasionally,andtworarely.Allsurveyinstrumentsandanonymized
+responsedataareavailableinourreplicationpackage[1].
+5.2 EvaluationInstrument
+To rigorously evaluate developer perceptions of ToxiShield, we employed the Technology Ac-
+ceptance Model (TAM) [27], a widely adopted framework for assessing user adoption of new
+technologies.OursurveyinstrumentincorporatednineitemsadaptedfromTAM,categorizedinto
+fourdistinctdimensionsasdetailedinTable7.FortheitemsbelongingtoPU,PEOU,andBI,users
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:17
+ratedeachitemonaascaleof1to5,where1means‘StronglyDisagree’and5indicates‘Strongly
+Agree’.Theanalysisofthesedimensionsisasfollows.
+i)PerceivedUsefulness(PU):Thisdimensionmeasuresthedegreetowhichauserbelievesthatusing
+aspecificsystemwillenhancetheirjobperformance.Ourresultsindicatethatdevelopersfound
+ToxiShieldmoderatelyuseful,particularlyregardingfeaturerelevanceandtasksupport.However,
+variabilityintime-savingmetricssuggeststhatwhilethetoolishelpful,furtheroptimizationis
+requiredtomaximizeworkflowefficiency.
+ii)PerceivedEaseofUse(PEOU):PEOUassessesthedegreetowhichusingthesystemisfreeof
+effort.ToxiShieldreceivedhighratingsinthiscategory,confirmingthatitsdesignisaccessible
+andintuitive.Whiletheoveralluserexperiencewaspositive,lowermeanscoresrelatedtoerror
+handlingandtaskcompletionspeedhighlightspecificusabilitybottlenecksthatwarrantattention
+infutureiterations.
+iii)AttitudeTowardUse(ATU):Thismetriccapturestheuser’saffectivereactiontothesystem.We
+measuredgeneralsatisfactionona10-pointscale.Thehighaggregatescoredemonstratesthatthe
+majorityofdevelopersholdapositiveattitudetowardToxiShield,validatingitsroleinimproving
+thecodereviewexperience.
+iv)BehavioralIntention(BI):BIpredictsthelikelihoodofausercontinuingtousethetechnologyor
+recommendingittoothers.Althoughthereportedintentionwaspositive,thestandarddeviation
+revealsvariabilityinuseradvocacy.Thissuggeststhatwhilethecorevaluepropositionissound,
+improvementsinusabilityandfeaturerobustnessarenecessarytosolidifyusercommitment.
+5.3 EvaluationResults
+TheTAManalysisconfirmsthatToxiShieldisgenerallywell-receivedbyprofessionaldevelop-
+ers, with particular strength in ease of use and overall satisfaction. While the tool’s utility is
+acknowledged,enhancingtaskefficiencyanderrormanagementmechanismswillbecriticalfor
+drivingbroaderadoption.Wehaveatotalof8openendedquestionsinoursurvey.Twoofour
+authorsconductedathematicanalysisoftheopen-endedresponsesfollowingBraunandClarke[3],
+identifyingfourprimarythemes.
+Theme1:PerceivedValueandUsability.Participantsrespondedpositivelytothetool’score
+conceptanddesign.P7described“Blockingandrefiningtoxiccommentsinrealtimeisaninnovative
+idea”.P3highlightedthevalueofthemission,notingthat“detoxificationisneededformentalhealth
+ofthedeveloperswhichilikedmost."Regardingusability,P2foundthetool“straightforward,"andP6
+describeditas“easytouseandwellbuild,"validatingthebrowser-basedimplementation.
+Theme2:WorkflowIntegrationandLatency.Despitethegoodusability,performancewasa
+majorfrictionpoint.P3notedthat“scanningisslow,"andP7advised“latencyneedstoimprovealot"
+fortheBERTclassifier.P3criticizedthemanualtrigger,statingthetoolshould“detectpull-request
+orotherpagesonrun-time"tobetrulyuseful.
+Theme 3: Nuance in Toxicity Detection. A key finding was the tool’s struggle with subtle
+toxicity.P5notedthat“Ihaveusedsarcasticandfrustratedtoneswhichdidnotcomeuponthetoxicity
+radar".P6providedsignificantinsight,arguingthattoxicityisoftenbehavioral,suchas“askingfor
+unnecessaryhugechanges"or“beingveryspecificaboutcodeindentation."P6alsoemphasizedthat
+thesebehaviorsare“hardtocatch"butcanbejustasharmfulasharshwords.
+Theme4:ExpandingScopeBeyondToxicity.ParticipantssuggestedevolvingToxiShieldintoa
+broaderreviewassistant.P6requestedmetricsfor“Clarity"and“Utility"tomeasureacomment’s
+“impact on the merge request." P4 suggested the tool would be better if it offered “code smells"
+detection,andP7proposeda“Perhapsachat-botinterfacelikeCo-pilotwouldbemoreeffective"to
+supportconstructivedecision-makingduringthewritingprocess.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:18 Anindyaetal.
+6 ImplicationsandLessonsLearned
+SocioTechnicalImplicationsofToxiShieldinOSSDevelopment:Byintroducingreal-time,
+rationale-awareintervention,ToxiShieldcarriesdistinctsocio-technicalimplicationsforthehealth
+of OSS communities. First, ToxiShield fundamentally alters the economics of moderation. By
+automatingthedetectionprocessandprovidingimmediate,explanatoryfeedback,thetoolsignifi-
+cantlyreducestheemotionalandcognitivelabordemandedofOSSmaintainers,whocurrently
+shouldertheburdenofmanualpolicing.Second,thetoolservesavitalpedagogicalfunction.AsTox-
+iShielddoesnotmerelyflagcontent,iteducatescontributorsbyarticulatingwhyspecificlanguage
+isharmful.Thistransformsmoderationfromapunitiveactintoalearningopportunity,fostering
+long-termbehavioralchange.Furthermore,byofferingdetoxifiedalternativesthatpreservethe
+originaltechnicalintent,ToxiShielddirectlysupportsdiversityandinclusionefforts.Giventhat
+toxicity disproportionately impacts minority contributors [28], a tool that neutralizes hostility
+withoutsilencingtechnicalcritiqueisessentialforretainingadiversecontributorbase.Finally,
+recognizingthatCodesofConduct(CoC)areofteninsufficientontheirown[2],ToxiShieldacts
+asanoperationalenforcementmechanism,bridgingthegapbetweencommunityidealsanddaily
+practice.Byembeddingthesevaluesdirectlyintothecommunicationpipeline,ToxiShieldcanhelp
+cultivateamoreresilientandinclusiveOSSecosystem.
+EffectivenessofLLMsinCodeReviewDetoxification: Weevaluatedsevenfine-tunedLLMs
+onourdetoxificationdatasetusingfourcomplementarymetrics:styleaccuracy,fluency,content
+preservation,andtheaggregatedJ-score(Table6).Allmodelsreducedtoxicitybymorethan87%
+asmeasuredbyToxiCR,confirmingthatLLMsareeffectivedetoxificationtools.However,their
+abilitytopreservesemanticcontentvariedconsiderably.Thesefindingsindicatethatwhilemost
+LLMs perform well in toxicity reduction and fluency (all exceeding 94% in fluency), semantic
+preservationremainsachallenge,witheventhebestmodelsretainingonlyabouttwo-thirdsofthe
+originalmeaning.Modelselectionthuscriticallyaffectspracticalutility:lightweight,open-source
+modelslikeLlama3.23Bcanofferastrongbalanceofeffectiveness,efficiency,anddeployability
+forreal-timedevelopertooling.
+Open-SourceLLMsvsProprietaryModels:Ourevaluationshowsfine-tunedopen-sourcemodels
+canmatchorsurpassproprietarysystems.WhileGPT-4ominiachievedthehigheststyleaccuracy,
+Llama-3.23Bsecuredthebestoverallscorebybetterpreservingcontent.Thisdemonstratesthat
+small,open-sourcemodelsareidealforreal-timedeployment:theyarecost-effective,transparent,
+andlocallyhosted.ByeliminatingrelianceonexternalAPIs,theselightweightcheckpointsbypass
+commonprivacyandcompliancehurdles,makingToxiShieldpracticalforwidespreadenterprise
+adoption.Futureproductiondeploymentswillincorporatetelemetrytoprovidelongitudinalinsights
+intoadoptionandToxiShield’slong-termimpactondevelopercommunicationnorms.
+7 ThreatstoValidity
+InternalValidityThereisariskthatthemodels,particularlythosefine-tunedusingLoRA,may
+overfittothespecificdatasetusedinthisstudy,potentiallylimitingtheirgeneralizabilitytoother
+datasetsordomains.Althoughcross-validationwasemployedtomitigatethisrisk,itcannotbe
+entirelyeliminated.Moreover,ourmulti-classevaluationwasconductedonasmall-scaledataset
+of1,200samples,includingtheonlypubliclyavailablecorpusofferingfine-grainedtoxicitylabels
+compatible with our 11-class schema [44]. Future studies should evaluate larger, more diverse
+corporatomitigatethelimitedstatisticalpowerandsamplingbiasofourdataset.
+ExternalValidityFirst,ourdataset’sfocusoncodereviews,withitsspecificjargonandcode
+snippets,maylimittheapplicabilityofourfindingstootherdomains.However,sincethedatais
+fromGitHub,ourresultsshouldremainvalidwithinthebroadersoftwareengineeringcommunity.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:19
+Table8. FeaturecomparisonhighlightingToxiShield’scomprehensivecapabilities.Checkmarks(✓)indicate
+support,whilecrosses(✗)indicateunsupportedfeatures.MC->MultiClass,DT->Detoxification
+Tool Binary MC DT Explanation RealTime
+Ramanetal.[39] ✓ ✗ ✗ ✗ ✗
+Egelmanetal. ✗ ✗ ✗ ✗ ✗
+ToxiCR[45] ✓ ✗ ✗ ✗ ✗
+ToxiSpanSE[42] ✓ ✗ ✗ ✗ ✗
+Ferreiraetal.[14] ✗ ✗ ✗ ✗ ✗
+Rahmanetal.[38] ✓ ✗ ✓ ✗ ✗
+Mishra&Chatterjee[29] ✗ ✗ ✗ ✗ ✗
+ToxiShield ✓ ✓ ✓ ✓ ✓
+Second,ourmodelswereoptimizedforasingletask(toxicityclassification)andmaynottransfer
+effectivelytootherNLPapplicationsorsoftwarecontexts.Finally,apotentialthreattothegen-
+eralizabilityofourfindingsisthesamplesizeofouruserstudy(𝑁 =10).Ourrecruitmentwas
+constrainedbystrictIRBlimitationsongeographiceligibilityandbyahighbarriertoentry(a
+two-weekcommitmentandinstallationofabrowserplugin).However,wemitigatedthisthreatby
+ensuringdeepengagement;allparticipantsprovidedextensivefeedbackoverthetwo-weekperiod.
+Furthermore,withinthecontextofusabilityevaluation,priorresearchpositsthat5participants
+aresufficienttoidentify80%ofusabilityissues[51],and10participantscanuncoverupto92%of
+issues[12].Thus,whileoursamplesizelimitsbroaddemographicgeneralization,webelieveitis
+sufficienttocapturetheprimaryusabilityandworkflowchallengesofthetool.
+ConstructValidityFirst,ourdefinitionoftoxicity[28,45]maynotencompasssubtleformsof
+toxicbehavior,suchaspassive-aggressivecomments.Second,ouruseofprompttuningcouldlead
+tooverlydependentresultsonspecificprompts,therebyaffectingreproducibility.Tomitigatethe
+relatedriskofLLMnon-determinism,wefixedgenerationparameters(e.g.,temperature,top-p)
+andconductedastructurederroranalysis,whichincreasedtheconsistencyandtrustworthinessof
+thedetoxificationprocess.
+Ecological Validity While our real-time toxicity tool has proven effective in controlled tests,
+itspracticalsuccessdependsonuseradoptionandseamlessworkflowintegration.Asthefirst
+real-timedetoxificationtoolbuiltfortheSEdomain,it’sakeysteptowardhealthierdeveloper
+communication.Wewillusefeedbackfromreal-worlddeploymenttoaddresschallengeslikealert
+fatigue,continuouslyimprovingthetool’sadoptionandimpact.
+8 RelatedWork
+Antisocial Behavior in Open Source Software Development Environments: Antisocial
+behaviorintheSEdomainisbroadlydefinedasactionsthatharmcommunityparticipation[28,
+37, 43, 44]. Although OSS environments exhibit lower toxicity than general social media (i.e.,
+RedditorTwitter),theirprofessionalandtechnicaldynamicsmaketheseinteractionsqualitatively
+distinct[28].Toxicityoftenmanifestssubtlythroughpersonalattacks(‘destructivecriticism’[17]),
+aggressiverejections(‘pushback’[8]),ordismissivetones(‘incivility’[13]).Additionally,arecent
+large-scalestudy[44]revealedthattoxicityisunevenlydistributed,peakingingamingprojects
+andstronglycorrelateswithtechnicalfactorssuchascodechurnandreviewintervals.Buildingon
+thisextensivefoundation,ourstudymovesbeyondcharacterizationtodevelopadaptive,real-time
+strategiestomitigatetoxicinteractionsinOSSenvironments.
+AutomatedDetectionofToxicityinSoftwareEngineering:General-purposeNaturalLanguage
+Processing(NLP)toolsoftenfailtoaccuratelydetecttoxicitywithinSoftwareEngineering(SE)
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:20 Anindyaetal.
+contextsduetotheirinabilitytoparsetechnicaljargonanddeveloper-specificcommunication
+styles [33, 43]. Recognizing this gap, Raman et al. [39] pioneered the field by developing the
+firsttoxicitydetectorspecificallytailoredforOSScommunities.However,subsequentevaluations
+revealed significant limitations in this early model’s generalizability and accuracy [28, 37, 43].
+Addressingtheseshortcomings,laterstudiessoughttorefinedetectioncapabilities.Qiuetal.[37]
+designedaclassifierthatintegratedmetricsfor‘pushback’[8]and‘toxicity’[39],whileSarkeret
+al. [45] established a new benchmark with ToxiCR, a tool trained on 19,651 manually labeled
+codereviewcommentsthatachievedan88.9%F1-score.Mostrecently,Rahmanetal.[38]shifted
+theparadigmtowardgenerativeAI,utilizingbothvanillaandfine-tunedLargeLanguageModels
+(LLMs)tonotonlyidentifyuncivilcommentsbutalsoproposecivilalternatives.Ourworkbuilds
+uponthesefoundationalefforts,advancingthestateoftheartbyintegratingaccuratedetection
+withreal-time,explanatorymitigationstrategies.
+Repercussions of toxicity on OSS projects: The consequences of toxic interactions in OSS
+developmentextendfarbeyondmomentaryunpleasantness,creatingacascadeofnegativeeffects
+thatdamagebothindividualsandcommunities.Researchdemonstratesthattoxicityfundamentally
+underminesdevelopers’mentalhealth[4],servingasaprimarydriverofsignificantstressand
+burnout[39].Theseindividualstrugglesinevitablydegradethecollectiveworkflow;phenomena
+suchasunjustifiedpushbackanddestructivecriticismhavebeenshowntodiminishproductivity
+andseverelystraininterpersonalrelationships[8,32].Mostcritically,toxicitydisproportionately
+harms minority developers, acting as a systemic barrier that obstructs Diversity, Equity, and
+Inclusionefforts[17].Buildinguponthisevidenceofharm,ourstudyproposesactionablestrategies
+tomitigatetheseadverseeffectsandfosterhealthierOSScommunities.
+Novelty:ToxiShielddistinguishesitselffromexistingtoxicitydetectionapproachesthroughthree
+advancements,assummarizedinTable8.First,itmovesbeyondbinaryclassificationbyemploying
+multi-classanalysistoidentifytoxicitysubcategories.Second,itprovidesexplanatoryfeedback
+detailingwhyacommentistoxictofosterbehavioralchange.Finally,ToxiShieldrepresentsthe
+firstempiricallyevaluated,real-timetoxicitymitigationtoolintegratedintodeveloperworkflows.
+9 Conclusion
+Ourstudyintroducesarobustapproachfordetectingandmitigatingtoxicityincodereviewenvi-
+ronments,fosteringhealthiercommunicationinsoftwaredevelopment.WepresentToxiShield,a
+domain-specificdataset,andfine-tunestate-of-the-artlanguagemodelsusingLoRAandprompt-
+tuningtechniquestoaddressthenuancesoftoxicityincodereviewdiscourse.Ourpipelineen-
+ables real-time detection, multiclass classification, and detoxification, with ToxiShield offering
+cost-efficientintegrationintoexistingplatforms.Experimentalresultsdemonstratethetool’seffec-
+tiveness,thoughchallengeslikeoverfittingandlimitedgeneralizabilityexist.Thisworklaysthe
+groundworkforresearchinautomatedtoxicitydetectionandinclusivedevelopercollaboration.
+ACKNOWLEDGEMENT
+ThisresearchispartiallysupportedbytheUSNationalScienceFoundationunderGrantNo.2340389,
+andastart-upgrantfromtheUniversityofNebraskaatOmaha,CollegeofInformationScience
+andTechnology.ThefindingsofthisresearchdonotnecessarilyreflecttheviewsoftheNational
+ScienceFoundation.WearealsogratefultotheAppliedMachineLearningLabintheDepartment
+ofCSEatBangladeshUniversityofEngineeringandTechnologyforlogisticalsupport.
+DATAAVAILABILITY
+Thedataset,sourcecode,andexperimentalresultsofToxiShieldareavailablehere[1]andDOI:
+https://doi.org/10.5281/zenodo.19490337.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:21
+References
+[1] MdAwsafAlamAnindya,ShowvikBiswas,AnindyaIqbal,JaydebSarker,andAmiangshuBosu.2026. ToxiShield:
+ReplicationPackage. https://github.com/WSU-SEAL/ToxiShield
+[2] SarthakBharadwaj,FabioSantos,andBiancaTrinkenreich.2025. TheShiftingSandsofToxicity:TheEvolving
+NatureofInterpersonalChallengesinOpenSource.In2025ACM/IEEEInternationalSymposiumonEmpiricalSoftware
+EngineeringandMeasurement(ESEM).1–11.doi:10.1109/ESEM64174.2025.00016
+[3] VirginiaBraunandVictoriaClarke.2006.Usingthematicanalysisinpsychology.Qualitativeresearchinpsychology3,
+2(2006),77–101.
+[4] KevinDanielAndréCarillo,JosianneMarsan,andBogdanNegoita.2016.Towardsdevelopingatheoryoftoxicityin
+thecontextoffree/opensourcesoftware&peerproductioncommunities.SIGOPEN2016(2016).
+[5] OferDekelandOhadShamir.2010.Multiclass-multilabelclassificationwithmoreclassesthanexamples.InProceedings
+oftheThirteenthInternationalConferenceonArtificialIntelligenceandStatistics.JMLRWorkshopandConference
+Proceedings,137–144.
+[6] TanniDev,SaymaSultana,andAmiangshuBosu.2025.BeyondBinaryModeration:IdentifyingFine-GrainedSexistand
+MisogynisticBehavioronGitHubwithLargeLanguageModels.In2025ACM/IEEEInternationalSymposiumonEmpirical
+SoftwareEngineeringandMeasurement(ESEM)(Honolulu,Hawai,USA,USA).1–12.doi:10.1109/ESEM64174.2025.00059
+[7] JacobDevlin,Ming-WeiChang,KentonLee,andKristinaToutanova.2019.Bert:Pre-trainingofdeepbidirectional
+transformersforlanguageunderstanding.InProceedingsofthe2019conferenceoftheNorthAmericanchapterofthe
+associationforcomputationallinguistics:humanlanguagetechnologies,volume1(longandshortpapers).4171–4186.
+doi:10.18653/v1/N19-1423
+[8] CarolynDEgelman,EmersonMurphy-Hill,ElizabethKammer,MargaretMorrowHodges,CollinGreen,CieraJaspan,
+andJamesLin.2020.Predictingdevelopers’negativefeelingsaboutcodereview.InProceedingsoftheACM/IEEE42nd
+InternationalConferenceonSoftwareEngineering.174–185.doi:10.1145/3377811.3380414
+[9] RamtinEhsani,MiaMohammadImran,RobertZita,KostadinDamevski,andPreethaChatterjee.2024.Incivilityin
+opensourceprojects:Acomprehensiveannotateddatasetoflockedgithubissuethreads.InProceedingsofthe21st
+InternationalConferenceonMiningSoftwareRepositories.515–519.doi:10.1145/3643991.3644887
+[10] RamtinEhsani,RezvanehRezapour,andPreethaChatterjee.2023.Exploringmoralprinciplesexhibitedinoss:Acase
+studyongithubheatedissues.InProceedingsofthe31stACMJointEuropeanSoftwareEngineeringConferenceand
+SymposiumontheFoundationsofSoftwareEngineering.2092–2096.
+[11] RamtinEhsani,RezvanehRezapour,andPreethaChatterjee.2025. AnalyzingToxicityinOpenSourceSoftware
+CommunicationsUsingPsycholinguisticsandMoralFoundationsTheory.(2025),1–8.doi:10.1109/NLBSE66842.2025.
+00006
+[12] LauraFaulkner.2003.Beyondthefive-userassumption:Benefitsofincreasedsamplesizesinusabilitytesting.Behavior
+ResearchMethods,Instruments,&Computers35,3(2003),379–383.doi:10.3758/BF03195514
+[13] IsabellaFerreira,JinghuiCheng,andBramAdams.2021.The"shutthef**kup"phenomenon:Characterizingincivility
+inopensourcecodereviewdiscussions.ProceedingsoftheACMonHuman-ComputerInteraction5,CSCW2(2021),
+1–35.doi:10.1145/3479497
+[14] IsabellaFerreira,AhlaamRafiq,andJinghuiCheng.2024.Incivilitydetectioninopensourcecodereviewandissue
+discussions.JournalofSystemsandSoftware209(2024),111935.doi:10.1016/j.jss.2023.111935
+[15] ZhenxinFu,XiaoyeTan,NanyunPeng,DongyanZhao,andRuiYan.2018. Styletransferintext:Explorationand
+evaluation.InProceedingsoftheAAAIconferenceonartificialintelligence,Vol.32.doi:10.1609/aaai.v32i1.11330
+[16] ShaiGretz,AlonHalfon,IlyaShnayderman,OrithToledo-Ronen,ArtemSpector,LenaDankin,YannisKatsis,OfirArviv,
+YoavKatz,NoamSlonim,andLiatEin-Dor.2023.Zero-shotTopicalTextClassificationwithLLMs-anExperimental
+Study.InFindingsoftheAssociationforComputationalLinguistics:EMNLP2023.AssociationforComputational
+Linguistics,9647–9676.doi:10.18653/v1/2023.findings-emnlp.647
+[17] SanuriDananjaGunawardena,PeterDevine,IsabelleBeaumont,LolaPiperGarden,EmersonMurphy-Hill,and
+KellyBlincoe.2022. Destructivecriticisminsoftwarecodereviewimpactsinclusion. ProceedingsoftheACMon
+Human-ComputerInteraction6,CSCW2(2022),1–29.doi:10.1145/3555183
+[18] KeyanGuo,AlexanderHu,JadenMu,ZihengShi,ZimingZhao,NishantVishwamitra,andHongxinHu.2023.An
+InvestigationofLargeLanguageModelsforReal-WorldHateSpeechDetection.In2023InternationalConferenceon
+MachineLearningandApplications(ICMLA).1568–1573.doi:10.1109/ICMLA58977.2023.00237
+[19] GeoffreyHinton,OriolVinyals,andJeffDean.2015. Distillingtheknowledgeinaneuralnetwork. arXivpreprint
+arXiv:1503.02531(2015).
+[20] EdwardJHu,YelongShen,PhillipWallis,ZeyuanAllen-Zhu,YuanzhiLi,SheanWang,LuWang,andWeizhuChen.
+2022.LoRA:Low-RankAdaptationofLargeLanguageModels.InInternationalConferenceonLearningRepresentations.
+https://openreview.net/forum?id=nZeVKeeFYf9
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+FSE123:22 Anindyaetal.
+[21] MiaMohammadImran,RobertZita,RahatRizviRahman,PreethaChatterjee,andKostadinDamevski.2026.Toxicity
+Ahead:ForecastingConversationalDerailmentonGitHub.InProceedingsofthe2026IEEE/ACM48thInternational
+ConferenceonSoftwareEngineering(ICSE’26)(RiodeJaneiro,Brazil).ACM,RiodeJaneiro,Brazil. doi:10.1145/3744916.
+3787839
+[22] SatyanarayanaChowdaryKadiyala,JaydebSarker,andBiancaTrinkenreich.2026. Howshouldself-deprecation
+commentsbeclassified?AtoxicityanalysisstudyonZephyr.InProceedingsofthe5thACM/IEEEInternationalWorkshop
+onNL-basedSoftwareEngineering(NLBSE).doi:10.1145/3786164.3788447
+[23] AnjaliKhurana,HariharanSubramonyam,andParmitKChilana.2024.Whyandwhenllm-basedassistantscango
+wrong:Investigatingtheeffectivenessofprompt-basedinteractionsforsoftwarehelp-seeking.InProceedingsofthe
+29thInternationalConferenceonIntelligentUserInterfaces.288–303.doi:10.1145/3640543.3645200
+[24] TakeshiKojima,ShixiangShaneGu,MachelReid,YutakaMatsuo,andYusukeIwasawa.2022.Largelanguagemodels
+arezero-shotreasoners.Advancesinneuralinformationprocessingsystems35(2022),22199–22213.
+[25] DeepakKumar,PatrickGageKelley,SunnyConsolvo,JoshuaMason,ElieBursztein,ZakirDurumeric,KurtThomas,
+andMichaelBailey.2021. DesigningToxicContentClassificationforaDiversityofPerspectives.InSeventeenth
+SymposiumonUsablePrivacyandSecurity(SOUPS2021).USENIXAssociation,299–318. https://www.usenix.org/
+conference/soups2021/presentation/kumar
+[26] J.RichardLandisandGaryG.Koch.1977.TheMeasurementofObserverAgreementforCategoricalData.Biometrics
+33,1(March1977),159. doi:10.2307/2529310
+[27] QingxiongMaandLipingLiu.2005.TheTechnologyAcceptanceModel.doi:10.4018/9781591404743.ch006.ch000
+[28] CourtneyMiller,SophieCohen,DanielKlug,BogdanVasilescu,andChristianKästner.2022."Didyoumissmycomment
+orwhat?"understandingtoxicityinopensourcediscussions.InProceedingsofthe44thInternationalConferenceon
+SoftwareEngineering.710–722.doi:10.1145/3510003.3510111
+[29] ShyamalMishraandPreethaChatterjee.2024.ExploringChatGPTforToxicityDetectioninGitHub(ICSE-NIER’24).
+AssociationforComputingMachinery,NewYork,NY,USA,6–10. doi:10.1145/3639476.3639777
+[30] SubhabrataMukherjee,AhmedHassanAwadallah,andJianfengGao.2021.XtremeDistilTransformers:TaskTransfer
+forTask-agnosticDistillation.doi:10.48550/ARXIV.2106.04563
+[31] EmersonMurphy-Hill,JillDicker,DelphineCarlson,MarianHarbach,AmbarMurillo,andTaoZhou.2024. Did
+Gerrit’sRespectfulCodeReviewRemindersReduceCommentToxicity?InEquity,Diversity,andInclusioninSoftware
+Engineering:BestPracticesandInsights.ApressBerkeley,CA,309–321.doi:10.1007/978-1-4842-9651-6_18
+[32] EmersonMurphy-Hill,CieraJaspan,CarolynEgelman,andLanCheng.2022.Thepushbackeffectsofrace,ethnicity,
+gender,andageincodereview.Commun.ACM65,3(2022),52–57.doi:10.1145/3474097
+[33] NicoleNovielli,FabioCalefato,FilippoLanubile,andAlexanderSerebrenik.2021. Assessmentofoff-the-shelfSE-
+specificsentimentanalysistools:Anextendedreplicationstudy. EmpiricalSoftwareEngineering26,4(2021),77.
+doi:10.1007/s10664-021-09960-w
+[34] PhilSidneyOstheimer,MayankKumarNagda,MariusKloft,andSophieFellenz.2024.TextStyleTransferEvaluation
+UsingLargeLanguageModels.InProceedingsofthe2024JointInternationalConferenceonComputationalLinguistics,
+LanguageResourcesandEvaluation(LREC-COLING2024).ELRAandICCL,Torino,Italia,15802–15822. https://
+aclanthology.org/2024.lrec-main.1373/
+[35] KishorePapineni,SalimRoukos,ToddWard,andWei-JingZhu.2002. Bleu:amethodforautomaticevaluationof
+machinetranslation.InProceedingsofthe40thannualmeetingoftheAssociationforComputationalLinguistics.311–318.
+[36] ShrimaiPrabhumoye,YuliaTsvetkov,RuslanSalakhutdinov,andAlanWBlack.2018.StyleTransferThroughBack-
+Translation.InProceedingsofthe56thAnnualMeetingoftheAssociationforComputationalLinguistics(Volume1:Long
+Papers),IrynaGurevychandYusukeMiyao(Eds.).AssociationforComputationalLinguistics,Melbourne,Australia,
+866–876.doi:10.18653/v1/P18-1080
+[37] HuilianSophieQiu,BogdanVasilescu,ChristianKästner,CarolynEgelman,CieraJaspan,andEmersonMurphy-Hill.
+2022.Detectinginterpersonalconflictinissuesandcodereview:crosspollinatingopen-andclosed-sourceapproaches.
+InProceedingsofthe2022ACM/IEEE44thInternationalConferenceonSoftwareEngineering:SoftwareEngineeringin
+Society(Pittsburgh,Pennsylvania)(ICSE-SEIS’22).AssociationforComputingMachinery,NewYork,NY,USA,41–55.
+doi:10.1145/3510458.3513019
+[38] MdShamimurRahman,ZadiaCodabux,andChanchalKRoy.2024. DoWordsHavePower?Understandingand
+FosteringCivilityinCodeReviewDiscussion.ProceedingsoftheACMonSoftwareEngineering1,FSE(2024),1632–1655.
+doi:10.1145/3660780
+[39] NaveenRaman,MinxuanCao,YuliaTsvetkov,ChristianKästner,andBogdanVasilescu.2020.Stressandburnoutinopen
+source:Towardfinding,understanding,andmitigatingunhealthyinteractions.InProceedingsoftheACM/IEEE42nd
+InternationalConferenceonSoftwareEngineering:NewIdeasandEmergingResults.57–60.doi:10.1145/3377816.3381732
+[40] SarthakRoy,AshishHarshvardhan,AnimeshMukherjee,andPunyajoySaha.2023.ProbingLLMsforhatespeech
+detection:strengthsandvulnerabilities.InFindingsoftheAssociationforComputationalLinguistics:EMNLP2023.
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.
+ToxiShield:PromotingInclusiveDeveloperCommunicationthroughReal-TimeToxicityFiltering FSE123:23
+AssociationforComputationalLinguistics,6116–6128.doi:10.18653/v1/2023.findings-emnlp.407
+[41] ElvisSaravia.2022.PromptEngineeringGuide.https://github.com/dair-ai/Prompt-Engineering-Guide(122022).
+[42] JaydebSarker,SaymaSultana,StevenRWilson,andAmiangshuBosu.2023. ToxiSpanSE:Anexplainabletoxicity
+detectionincodereviewcomments.In2023ACM/IEEEInternationalSymposiumonEmpiricalSoftwareEngineeringand
+Measurement(ESEM).IEEE,1–12.doi:10.1109/ESEM56168.2023.10304855
+[43] JaydebSarker,AsifKamalTurzo,andAmiangshuBosu.2020. Abenchmarkstudyofthecontemporarytoxicity
+detectorsonsoftwareengineeringinteractions.In202027thAsia-PacificSoftwareEngineeringConference(APSEC).
+IEEE,218–227.doi:10.1109/APSEC51365.2020.00030
+[44] JaydebSarker,AsifKamalTurzo,andAmiangshuBosu.2025.TheLandscapeofToxicity:AnEmpiricalInvestigation
+ofToxicityonGitHub.ProceedingsoftheACMonSoftwareEngineering2,FSE(2025),623–646.doi:10.1145/3715744
+[45] JaydebSarker,AsifKamalTurzo,MingDong,andAmiangshuBosu.2023.AutomatedIdentificationofToxicCode
+ReviewsUsingToxiCR.ACMTransactionsonSoftwareEngineeringandMethodology32,5(July2023),1–32. doi:10.
+1145/3583562
+[46] SulaymanKSowe,IoannisStamelos,andLefterisAngelis.2008. Understandingknowledgesharingactivitiesin
+free/opensourcesoftwareprojects:Anempiricalstudy. JournalofSystemsandSoftware 81,3(2008),431–446.
+doi:10.1016/j.jss.2007.03.086
+[47] SaymaSultana,JaydebSarker,FarzanaIsrat,RajshakharPaul,andAmiangshuBosu.2025.AutomatedIdentificationof
+SexualOrientationandGenderIdentityDiscriminatoryTextsfromIssueComments.ACMTransactionsonSoftware
+EngineeringMethodology(TOSEM)34(2025). doi:10.1145/3757739
+[48] XiaofeiSun,XiaoyaLi,JiweiLi,FeiWu,ShangweiGuo,TianweiZhang,andGuoyinWang.2023.TextClassification
+viaLargeLanguageModels.InFindingsoftheAssociationforComputationalLinguistics:EMNLP2023.8990–9005.
+doi:10.18653/v1/2023.findings-emnlp.603
+[49] HugoTouvron,ThibautLavril,GautierIzacard,XavierMartinet,Marie-AnneLachaux,TimothéeLacroix,Baptiste
+Rozière,NamanGoyal,EricHambro,FaisalAzhar,etal.2023.Llama:Openandefficientfoundationlanguagemodels.
+arXivpreprintarXiv:2302.13971(2023).
+[50] BiancaTrinkenreich,MariamGuizani,IgorWiese,TayanaConte,MarcoGerosa,AnitaSarma,andIgorSteinmacher.
+2021. Potsofgoldattheendoftherainbow:whatissuccessforopensourcecontributors? IEEETransactionson
+SoftwareEngineering48,10(2021),3940–3953.doi:10.1109/TSE.2021.3108032
+[51] RobertAVirzi.1992.Refiningthetestphaseofusabilityevaluation:howmanysubjectsisenough?Humanfactors34,
+4(1992),457–468.
+[52] ZhiqiangWang,YiranPang,andYanbinLin.2023. LargeLanguageModelsAreZero-ShotTextClassifiers. doi:10.
+48550/ARXIV.2312.01044
+[53] AlexWarstadt,AmanpreetSingh,andSamuelR.Bowman.2019.NeuralNetworkAcceptabilityJudgments.Transactions
+oftheAssociationforComputationalLinguistics7(092019),625–641.doi:10.1162/tacl_a_00290
+[54] JasonWei,XuezhiWang,DaleSchuurmans,MaartenBosma,brianichter,FeiXia,EdChi,QuocVLe,andDennyZhou.
+2022.Chain-of-ThoughtPromptingElicitsReasoninginLargeLanguageModels.InAdvancesinNeuralInformation
+ProcessingSystems,Vol.35.CurranAssociates,Inc.,24824–24837. https://proceedings.neurips.cc/paper_files/paper/
+2022/file/9d5609613524ecf4f15af0f7b31abca4-Paper-Conference.pdf
+[55] JohnWieting,TaylorBerg-Kirkpatrick,KevinGimpel,andGrahamNeubig.2019. BeyondBLEU:TrainingNeural
+MachineTranslationwithSemanticSimilarity.InProceedingsofthe57thAnnualMeetingoftheAssociationfor
+ComputationalLinguistics,AnnaKorhonen,DavidTraum,andLluísMàrquez(Eds.).AssociationforComputational
+Linguistics,Florence,Italy,4344–4355.doi:10.18653/v1/P19-1427
+[56] FrancesZlotnick.2017.GitHubOpenSourceSurvey2017.http://opensourcesurvey.org/2017/.doi:10.5281/zenodo.
+806811
+Received2025-09-10;accepted2026-03-24
+Proc.ACMSoftw.Eng.,Vol.3,No.FSE,ArticleFSE123.Publicationdate:July2026.

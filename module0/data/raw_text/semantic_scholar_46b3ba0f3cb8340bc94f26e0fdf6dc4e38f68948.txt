@@ -1,0 +1,483 @@
+9102
+tcO
+32
+]LC.sc[
+1v18701.0191:viXra
+HIERARCHICALTRANSFORMERS FORLONGDOCUMENTCLASSIFICATION
+RaghavendraPappagari1, PiotrZ˙elasko2,Jesu´s Villalba1, YishayCarmiel2, andNajim Dehak1
+1
+Centerfor Languageand Speech Processing,JohnsHopkinsUniversity,Baltimore, MD
+2AvayaConversationalIntelligence
+{rpappag1,jvillal7,ndehak3}@jhu.edu
+petezor@gmail.com, ycarmiel@avaya.com
+ABSTRACT ofteninvolveagentstryingtosolveverycomplexissuesthat
+thecustomersexperience,resultinginsomecallstakingeven
+BERT, which stands for Bidirectional Encoder Represen-
+an hour or more. For speech analytics purposes, these calls
+tations from Transformers, is a recently introduced lan-
+are typically transcribedusing an automatic speech recogni- guagerepresentationmodelbaseduponthe transferlearning
+tion (ASR) system, and processed in textual representations
+paradigm.Weextenditsfine-tuningproceduretoaddressone
+furtherdowntheNLPpipeline. Thesetranscriptssometimes
+of its major limitations - applicability to inputs longer than
+exceedthelengthof5000words. Furthermore,temporalin-
+afewhundredwords,suchastranscriptsofhumancallcon-
+formation might play an important role in tasks like CSAT.
+versations. Ourmethodisconceptuallysimple. We segment
+Forexample,acustomermaybeangryatthebeginningofthe
+theinputintosmallerchunksandfeedeachofthemintothe
+call, butafter her issue is resolved, she wouldbe verysatis-
+basemodel.Then,wepropagateeachoutputthroughasingle
+fied with the way it was handled. Therefore, simple bag of
+recurrentlayer,oranothertransformer,followedbyasoftmax
+words models, or any model that does not include temporal
+activation.Weobtainthefinalclassificationdecisionafterthe
+dependenciesbetween the inputs, may not be well-suited to
+last segmenthas been consumed. We show that both BERT
+handle this category of tasks. This motivates us to employ
+extensionsarequicktofine-tuneandconvergeafteraslittleas
+modelsuchasBERTinthistask.
+1epochoftrainingonasmall, domain-specificdataset. We
+successfullyapplytheminthreedifferenttasksinvolvingcus- In this paper, we propose a method that builds upon
+tomercallsatisfactionpredictionandtopicclassification,and BERT’s architecture. We split the input text sequence
+obtainasignificantimprovementoverthebaselinemodelsin into shorter segments in order to obtain a representation
+twoofthem. for each of them using BERT. Then, we use either a re-
+current LSTM [11] network, or another Transformer, to
+Index Terms— Transformer, BERT, Recurrent Neural
+perform the actual classification. We call these techniques
+Networks,TopicIdentification,CustomerSatisfactionPredic-
+Recurrence over BERT (RoBERT) and Transformer over
+tion
+BERT(ToBERT).Giventhatthesemodelsintroduceahier-
+archyofrepresentations(segment-wiseanddocument-wise),
+1. INTRODUCTION we refer to them as Hierarchical Transformers. To the best
+of our knowledge, no attempt has been done before to use
+Bidirectional Encoder Representations from Transformers the Transformer architecture for classification of such long
+(BERT) is a novel Transformer [1] model, which recently sequences.
+achieved state-of-the-art performance in several language
+Ournovelcontributionsare:
+understandingtasks,suchasquestionanswering,naturallan-
+guageinference,semanticsimilarity,sentimentanalysis,and
+• Twoextensions-RoBERTandToBERT-totheBERT
+others[2]. Whilewell-suitedtodealingwithrelativelyshort
+model,whichenableitsapplicationinclassificationof
+sequences, Transformerssuffer from a major issue that hin-
+long texts by performing segmentation and using an-
+derstheirapplicabilityinclassificationoflongsequences,i.e.
+otherlayerontopofthesegmentrepresentations.
+theyareabletoconsumeonlyalimitedcontextofsymbolsas
+theirinput[3].
+Thereareseveralnaturallanguage(NLP)processingtasks • State-of-the-artresultsontheFishertopicclassification
+task.
+that involve such long sequences. Of particular interest are
+topicidentificationofspokenconversations[4,5,6]andcall
+centercustomersatisfactionprediction[7,8,9,10]. Callcen- • Significant improvementon the CSAT prediction task
+ter conversations, while usually quite shortand to the point, overtheMS-CNNmodel.
+2. RELATEDWORK
+Several dimensionality reduction algorithms such as RBM,
+autoencoders,subspacemultinomialmodels(SMM)areused
+toobtainalowdimensionalrepresentationofdocumentsfrom
+asimpleBOWrepresentationandthenclassifyitusingasim-
+ple linear classifiers [12, 13, 14, 5]. In [15] hierarchicalat-
+tentionnetworksare used fordocumentclassification. They
+evaluate their model on several datasets with average num-
+berofwordsaround150. Character-levelCNNareexplored
+in[16]butitisprohibitiveforverylongdocuments. In[17],
+datasetcollectedfromarXivpapersisusedforclassification.
+For classification, they sample random blocks of words and
+usethemtogetherforclassificationinsteadofusingfulldoc-
+umentwhichmayworkwellasarXivpapersareusuallyco-
+herentandwellwrittenonawelldefinedtopic.Theirmethod
+maynotworkwellonspokenconversationsasrandomblock
+ofwordsusuallydonotrepresenttopicoffullconversation.
+Several researchers addressed the problem of predicting
+customer satisfaction [7, 8, 9, 10]. In most of these works,
+logisticregression,SVM,CNNareappliedondifferentkinds Fig.1. BERTmodelforclassification. HdenotesBERTseg-
+ofrepresentations. ment representationsfrom last transformer block, P denotes
+In[18],authorsuseBERTfordocumentclassificationbut segmentposteriorprobabilities.Figureinspiredfrom[2]
+the average document length is less than BERT maximum
+length512. TransformerXL[3]isanextensiontotheTrans-
+formerarchitecturethatallowsitto betterdealwithlongin-
+kindsof representationfromBERT: pooledoutputfrom last
+puts for the language modelling task. It relies on the auto-
+transformerblock,denotedbyH,andposteriorprobabilities,
+regressivepropertyofthemodel,whichisnotthecaseinour
+denotedby P. Thereare two variantsof BERT - BERT-Base
+tasks.
+and BERT-Large. In this work we are using BERT-Base for
+fastertrainingandexperimentation,however,ourmethodsare
+3. METHOD
+applicable to BERT-Large as well. BERT-Base and BERT-
+Large are different in model parameters such as number of
+3.1. BERT
+transformer blocks, number of self-attention heads. Total
+Because our work builds heavily upon BERT, we provide numberofparametersinBERT-Baseare110Mand340Min
+a brief summary of its features. BERT is built upon the BERT-Large.
+Transformerarchitecture[1],whichusesself-attention,feed-
+BERT suffers from major limitations in terms of han-
+forwardlayers,residualconnectionsandlayernormalization
+dling long sequences. Firstly, the self-attention layer has a
+as the main building blocks. It has two pre-training objec-
+quadraticcomplexityO(n2 ) in termsof thesequencelength
+tives:
+n [1]. Secondly, BERT uses a learned positional embed-
+• Masked language modelling - some of the words in a dingsscheme[2],whichmeansthatitwon’tlikelybeableto
+sentencearebeingmaskedandthemodelhastopredict generalizetopositionsbeyondthoseseeninthetrainingdata.
+thembasedonthecontext(notethedifferencefromthe
+Toinvestigatetheeffectoffine-tuningBERTontaskper-
+typical autoregressive language model training objec-
+formance,weuseeitherthepre-trainedBERTweights1,orthe
+tive);
+weightsfroma BERT fine-tunedonthe task-specificdataset
+• Nextsentence prediction- giventwo inputsequences, onasegment-level(i.e.wepreservetheoriginallabelbutfine-
+decide whetherthe secondone is the nextsentence or tuneoneachsegmentseparatelyinsteadofonthewholetext
+not. sequence). We comparethese resultsto usingthe fine-tuned
+segment-levelBERTpredictionsdirectlyasinputstothenext
+BERT has been shown to beat the state-of-the-art perfor- layer.
+manceon11taskswithnomodificationstothemodelarchi-
+tecture, besides adding a task-specific output layer [2]. We
+followsameproceduresuggestedin [2]forourtasks. Fig. 1
+shows the BERT model for classification. We obtain two 1Availableathttps://github.com/huggingface/pytorch-pretrained-BERT
+3.2. RecurrenceoverBERT 2500
+2234
+Given that BERT is limited to a particular input length, we
+split the input sequence into segments of a fixed size with 2000
+overlap. Foreachofthese segments,we obtainHor Pfrom
+BERTmodel. Wethenstackthesesegment-levelrepresenta-
+1500 1401
+tionsintoasequence,whichservesasinputtoasmall(100-
+dimensional) LSTM layer. Its output serves as a document
+embedding. Finally, we use two fullyconnectedlayerswith 1000
+ReLU(30-dimensional)andsoftmax(thesamedimensional-
+ity as the number of classes) activations to obtain the final
+predictions. 500
+comW pli et xh itt yh ,is rea dp up cr io na gc ih t, tow Oe (o nv /er kc ∗o km 2e )B =E OR (T n’s k)co fom rp Ru ota Bt Eio Rn Ta ,l 182 180 147
+26 4 30
+127
+0
+withk denotingthesegmentsize(theLSTMcomponenthas 1 2 3 4 5 6 7 8 9
+Customer Rating
+negligible linear complexity O(k)). The positional embed-
+dingsarealsonolongeranissue.
+3.3. TransformeroverBERT
+Given that Transformers’ edge over recurrent networks is
+theirabilitytoeffectivelycapturelongdistancerelationships
+betweenwordsinasequence[1],weexperimentwithreplac-
+ingtheLSTMrecurrentlayerinfavorofasmallTransformer
+model(2layersoftransformerbuildingblockcontainingself-
+attention, fully connected,etc.). To investigateif preserving
+theinformationabouttheinputsequenceorderisimportant,
+we also build a variant of ToBERT which learns positional
+embeddingsat the segment-levelrepresentations(butis lim-
+itedtosequencesoflengthseenduringthetraining).
+n2
+ToBERT’scomputationalcomplexityO( )isasymptot- k2
+icallyinferiortoRoBERT,asthetop-levelTransformermodel
+againsuffersfromquadraticcomplexityinthenumberofseg-
+ments.However,inpracticethisnumberismuchsmallerthan
+n
+theinputsequencelength( <<n),sowehaven’tobserved k
+performanceormemoryissueswithourdatasets.
+4. EXPERIMENTS
+Weevaluatedourmodelson3differentdatasets:
+• CSAT dataset for CSAT prediction, consisting of spo-
+kentranscripts(automaticviaASR).
+• 20 newsgroupsfortopicidentificationtask, consisting
+ofwrittentext;
+• FisherPhase1corpusfortopicidentificationtask,con-
+sistingofspokentranscripts(manual);
+4.1. CSAT
+CSATdatasetconsistsofUSEnglishtelephonespeechfrom
+call centers. For each call in this dataset, customerspartici-
+patedinthatcallgavearatingonhisexperiencewithagent.
+Originally,thisdatasethaslabelsratedonascale 1-9with9
+sllac
+fo
+rebmuN
+Fig.2. Histogramofcustomerratings. Rating9corresponds
+toextremelysatisfiedand1toextremelydissatisfied
+beingextremelysatisfied and 1beingextremelydissatisfied.
+Fig.2showsthehistogramofratingsforourdataset. Asthe
+distributionisskewedtowardsextremes,wechoosetodobi-
+naryclassificationwithratingsabove4.5assatisfiedandbe-
+low4.5asdissatisfied. Quantizationofratingsalsohelpedus
+tocreateabalanceddataset. Thisdatasetcontains4331calls
+andwesplittheminto3setsforourexperiments: 2866calls
+for training, 362 calls for validation and, finally, 1103 calls
+fortesting.
+We obtained the transcripts by employing an ASR sys-
+tem. The ASR system uses TDNN-LSTM acoustic model
+trained on Fisher and Switchboard datasets with lattice-free
+maximum mutual information criterion [19]. The word er-
+ror rates using four-gram language models were 9.2% and
+17.3% respectively on Switchboard and CallHome portions
+ofEval2000dataset2.
+4.2. 20newsgroups
+20newsgroups3datasetisoneofthefrequentlyuseddatasets
+in the text processing community for text classification and
+textclustering. Thisdata set containsapproximately20,000
+English documents from 20 topics to be identified, with
+11314 documents for training and 7532 for testing. In this
+work, we used only 90% of documents for training and the
+remaining10%forvalidation.Forfaircomparisonwithother
+publications, we used 53160 words vocabulary set available
+inthedatasetswebsite.
+4.3. Fisher
+FisherPhase1USEnglishcorpusisoftenusedforautomatic
+speech recognition in speech community. In this work, we
+2https://catalog.ldc.upenn.edu/LDC2002T43
+3http://qwone.com/jason/20Newsgroups/
+1
+0.8
+0.6
+0.4
+0.2
+0
+0 1000 2000 3000 4000 5000
+Word count in document
+stnemucoD
+fo
+noitcarF
+CSAT RoBERT ToBERT
+20News
+Fisher CSAT 71.16 74.77
+20newsgroups 60.75 65.04
+Fisher 38.04 80.68
+Table 2. Results using segment representations (H) from a
+pre-trainedBERT(withoutfine-tuning).
+RoBERT ToBERT
+CSAT 83.65 83.48
+20newsgroups 84.71 85.52
+Fisher 82.28 95.48
+Table 3. Results using segment representations (H) from a
+fine-tunedBERT.
+Fig.3. Cumulativedistributionofdocumentlengths.
+Dataset C N AW L cross-entropy loss with Adam optimizer [20]. The initial
+learning rate is set to 0.001 and is reduced by a factor of
+CSAT 2 4331 787 10503
+0.95 if validation loss does not decrease for 3-epochs. For
+20newsgroups 20 18846 266 10334
+ToBERT, the Transformer is trained with the default BERT
+Fisher 40 2746 1788 2713
+version of Adam optimizer [2] with an initial learning rate
+of 5e-5. We report accuracy in all of our experiments. We
+Table1. Datasetstatistics. CindicatesnumberofClasses,N
+chose a modelwith the best validationaccuracyto calculate
+theNumberofdocuments,AWtheAveragenumberofWords
+accuracyonthetestset. Toaccomodatefornon-determinism
+perdocumentandLtheLongestdocumentlength.
+of some TensorFlow4 GPU operations, we report accuracy
+averagedover5runs.
+used it for topic identification as in [4]. The documentsare
+10-minutelongtelephoneconversationsbetweentwopeople
+5. RESULTS
+discussingagiventopic.Weusedsametrainingandtestsplits
+as[4]inwhich1374and1372documentsareusedfortraining Table2presentsresultsusingpre-trainedBERTfeatures. We
+andtestingrespectively.Forvalidationofourmodel,weused extractedfeaturesfromthepooledoutputoffinaltransformer
+10%oftrainingdatasetandtheremaining90%wasusedfor block as these were shown to be working well for most of
+actualmodeltraining.Thenumberoftopicsinthisdatasetis thetasks[2].Thefeaturesextractedfromapre-trainedBERT
+40. modelwithoutanyfine-tuningleadtoasub-parperformance.
+However, We also notice that ToBERT model exploited the
+4.4. DatasetStatistics pre-trainedBERT featuresbetter than RoBERT. It also con-
+verged faster than RoBERT. Table 3 shows results using
+Table1showsstatisticsofourdatasets.Itcanbeobservedthat
+features extracted after fine-tuning BERT model with our
+averagelengthofFisherismuchhigherthan20newsgroups
+datasets. Significant improvements can be observed com-
+and CSAT. Cumulative distribution of documentlengths for
+pared to using pre-trained BERT features. Also, it can be
+eachdatasetisshowninFig.3.Itcanbeobservedthatalmost
+noticed that ToBERT outperforms RoBERT on Fisher and
+allofthedocumentsinFisherdatasethavelengthmorethan
+20newsgroupsdatasetby13.63%and0.81%respectively.On
+1000 words. For CSAT, more than 50% of the documents
+CSAT,ToBERTperformsslightlyworsethanRoBERTbutit
+havelengthgreaterthan500andfor20newsgroupsonly10%
+isnotstatisticallysignificantasthisdatasetissmall.
+of the documents have length greater than 500. Note that,
+Table 4 presents results using fine-tuned BERT predic-
+for CSAT and 20newsgroups, there are few documentswith
+tions instead of the pooled output from final transformer
+lengthmorethan5000.
+block. For each document, having obtained segment-wise
+predictionswecanobtainfinalpredictionforthewholedoc-
+4.5. ArchitectureandTrainingDetails umentinthreeways:
+In this work, we split document into segments of 200 to-
+• Compute the average of all segment-wise predictions
+kenswithashiftof50tokenstoextractfeaturesfromBERT
+model. For RoBERT, LSTM model is trained to minimize 4WeusedTensorFlowversion1.14.0.
+Mostfrequent Average RoBERT ToBERT
+CSAT 81.03 82.84 83.54 81.48
+20newsgroups 84.78 84.51 84.07 85.47
+Fisher 88.70 88.48 91.18 94.16
+Table 4. Comparison of models using fine-tuned BERT
+segment-levelpredictions(P) insteadof segmentrepresenta-
+tions(H).
+105
+100
+95
+90
+85
+80
+75
+70
+0-800 800-1100 1100-1400 1400-2000 2000-3000
+Document Length range
+ycaruccA
+Positionembeddings
+No Yes
+CSAT 82.84 83.48
+20newsgroups 85.51 85.52
+Fisher 95.84 95.48
+Table 5. The effect of including positional embeddings in
+ToBERT model. Fine-tuned BERT segment representations
+wereusedfortheseresults.
+ToBERT
+Average Voting
+dataset Model Accuracy
+MS-CNN 79.53
+CSAT
+ToBERT 83.48
+RoBERT 83.65
+SCDV[21] 84.6
+20newsgroups MS-CNN[6] 86.12
+ToBERT 85.52
+RoBERT 84.71
+SVMMCE[4] 91.9
+Fisher MS-CNN[6] 92.93
+Fig.4. ComparisonofaveragevotingandToBERTforvari-
+ToBERT 95.48
+ousdocumentlengthrangesforFisherdataset.
+RoBERT 91.18
+andfindthemostprobableclass; Table6. Comparisonofourresultswithpreviousworks.
+• Findthemostfrequentlypredictedclass;
+prediction(anabsoluteimprovementof0.64%F1-score).We
+• Trainaclassificationmodel. thinkthatthisisexplainedbythefactthatFisherand20news-
+groups are topic identification tasks, and the topic does not
+It can be observed from Table 4 that a simple averaging
+changemuch throughoutthese documents. However, CSAT
+operationortakingmostfrequentpredictedclassworkscom-
+mayvaryduringthecall,andinsomecasesanaiveassump-
+petitivelyforCSATand20newsgroupsbutnotfortheFisher
+tion that the sequential nature of the transcripts is irrelevant
+dataset. We believe the improvementsfrom using RoBERT
+mayleadtowrongconclusions.
+or ToBERT, comparedto simple averagingor mostfrequent
+Table6comparesourresultswithpreviousworks. Itcan
+operations,areproportionaltothefractionoflongdocuments
+beseenthatourmodelToBERToutperformsCNNbasedex-
+in the dataset. CSAT and 20newsgroups have (on average)
+perimentsbysignificantmarginonCSATandFisherdatasets.
+significantlyshorterdocumentsthanFisher,asseeninFig.3.
+For CSAT dataset, we used multi-scale CNN (MS-CNN) as
+Also,significantimprovementsforFishercouldbebecauseof
+the baseline, given its strong results on Fisher and 20news-
+less confident predictions from BERT model as this dataset
+groups. The setup was replicated from [6] for comparison.
+has 40 classes. Fig. 4 presents the comparison of average
+We also see thatourresulton20newsgroupsis 0.6%worse
+voting and ToBERT for various documentlength ranges for
+thanthestate-of-the-art.
+Fisherdataset. Weusedfine-tunedBERTsegment-levelpre-
+dictions(P)forthisanalysis. ItcanbeobservedthatToBERT
+outperformsaveragevoting in everyinterval. To the best of 6. CONCLUSIONS
+ourknowledge,thisisastate-of-the-artresultreportedonthe
+Fisherdataset. Inthispaper,wepresentedtwomethodsforlongdocuments
+Table5presentstheeffectofpositionembeddingsonthe usingBERTmodel:RoBERTandToBERT.Weevaluatedour
+modelperformance. Itcanbeobservedthatpositionembed- experimentsontwoclassificationtasks-customersatisfaction
+dings did not significantly affectthe model performancefor predictionand topic identification- using 3 datasets: CSAT,
+Fisher and 20newsgroups, but they helped slightly in CSAT 20newsgroupsandFisher. WeobservedthatToBERToutper-
+formsRoBERTonpre-trainedBERTfeaturesandfine-tuned fromturn-takingin spokenconversations.,” in INTER-
+BERT featuresfor all our tasks. Also, we noticed that fine- SPEECH,2016,pp.2910–2914.
+tunedBERTperformsbetterthanpre-trainedBERT.Wehave
+shown that both RoBERT and ToBERT improved the sim- [8] Jordi Luque, Carlos Segura, Ariadna Sa´nchez, Martı
+ple baselines of taking an average (or the most frequent) of Umbert,andLuisAngelGalindo, “Theroleoflinguis-
+segment-wisepredictionsfor long documentsto obtainfinal tic andprosodiccueson thepredictionofself-reported
+prediction. Position embeddings did not significantly affect satisfactionin contactcentrephonecalls,” Proc. Inter-
+ourmodelsperformance,butslightlyimprovedtheaccuracy speech2017,pp.2346–2350,2017.
+on the CSAT task. We obtained the best results on Fisher
+[9] YoungjaParkandStephenCGates, “Towardsreal-time
+dataset and good improvementsfor CSAT task comparedto
+measurement of customer satisfaction using automati-
+theCNNbaseline. Itisinterestingtonotethatthelongerthe
+cally generated call transcripts,” in Proceedingsof the
+averageinputinagiventask,thebiggerimprovementweob-
+18th ACM conference on Information and knowledge
+servew.r.t. thebaselineforthattask. Ourresultsconfirmthat
+management.ACM,2009,pp.1387–1396.
+both RoBERT and ToBERT can be used for long sequences
+with competitive performance and quick fine-tuning proce-
+[10] Stefan Meinzer, Ulf Jensen, Alexander Thamm,
+dure. Forfuturework,we shallfocusontrainingmodelson
+Joachim Hornegger, and Bjo¨rn M Eskofier, “Can ma-
+longdocumentsdirectly(i.e. inanend-to-endmanner).
+chine learning techniques predict customer dissatisfac-
+tion? a feasibility study for the automotive industry,”
+7. REFERENCES Artificial Intelligence Research, vol. 6, no. 1, pp. 80,
+2016.
+[1] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit,LlionJones,AidanNGomez,LukaszKaiser, [11] SeppHochreiterandJu¨rgenSchmidhuber,“Longshort-
+andIlliaPolosukhin, “Attentionisallyouneed,” inAd- term memory,” Neural computation, vol. 9, no. 8, pp.
+vancesinneuralinformationprocessingsystems,2017, 1735–1780,1997.
+pp.5998–6008.
+[12] GeoffreyEHintonandRuslanRSalakhutdinov,“Repli-
+[2] Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+cated softmax: an undirected topic model,” in Ad-
+KristinaToutanova, “Bert:Pre-trainingofdeepbidirec-
+vancesinneuralinformationprocessingsystems,2009,
+tionaltransformersforlanguageunderstanding,” arXiv
+pp.1607–1614.
+preprintarXiv:1810.04805,2018.
+[13] Hugo Larochelle and Yoshua Bengio, “Classification
+[3] ZihangDai,ZhilinYang,YimingYang,WilliamWCo-
+usingdiscriminativerestrictedboltzmannmachines,” in
+hen,JaimeCarbonell,QuocVLe,andRuslanSalakhut-
+Proceedingsofthe25thinternationalconferenceonMa-
+dinov, “Transformer-xl: Attentive language mod-
+chinelearning.ACM,2008,pp.536–543.
+els beyond a fixed-length context,” arXiv preprint
+arXiv:1901.02860,2019.
+[14] YuChenandMohammedJZaki, “Kate: K-competitive
+autoencoderfortext,”arXivpreprintarXiv:1705.02033,
+[4] Timothy J Hazen, “Mce training techniques for topic
+2017.
+identificationofspokenaudiodocuments,”IEEETrans-
+actions on Audio, Speech, and Language Processing,
+[15] Zichao Yang, Diyi Yang, Chris Dyer, Xiaodong He,
+vol.19,no.8,pp.2451–2460,2011.
+AlexSmola,andEduardHovy, “Hierarchicalattention
+networks for documentclassification,” in Proceedings
+[5] Santosh Kesiraju, Luka´s Burget, Igor Szo¨ke, and Jan
+of the 2016 conference of the North American chapter
+Cernocky`, “Learning document representations us-
+oftheassociationforcomputationallinguistics: human
+ingsubspacemultinomialmodel.,” inINTERSPEECH,
+languagetechnologies,2016,pp.1480–1489.
+2016,pp.700–704.
+[6] RaghavendraPappagari,Jesu´sVillalba, and Najim De- [16] Xiang Zhang, Junbo Zhao, and Yann LeCun,
+hak, “Joint verification-identification in end-to-end “Character-level convolutional networks for text
+multi-scale cnn framework for topic identification,” classification,” in Advances in neural information
+in 2018 IEEE International Conference on Acoustics, processingsystems,2015,pp.649–657.
+Speech and Signal Processing (ICASSP). IEEE, 2018,
+[17] Liu Liu, Kaile Liu, Zhenghai Cong, Jiali Zhao, Yefei
+pp.6199–6203.
+Ji, and Jun He, “Long length document classification
+[7] Shammur Absar Chowdhury, Evgeny A Stepanov, bylocalconvolutionalfeatureaggregation,”Algorithms,
+Giuseppe Riccardi, et al., “Predictinguser satisfaction vol.11,no.8,pp.109,2018.
+[18] Ashutosh Adhikari, AchyudhRam, RaphaelTang, and
+JimmyLin,“Docbert:Bertfordocumentclassification,”
+arXivpreprintarXiv:1904.08398,2019.
+[19] DanielPovey,VijayadityaPeddinti,DanielGalvez,Pe-
+gah Ghahremani, Vimal Manohar, Xingyu Na, Yim-
+ing Wang, and SanjeevKhudanpur, “Purelysequence-
+trained neural networks for asr based on lattice-free
+mmi.,” inInterspeech,2016,pp.2751–2755.
+[20] Diederik P Kingma and Jimmy Ba, “Adam: A
+method for stochastic optimization,” arXiv preprint
+arXiv:1412.6980,2014.
+[21] DheerajMekala,VivekGupta,BhargaviParanjape,and
+Harish Karnick, “Scdv: Sparse composite document
+vectors using soft clustering over distributional repre-
+sentations,” in Proceedings of the 2017 Conference
+onEmpiricalMethodsinNaturalLanguageProcessing,
+2017,pp.670–680.

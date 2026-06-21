@@ -1,0 +1,689 @@
+1
+Listening Between the Lines: Decoding Podcast
+Narratives with Language Modeling
+Shreya Gupta, Ojasva Saxena, Arghodeep Nandi, Sarah Masud, Kiran Garimella, and Tanmoy Chakraborty Senior
+Member, IEEE
+Abstract—Podcasts have become a central arena for shaping
+public opinion, making them a vital source for understand-
+ing contemporary discourse. Their typically unscripted, multi-
+themed, and conversational style offers a rich but complex form
+of data. To analyze how podcastspersuade and inform, we must
+examine their narrative structures – specifically, the narrative
+frames they employ.
+Thefluidandconversationalnatureofpodcastspresentsasig-
+nificant challenge for automated analysis. We show that existing
+largelanguagemodels,typicallytrainedonmorestructuredtext
+such as news articles, struggle to capture the subtle cues that
+humanlistenersrelyontoidentifynarrativeframes.Asaresult,
+current approaches fall short of accurately analyzing podcast
+narratives at scale.
+To solve this, we develop and evaluate a fine-tuned BERT
+model that explicitly links narrative frames to specific entities
+mentionedintheconversation,effectivelygroundingtheabstract
+frameinconcretedetails.Ourapproachthenusesthesegranular Fig.1:SampleSPoRCtranscriptexcerptanditscorresponding
+frame labels and correlates them with high-level topics to reveal
+frame, key phrases, and topics.
+broader discourse trends. The primary contributions of this
+paper are: (i) a novel frame-labeling methodology that more
+closely aligns with human judgment for messy, conversational
+data, and (ii) a new analysis that uncovers the systematic
+podcast transcripts are conversational, subjective, and often
+relationship between what is being discussed (the topic) and
+lackclearrhetoricalorganization,makingthemchallengingfor
+how it is being presented (the frame), offering a more robust
+framework for studying influence in digital media. downstream natural language processing tasks [5], [6]. Naive
+computational approaches, including the direct application of
+IndexTerms—Multi-TaskBERT,FrameDetection,TopicMod-
+eling, Podcast Narratives modern large language models (LLMs), often fail in this
+context. These models, while powerful, tend to prioritize
+I. INTRODUCTION statistically salient keywords over the subtle, contextual cues
+that human annotators use to identify narrative frames. For
+PODCASTShaveemergedasapowerfulanddecentralized
+example, a zero-shot LLM might correctly identify a topic
+platform for shaping public discourse, offering a unique
+like“climatechange”butfailtodistinguishwhetheritisbeing
+medium for nuanced conversations and amplifying under-
+framedasan“impendingdisaster,”an“economicopportunity,”
+represented voices [1]. Their growing influence on political
+ora“politicalconspiracy,”acrucialdistinctionforunderstand-
+engagement is undeniable, yet this also brings significant
+ing the speaker’s intent and likely impact on the listener.
+concerns about their potential to spread misinformation and
+fosterideologicalpolarization[2],[3],[4].Thecentralproblem Previous efforts to analyze podcasts at scale have produced
+is that while we recognize their impact, we lack effective valuable resources, such as the Structured Podcast Research
+methods to analyze how this influence is constructed at a Corpus (SPoRC) [7]. However, these often suffer from sparse
+narrative level. Understanding the persuasive strategies at or inconsistent annotations beyond basic transcriptions, lim-
+play requires moving beyond what topics are discussed to iting their utility for deep narrative analysis. Furthermore,
+how they are framed. This paper tackles the challenge of most existing work applying LLMs to media analysis has
+computationally identifying narrative frames within the vast not sufficiently addressed the unique challenges posed by
+and noisy landscape of podcasting to better understand the conversational audio transcripts. Our work differs in that it
+mechanisms of modern discourse. overcomesthelimitationsofgenericmodels.Insteadofrelying
+This problem is complicated due to the inherent nature of solely on statistical patterns in text, our primary innovation is
+podcast data. Unlike structured text such as news articles, togroundtheabstractconceptofanarrativeframeinconcrete,
+identifiable named entities. We hypothesize that linking a
+S.G,O.S,A.NandT.CarewiththeIndianInstituteOfTechnologyDelhi frame to the specific people, organizations, or locations pro-
+S.MiswiththeUniversityofCopenhagen
+vides the necessary context that generic models miss, leading
+K.GiswithRutgersUniversity
+CorrespondingAuthors:sarahmasud02@gmail.com to a more accurate and human-aligned analysis (Figure 1).
+5202
+ceD
+61
+]LC.sc[
+2v01350.1152:viXra
+2
+To investigate this, we conduct a multi-faceted study on transcriptions of 1.1M episodes from 247k shows. As SPoRC
+the SPoRC transcript dataset. We first establish a baseline is not curated for a single task, it enables a temporal and
+by evaluating a state-of-the-artLLM, Llama-3-8B-Instruct, on narrative-based analysis, such as ours.
+the task of zero-shot frame detection. We then develop and Topic Segmentation Methods. Topic segmentation ap-
+evaluate a multi-task, BERT-based model that is fine-tuned proaches fall broadly into two categories [17] – (i) detecting
+to jointly classify a narrative frame and its association with explicit transitions, and (ii) identifying vocabulary shifts. The
+relevantnamedentities.Ourapproachsystematicallyidentifies TextTiling algorithm [18] exemplifies the latter, detecting top-
+dominant topics and entities (Section IV-A), evaluates the ical shifts through changes in vocabulary. Meanwhile, to cap-
+strengths and critical failures of LLMs in frame detection turetheformer,languagemodelsetups,suchasBERTopic[19]
+(Section IV-B), and demonstrates the superior performance of and TopicGPT [20], have been recently proposed. BERTopic,
+our fine-tuned, entity-aware model (Section IV-D). applied to AI and healthcare, has outperformed traditional
+Specifically, we make the following contributions: methods in podcast analysis [19], [21]. We employ the same
+• Wedevelopanuancedapproachforidentifyinginfluential for our analysis. Our work also highlights the extent of noise
+named entities by leveraging temporal and topological generatedbyBERTopiconlargecorpora,suchasSPoRC,and
+features across podcast textual transcripts. potential workarounds, as discussed in Section IV-A. Readers
+• Wepresent atechnique forrepresenting theinterrelation- are encouraged to reference the comprehensive benchmark of
+shipsbetweendominantpodcasttopics,revealingclusters unsupervised topic segmentation models in [22].
+and thematic overlaps in discourse. Frame Detection Methods. Framing can be defined as se-
+• We evaluate Llama-3-8B Instruct for frame detection, lecting and emphasizing elements of perceived reality (offline
+identifying its strengths and limitations through compar- or online) to influence interpretation [23]. Framing research
+ison with manual annotations. Here, we highlight how primarily and largely relies on expert annotation [24], [25].
+LLMs fail to operationalize subjective aspects, unlike Such a setup is challenging to scale, especially for abstract
+human annotators. socialissues.Toovercomethis,unsupervisedtechniques,such
+• We contribute a multi-task setup fine-tuning an LLM as topic modeling, have been employed to detect transitions
+for automatic frame detection and annotation assessment and trigger vocabulary, enabling the identification of frames
+usingframelabelsandrelevantnamedentityassociations. [26], [17]. Meanwhile, Bayesian and time series models have
+also been used for unsupervised frame detection [27].
+Ourresultsconfirmthelimitationsofgeneral-purposemod-
+Computational advances have made large-scale frame anal-
+els, with Llama-3-8B achieving only 30-75% accuracy across
+ysis feasible via language modelling. This allows for a semi-
+differentframetypesandexhibitingaclearbiastowardssalient
+supervised setup, where researchers trained binary classifiers
+features over contextual nuance. Critically, our experimental
+per frame-topic pair using vocabulary indicators [23], [28].
+results indicate that fine-tuning a pretrained model with our
+However,scalabilitycontinuedtoremainachallengeformulti-
+entity-aware,multi-taskapproachyieldsasignificantimprove-
+topic, multi-frame data. To further overcome annotation chal-
+ment of 5%-15% in classification accuracy across all frames.
+lenges, zero-shot prompting has been explored as a solution.
+ThisdemonstratesthatwhileLLMsprovidescalablesolutions,
+Existing research on frame prediction for news articles has
+amoretargeted,fine-tunedapproachisessentialforaccurately
+reported43%agreementbetweenLLMsandhumanannotators
+capturing the narrative structures that underpin the influential
+[29], [30].
+discourse taking place in today’s podcast ecosystem.
+Our paper contributes to this discourse by investigating the
+potential of LLMs in detecting narrative frames in both large-
+II. RELATEDWORK
+scaleandinformalconversationaltexts,suchasinSPoRC.To
+Podcast Datasets.Earlyexamplesofconversationalspeech the best of our knowledge, no prior work has systematically
+datasets for NLP tasks include the ATIS dataset [8] which addressed the problem of frame detection in large-scale pod-
+focuses on air travel queries, and the NIST dataset [9], cast corpora by explicitly modeling the relationship between
+which contains transcriptions of overlapping multi-speaker narrative frames and the named entities they center on. The
+meetings. Despite featuring 700 unique speakers and 216 effectiveness of a fine-tuned, entity-aware model compared
+hours of transcripts, the TED-LIUM ASR corpus [10] does to zero-shot LLMs in this domain remains an open question,
+not capture a multi-turn setup. Similarly, speech retrieval whichthispaperattemptstoanswer.Furthermore,whileframe
+experiments using clean, continuous, single-speaker data have detectionandtopicmodelinghavebeenregularlyemployedto
+often employed the TIMIT corpora [11]. However, the nature study narratives, they have been used as isolated techniques.
+ofaudio-transcribeddataposeschallengesforexploringtopics Drawparallelsintherealworld;thisstudyperformsatempo-
+and themes in spoken content [12]. The setup is further ralanalysisofentitiesandframes,employingthetwoconcepts
+complicated by the noisy, multi-speaker, multilingual long- in tandem to analyze emerging narratives.
+formcharacteristicsofpodcasts[13],[14].Toaddressthisgap,
+the TREC Podcast Track [15] was launched with the release
+III. DATASETPREPARATION
+of the Spotify Podcast Dataset [16]. TREC focused on two
+text-based tasks: retrieval of fixed two-minute segments and In this section, we profile SPoRC [7] and describe the
+full-episode summarization. Recently, the Structured Podcast methodforfilteringthe1Mdatasettoasmaller,representative
+ResearchCorpus(SPoRC)hasbeenintroduced[7],containing subset for computational feasibility. With a focus on textual
+3
+transcripts, a list of feature subsets from SPoRC relevant to Entity Pagerank Entity Count
+the current study is given in Table I. Jesus 0.01507 Jesus 2660624
+Bible 0.004269 Instagram 608161
+Instagram 0.00374 America 559406
+Feature Description
+COVID 0.00317 Twitter 510672
+transcript Textualpodcastdataextractedfromvideos. America 0.003016 COVID 451510
+podTitle Titleofthepodcast(notthesameasepisodetitle) Youtube 0.002886 John 446512
+epTitle Titleoftheparticularepisodeforthepodcasttitle Twitter 0.002838 Christian 435348
+Christian 0.002532 NewYork 421028
+oldestEpisodeDate Dateoftheoldestepisodeunderthatpodcasttitle.
+US 0.00283 US 414136
+Category labels Multi-labelclassificationofthepodcasttopic,withup
+to10categoriesassignedtoanypodcastepisode.
+durationSeconds Episodeduration(inSeconds). TABLE II: A comparison of top-9 entities along with their
+episodeDate Dateofepisoderelease. PageRank scores and raw counts.
+TABLE I: A subset of columns of SPoRC [7] used in the
+current study.
+A. Entity-Topic Analysis
+The first question to investigate is “what entities and topics
+are discussed in the podcasts.” We start with zero-shot LLM
+prompting for topic detection. As its inference process is
+slow1, we employ BERTopic [19] models instead. BERTopic
+runs on 250-token chunks of podcast text. We determine the
+chunk size through preliminary experiments with BERTopic
+conductedonasmallersubsetofpodcasts.Interestingly,when
+we apply the chunk-based topic model to the 19k podcasts,
+it yields incorrect topic associations. Hence, category-wise
+Fig. 2: A multi-stage filtering approach to filter the podcasts.
+(based on category labels assigned in SPoRC), 250 token
+chunk-based topic modeling is performed. The setup strikes
+Figure 2 illustrates our data preparation pipeline visually.
+a balance between contextual richness and computational
+We employ Named Entity Recognition (NER), temporal, and
+efficiency, thereby optimizing the model’s performance.
+network features to obtain the most representative podcasts.
+1) Graph-basedapproachforselectingentities: Toshortlist
+entities, we look beyond raw NER counts. Here, we construct B. Frame Prediction
+an undirected, weighted bipartite network that connects pod- We now use framing to understand better the intent and
+casts to the entities they mention. The weight of the edge narratives of how the topics and entities are being discussed.
+between a podcast and an entity is the number of times the Frames constitute the perspectives or lenses through which
+podcast mentions the entity. The influential nodes are then contentispresented[32].Existingmethodsforframedetection
+identified based on the PageRank centrality [31]. Entities are relyonavocabulary,orspecificallytrainedframe-wiseclassi-
+filtered to retain only the top 30,000 based on their node fiers [23], or some subjective technique [33]. However, none
+importancemetrics(PageRank).Aside-by-sidecomparisonof ofthesetechniquesisscalableandversatileenoughforalarge
+top entities according to PageRank and simple entity counts dataset like ours. We thus experiment with LLM prompting.
+canbeseeninTableII.Duetomanyentitiesin1.1Msamples, Llama 8B Instruct [34] is prompted on a subset of 6k chunks
+the PageRank values are in the order of 10−2 even for top-10 to assign one of six predefined frame categories to chunks of
+entities. The consistently high mentions of religious symbols podcast transcripts: Social, Health, Legal, Financial, Security,
+occur because ‘religion’ is the topmost podcast category. and Moral. Figure 3 enlists the prompting setup.
+2) Analysis of temporal distribution of podcasts: On filter-
+However, due to the subjective nature of the task, even
+ingtheinitialpodcastsbasedontimebetweentwoconsecutive
+LLMs do not consistently achieve high accuracy across all
+podcasts (> half a day) and minimum number of episodes
+frame types. We conduct an extensive error analysis to gain a
+in the title (=10), we obtain 338,407 podcasts. Further, the
+deeper understanding of these limitations.
+episodes are filtered based on minimum duration (141,493
+podcasts),andonlythetop50categoriesareretained(140,471
+C. Manual Evaluation
+podcasts).Thisisfollowedbysampling60episodesfromtitles
+with a large number of episodes (139,713 podcasts). Finally, TobetterunderstandtheLLM’sshortcomings,wemanually
+from the category-wise stratified sampling of the 139,713 review a random subset of 600 frame predictions (100 per
+podcasts, a final set of 19,073 podcast episodes is obtained. frame type) by the LLM. An expert annotator2 from the
+From now on, when we mention SPoRC or the data set, we field of CSS volunteered to review the frame labels and key
+refer to the 19k representative samples. phrases(rationales)generatedbytheLLM.Theevaluatoralso
+documents corrections and the error patterns. This enables us
+IV. METHODOLOGY
+1Ittook≈18daystoclassifychunksof5000podcasts.
+In this section, we present our approach to analyzing the
+2Theexpertisnotaffiliatedwithanypoliticalorganizationorendorsesany
+topical and framing characteristics of podcast discourse. podcastexaminedinthisstudy.
+4
+TextualFeature Description
+Toxicity Toxicitymeasurestheextenttowhichlanguageisperceivedasrude,hostile,orinflammatory.
+Sentiment Sentimentanalysisevaluatestheemotionalvalenceoftext—whetheritispositive,negative,orneutral.
+Modality Modality refers to expressions of obligation, permission, or likelihood, often conveyed through modal verbs
+suchasmust,should,can,andmay.
+Hedging Hedging involves language that softens assertions or introduces uncertainty, using terms like might, could,
+possibly,andsomewhat.
+DegreeModifiers Degreemodifiers(e.g.,very,extremely,just)intensifyordownplaythestrengthofstatements.
+Part-of-Speech(PoS)Tags AnalyzingPoStagsprovidesinsightintothestructuralcompositionoftexts.
+Frame-BasedVocabularies Eachframeisassociatedwithadistinctivesetofkeywordsandphrases.
+TABLE III: Description of significant extracted textual features from podcast transcript chunks.
+has reported the better task-specificity of fine-tuned PLMs
+over LLMs [35], [36], and we examine the same for frame
+detection.
+Multi-task BERT: Using a multi-task setup, we attempt
+to capture the influence of the ‘rationales’ (key phrases)
+that serve as indicators of specific frames. To this end,
+BERT is trained on two objectives: span detection for key
+phrases/rationales and frame classification. The model is eval-
+uated over 30 epochs, and the confusion matrix for each
+epoch is analyzed to understand which frame types are more
+complextodistinguishbetween.Thisfine-tunedmodelisthen
+employed to frame all the podcast transcript chunks. Standard
+label encoding is used for the frame classification task, while
+the span detection task utilizes B-I-O (Begin-Inside-Outside)
+labels to represent the location of key phrases. Cross-entropy
+loss is employed for training both tasks. The model is fine-
+tunedonthedatasetcomprising600human-annotatedchunks.
+Assessingfine-tunedBERTmodel: Asmanualannotation
+for direct ground-truth evaluation of the 760k podcast chunks
+(spanning 19k podcasts) is infeasible, we design an indirect
+assessment methodology (see IV-D) based on the distribution
+of frames over particular named entities. The hypothesis
+guiding this assessment is that certain named entities (e.g.,
+“COVID”, “Jesus Christ”) are contextually associated with
+Fig. 3: Prompt to extract frames.
+specific frames (e.g., “Health”, “Morality”) due to real-world
+patterns.Theimportantnamedentities(asdescribedinSection
+IV-A) are manually selected to associate relevant frames
+toexaminethedifferenceintheimportanceoftextualfeatures
+corresponding to each entity, thereby assessing the automatic
+between LLM-predicted and human-annotated classifications
+frame classification. Regular expression matching is used for
+by training supervised models on both annotation sources.
+Textual feature extraction: Based on our observations, both exact matches and closely related variations of the entity
+to determine the presence of a named entity within a podcast
+we extract a comprehensive set of textual features spanning
+segment.
+abstract elements like toxicity and sentiment, and objective
+elements like part-of-speech tag counts. Table III lists the
+textual features employed in this setup. E. Models Used
+Textualfeatureimportance: ThesubsetofincorrectLLM
+Here, we describe the various models used in this study.
+labels and their extracted features is used to train a random
+forest and a logistic regression model. Separate models are • Spacy. ‘Spacy en core web sm’, is part of the Spacy
+library with an English pipeline optimized for CPU. It is
+built for the human-annotated and LLM-annotated sets to
+employed for NER and PoS Tagging.
+understand the importance of the general feature.
+• Llama 3. The Llama 3-8B Instruct [34] is optimized for
+dialogue use cases, and is employed here for prompting
+D. Fine-Tuned Frame Prediction
+frameclassification.WeemploytheHuggingFaceversion
+OwingtotheperformancegapsinLLMannotationsandthe of the model.
+low inference speed, we investigate whether a BERT-based • Toxicity scores. The ‘unbiased-toxic-roberta’ model on
+PLM can yield better frame accuracies. Existing literature HuggingFace has been trained on the Jigsaw toxicity
+5
+dataset [37]. The model extracted toxicity scores, one of
+the many textual features.
+• VADER. VADER (Valence Aware Dictionary and sEn-
+timent Reasoner) is a lexicon and rule-based sentiment
+analysis tool attuned explicitly to sentiments expressed
+in social media. This model is used to extract sentiment-
+based features [38].
+• BERT. The ‘bert-base-uncased’ [39] from HuggingFace
+is used for frame classification.
+V. OBSERVATIONS&RESULTS
+This section presents the findings at each stage of the
+analysis. Our discussion encompasses the expected increase
+in entity counts resulting from real-world events, as well as
+secondary effects on the emergence of podcast discussions
+that are not directly related to these events. We conclude
+this section with a discussion of a three-way comparison of
+the zero-shot LLM, human annotator, and fine-tuned PLM
+efficacies, highlighting the scope of each.
+A. Entity Count Analysis over Time Fig. 4: LLM annotations (bottom) for podcast chunks as
+WemaptheNERcountstothedaysepisodeswerereleased comparedtoacorrectLLMannotation(top).TheLLMoutputs
+tounderstandhowentityfrequencychangedovertime.Asthe hallucinated key phrases for the bottom chunk.
+podcasts span May-June 2020, we observe a 10-fold increase
+in mentions of entities like COVID-19 as the virus spreads.
+c) Impact of COVID-19 on daily life: The impact of
+During the same period, speculation about the connection
+COVID-19 is evident in the consistent mention of concepts
+between COVID-19 and China increased, as reflected in the
+such as “lockdown” and “COVID tests” in basketball and
+growing mentions of China over time.
+footballpodcasts.Meanwhile,issuessuchas‘remoteworking,
+masks, and vaccination’ become visible in business and the
+B. Topic-Word Correlations
+comedy genre. ‘Virus, cases, and testing’ are evident in
+BeyondNERmentions,category-wiseBERTopic[19]helps
+government-related podcasts. Additionally, secondary effects
+draw insights into how podcasts interlace with socio-political
+such as distance learning are mentioned in family-themed
+events.
+podcasts. It indicates that the pandemic had a significant
+a) Socio-political categories: An analysis of topics di-
+impact across different fields, either in a primary or a
+rectly linked to the socio-political landscape, including daily
+secondary manner.
+news,commentary,andpolitics,revealsahighcorrelationwith
+currentaffairs.ItcanbeseeninthementionofGeorgeFloyd,
+C. Framing Results and Limitations
+Biden,Blackvoters,andgeopoliticalissuesinIran,Syria,and
+China (due to rising COVID cases). Unsurprisingly, one of The NER analysis helps identify the various entities and
+the top-mentioned topics in daily news is the intersection of how their mention evolves. BERTopic further helps correlate
+protests and police, along with the issue of wearing masks entities based on occurrence patterns. While topic modeling
+duringtheCOVID-19pandemic.Wealsoobservethemention and NER analysis give a good insight into what is discussed,
+ofChinainrelationtotheHongKong-mainlandChinaconflict they are inadequate in providing clues on how things are
+thatbeganinlate2019andcontinueduntilearly2020.Political said. Therefore, it was essential to further identify the frames
+podcasts, on the other hand, have topics like defunding the employed for different concepts to analyze the intent behind
+police,Brexit,andhealthcare,alongwiththementionofAntifa the narratives in the podcasts.
+and a nuclear treaty. All of these show that the podcasts are, The LLM output is post-processed to determine the frame
+in fact, reflecting and commenting on current affairs. predicted for each chunk. After classification, the filtering
+b) Racism in Zeitgeist: The football topics also feature ensures that at least 1000 chunks are present per frame.
+Colin Kaepernick kneeling as a top topic [40]. Interestingly, Looking closely at Figure 4, we realize that in some cases the
+correlations of racism, ‘black’, and ‘white’ are observed in a key phrases identified by the LLM do not exist in the podcast
+broader range of categories, including religion, careers, video chunkatall.Here,theLLMhallucinateskeyphrasestojustify
+games, and sports that traditionally have a prominent Black the misclassified frame label. Expert annotators also record
+representation.This shows that even podcasts on topics like noteworthy patterns during the annotation process, which we
+‘beauty’ and ‘fashion’, which are generally not perceived discussinSectionVI.Basedonthemanualannotationsof600
+as necessary for analyzing the socio-political landscape, framechunks,theper-categoryaccuracyforbothframelabels
+still discuss socially charged topics. and key phrases is reported in Table IV. LLM accuracies
+6
+vary across frames, with the ‘health’ frame showing the interesting findings included the higher feature importance
+lowest accuracy at 41%, and the ‘social’ frame achieving given to positive sentiment in the case of social frames, as
+the highest accuracy at 76%. well as the higher importance of personal pronouns (with
+coefficients between 0.5 and 0.6 for both human annotations).
+Similarly, for the security frames, there is a high positive
+correlation with negative sentiment (ranging from 0.6 to 0.7)
+and toxicity (ranging from 0.2 to 0.3).
+E. BERT-Based Model
+As shown in Table IV, the recall generally exceeds 75%
+across different frame types. Notably, the frame-wise label
+accuracies achieved by the fine-tuned model outperform the
+LLM-prompting. In addition to higher accuracy, the model’s
+predictionsexhibitedlowerstandarddeviation,furthervalidat-
+ing the consistency of the multi-task learning approach.
+(a) Textual feature priority: LLM annotations (RF classifier) Upon evaluating the fine-tuning loss curve over 30 epochs,
+we observe that the fine-tuned model’s performance gradually
+improves and stabilizes around the 10th epoch, achieving a
+balancedperformancewithoutcompromisingaccuracyforany
+specific frame type. An analysis of confusion matrices over
+epochs reveals particular patterns of misclassifications. For
+example,earlyintraining,themodelconfusesfinancialframes
+with social ones, a distinction that improves over time.
+F. Large-scale Frame Analysis
+Using our fine-tuned BERT, we obtain frame labels for
+the entire 760k chunks (19k podcasts). This allows us to
+examine if the automatic frame labels are consistent with
+(b) Textual feature priority: Human annotations (RF classifier)
+plausibleframingassociationsgroundedinreal-worldpatterns.
+The entity-frame distributions are outlined in Figure 6.
+Fig. 5: Textual feature analysis shows that LLMs prioritize Across all 760k chunks (19k podcasts), the social frame
+objective and statistical features (shown in blue). In contrast, is the most dominant one (≈60%). Despite the overall skew,
+human annotations emphasize more nuanced aspects such as one can still observe variability in frame assignments at the
+toxicity and sentiment (shown in red). entity level. Here, topics like ‘COVID-19’ present a complex
+interplay of social, financial, and health factors, reflecting its
+socio-economic and public health implications. Meanwhile,
+topics like ‘Cryptocurrency’ are overwhelmingly framed as fi-
+D. Human vs LLM Feature Importance
+nancial(≈65%),withminorsocialframing,whichreflectsthe
+A set of 270 texts incorrectly labeled by the LLM (com-
+prevailing zeitgeist regarding them. Similarly, Constitutional
+pared to ground-truth labels) is used to train three models:
+references are dominated by the legal and security frames
+Random Forest, Logistic Regression, and One-vs-Rest Clas-
+(≈30% each), reflecting their judicial nature. Meanwhile, the
+sifiers. Although the classification accuracies were modest,
+entity‘Jesus’across44kchunksexhibitsastrongmoralfram-
+ranging from 30% to 60%, notable differences are evident in
+ing(≈75%),withamuchlowerrepresentationofotherframes,
+the feature importance rankings between the two annotation
+reflecting typical moral–religious discourse. In a similar vein,
+sources. As shown in Figure 5, human annotations tend to
+the‘Muslim’entityaswellhasahighmoralframingof≈45%,
+assign higher importance to abstract features (depicted in red)
+but this is contrasted with ≈30% security framing, hinting
+such as sentiment and toxicity. In contrast, LLM annotations
+towardstheprojectionsafetydebatesaroundMuslims.Overall,
+emphasize more objective features (shown in blue), such as
+these patterns closely mirror real-world associations.
+counts of specific PoS tags. It indicates a more formulaic
+classification strategy in the case of LLMs.
+We further use one-vs-rest analysis to obtain frame-specific VI. DISCUSSION
+feature importance rankings. We train six binary classifiers,
+each targeting the classification of one frame type against all We conclude our study by revisiting two broad topics: the
+others. This approach provides granular insights into the dis- existing limitations in LLM-prompting for frame analysis and
+criminative features associated with individual frames. Some the potential real-world impact of podcasts.
+7
+Frame Accuracy Epoch5 Epoch10 Epoch15 Epoch20 Epoch30
+Prec Acc F1 Prec Acc F1 Prec Acc F1 Prec Acc F1 Prec Acc F1
+financial 0.500 0.750 0.214 0.333 0.615 0.571 0.593 0.600 0.429 0.500 0.667 0.429 0.522 0.750 0.429 0.545
+health 0.410 0.750 0.750 0.750 0.857 0.750 0.800 0.857 0.750 0.750 0.857 0.750 0.800 0.538 0.875 0.667
+legal 0.320 1.000 0.667 0.800 1.000 0.778 0.875 0.875 0.778 0.778 0.875 0.778 0.824 0.727 0.889 0.800
+moral 0.720 0.846 0.579 0.688 0.882 0.789 0.833 0.867 0.684 0.764 0.765 0.882 0.833 1.000 0.316 0.480
+security 0.590 0.917 0.458 0.611 0.750 0.500 0.600 0.765 0.542 0.634 0.765 0.542 0.634 0.778 0.583 0.667
+social 0.760 0.560 0.955 0.706 0.672 0.886 0.765 0.639 0.886 0.743 0.667 0.909 0.769 0.597 0.841 0.698
+TABLEIV:Frame-wiseevaluationofourBERT-styleencoder,showingPrecision,Accuracy,andF1progressionacrosstraining
+epochs (5, 10, 15, 20, and 30). Ground-truth label accuracy provides a baseline performance.
+Theme Correlation Speculations
+COVIDinHealthDomain
+insurance healthcare 0.633 notablecorrelationwiththehealthcareandinsurance
+responseduringthepandemic
+trauma ptsd therapist 0.625 mentalhealthissueslikePTSDbecamemorepromi-
+nentduringCOVID
+anxiety anxious weak 0.624 widespread anxiety and psychological vulnerability
+duetothepandemic
+loneliness lonely franco 0.617 lonelinessduetoisolationanddistancingmeasures
+KaepernickinFootballRealm
+lack police people 0.702 policeinvolvementandthepeople’sresponsetothe
+Kaepernickcontroversy
+quarterbacks brady quarte 0.561 higher correlation to the police as compared to the
+Karpernick’sownpositiononthefield
+RacisminSportsRealm
+police cops black 0.733 underscores tensions between policing and Black
+athletesorfanswithinsportssettings
+coach basketball coaching 0.703 strongcorrelationwithbasketballandcoachingsug-
+gestsracializedunderstandingsoftalentandleader-
+ship
+nba protests black 0.788 highlights the NBA’s central role in athlete-led
+protestsagainstracialinjustice
+jordan michael lebron 0.584 surprisingly moderate – iconic Black athletes are
+mentioned less in direct connection with racial ac-
+tivismthanexpected
+TABLE V: Correlations between various entities across different themes.
+A. LLM Drawbacks for Automatic Framing the LLM directly reports [‘phrase1’, ‘phrase2’] as the key
+phrases, i.e., just as shown in the prompt (see Figure 3) and
+Annotators notice interesting patterns that offer insights
+demonstrates weak in-context learning ability for subjective
+into the issues LLMs encounter when annotating framing
+tasks. The LLM can also choose specific phrases from the
+text chunks. A significant concern is context limitation in
+chunk to justify the frame, even if the phrase is insignificant.
+smallerLLMs.Sometimes,theLLMonlyextractskeyphrases
+Take the following text for example,
+from the start of the chunk, depicting the context limitation.
+“...gottoflytheT6,thatreallywasn’taccomplishment.Iwas
+Uponcloserexamination,wenoticethatsomekeyphrasesare
+quite pleased with that. I felt the aircraft was a bit of a time
+selected only from the beginning 50 words of the chunk.
+machine. You climb into one of these old war birds and you
+Secondly, as expected, the LLM outputs are prone to
+goflyabovetheclouds,lookatthelinktip.There’szeroways
+hallucination. For instance, we find that the LLM reported a
+to tell that it’s 2000, whatever, or 1942. So I thought that
+frame as ‘Legal’ and then hallucinated key phrases like ‘law,’
+wasaprettycoolexperience.AndItelleverybodyallthetime
+‘regulation, ’ ‘court’ (as also seen in Figure 4) to justify its
+thatoutofallthesingle-enginewarbirds,there’snoquestion
+decision, even if these phrases are not present in the chunk
+in my mind that T6 is by far the most difficult hurdle. Once
+at all. This behavior is evident across frame types. While
+you have the T6, I don’t want to say mastered because really
+such hallucinations can be checked by exact word match,
+nobody ever masters the airplane. Once you have it figured
+the annotators also observe a milder form of hallucination
+out, transitioning to the fighters is easy ...”
+occurring due to paraphrasing or misguided importance. For
+Here, the LLM reports a frame as ‘Security’, focusing on
+example, in the subsequent text, the key phrase the LLM
+key phrases like ‘aircraft’ and ‘war birds’, while missing the
+identifies is ‘looking forward,’ but the chunk only contains
+central theme of the chunk – someone sharing their enjoyable
+‘look forward.’
+experience of flying a wartime aircraft.
+“... But slowly but surely we’re working our way to be
+back open as well. So hopefully sooner rather than later. I These observations contribute to the research on parametric
+appreciatethat.Idon’tlookforwardtotryingtheendofJune, versus contextual knowledge in LLMs [41]. The prompted
+early July to the list. ...” definitionsofaframecouldnotalwaysoverridetheLLM’s
+Occasionally,evenwhentheframetypeiscorrectlypredicted, parametric understanding of specific keywords.
+8
+Fig. 6: Frame distribution across various NERs using the fine-tuned BERT Model.
+B. Real-World Insights purchases of both health and life insurance [46]. Our findings
+alsoshowacorrelationbetweenconversationsaboutloneliness
+As summarised in Table V, we can draw some interesting
+and COVID-19. Other studies have found similar patterns,
+topic-word correlations. Within the context of race, we also
+especially among younger people [47]. A striking insight
+observe a low correlation between iconic black sports stars
+from this analysis is that while loneliness emerged as a
+(like Michael Jordan and LeBron James) and race in the
+long-termconsequenceofthepandemic,earlysignsofthis
+sports realm, as compared to strong links between race and
+were evident through podcast discourse.
+police and protests. Recent reports also highlight this trend
+[42], [43], with implications in downplaying the impact of
+racial factors in sports. A possibly concerning pattern in our
+VII. CONCLUSION
+analysis is the correlation between racism and comedy within This study investigates the effectiveness and limitations of
+socialcommentary.Overthelastfewyears,hatefulideashave computational modeling in detecting nuanced frames within
+been amplified, primarily through ‘concealed punching down’ SPoRC. Our experiments suggest a key difference in how
+humour [44], [45]. LLMsandhumansannotatetext,whereLLMsrelyonsurface-
+Since SPoRC includes podcasts released between May and level features, and human annotators tend to gravitate toward
+June2020,thepodcastdiscussionsalignedwiththeworldwide moreabstractandinterpretivecues.Topicmodelingandentity-
+onset of the first-wave COVID-19 pandemic. We observe an correlation analyses further reveal thematic overlaps in the
+apparent rise in conversationsabout buying medical insurance discourse, illustrating that podcasts are not only spaces where
+and investing in healthcare policies. Parallel research has distinct domains intersect but are also active sites of narrative
+showcased that the pandemic led to a sharp increase in daily expansion.
+9
+These findings, however, must be considered in light of [12] T. Ishibashi, Y. Nakao, and Y. Sugano, “Investigating audio data
+several constraints. Human annotations for framing remain visualization for interactive sound recognition,” in Proceedings of
+the 25th International Conference on Intelligent User Interfaces,
+subjective. Our manual gold set, though representative, is
+ser. IUI ’20. New York, NY, USA: Association for Computing
+limited to 600 samples. The relatively small train–test size Machinery, Mar. 2020, pp. 67–77. [Online]. Available: https:
+alsomeantthatframe-levelefficacysometimesoscillatedover //dl.acm.org/doi/10.1145/3377325.3377483
+[13] R. Jones, H. Zamani, M. Schedl, C.-W. Chen, S. Reddy, A. Clifton,
+epochs. Scale poses another challenge: working with 1.1M
+J. Karlgren, H. Hashemi, A. Pappu, Z. Nazari, L. Yang, O. Semerci,
+samplesunderthecurrentcomputesetupwasinfeasible.While H. Bouchard, and B. Carterette, “Current Challenges and Future
+representative sampling helps ensure that our observations DirectionsinPodcastInformationAccess,”Jun.2021,arXiv:2106.09227
+[cs].[Online].Available:http://arxiv.org/abs/2106.09227
+hold at scale, transcribed advertisements introduce additional
+[14] M. Federico and G. J. F. Jones, “The CLEF 2003 Cross-Language
+ambiguities, indicating the need for more robust filtering [48] Spoken Document Retrieval Track,” in Comparative Evaluation of
+in future versions of SPoRC. Looking forward, we aim to MultilingualInformationAccessSystems. Berlin,Heidelberg:Springer,
+2004,pp.646–652.
+incorporate richer relational features in modeling frames and
+[15] R. Jones, B. Carterette, A. Clifton, M. Eskevich, G. J. F. Jones,
+context switching to better understand how narratives evolve. J.Karlgren,A.Pappu,S.Reddy,andY.Yu,“TREC2020PodcastsTrack
+Overview,” Mar. 2021, arXiv:2103.15953 [cs]. [Online]. Available:
+REFERENCES http://arxiv.org/abs/2103.15953
+[16] A. Clifton, S. Reddy, Y. Yu, A. Pappu, R. Rezapour, H. Bonab,
+[1] P. Aufderheide, D. Lieberman, A. Alkhallouf, and J. M. Ugboma, M. Eskevich, G. Jones, J. Karlgren, B. Carterette, and R. Jones,
+“PodcastingasPublicMedia:TheFutureofU.S.News,PublicAffairs, “100,000 Podcasts: A Spoken English Document Corpus,” in
+and Educational Podcasts,” International Journal of Communication, Proceedings of the 28th International Conference on Computational
+vol. 14, no. 0, p. 22, Feb. 2020, number: 0. [Online]. Available: Linguistics. Barcelona, Spain (Online): International Committee on
+https://ijoc.org/index.php/ijoc/article/view/13548 Computational Linguistics, Dec. 2020, pp. 5903–5917. [Online].
+[2] Faculty of Education, Kampala International University, Uganda Available:https://aclanthology.org/2020.coling-main.519/
+and K. Samuel J., “The Role of Podcasts in Shaping Public [17] M.Purver,“TopicSegmentation,”inSpokenLanguageUnderstanding,
+Discourse,” RESEARCH INVENTION JOURNAL OF RESEARCH IN 1st ed. Wiley, Mar. 2011, pp. 291–317. [Online]. Available:
+EDUCATION,vol.5,no.1,pp.60–66,May2025.[Online].Available: https://onlinelibrary.wiley.com/doi/10.1002/9781119992691.ch11
+https://rijournals.com/the-role-of-podcasts-in-shaping-public-discourse/ [18] M. A. Hearst, “Text Tiling: Segmenting Text into Multi-paragraph
+[3] S. P. Cherumanal, U. Gadiraju, and D. Spina, “Everything We Subtopic Passages,” Computational Linguistics, vol. 23, no. 1, pp.
+Hear: Towards Tackling Misinformation in Podcasts,” Aug. 2024, 33–64, 1997, place: Cambridge, MA Publisher: MIT Press. [Online].
+arXiv:2408.00292 [cs]. [Online]. Available: http://arxiv.org/abs/2408. Available:https://aclanthology.org/J97-1003/
+00292 [19] M.Grootendorst,“BERTopic:Neuraltopicmodelingwithaclass-based
+[4] N. Rizwan, N. Deb, S. Roy, V. S. Solanki, K. Garimella, and TF-IDF procedure,” Mar. 2022, arXiv:2203.05794 [cs]. [Online].
+A. Mukherjee, “Toxicity begets toxicity: Unraveling conversational Available:http://arxiv.org/abs/2203.05794
+chains in political podcasts,” in Proceedings of the 33rd ACM [20] A. Reuter, A. Thielmann, C. Weisser, S. Fischer, and B. Sa¨fken,
+InternationalConferenceonMultimedia,ser.MM’25. NewYork,NY, “Gptopic: Dynamic and interactive topic representations,” 2024.
+USA: Association for Computing Machinery, 2025, p. 11776–11784. [Online].Available:https://arxiv.org/abs/2403.03628
+[Online].Available:https://doi.org/10.1145/3746027.3754553 [21] P. Dumbach, L. Schwinn, T. Lo¨hr, P. L. Do, and B. M. Eskofier,
+[5] J. Park, C. Lee, E. Cho, and U. Oh, “Enhancing the Podcast “Artificialintelligencetrendanalysisonhealthcarepodcastsusingtopic
+Browsing Experience through Topic Segmentation and Visualization modelingandsentimentanalysis:adata-drivenapproach,”Evolutionary
+with Generative AI,” in Proceedings of the 2024 ACM International Intelligence, vol. 17, no. 4, pp. 2145–2166, Aug. 2024. [Online].
+Conference on Interactive Media Experiences, ser. IMX ’24. New Available:https://doi.org/10.1007/s12065-023-00878-4
+York,NY,USA:AssociationforComputingMachinery,Jun.2024,pp. [22] V. Gupta, G. Zhu, A. Yu, and D. E. Brown, “A Comparative Study
+117–128. [Online]. Available: https://dl.acm.org/doi/10.1145/3639701. ofthePerformanceofUnsupervisedTextSegmentationTechniqueson
+3656324 Dialogue Transcripts,” in 2020 Systems and Information Engineering
+[6] A.Aquilina,S.Diacono,P.Papapetrou,andM.Movin,“AnEnd-to-End Design Symposium (SIEDS), Apr. 2020, pp. 1–6. [Online]. Available:
+WorkflowusingTopicSegmentationandTextSummarisationMethods https://ieeexplore.ieee.org/document/9106639/
+for Improved Podcast Comprehension,” Jul. 2023, arXiv:2307.13394 [23] A. E. Boydstun, D. Card, J. H. Gross, P. Resnik, and N. A. Smith,
+[cs].[Online].Available:http://arxiv.org/abs/2307.13394 “TrackingtheDevelopmentofMediaFrameswithinandacrossPolicy
+[7] B. R. Litterer, D. Jurgens, and D. Card, “Mapping the Podcast Issues.”
+Ecosystem with the Structured Podcast Research Corpus,” in [24] O. Eisele, T. Heidenreich, O. Litvyak, and H. G. Boomgaarden,
+Proceedings of the 63rd Annual Meeting of the Association for “Capturing a News Frame – Comparing Machine-Learning
+ComputationalLinguistics(Volume1:LongPapers). Vienna,Austria: Approaches to Frame Analysis with Different Degrees of
+AssociationforComputationalLinguistics,Jul.2025,pp.25132–25154. Supervision,” Communication Methods and Measures, vol. 17,
+[Online].Available:https://aclanthology.org/2025.acl-long.1222/ no. 3, pp. 205–226, Jul. 2023, publisher: Routledge eprint:
+[8] C. T. Hemphill, J. J. Godfrey, and G. R. Doddington, “The https://doi.org/10.1080/19312458.2023.2230560. [Online]. Available:
+ATIS Spoken Language Systems Pilot Corpus,” in Speech and https://doi.org/10.1080/19312458.2023.2230560
+Natural Language: Proceedings of a Workshop Held at Hidden [25] J. Piskorski, T. Mahmoud, N. Nikolaidis, R. Campos, A. Mario Jorge,
+Valley, Pennsylvania, June 24-27,1990, 1990. [Online]. Available: D. Dimitrov, P. Silvano, R. Yangarber, S. Sharma, T. Chakraborty,
+https://aclanthology.org/H90-1021/ N. Guimaraes, E. Sartori, N. Stefanovitch, Z. Xie, P. Nakov,
+[9] J. S. Garofolo, C. D. Laprun, M. Michel, V. M. Stanford, and and G. Da San Martino, “SemEval 2025 task 10: Multilingual
+E. Tabassi, “The NIST Meeting Room Pilot Corpus,” in Proceedings characterization and extraction of narratives from online news,” in
+of the Fourth International Conference on Language Resources Proceedingsofthe19thInternationalWorkshoponSemanticEvaluation
+and Evaluation (LREC’04). Lisbon, Portugal: European Language (SemEval-2025). Vienna, Austria: Association for Computational
+Resources Association (ELRA), May 2004. [Online]. Available: Linguistics, Jul. 2025, pp. 2610–2643. [Online]. Available: https:
+https://aclanthology.org/L04-1097/ //aclanthology.org/2025.semeval-1.331/
+[10] A. Rousseau, P. Dele´glise, and Y. Este`ve, “TED-LIUM: an [26] D. Walter and Y. Ophir, “News Frame Analysis: An Inductive Mixed-
+Automatic Speech Recognition dedicated corpus,” in Proceedings method Computational Approach,” Communication Methods and
+of the Eighth International Conference on Language Resources Measures,vol.13,no.4,pp.248–266,Oct.2019.[Online].Available:
+and Evaluation (LREC’12). Istanbul, Turkey: European Language https://www.tandfonline.com/doi/full/10.1080/19312458.2019.1639145
+Resources Association (ELRA), May 2012, pp. 125–129. [Online]. [27] O.Tsur,D.Calacci,andD.Lazer,“AFrameofMind:UsingStatistical
+Available:https://aclanthology.org/L12-1405/ Models for Detection of Framing and Agenda Setting Campaigns,”
+[11] C.Lopes,F.Perdigao,C.Lopes,andF.Perdigao,“PhonemeRecognition in Proceedings of the 53rd Annual Meeting of the Association for
+on the TIMIT Database,” in Speech Technologies. IntechOpen, Jun. Computational Linguistics and the 7th International Joint Conference
+2011.[Online].Available:https://www.intechopen.com/chapters/15948 on Natural Language Processing (Volume 1: Long Papers). Beijing,
+10
+China: Association for Computational Linguistics, Jul. 2015, pp. [46] S. Chen, Z. Lin, X. Wang, and X. Xu, “Pandemic and insurance
+1629–1638.[Online].Available:https://aclanthology.org/P15-1157/ purchase: How do people respond to unprecedented risk and
+[28] V. Jumle, M. Makhortykh, M. Sydorova, and V. Vziatysheva, uncertainty?” China Economic Review, vol. 79, p. 101946, Jun. 2023.
+“Finding frames with BERT: A transformer-based approach to generic [Online]. Available: https://www.sciencedirect.com/science/article/pii/
+news frame detection,” Aug. 2024, arXiv:2409.00272 [cs]. [Online]. S1043951X23000317
+Available:http://arxiv.org/abs/2409.00272 [47] A. Rebechi, A. Lepinteur, A. E. Clark, N. Rohde, C. Vo¨gele,
+[29] V. Pastorino, J. A. Sivakumar, and N. S. Moosavi, “Decoding News and C. D’Ambrosio, “Loneliness during the COVID-19 pandemic:
+Narratives:ACriticalAnalysisofLargeLanguageModelsinFraming Evidence from five European countries,” Economics & Human
+Detection,” Jun. 2024, arXiv:2402.11621 [cs]. [Online]. Available: Biology, vol. 55, p. 101427, Dec. 2024. [Online]. Available:
+http://arxiv.org/abs/2402.11621 https://www.sciencedirect.com/science/article/pii/S1570677X24000790
+[30] D. Alonso Del Barrio, M. Tiel, and D. Gatica-Perez, “Human Interest [48] Y. Abdessamed, S. Rezapour, and S. Wilson, “Identifying narrative
+or Conflict? Leveraging LLMs for Automated Framing Analysis in content in podcast transcripts,” in Proceedings of the 18th Conference
+TV Shows,” in ACM International Conference on Interactive Media of the European Chapter of the Association for Computational
+Experiences. Stockholm Sweden: ACM, Jun. 2024, pp. 157–167. Linguistics(Volume1:LongPapers). St.Julian’s,Malta:Association
+[Online].Available:https://dl.acm.org/doi/10.1145/3639701.3656308 for Computational Linguistics, Mar. 2024, pp. 2631–2643. [Online].
+[31] P.Zhang,T.Wang,andJ.Yan,“PageRankcentralityandalgorithmsfor Available:https://aclanthology.org/2024.eacl-long.161/
+weighted, directed networks with applications to World Input-Output
+Tables,” May 2021, arXiv:2104.02764 [physics]. [Online]. Available:
+http://arxiv.org/abs/2104.02764
+[32] M.vanHulst,M.,Tamara,D.,Art,d.V. ,Jasper,v.B. ,Severine,
+, and M. van Ostaijen, “Discourse, framing and narrative: three ways
+of doing critical, interpretive policy analysis,” Critical Policy Studies,
+vol. 19, no. 1, pp. 74–96, Jan. 2025, publisher: Routledge eprint:
+https://doi.org/10.1080/19460171.2024.2326936. [Online]. Available:
+https://doi.org/10.1080/19460171.2024.2326936
+[33] D. Odijk, B. Burscher, R. Vliegenthart, and M. De Rijke, “Automatic
+Thematic Content Analysis: Finding Frames in News,” in Social
+Informatics. Cham:SpringerInternationalPublishing,2013,vol.8238,
+pp.333–345,seriesTitle:LectureNotesinComputerScience.[Online].
+Available:http://link.springer.com/10.1007/978-3-319-03260-3 29
+[34] “meta-llama/Meta-Llama-3-8B-Instruct · Hugging Face,” Dec.
+2024. [Online]. Available: https://huggingface.co/meta-llama/
+Meta-Llama-3-8B-Instruct
+[35] N. Yadav, S. Masud, V. Goyal, M. S. Akhtar, and T. Chakraborty,
+“Tox-BART: Leveraging toxicity attributes for explanation generation
+of implicit hate speech,” in Findings of the Association for
+ComputationalLinguistics:ACL2024. Bangkok,Thailand:Association
+forComputationalLinguistics,Aug.2024,pp.13967–13983.[Online].
+Available:https://aclanthology.org/2024.findings-acl.831/
+[36] M. Upravitelev, N. Duran-Silva, C. Woerle, G. Guarino, S. Mohtaj,
+J. Yang, V. Solopova, and V. Schmitt, “Comparing LLMs and
+BERT-based classifiers for resource-sensitive claim verification in
+social media,” in Proceedings of the Fifth Workshop on Scholarly
+Document Processing (SDP 2025). Vienna, Austria: Association for
+ComputationalLinguistics,Jul.2025,pp.281–287.[Online].Available:
+https://aclanthology.org/2025.sdp-1.26/
+[37] “unitary/unbiased-toxic-roberta · Hugging Face.” [Online]. Available:
+https://huggingface.co/unitary/unbiased-toxic-roberta
+[38] C.HuttoandE.Gilbert,“VADER:AParsimoniousRule-BasedModel
+for Sentiment Analysis of Social Media Text,” Proceedings of the
+International AAAI Conference on Web and Social Media, vol. 8,
+no. 1, pp. 216–225, May 2014, number: 1. [Online]. Available:
+https://ojs.aaai.org/index.php/ICWSM/article/view/14550
+[39] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,“BERT:Pre-training
+ofDeepBidirectionalTransformersforLanguageUnderstanding,”Oct.
+2018.[Online].Available:https://arxiv.org/abs/1810.04805v2
+[40] “A timeline of Colin Kaepernick kneeling in protest
+against police brutality - The Washington Post.” [On-
+line]. Available: https://www.washingtonpost.com/sports/2020/06/01/
+colin-kaepernick-kneeling-history/
+[41] L. Hagstro¨m, S. V. Marjanovic, H. Yu, A. Arora, C. Lioma,
+M. Maistro, P. Atanasova, and I. Augenstein, “A reality check on
+context utilisation for retrieval-augmented generation,” in Proceedings
+of the 63rd Annual Meeting of the Association for Computational
+Linguistics (Volume 1: Long Papers). Vienna, Austria: Association
+for Computational Linguistics, Jul. 2025, pp. 19691–19730. [Online].
+Available:https://aclanthology.org/2025.acl-long.968/
+[42] “After he reached the Super Bowl, Colin Kaepernick’s racial justice
+protestshelpedexposeUSviewstowardsportsactivism.”
+[43] “NBAinvestigatingoffensiveaudiorecordingallegedlybyLosAngeles
+ClippersownerDonaldSterling-ESPN.”
+[44] S. Ivry, “No Joke,” Aug. 2023. [Online]. Available: https://daily.jstor.
+org/no-joke/
+[45] P.BreazuandD.Machin,“Usinghumortodisguiseracismintelevision
+news:thecaseoftheRoma,”HUMOR,vol.35,no.1,pp.73–92,Feb.
+2022,publisher:DeGruyterMouton.[Online].Available:https://www.
+degruyterbrill.com/document/doi/10.1515/humor-2021-0104/html

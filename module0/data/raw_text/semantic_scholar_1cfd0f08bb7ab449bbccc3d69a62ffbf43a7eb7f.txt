@@ -1,0 +1,1471 @@
+First Align, then Predict:
+Understanding the Cross-Lingual Ability of Multilingual BERT
+BenjaminMuller1,2 YanaiElazar3,4 BenoˆıtSagot1 DjaméSeddah1
+1Inria,Paris,France 2SorbonneUniversité,Paris,France
+3ComputerScienceDepartment,BarIlanUniversity
+4AllenInstituteforArtificialIntelligence
+{benjamin.muller, benoit.sagot,djame.seddah}@inria.fr
+yanaiela@gmail.com
+Abstract orparalleldata. (2)Trainingatask-specificmodel
+usingsupervisiononasourcelanguageontopof
+Multilingualpretrainedlanguagemodelshave
+thesharedrepresentation.
+demonstrated remarkable zero-shot cross-
+Recently,theriseofmultilinguallanguagemod-
+lingual transfer capabilities. Such transfer
+emergesbyfine-tuningonataskofinterestin els entailed a paradigm shift in this field. Multi-
+onelanguageandevaluatingonadistinctlan- lingualpretrainedlanguagemodels(Devlinetal.,
+guage, not seen during the fine-tuning. De- 2019; Conneau and Lample, 2019) have been
+spite promising results, we still lack a proper showntoperformefficientzero-shotcross-lingual
+understanding of the source of this transfer.
+transferformanytasksandlanguages(Piresetal.,
+Using a novel layer ablation technique and
+2019; Wu and Dredze, 2019). Such transfer re-
+analyses of the model’s internal representa-
+liesonthree-steps: (i)pretrainingamask-language
+tions, we show that multilingual BERT, a
+model(e.g.Devlinetal.(2019))ontheconcatena-
+popular multilingual language model, can be
+viewed as the stacking of two sub-networks: tion of monolingual corpora across multiple lan-
+a multilingual encoder followed by a task- guages,(ii)fine-tuningthemodelonaspecifictask
+specific language-agnostic predictor. While in the source language, and (iii) using the fine-
+the encoder is crucial for cross-lingual trans-
+tunedmodelonatargetlanguage. Thesuccessof
+ferandremainsmostlyunchangedduringfine-
+thisapproachisremarkable,andincontrasttothe
+tuning,thetaskpredictorhaslittleimportance
+standardcross-lingualpipeline,themodelseesnei-
+onthetransferandcanbereinitializedduring
+theraligneddatanortask-specificannotateddata
+fine-tuning. Wepresentextensiveexperiments
+with three distinct tasks, seventeen typologi- inthetargetlanguageatanytrainingstage.
+cally diverse languages and multiple domains Thesourceofsuchasuccessfultransferisstill
+tosupportourhypothesis. largelyunexplained. Piresetal.(2019)hypothesize
+thatthesemodelslearnsharedmultilingualrepre-
+1 Introduction
+sentationsduringpretraining. Focusingonsyntax,
+Zero-shotCross-Lingualtransferaimsatbuilding Chi et al. (2020) recently showed that the multi-
+modelsforatargetlanguagebyreusingknowledge lingualversionofBERT(mBERT)(Devlinetal.,
+acquired from a source language. Historically, it 2019),encodeslinguisticpropertiesinsharedmul-
+has been tackled with a two-step standard cross- tilingualsub-spaces. Recently,Gonenetal.(2020)
+lingualpipeline(Ruderetal.,2019): (1)Building suggest that mBERT learns a language encoding
+a shared multilingual representation of text, typ- component and an abstract cross-lingual compo-
+ically by aligning textual representations across nent. Inthiswork,weareinterestedinunderstand-
+languages. This step can be done using feature ingthemechanismthatleadsmBERTtoperform
+extraction (Aone and McKee, 1993; Schultz and zero-shotcross-lingualtransfer. Morespecifically,
+Waibel,2001)aswiththedelexicalizedapproach weaskwhatpartsofthemodelandwhatmech-
+(ZemanandResnik,2008;Søgaard,2011)orusing anismssupportcross-lingualtransfer?
+wordembeddingtechniques(Mikolovetal.,2013; Bycombiningbehavioralandstructuralanalyses
+Smithetal.,2017)byprojectingmonolingualem- (Belinkovetal.,2020),weshowthatmBERToper-
+beddings onto a shared multilingual embedding atesasthestackingoftwomodules: (1)Amultilin-
+space,thissteprequiringexplicitsupervisionsig- gualencoder,locatedinthelowerpartofthemodel,
+nal in the target language in the form of features critical for cross-lingual transfer, is in charge of
+aligning multilingual representations; and (2) a outcome on the downstream task. In contrast,
+task-specific, language-agnostic predictor which RANDOM-INIT allows to study a specific archi-
+haslittleimportanceforcross-lingualtransferand tecturecomponent,insteadofspecificfeatures.
+is dedicated to performing the downstream task.
+2.2 HiddenStateSimilaritiesacross
+Thismechanismthatemergesout-of-the-box,with-
+Languages
+outanyexplicitsupervision,suggeststhatmBERT
+behaves like the standard cross-lingual pipeline. Tostrengthenthebehavioralevidencebroughtby
+Our contributions advance the understanding of RANDOM-INIT,andprovidefineranalysesthatfo-
+multilinguallanguagemodelsandassuchhavethe cusonindividuallayers,westudyhowthetextual
+potentialtosupportthedevelopmentofbetterpre- representationsdifferbetweenparallelsentencesin
+trainingprocesses. different languages. We hypothesize that an effi-
+cientfine-tunedmodelshouldbeabletorepresent
+2 AnalysisTechniques similarsentencesinthesourceandtargetlanguages
+similarly,even-thoughitwasfine-tunedonlyonthe
+WestudymBERTwithanovelbehavioraltestthat
+sourcelanguage.
+disentanglesthetaskfine-tuninginfluencefromthe
+To measure the similarities of the representa-
+pretrainingstep(§2.1),andastructuralanalysison
+tion across languages, we use the Central Kernel
+theintermediaterepresentations(§2.2). Combining
+Alignmentmetric(CKA),introducedbyKornblith
+theresultsfromtheseanalysesallowsustolocate
+et al. (2019). We follow Conneau et al. (2020)
+thecross-lingualtransferandgaininsightsintothe
+who use the CKA as a similarity metric to com-
+mechanismsthatenableit.
+paretherepresentationsofmonolingualandbilin-
+gual pretrained models across languages. In our
+2.1 LocatingTransferwithRANDOM-INIT
+work,weusetheCKAtostudytherepresentation
+Inordertodisentangletheimpactofthepretrain-
+differencebetweensourceandtargetlanguagesin
+ing step from the fine-tuning, we propose a new
+pretrainedandfine-tunedmultilingualmodels. For
+behavioral technique: RANDOM-INIT. First, we
+everylayer,weaverageallcontextualizedtokensin
+randomly initialize a set of parameters (e.g. all
+asentencetogetasinglevector.2 Thenwecompute
+the parameters of a given layer) instead of using
+thesimilaritybetweentargetandsourcerepresenta-
+theparameterslearnedduringthepretrainingstep.
+tionsandcompareitacrosslayersinthepretrained
+Then,wefine-tunethemodifiedpretrainedmodel
+and fine-tuned models. We call this metric the
+andmeasurethedownstreamperformance.1
+cross-lingualsimilarity.
+Byreplacingagivensetofpretrainedparameters
+andfine-tuningthemodel,allotherfactorsbeing 3 ExperimentalSetup
+equal, RANDOM-INIT enables us to quantify the
+Tasks, Datasets and Evaluation We consider
+contribution of a given set of pretrained parame-
+threetaskscoveringbothsyntacticandsemanticas-
+tersondownstreamperformanceandthereforeto
+pectsoflanguage: Part-Of-SpeechTagging(POS),
+locate which pretrained parameters contribute to
+dependencyparsing,andNamed-EntityRecogni-
+thecross-lingualtransfer.
+tion(NER).ForPOStaggingandparsingweuse
+If the cross-language performance is signifi-
+theUniversalDependency(Nivreetal.,2018)tree-
+cantlylowerthansame-languageperformance,we
+banks,andforNER,weusetheWikiANNdataset
+conclude that these layers are more important to
+(Panetal.,2017). Weevaluateoursystemswiththe
+cross-languageperformancethantheyareforsame-
+standardmetricspertask;word-levelaccuracyfor
+languageperformance. Ifthecross-languagescore
+POStagging,F1forNERandlabeledattachment
+does not change, it indicates that cross-language
+score (LAS) for parsing. All the reported scores
+transferdoesnotrelyontheselayers.
+arecomputedonthetestsetofeachdataset.
+ThistechniqueisreminiscentoftherecentAm-
+WeexperimentwithEnglish,RussianandArabic
+nesic Probing method (Elazar et al., 2020), that
+as source languages, and fourteen typologically
+removes from the representation a specific fea-
+diversetargetlanguages,includingChinese,Czech,
+ture, e.g. Part-of-Speech, and then measures the
+GermanandHindi. Thecompletelistcanbefound
+1Notethatweperformthesameoptimizationprocedure intheAppendixA.1.2.
+forthemodelwithandw/oRANDOM-INIT(optimallearning
+rateandbatchsizearechosenwithgrid-search). 2Afterremoving[CLS]and[SEP]specialtokens.
+RANDOM-INIToflayers For all tasks, we observe sharp drops in the
+SRC-TRG REF ∆1-2 ∆3-4 ∆5-6 ∆7-8 ∆9-10 ∆11-12
+Parsing cross-languageperformanceatthelowerlayersof
+EN-EN 88.98 -0.96 -0.66 -0.93 -0.55 0.04 -0.09
+RU-RU 85.15 -0.82 -1.38 -1.51 -0.86 -0.29 0.18 the model but only moderate drops in the same-
+AR-AR 59.54 -0.78 -2.14 -1.20 -0.67 -0.27 0.08
+EN-X 53.23 -15.77 -6.51 -3.39 -1.47 0.29 1.00 language performance. For instance, the parsing
+RU-X 55.41 -7.69 -3.71 -3.13 -1.70 0.92 0.94
+AR-X 27.97 -4.91 -3.17 -1.48 -1.68 -0.36 -0.14 experiment with English as the source language,
+POS results in a performance drop on English of only
+EN-EN 96.51 -0.30 -0.25 -0.40 -0.00 0.05 0.02
+RU-RU 96.90 -0.52 -0.55 -0.40 -0.07 0.02 -0.03 0.96points(EN-EN), whenrandomly-initializing
+AR-AR 79.28 -0.35 -0.49 -0.36 -0.19 -0.05 -0.00
+EN-X 79.37 -8.94 -2.49 -1.66 -0.88 0.20 -0.14 layers1and2. However,itleadstoanaveragedrop
+RU-X 79.25 -10.08 -2.83 -1.65 -2.74 0.01 -0.45
+AR-X 64.81 -6.73 -3.50 -1.63 -1.56 -0.73 -1.29 of15.77pointsonotherlanguages(EN-X).
+NER
+EN-EN 83.30 -2.66 -2.14 -1.43 -0.63 -0.23 -0.12 Furthermore,weshowthatapplyingRANDOM-
+RU-RU 88.20 -2.08 -2.13 -1.52 -0.64 -0.33 -0.13
+AR-AR 87.97 -2.37 -2.11 -0.96 -0.39 -0.15 0.21 INIT to the upper layers does not harm same-
+EN-X 64.17 -8.28 -5.09 -3.07 -0.79 -0.47 -0.13
+RU-X 62.13 -15.85 -9.36 -5.50 -2.44 -1.16 -0.06 language and cross-language performances (e.g.
+AR-X 65.59 -16.10 -8.42 -3.73 -1.40 -0.25 0.67
+when training on parsing for English, the perfor-
+Table 1: Relative Zero shot Cross-Lingual perfor- mance slightly decreases by 0.09 points in the
+manceofmBERTwithRANDOM-INIT (§2.1)onpairs same-language while it increases by 1.00 in the
+of consecutive layers compared to mBERT without cross-language case). This suggests that the up-
+any random-initialization (REF). In SRC-TRG, SRC perlayersaretask-specificandlanguage-agnostic,
+indicates the source language on which we fine-tune
+sincere-initializingthemhaveminimalchangeon
+mBERT, and TRG the target language on which we
+performance. We conclude that mBERT’s upper
+evaluate it. SRC-X is the average across all 17 target
+layersdonotcontributetocross-languagetransfer.
+language with X (cid:54)= SRC. Detailed results per target
+language are reported in tables 6, 7 and 8 in the Ap-
+pendix. Coloring is computed based on how mBERT
+Does the Target Domain Matter? In order to
+with RANDOM-INIT performs compared to the REF
+testwhetherthisbehaviorisspecifictothecross-
+model. ≥REF <REF ≤-2points ≤-5points
+language setting and is not general to out-of-
+distribution (OOD) transfer, we repeat the same
+The results of a model that is fine-tuned and RANDOM-INITexperimentbyevaluatingonsame-
+evaluatedonthesamelanguagearereferredtoas language setting while varying the evaluated do-
+same-languageandthoseevaluatedondistinctlan- main.3 If the drop is similar to cross-language
+guagesarereferredtoascross-language. performance, it means that lower layers are im-
+portantforout-of-distributiontransferingeneral.
+MultilingualModel WefocusonmBERT(De-
+Otherwise,itwouldconfirmthattheselayersplay
+vlinetal.,2019),a12-layermodeltrainedonthe
+aspecificroleforcross-languagetransfer.
+concatenationof104monolingualWikipediacor-
+WereporttheresultsinTable2. Forallanalyzed
+pora,includingourlanguagesofstudy.
+domains (Web, News, Literature, etc.) applying
+Fine-Tuning We fine-tune the model for each RANDOM-INITtothetwofirstlayersofthemodels
+taskfollowingthestandardmethodologyofDevlin leadstoverymoderatedrops(e.g. -0.91whenthe
+etal.(2019). Theexactdetailsforreproducingour target domain is English Literature for parsing),
+resultscanbefoundintheAppendix. Allreported while it leads to large drops when the evaluation
+scoresareaveragedon5runswithdifferentseeds. is done on a distinct language (e.g. -5.82 when
+evaluatedonFrench). Thetrendsaresimilarforall
+4 Results
+thedomainsandtaskswetestedon. Weconclude
+that the pretrained parameters at the lower layers
+4.1 DisentanglingthePretrainingEffect
+are consistently more critical for cross-language
+For each experiment, we measure the impact of
+transferthanforsame-languagetransfer,andcannot
+randomly-initializing specific layers as the dif-
+be explained by the possibly different domain of
+ference between the model performance without
+theevaluateddatasets.
+anyrandom-initialization(REF)andwithrandom-
+initialization(RANDOM-INIT). Resultsfortwocon-
+secutivelayersareshowninTable1. Therestofthe 3Although other factors might play a part in out-of-
+distribution,wesuspectthatdomainsplaysacrucialpartin
+results,whichexhibitsimilartrends,canbefound
+transfer.Moreover,itwasshownthatBERTencodesout-of-
+intheAppendix(Table5). the-boxdomaininformation(AharoniandGoldberg,2020)
+RANDOM-INIToflayers
+0.9
+SRC-TRG REF ∆0-1 ∆2-3 ∆4-5 ∆6-7 ∆8-9 ∆10-11
+DomainAnalyses Parsing 0.8
+EN-EN 90.40 -1.41 -2.33 -1.57 -1.43 -0.60 -0.46
+EN-ENLIT. 77.91 -0.91 -1.38 -1.85 -0.83 -0.23 -0.17 0.7
+EN-ENWEB 75.77 -2.14 -2.42 -2.54 -1.42 -0.71 -0.69
+EN-ENUGC 45.90 -1.97 -2.75 -2.10 -1.04 -0.39 -0.25 0.6
+Cross-Language
+0.5 EN-FRTRAN. 83.25 -5.82 -2.69 -2.42 -0.44 0.25 0.94
+EN-FRWIKI 71.29 -7.86 -4.33 -4.64 -0.92 -0.11 0.33 0.4
+DomainAnalyses POS
+EN-EN 96.83 -1.35 -0.98 -0.70 -0.40 -0.28 -0.24 0.3
+E EN N- -E EN NL WIT E. B 9 83 9. .0 69 7 - -0 1. .5 08 7 - -0 1. .6 25 1 - -0 0. .2 48 1 - -0 0. .0 14 0 -0 0. .0 06 3 0 0. .1 22 1 0.2 2 4 6 8 10 12
+EN-ENUGC 68.93 -2.38 -1.07 -0.14 0.54 -0.04 0.63 Hidden Layer Index
+Cross-Language
+EN-FRTRAN. 93.43 -3.59 -0.88 -1.31 -0.56 0.46 0.25
+EN-FR. 91.13 -5.10 -0.93 -1.16 -0.74 0.15 -0.07
+DomainAnalyses NER
+EN-EN 83.22 -2.45 -2.15 -1.28 -0.49 -0.15 -0.06
+EN-NEWS 51.72 -1.32 -1.05 -0.80 -0.14 -0.31 -0.33
+Cross-Language
+EN-FR 76.16 -5.14 -2.82 -1.97 -0.33 0.52 0.34
+Table2:RelativeZeroshotCross-Lingualperformance
+of mBERT with RANDOM-INIT (§2.1) on pairs of
+consecutive layers compared to mBERT without any
+random-initialization (REF). We present experiments
+withEnglishasthesourcelanguageandevaluateacross
+various target domains in English in comparison with
+thecross-lingualsettingwhenweevaluateonFrench.
+EN-LIT. refers to the Literature Domain. UGC refers
+to User-Generated Content. FR-TRAN. refers to sen-
+tences translated from the English In-Domain test set,
+hencereducingthedomain-gaptoitsminimum.
+≥REF <REF ≤-2points ≤-5points
+4.2 Cross-LingualSimilarityinmBERT
+Theresultsfromtheprevioussectionssuggestthat
+the lower layers of the model are responsible for
+thecrosslingualtransfer,whereastheupperlayers
+are language-agnostic. In this section, we assess
+thetransferbydirectlyanalyzingtheintermediate
+representations and measuring the similarities of
+thehiddenstaterepresentationsbetweensourceand
+targetlanguages. WecomputetheCKAmetric(cf.
+§2.2)betweenthesourceandthetargetrepresen-
+tationsforpretrainedandfine-tunedmodelsusing
+parallel sentences from the PUD dataset (Zeman
+et al., 2017). In Figure 1, we present the similar-
+ities between Russian and English with mBERT
+pretrainedandfine-tunedonthethreetasks.4
+Thecross-lingualsimilaritybetweentherepre-
+sentationsconstantlyincreasesuptolayer5forall
+thethreetasks(reaching78.1%,78.1%and78.2%
+for parsing, POS tagging and NER respectively).
+Fromtheselayersforward,thesimilaritydecreases.
+We observe the same trends across all languages
+(cf. Figure 5). This demonstrates that the fine-
+tunedmodelcreatessimilarrepresentationsregard-
+4Wereportthecomparisonsfor5otherlanguagesinFig-
+ure5intheAppendix.
+uR
+.sv
+nE
+ytiralimiS
+laugniL-ssorC
+Pretrain/Tuned mBERT Language Similarity
+Pretrained
+NER
+POS
+Parser
+Figure1:Cross-Lingualsimilarity(CKA)betweenrep-
+resentations of pretrained and fine-tuned models on
+POS,NERandParsingbetweenEnglishandRussian.
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1 2 4 6 8 10 12
+Hidden Layer Index
+uR
+.sv
+nE
+ytiralimiS
+laugniL-ssorC
+NER Fine-Tuned mBERT Lang. Similarity
+*59.12
+*58.28
+*F1 score
+Standard *52.03
+Random-Init 4-7 *34.66
+Random-Init 8-11
+Random-Init 0-3
+Figure2: Cross-Lingualsimilarity(CKA)oftherepre-
+sentationsofafine-tunedmodelonNERwithandw/o
+RANDOM-INIT between English (source) and Russian
+(target). Thehigherthescorethegreaterthesimilarity.
+lessofthelanguageandtask,andhintsonanalign-
+ment that occurs in the lower part of the model.
+Interestingly,thesametrendisalsoobservedinthe
+pretrained model, suggesting that the fine-tuning
+steppreservesthemultilingualalignment.
+TheseresultsdonotmatchthefindingsofSingh
+et al. (2019), who found no language alignment
+acrosslayers,althoughtheyinspectedNaturalLan-
+guageInference,amore“high-leveltask”(Dagan
+et al., 2005; Bowman et al., 2015). We leave the
+inspectionofthismismatchtofuturework.
+4.3 BetterAlignmentLeadstoBetter
+Cross-LingualTransfer
+Intheprevioussectionweshowedthatfine-tuned
+modelsaligntherepresentationsbetweenparallel
+sentences,acrosslanguages. Moreover,wedemon-
+strated that the lower part of the model is critical
+forcross-languagetransferbuthardlyimpactsthe
+same-language performance. In this section, we
+showthatthealignmentmeasuredplaysacritical
+roleincross-lingualtransfer.
+As seen in Figure 2 in the case of English to
+Russian (and in Figures 6-8 in the Appendix for
+otherlanguages),whenwerandomly-initializethe
+lowerpartofthemodel,thereisnoalignment: the
+similaritybetweenthesourceandtargetlanguages perlayersofthemodelandpreservesthelinguistic
+decreases. Weobservethesametrendforallother featureslearnedduringpretraining. Inourcase,we
+languagesandtasksandreportitintheAppendixin show that the lower layers are in charge of align-
+Figures6-8. Thisresultmatchesthedropincross- ingrepresentationsacrosslanguagesandthatthis
+lingual performance that occurs when we apply cross-lingualalignmentlearnedduringpretraining
+RANDOM-INITtothelowerpartofthemodelwhile ispreservedafterfine-tuning.
+impactingmoderatelysame-languageperformance.
+6 Conclusion
+For a more systematic view of the link be-
+tweenthecross-lingualsimilaritiesandthecross- Theremarkableperformanceofmultilinguallan-
+languagetransfer,wemeasuretheSpearmancorre- guages models in zero-shot cross-lingual trans-
+lationbetweenthecross-langgap(i.ethedifference fer is still not well understood. In this work, we
+between the same-language perfromance and the combine a structural analysis of the similarities
+cross-languageperformance)(Huetal.,2020)and between hidden representation across languages
+the cross-lingual similarity averaged over all the with a novel behavioral analysis that randomly-
+layers. Wemeasureitwiththecross-lingualsim- initializethemodels’parameterstounderstandit.
+ilaritycomputedonthepretrainedandfine-tuned Bycombiningthoseexperimentson17languages
+models(withoutrandom-initialization)onallthe and3tasks, weshowthatmBERTisconstructed
+languages. We find that the cross-lingual simi- from: (1)amultilingualencoderinthelowerlay-
+larity correlates significantly with the cross-lang ers,whichalignshiddenrepresentationsacrosslan-
+gapforallthreetasks,bothonthefine-tunedand guages and is critical for cross-language transfer,
+pretrained models. The spearman correlation for and(2)atask-specific,language-agnosticpredic-
+thefine-tunedmodelsare0.76,0.75and0.47for tor that has little effect to cross-language trans-
+parsing,POSandNER,respectively.5 Insummary, fer, in the upper layers. Additionally, we demon-
+ourresultsshowthatthecross-lingualalignmentis stratethathiddencross-lingualsimilaritystrongly
+highlycorrelatedwiththecross-lingualtransfer. correlates with downstream cross-lingual perfor-
+mancesuggestingthatthisalignmentisattheroot
+5 Discussion
+ofthesecross-lingualtransferabilities. Thisshows
+thatmBERTreproducesthestandardcross-lingual
+Understandingthebehaviorofpretrainedlanguage
+pipelinedescribedbyRuderetal.(2019)without
+models is currently a fundamental challenge in
+any explicit supervision signal for it. Practically
+NLP.Apopularapproachconsistsofprobingthe
+speaking, our findings provide a concrete tool to
+intermediaterepresentationswithexternalclassi-
+measurecross-lingualrepresentationsimilaritythat
+fiers (Alain and Bengio, 2017; Adi et al., 2017;
+could be used to design better multilingual pre-
+Conneauetal.,2018)tomeasureifaspecificlayer
+trainingprocesses.
+captures a given property. Using this technique,
+Tenney et al. (2019) showed that BERT encodes
+Acknowledgments
+linguisticpropertiesinthesameorderasthe“clas-
+sicalNLPpipeline”. However,probingtechniques WewanttothankHilaGonen,ShauliRavfogeland
+only indirectly explain the behavior of a model Ganesh Jawahar for their insightful reviews and
+anddonotexplaintherelationshipbetweenthein- comments. Wealsothanktheanonymousreviewers
+formation captured in the representations and its fortheirvaluablesuggestions. Thisworkwaspartly
+effectonthetask(Elazaretal.,2020). Moreover, funded by two French National funded projects
+recentworkshavequestionedtheusageofprobing grantedtoInriaandotherpartnersbytheAgence
+asaninterpretationtool(HewittandLiang,2019; NationaledelaRecherche,namelyprojectsPAR-
+Ravichanderetal.,2020). Thismotivatesourap- SITI (ANR-16-CE33-0021) and SoSweet (ANR-
+proach to combine a structural analysis based on 15-CE38-0011), as well as by the third author’s
+representationsimilaritywithbehavioralanalysis. chairinthePRAIRIEinstitutefundedbytheFrench
+Inthisregard,ourfindingsextendrecentworkfrom national agency ANR as part of the “Investisse-
+Merchantetal.(2020)inthemultilingualsetting, ments d’avenir” programme under the reference
+whoshowthatfine-tuningimpactsmainlytheup- ANR-19-P3IA-0001. Yanai Elazar is grateful to
+be partially supported by the PBC fellowship for
+5Correlationsforboththepretrainedandthefine-tuned
+outstandingPhdcandidatesinDataScience.
+modelsarereportedintheAppendixTable4.
+References Alexis Conneau, Shijie Wu, Haoran Li, Luke Zettle-
+moyer, and Veselin Stoyanov. 2020. Emerging
+Yossi Adi, Einat Kermany, Yonatan Belinkov, Ofer cross-lingual structure in pretrained language mod-
+Lavi,andYoavGoldberg.2017. Fine-grainedanal- els. In Proceedings of the 58th Annual Meeting
+ysis of sentence embeddings using auxiliary pre- of the Association for Computational Linguistics,
+diction tasks. In 5th International Conference pages 6022–6034, Online. Association for Compu-
+on Learning Representations, ICLR 2017, Toulon, tationalLinguistics.
+France, April 24-26, 2017, Conference Track Pro-
+ceedings.OpenReview.net. Ido Dagan, Oren Glickman, and Bernardo Magnini.
+2005. The pascal recognising textual entailment
+RoeeAharoniandYoavGoldberg.2020. Unsupervised challenge. In Machine Learning Challenges Work-
+domain clusters in pretrained language models. In shop,pages177–190.Springer.
+Proceedingsofthe58thAnnualMeetingoftheAsso-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+ciationforComputationalLinguistics, pages7747–
+Kristina Toutanova. 2019. BERT: Pre-training of
+7763, Online. Association for Computational Lin-
+deep bidirectional transformers for language under-
+guistics.
+standing. In Proceedings of the 2019 Conference
+of the North American Chapter of the Association
+Guillaume Alain and Yoshua Bengio. 2017. Under-
+for Computational Linguistics: Human Language
+standing intermediate layers using linear classifier
+Technologies, Volume 1 (Long and Short Papers),
+probes. In 5th International Conference on Learn-
+pages4171–4186,Minneapolis,Minnesota.Associ-
+ing Representations, ICLR 2017, Toulon, France,
+ationforComputationalLinguistics.
+April 24-26, 2017, Workshop Track Proceedings.
+OpenReview.net.
+Yanai Elazar, Shauli Ravfogel, Alon Jacovi, and
+Y. Goldberg. 2020. Amnesic probing: Behavioral
+Chinatsu Aone and Douglas McKee. 1993. A
+explanation with amnesic counterfactuals. arXiv:
+language-independent anaphora resolution system
+ComputationandLanguage.
+forunderstandingmultilingualtexts. In31stAnnual
+Meeting of the Association for Computational Lin- Hila Gonen, Shauli Ravfogel, Yanai Elazar, and Yoav
+guistics,pages156–163. Goldberg. 2020. It’s not greek to mbert: Inducing
+word-level translations from multilingual bert. In
+Yonatan Belinkov, Sebastian Gehrmann, and Ellie Proceedings of the Third BlackboxNLP Workshop
+Pavlick.2020. Interpretabilityandanalysisinneural on Analyzing and Interpreting Neural Networks for
+nlp. In Proceedings of the 58th Annual Meeting of NLP,pages45–56.
+the Association for Computational Linguistics: Tu-
+torialAbstracts,pages1–5. RobvanderGootandGertjanvanNoord.2018. Mod-
+eling input uncertainty in neural network depen-
+SamuelR.Bowman, GaborAngeli,ChristopherPotts, dency parsing. In Proceedings of the 2018 Con-
+and Christopher D. Manning. 2015. A large anno- ferenceonEmpiricalMethodsinNaturalLanguage
+tatedcorpusforlearningnaturallanguageinference. Processing,pages4984–4991.
+In Proceedings of the 2015 Conference on Empiri-
+John Hewitt and Percy Liang. 2019. Designing and
+calMethodsinNaturalLanguageProcessing,pages
+interpreting probes with control tasks. In Proceed-
+632–642,Lisbon,Portugal.AssociationforCompu-
+ings of the 2019 Conference on Empirical Methods
+tationalLinguistics.
+inNaturalLanguageProcessingandthe9thInterna-
+tional Joint Conference on Natural Language Pro-
+Ethan A. Chi, John Hewitt, and Christopher D. Man-
+cessing(EMNLP-IJCNLP),pages2733–2743.
+ning. 2020. Finding universal grammatical rela-
+tions in multilingual BERT. In Proceedings of the
+Junjie Hu, Sebastian Ruder, Aditya Siddhant, Gra-
+58thAnnualMeetingoftheAssociationforCompu-
+ham Neubig, Orhan Firat, and Melvin Johnson.
+tational Linguistics, pages 5564–5577, Online. As-
+2020. XTREME: A massively multilingual multi-
+sociationforComputationalLinguistics.
+task benchmark for evaluating cross-lingual gener-
+alisation. In Proceedings of the 37th International
+Alexis Conneau, German Kruszewski, Guillaume
+Conference on Machine Learning, volume 119 of
+Lample, Lo¨ıc Barrault, and Marco Baroni. 2018.
+Proceedings of Machine Learning Research, pages
+Whatyoucancramintoasingle$&!#*vector:Prob-
+4411–4421.PMLR.
+ing sentence embeddings for linguistic properties.
+InProceedingsofthe56thAnnualMeetingoftheAs- Diederik P. Kingma and Jimmy Ba. 2015. Adam:
+sociationforComputationalLinguistics(Volume1: A method for stochastic optimization. CoRR,
+Long Papers), pages 2126–2136, Melbourne, Aus- abs/1412.6980.
+tralia.AssociationforComputationalLinguistics.
+Simon Kornblith, Mohammad Norouzi, Honglak Lee,
+AlexisConneauandGuillaumeLample.2019. Cross- and Geoffrey Hinton. 2019. Similarity of neu-
+lingual language model pretraining. In Advances ral network representations revisited. In Inter-
+in Neural Information Processing Systems, pages national Conference on Machine Learning, pages
+7057–7067. 3519–3529.
+Ryan McDonald, Joakim Nivre, Yvonne Quirmbach- KyungTae Lim, Nikola Ljubesˇic´, Olga Loginova,
+Brundage, Yoav Goldberg, Dipanjan Das, Kuz- Olga Lyashevskaya, Teresa Lynn, Vivien Macke-
+man Ganchev, Keith Hall, Slav Petrov, Hao tanz, Aibek Makazhanov, Michael Mandl, Christo-
+Zhang, Oscar Ta¨ckstro¨m, Claudia Bedini, Núria pher Manning, Ruli Manurung, Cătălina Mărăn-
+Bertomeu Castelló, and Jungmee Lee. 2013. Uni- duc, David Marecˇek, Katrin Marheinecke, Héctor
+versaldependencyannotationformultilingualpars- Martínez Alonso, André Martins, Jan Masˇek, Yuji
+ing. In Proceedings of the 51st Annual Meeting of Matsumoto, Ryan McDonald, Gustavo Mendonc¸a,
+theAssociationforComputationalLinguistics(Vol- Niko Miekka, Anna Missila¨, Cătălin Mititelu,
+ume2: ShortPapers),pages92–97,Sofia,Bulgaria. YusukeMiyao,SimonettaMontemagni,AmirMore,
+AssociationforComputationalLinguistics. Laura Moreno Romero, Shinsuke Mori, Bjartur
+Mortensen, Bohdan Moskalevskyi, Kadri Muis-
+AmilMerchant,ElaheRahimtoroghi,ElliePavlick,and chnek, Yugo Murawaki, Kaili Mu¨u¨risep, Pinkey
+Ian Tenney. 2020. What happens to BERT embed- Nainwani, Juan Ignacio Navarro Horn˜iacek, Anna
+dings during fine-tuning? In Proceedings of the Nedoluzhko, Gunta Nesˇpore-Be¯rzkalne, Lương
+ThirdBlackboxNLPWorkshoponAnalyzingandIn- Nguyê˜n Thị, Huyê`n Nguyê˜n Thị Minh, Vitaly
+terpreting Neural Networks for NLP, pages 33–44, Nikolaev, Rattima Nitisaroj, Hanna Nurmi, Stina
+Online.AssociationforComputationalLinguistics. Ojala, Adédayò. Olúòkun, Mai Omura, Petya Osen-
+ova, Robert O¨stling, Lilja Øvrelid, Niko Partanen,
+TomasMikolov,QuocVLe,andIlyaSutskever.2013.
+Elena Pascual, Marco Passarotti, Agnieszka Pate-
+Exploiting similarities among languages for ma-
+juk, Siyao Peng, Cenel-Augusto Perez, Guy Per-
+chinetranslation. arXivpreprintarXiv:1309.4168.
+rier, Slav Petrov, Jussi Piitulainen, Emily Pitler,
+Barbara Plank, Thierry Poibeau, Martin Popel,
+Joakim Nivre, Mitchell Abrams, Zˇeljko Agic´, Lars
+LaumaPretkalnin¸a,SophiePrévost,ProkopisProko-
+Ahrenberg, Lene Antonsen, Maria Jesus Aranz-
+pidis, Adam Przepiórkowski, Tiina Puolakainen,
+abe, Gashaw Arutie, Masayuki Asahara, Luma
+Sampo Pyysalo, Andriela Ra¨a¨bis, Alexandre Rade-
+Ateyah, Mohammed Attia, Aitziber Atutxa, Lies-
+maker, Loganathan Ramasamy, Taraka Rama, Car-
+beth Augustinus, Elena Badmaeva, Miguel Balles-
+los Ramisch, Vinit Ravishankar, Livy Real, Siva
+teros, Esha Banerjee, Sebastian Bank, Verginica
+Reddy, Georg Rehm, Michael Rießler, Larissa Ri-
+Barbu Mititelu, John Bauer, Sandra Bellato, Kepa
+naldi, Laura Rituma, Luisa Rocha, Mykhailo Ro-
+Bengoetxea, Riyaz Ahmad Bhat, Erica Biagetti,
+manenko, Rudolf Rosa, Davide Rovati, Valentin
+Eckhard Bick, Rogier Blokland, Victoria Bobicev,
+Rosca, Olga Rudina, Shoval Sadde, Shadi Saleh,
+Carl Bo¨rstell, Cristina Bosco, Gosse Bouma, Sam ,
+TanjaSamardzˇic´,StephanieSamson,ManuelaSan-
+Bowman,AdrianeBoyd,AljoschaBurchardt,Marie
+guinetti, Baiba Saul¯ıte, Yanin Sawanakunanon,
+Candito, Bernard Caron, Gauthier Caron, Gu¨ls¸en
+Nathan Schneider, Sebastian Schuster, Djamé Sed-
+Cebirog˘lu Eryig˘it, Giuseppe G. A. Celano, Savas
+dah, Wolfgang Seeker, Mojgan Seraji, Mo Shen,
+Cetin,FabricioChalub,JinhoChoi,YongseokCho,
+Atsuko Shimada, Muh Shohibussirri, Dmitry
+Jayeol Chun, Silvie Cinková, Aurélie Collomb,
+Sichinava, Natalia Silveira, Maria Simi, Radu
+C¸ag˘rı C¸o¨ltekin, Miriam Connor, Marine Courtin, Simionescu, Katalin Simkó, Mária Sˇimková, Kiril
+Elizabeth Davidson, Marie-Catherine de Marn-
+Simov, Aaron Smith, Isabela Soares-Bastos, An-
+effe, Valeria de Paiva, Arantza Diaz de Ilarraza,
+tonio Stella, Milan Straka, Jana Strnadová, Alane
+Carly Dickerson, Peter Dirix, Kaja Dobrovoljc,
+Suhr, Umut Sulubacak, Zsolt Szántó, Dima Taji,
+Timothy Dozat, Kira Droganova, Puneet Dwivedi,
+Yuta Takahashi, Takaaki Tanaka, Isabelle Tel-
+MarhabaEli, AliElkahky, BinyamEphrem, Tomazˇ
+lier, Trond Trosterud, Anna Trukhina, Reut Tsar-
+Erjavec, Aline Etienne, Richárd Farkas, Hector
+faty, Francis Tyers, Sumire Uematsu, Zdenˇka
+Fernandez Alcalde, Jennifer Foster, Cláudia Fre-
+Uresˇová, Larraitz Uria, Hans Uszkoreit, Sowmya
+itas, Katarína Gajdosˇová, Daniel Galbraith, Mar-
+Vajjala, Daniel van Niekerk, Gertjan van No-
+cos Garcia, Moa Ga¨rdenfors, Kim Gerdes, Filip
+ord, Viktor Varga, Veronika Vincze, Lars Wallin,
+Ginter, Iakes Goenaga, Koldo Gojenola, Memduh
+Jonathan North Washington, Seyi Williams, Mats
+Go¨kırmak, Yoav Goldberg, Xavier Gómez Guino-
+Wirén, Tsegay Woldemariam, Tak-sum Wong,
+vart, BertaGonzálesSaavedra, MatiasGrioni, Nor-
+Chunxiao Yan, Marat M. Yavrumyan, Zhuoran Yu,
+munds Gru¯z¯ıtis, Bruno Guillaume, Céline Guillot-
+Zdeneˇk Zˇabokrtský, Amir Zeldes, Daniel Zeman,
+Barbance, Nizar Habash, Jan Hajicˇ, Jan Hajicˇ jr.,
+Manying Zhang, and Hanzhi Zhu. 2018. Univer-
+Linh Hà Mỹ, Na-Rae Han, Kim Harris, Dag Haug,
+sal dependencies 2.2. LINDAT/CLARIN digital li-
+Barbora Hladká, Jaroslava Hlavácˇová, Florinel Ho-
+braryattheInstituteofFormalandAppliedLinguis-
+ciung, Petter Hohle, Jena Hwang, Radu Ion, Elena
+tics (ÚFAL), Faculty of Mathematics and Physics,
+Irimia, Tomásˇ Jelínek, Anders Johannsen, Fredrik
+CharlesUniversity.
+Jørgensen,Hu¨nerKas¸ıkara,SylvainKahane,Hiroshi
+Kanayama, Jenna Kanerva, Tolga Kayadelen, Vá-
+clava Kettnerová, Jesse Kirchner, Natalia Kotsyba, Xiaoman Pan, Boliang Zhang, Jonathan May, Joel
+SimonKrek,SookyoungKwak,VeronikaLaippala, Nothman,KevinKnight,andHengJi.2017. Cross-
+Lorenzo Lambertino, Tatiana Lando, Septina Dian lingualnametaggingandlinkingfor282languages.
+Larasati, Alexei Lavrentiev, John Lee, Phương In Proceedings of the 55th Annual Meeting of the
+Lê Hô`ng, Alessandro Lenci, Saran Lertpradit, Her- Association for Computational Linguistics (Volume
+man Leung, Cheuk Ying Li, Josie Li, Keying Li, 1: Long Papers), pages 1946–1958, Vancouver,
+Canada.AssociationforComputationalLinguistics. SystemDemonstrations,pages38–45,Online.Asso-
+ciationforComputationalLinguistics.
+Telmo Pires, Eva Schlinger, and Dan Garrette. 2019.
+How multilingual is multilingual BERT? In Pro- Shijie Wu and Mark Dredze. 2019. Beto, bentz, be-
+ceedings of the 57th Annual Meeting of the Asso- cas: The surprising cross-lingual effectiveness of
+ciationforComputationalLinguistics, pages4996– bert. In Proceedings of the 2019 Conference on
+5001,Florence,Italy.AssociationforComputational EmpiricalMethodsinNaturalLanguageProcessing
+Linguistics. andthe9thInternationalJointConferenceonNatu-
+ral Language Processing (EMNLP-IJCNLP), pages
+AbhilashaRavichander,YonatanBelinkov,andEduard 833–844.
+Hovy. 2020. Probing the probing paradigm: Does
+probing accuracy entail task relevance? arXiv Daniel Zeman, Martin Popel, Milan Straka, Jan
+preprintarXiv:2005.00719. Hajicˇ,JoakimNivre,FilipGinter,JuhaniLuotolahti,
+SampoPyysalo, SlavPetrov, MartinPotthast, Fran-
+Sebastian Ruder, Ivan Vulic´, and Anders Søgaard. cis Tyers, Elena Badmaeva, Memduh Gokirmak,
+2019. A survey of cross-lingual word embedding Anna Nedoluzhko, Silvie Cinková, Jan Hajicˇ jr.,
+models. JournalofArtificialIntelligenceResearch, Jaroslava Hlavácˇová, Václava Kettnerová, Zdenˇka
+65:569–631. Uresˇová, Jenna Kanerva, Stina Ojala, Anna Mis-
+sila¨, Christopher D. Manning, Sebastian Schuster,
+Tanja Schultz and Alex Waibel. 2001. Language-
+Siva Reddy, Dima Taji, Nizar Habash, Herman Le-
+independentandlanguage-adaptiveacousticmodel-
+ung, Marie-Catherine de Marneffe, Manuela San-
+ingforspeechrecognition. SpeechCommunication,
+guinetti, Maria Simi, Hiroshi Kanayama, Valeria
+35(1-2):31–51.
+dePaiva,KiraDroganova,HéctorMartínezAlonso,
+C¸ag˘rı C¸o¨ltekin, Umut Sulubacak, Hans Uszkor-
+Jasdeep Singh, Bryan McCann, Richard Socher, and
+eit, Vivien Macketanz, Aljoscha Burchardt, Kim
+CaimingXiong.2019. Bertisnotaninterlinguaand
+Harris, Katrin Marheinecke, Georg Rehm, Tolga
+the bias of tokenization. In Proceedings of the 2nd
+Kayadelen,MohammedAttia,AliElkahky,Zhuoran
+Workshop on Deep Learning Approaches for Low-
+Yu, Emily Pitler, Saran Lertpradit, Michael Mandl,
+ResourceNLP(DeepLo2019),pages47–55.
+JesseKirchner,HectorFernandezAlcalde,JanaStr-
+SamuelL.Smith,DavidH.P.Turban,StevenHamblin, nadová, Esha Banerjee, Ruli Manurung, Antonio
+andNilsY.Hammerla.2017. Offlinebilingualword Stella,AtsukoShimada,SookyoungKwak,Gustavo
+vectors,orthogonaltransformationsandtheinverted Mendonc¸a, Tatiana Lando, Rattima Nitisaroj, and
+softmax. In5thInternationalConferenceonLearn- Josie Li. 2017. CoNLL 2017 shared task: Mul-
+ing Representations, ICLR 2017, Toulon, France, tilingual parsing from raw text to universal depen-
+April 24-26, 2017, Conference Track Proceedings. dencies. InProceedingsoftheCoNLL2017Shared
+OpenReview.net. Task:MultilingualParsingfromRawTexttoUniver-
+sal Dependencies, pages 1–19, Vancouver, Canada.
+AndersSøgaard.2011. Datapointselectionforcross- AssociationforComputationalLinguistics.
+languageadaptationofdependencyparsers. InPro-
+ceedings of the 49th Annual Meeting of the Associ- Daniel Zeman and Philip Resnik. 2008. Cross-
+ation for Computational Linguistics: Human Lan- language parser adaptation between related lan-
+guage Technologies: short papers-Volume 2, pages guages. InProceedingsoftheIJCNLP-08Workshop
+682–686. Association for Computational Linguis- onNLPforLessPrivilegedLanguages.
+tics.
+CorsoSvizzera.2014. Convertingtheparalleltreebank
+partutinuniversalstanforddependencies.
+Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019.
+BERT rediscovers the classical NLP pipeline. In
+Proceedingsofthe57thAnnualMeetingoftheAsso-
+ciationforComputationalLinguistics, pages4593–
+4601,Florence,Italy.AssociationforComputational
+Linguistics.
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Chaumond,ClementDelangue,AnthonyMoi,Pier-
+ricCistac, Tim Rault, RemiLouf, Morgan Funtow-
+icz, Joe Davison, Sam Shleifer, Patrick von Platen,
+Clara Ma, Yacine Jernite, Julien Plu, Canwen Xu,
+Teven Le Scao, Sylvain Gugger, Mariama Drame,
+QuentinLhoest, andAlexanderRush.2020. Trans-
+formers: State-of-the-art natural language process-
+ing. InProceedingsofthe2020ConferenceonEm-
+pirical Methods in Natural Language Processing:
+A Appendices Domain Analysis Datasets We list here the
+datasets for completing our domain analysis ex-
+A.1 Reproducibility
+periment in Section 4.1 reported in Table 2. To
+A.1.1 Optimization haveafullcontrolonthesourcedomains,weuse
+Wefine-tuneourmodelsusingthestandardAdam forfine-tuningtheEnglishPartuttreebankforPOS
+optimizer (Kingma and Ba, 2015). We warmup tagging and parsing (Svizzera, 2014). It is a mix
+the learning rate on the first 10% steps and use of legal, news and wikipedia text. For NER, we
+linear decay in the rest of the training. Using the keeptheWikiANNdataset(Panetal.,2017). For
+validationsetofthesourcelanguage,wefindthe thesame-languageandout-of-domainexperiments,
+bestcombinationofhyper-parameterswithagrid we use the English-EWT, English-Lines and En-
+searchonbatchsizeamong{16,32}andlearning glishLexnorm(vanderGootandvanNoord,2018)
+rateinitializationamong{1e-5,2.5e-5,5e-5}We treebanksforWebMediadata,Literaturedataand
+selectthemodelwiththehighestvalidationperfor- Noisytweetsrespectively. Forthecross-language
+mance out of 15 epochs for parsing and out of 6 French evaluation, we use the translation of the
+epochsforPOStaggingandNER. Englishtestset,6 aswellastheFrench-GSDtree-
+bank. ForNER,wetaketheCoNLL-2003shared
+Hyperparameters InTable3,wereportthebest
+taskEnglishdataasourout-of-domainevaluation
+hyper-parameters set for each task, the bound of
+extractedfromtheNewsdomain. Wenotethatthe
+eachhyperparameter,theestimatednumberofgrid
+absoluteperformanceonthisdatasetisnotdirectly
+search trial for each task as well as the estimated
+comparabletotheoneonthesourcewikiner. In-
+runtime.
+deed,theCoNLL-2003datasetusesanextraMISC
+A.1.2 Data class. In our work, we only interpret the relative
+performanceofdifferentmodelsonthistestset.
+DataSources Webaseourexperimentsondata
+originated from two sources. The Universal De-
+Cross-LingualSimilarityAnalysis Foragiven
+pendencyproject(McDonaldetal.,2013)down-
+sourcelanguagelandatargetlanguagel(cid:48),wecol-
+loadable here https://lindat.mff.cuni.cz/
+lect a 1000 pairs of aligned sentences from the
+repository/xmlui/handle/11234/1-2988 and
+UD-PUD treebanks (Zeman et al., 2017). For a
+the WikiNER dataset (Pan et al., 2017). We also
+given model and for each layer, we get a single
+makeuseoftheCoNLL-2003sharedtaskNEREn-
+sentenceembeddingbyaveragingtoken-levelem-
+glish dataset https://www.clips.uantwerpen.
+beddings(afterexcludingspecialtokens). Wethen
+be/conll2003/
+concatenatethe1000sentenceembeddingvectors
+Languages Forallourexperiments,weuseEn- and get the matrices X and X(cid:48). Based on these
+l l
+glish, Russian and Arabic as source languages in twomatrices,theCKAbetweenthelanguageland
+additiontoChinese,Czech,Finish,French,Indone- thelanguagel(cid:48) isdefinedas:
+sian,Italian,Japanese,German,Hindi,Polish,Por-
+tuguese,Slovenian,Spanish,andTurkishastarget ||XTX ||2
+CKA(X ,X ) = l l(cid:48) F
+languages. l l(cid:48) ||XTX || ||XTX ||
+l l F l(cid:48) l(cid:48) F
+Fine-tuning Data For all the cross-lingual ex-
+periments,weuseEnglish,RussianandArabicas with||.|| F definingtheFrobeniusnorm.
+sourcelanguagesonwhichwefine-tunemBERT. Wedosoforeachsource-targetlanguagepairs
+ForEnglish,wetaketheEnglish-EWTtreebankfor usingtherepresentationofthepretrainedmBERT
+fine-tuning,forRussiantheRussian-GSDtreebank model as well as for mBERT fine-tuned on each
+andforArabictheArabic-PADTtreebank. downstreamtask.
+Inadditiontotheresultspresentedin§4.2,were-
+Evaluation Data For all our experiments, we
+portinFigure4,acomparisonofthecross-lingual
+perform the evaluation on all the 17 languages.
+similarityperhiddenlayerofmBERTfine-tuned
+For Parsing and POS tagging we use the test set
+onNER,acrosstargetlanguages. Thetrendisthe
+fromthePUDtreebanksreleasedfortheCoNLL
+sameforalllanguages.
+SharedTask2017(Zemanetal.,2017). ForNER,
+weusethecorrespondingannotateddatasetsinthe
+6WedosobytakingtheFrench-ParTUTtestsetthatover-
+wikinerdataset. lapswiththeEnglish-ParTUT,whichincludes110sentences.
+A.1.3 Computation
+1.0
+Infrastructure Our experiments were ran on a
+sharedclusterontheequivalentof15NvidiaTesla 0.8
+T4GPUs.7
+0.6
+Codebase All of our experiments are
+0.4
+built using the Transformers library de-
+scribed in (Wolf et al., 2020). We also
+0.2
+provide code to reproduce our experiments
+at https://github.com/benjamin-mlr/ 0.00 2 4 6 8 10
+Hidden Layer Index
+first-align-then-predict.git.
+A.1.4 Preprocessing
+Ourexperimentsareranwithword-leveltokeniza-
+tionasprovidedinthedatasets. Wethentokenize
+eachsequenceofwordsatthesub-wordlevelusing
+theWordpiecealgorithmofBERTandprovidedby
+theTransformerslibrary.
+Params. Parse NER POS Bounds
+batchsize 32 16 16 [1,256]
+learningrate 5e-5 3.5e-5 5e-5 [1e-6,1e-3]
+epochs(best) 15 6 6 [1,50]
+#grid 60 60 180 -
+Run-time(min) 32 24 75 -
+Table 3: Fine-tuning best hyper-parameters for each
+taskasselectedonthevalidationsetofthesourcelan-
+guagewithbounds. #grid: numberofgridsearchtrial.
+Run-timeisreportedinaveragefortrainingandevalu-
+ation.
+A.2 Cross-lingualtransferanalyses
+A.2.1 Correlation
+WereporthereinFigure4thecorrelationbetween
+the hidden representation of each layer and the
+cross-lang gap between the source and the target
+averaged across all target languages and all lay-
+ers. The correlation is strong and significant for
+all the tasks and for both the fine-tuned and the
+pretrained models. This shows that multilingual
+alignment that occurs within the models, learnt
+during pretraining is strongly related with cross-
+lingualtransfer.
+We report in Figure 3, the detail of this cor-
+relation per layer. For the pretrained model, we
+observe the same distribution for each task with
+layer6beingthemostcorrelatedtocross-lingual
+transfer. We observe large variations in the fine-
+tuned cases, the most notable being NER. This
+illustrates the task-specific aspect of the relation
+betweencross-lingualsimilarityandcross-lingual
+7https://www.nvidia.com/en-sg/data-center/tesla-t4/
+paG-X
+.sv
+ytiralimiS-X
+noitalerroC
+Fine-tuned Pretrained
+1.0
+0.8
+0.6
+0.4
+Parser
+0.2
+POS
+NER
+0.00 2 4 6 8 10
+Hidden Layer Index
+Figure 3: Spearman Correlation between Cross-
+LingualSimilarity(CKAbetweenEnglishandthetar-
+get representations) and cross-lang gap averaged over
+all17targetlanguagesforeachlayer
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity to English NER fine-tuned model
+French German
+Turkish
+Indonesian
+Arabic
+Figure 4: Cross-Lingual Similarity (CKA) (§4.2) of
+hidden representations of a source language (English)
+sentences with target languages of mBERT fine-tuned
+forNER.ThehighertheCKAvaluethegreaterthesim-
+ilarity.
+transfer. More precisely, in the case of NER, the
+sharp increase and decrease in the upper part of
+themodelprovidesnewevidencethatforthistask,
+fine-tuninghighlyimpactscross-lingualsimilarity
+intheupperpartofthemodelwhichcorrelateswith
+cross-languagetransfer.
+Correlation
+Task X-Gapvs.X-Similarity
+FINE-TUNED PRETRAINED
+Parsing 0.76 0.79
+POS 0.74 0.82
+NER* 0.47 0.43
+Table 4: Spearman-Rank Correlation between the Cross-
+lingualGap(X-LangGap)andtheCross-lingualSimilarity
+betweenthesourceandthetargetlanguagesofthefine-tuned
+modelsandthepretrainedmodelaveragedoverallthehidden
+layersandallthe17targetlanguages(samplesizepertask:
+17).ForNER,cross-langgapmeasuredonwikinerdataand
+notontheparralleldataitselfinconstrastwithParsingand
+POS tagging. Complete list of languages can be found in
+AppendixA.1.2
+RANDOM-INIToflayers
+Eval REF ALL 1 2 1-2 3-4 1-3 4-6 7-9 10-12 1-4 5-8 9-12
+Parsing
+ENGLISHDEV 88.52 74.66 87.77 88.03 87.28 86.81 83.77 85.86 87.53 88.78 84.30 85.41 88.35
+ENGLISHTEST 88.59 74.58 87.77 88.09 87.25 86.79 83.37 85.54 87.36 88.62 83.10 85.37 88.69
+FRENCH 68.94 3.70 65.73 65.21 55.31 61.31 43.81 61.77 67.03 69.36 37.29 61.82 69.26
+GERMAN 67.43 4.73 64.97 65.20 57.08 60.62 47.85 58.93 64.12 66.67 36.05 59.37 67.21
+TURKISH 28.40 2.76 21.65 23.77 16.78 21.21 10.69 20.23 25.39 30.43 9.70 20.94 29.33
+INDONESIAN 45.13 4.99 43.33 43.48 39.83 39.09 33.06 40.65 44.42 46.96 30.35 40.85 47.53
+RUSSIAN 59.70 2.95 57.81 57.53 54.10 53.51 47.01 52.37 56.45 61.41 38.58 52.41 60.72
+ARABIC 23.37 3.19 23.66 23.49 21.01 19.55 16.17 18.84 20.70 24.54 13.26 18.27 23.93
+POS
+ENGLISHDEV 96.45 87.47 96.04 96.06 95.92 95.81 95.38 95.43 96.25 96.58 94.01 95.35 96.39
+ENGLISHTEST 96.53 87.71 96.08 96.24 95.94 95.72 95.40 95.59 96.34 96.74 94.05 95.45 96.51
+FRENCH 88.25 28.96 86.70 87.66 79.84 87.14 69.43 86.42 86.94 88.30 62.28 86.37 88.26
+GERMAN 90.63 28.93 88.26 89.53 82.26 88.39 71.63 88.30 90.26 90.83 59.16 89.12 90.64
+TURKISH 72.65 32.23 62.17 66.17 54.50 63.22 47.77 66.37 70.91 72.92 44.16 69.30 73.08
+INDONESIAN 84.06 36.98 82.15 82.89 80.13 81.40 75.94 81.99 83.78 84.42 72.42 82.59 84.09
+RUSSIAN 82.97 32.63 83.14 83.63 81.95 82.26 77.93 81.69 82.98 81.76 70.33 82.56 83.19
+ARABIC 56.66 19.61 58.10 58.06 57.89 55.62 57.93 54.69 56.04 55.97 52.28 53.60 58.84
+NER
+ENGLISHDEV 83.29 56.99 82.04 82.26 79.52 80.36 76.22 79.53 82.18 82.53 69.31 80.05 82.47
+ENGLISHTEST 83.06 56.56 81.46 82.00 79.63 79.25 76.68 78.93 81.64 82.39 69.08 79.91 82.27
+FRENCH 76.76 35.35 75.46 77.57 69.94 72.83 65.14 70.34 75.42 75.90 55.79 73.12 75.77
+GERMAN 76.68 18.95 73.73 75.39 66.18 70.12 56.50 69.53 75.38 77.11 42.37 71.14 75.50
+TURKISH 67.64 20.76 62.54 64.84 52.20 57.11 53.03 60.59 65.66 64.87 39.38 61.43 66.62
+INDONESIAN 53.47 21.20 49.19 49.27 46.50 46.87 43.75 47.83 54.39 48.71 36.11 46.06 48.23
+RUSSIAN 58.23 7.43 55.63 58.08 50.67 52.89 42.83 46.13 53.38 58.09 34.66 52.03 59.12
+ARABIC 41.81 5.49 35.79 34.80 32.37 32.31 26.21 38.88 38.55 40.83 21.85 38.67 41.23
+Table5: Zero-shotcross-lingualperformancewhenapplyingRANDOM-INIT tospecificsetofconsecutivelayers
+comparedtotheREFmodel. SourcelanguageisEnglish. BaselinemodelALL(foralllayersrandomlyinitialized)
+correspondstoamodeltrainedfromscratchonthetask. Forreproducibilitypurposes,wereportperformanceon
+the Validation set ENGLISH DEV. For all target languages, we report the scores on the test split of each dataset.
+Eachscoreistheaverageof5runswithdifferentrandomseeds.Formoreinsightsintothevariabilityofourresults,
+wereportthemin.,medianandmax. valueofthestandarddeviations(std)acrossrunswithdifferentrandomseeds
+foreachtask: Parsing:0.02/0.34/1.48,POS:0.01/0.5/2.38,NER:0.0/0.47/2.62(stdmin/median/max).
+≥REF <REF ≤5points ≤10points
+. .
+RANDOM-INIToflayers
+SOURCE-TARGET REF ∆0-1 ∆2-3 ∆4-5 ∆6-7 ∆8-9 ∆10-11
+Parsing
+EN-ENGLISH 88.98 -0.96 -0.66 -0.93 -0.55 0.04 -0.09
+EN-ARABIC 35.88 -4.05 -2.38 -3.16 -0.78 1.74 1.68
+EN-FRENCH 74.04 -21.30 -6.84 -2.93 -0.69 0.03 0.76
+EN-GERMAN 70.34 -15.06 -9.26 -4.75 -1.54 -0.29 1.82
+EN-TURKISH 34.03 -16.37 -10.10 -5.11 -3.71 0.43 1.43
+EN-INDO 44.11 -10.57 -5.87 -2.66 -0.96 -0.74 0.73
+EN-RUSSIAN 62.52 -7.31 -5.37 -2.84 -1.09 0.44 0.71
+EN-PORTHUGHESE 68.59 -25.83 -6.22 -2.97 -0.77 0.15 0.82
+EN-SPANISH 69.96 -18.05 -5.74 -2.78 -0.96 0.13 0.72
+EN-FINISH 48.42 -24.25 -9.48 -4.39 -2.51 -0.28 0.22
+EN-ITALIAN 74.54 -30.54 -9.63 -4.18 -1.32 -0.12 0.90
+EN-SLOVENIAN 73.04 -29.89 -6.52 -3.00 -1.68 -0.05 0.18
+EN-CZECH 60.44 -31.84 -10.69 -4.61 -1.82 0.18 1.17
+EN-POLISH 55.23 -23.57 -9.11 -3.34 -1.83 0.28 0.89
+EN-HINDI 28.86 -9.13 -7.58 -5.84 -2.50 1.35 1.49
+EN-CHINESE 27.48 -7.31 -4.47 -1.65 -0.62 0.65 1.32
+EN-JAPANESE 11.99 -4.36 -2.76 -1.91 -1.19 0.47 1.12
+EN-X(MEAN) 53.23 -15.77 -6.51 -3.39 -1.47 0.29 1.00
+RU-RUSSIAN 85.15 -0.82 -1.38 -1.51 -0.86 -0.29 0.18
+RU-ENGLISH 61.40 -8.37 -3.55 -3.90 -0.72 1.77 1.14
+RU-ARABIC 59.41 -5.65 -5.26 -5.15 -1.47 0.24 0.16
+RU-FRENCH 65.84 -8.87 -2.93 -1.81 -1.05 3.81 1.24
+RU-GERMAN 65.90 -7.02 -4.19 -1.97 -1.45 2.58 2.05
+RU-TURKISH 32.20 -13.13 -7.18 -6.82 -3.77 -0.85 1.21
+RU-INDO 47.59 -4.74 -2.99 -2.30 -1.81 0.04 1.02
+RU-PORTHUGHESE 66.41 -11.17 -1.61 -1.09 -1.25 4.16 1.94
+RU-SPANISH 66.74 -4.52 -1.38 -0.69 -0.97 2.95 1.37
+RU-FINISH 52.92 -15.43 -6.59 -4.09 -1.35 0.12 0.77
+RU-ITALIAN 65.28 -12.97 -3.56 -2.34 -1.46 3.16 1.55
+RU-SLOVENIAN 62.91 -16.67 -2.71 -3.18 -1.03 0.31 1.08
+RU-CZECH 72.77 -11.95 -4.17 -3.13 -1.57 -0.33 0.30
+RU-POLISH 66.07 -5.70 -3.22 -2.57 -1.54 -0.12 0.54
+RU-HINDI 28.67 -6.02 -5.77 -5.27 -3.75 -0.06 0.99
+RU-CHINESE 28.77 -4.66 -4.38 -3.22 -1.80 0.15 1.12
+RU-JAPANESE 15.10 -4.89 -3.56 -3.95 -3.11 0.68 0.73
+RU-X(MEAN) 55.41 -7.69 -3.71 -3.13 -1.70 0.92 0.94
+AR-ARABIC 59.54 -0.78 -2.14 -1.20 -0.67 -0.27 0.08
+AR-ENGLISH 25.46 -2.09 -2.92 -0.90 -1.40 -0.97 -0.61
+AR-FRENCH 28.92 -4.85 -1.45 -0.25 -2.72 -1.60 -0.88
+AR-GERMAN 27.14 -6.38 -4.51 -0.98 -2.24 0.13 0.09
+AR-TURKISH 9.58 -3.90 -3.14 -2.76 -2.33 0.31 0.15
+AR-INDO 36.16 -5.85 -4.86 -1.71 -0.68 -0.17 0.58
+AR-RUSSIAN 42.25 -3.52 -5.28 -2.46 -1.66 -0.67 -0.27
+AR-PORTHUGHESE 34.71 -4.80 -1.22 0.10 -2.98 -0.33 -0.24
+AR-SPANISH 31.95 -4.02 -0.15 -0.44 -1.46 -0.77 0.38
+AR-FINISH 28.18 -9.89 -7.03 -3.17 -1.81 -0.58 -0.42
+AR-ITALIAN 28.85 -3.01 0.60 1.45 -2.26 -1.47 -0.70
+AR-SLOVENIAN 35.78 -9.73 -4.97 -2.21 -1.43 -0.41 -0.56
+AR-CZECH 40.04 -13.61 -6.82 -3.20 -2.38 -1.12 -0.21
+AR-POLISH 41.16 -8.46 -5.52 -2.48 -1.48 -0.47 -0.55
+AR-HINDI 10.24 -2.46 -2.86 -2.57 -1.55 1.00 0.14
+AR-CHINESE 11.46 -2.42 -2.43 -1.26 -0.82 0.23 -0.05
+AR-JAPANESE 6.66 -1.28 -0.79 -1.20 -1.04 0.74 0.30
+AR-X(MEAN) 27.97 -4.91 -3.17 -1.48 -1.68 -0.36 -0.14
+Table 6: Parsing (LAS score) Relative Zero shot Cross-Lingual performance of mBERT with RANDOM-INIT
+(section2.1)onpairsofconsecutivelayerscomparedtomBERTwithoutanyrandom-initialization(REF). InSRC
+-TRG,SRC indicatesthesourcelanguageonwhichwefine-tunemBERT,andTRG thetargetlanguageonwhich
+weevaluateit. SRC-Xistheaverageacrossall17targetlanguagewithX(cid:54)=SRC ≥REF <REF ≤-2points
+≤-5points
+. .
+RANDOM-INIToflayers
+SOURCE-TARGET REF ∆0-1 ∆2-3 ∆4-5 ∆6-7 ∆8-9 ∆10-11
+POS
+EN-ENGLISH 96.51 -0.30 -0.25 -0.40 -0.00 0.05 0.02
+EN-ARABIC 70.20 -3.63 -1.88 -2.40 -1.26 -1.89 -2.74
+EN-FRENCH 89.16 -9.68 -2.09 -1.49 -1.03 0.29 0.59
+EN-GERMAN 89.32 -7.81 -2.12 -1.27 -0.99 -0.46 -0.68
+EN-TURKISH 71.67 -11.62 -4.43 -1.48 -0.95 0.04 -0.95
+EN-INDO 71.44 -6.39 -2.80 -1.74 -0.59 -0.41 -1.10
+EN-RUSSIAN 86.26 -2.66 -0.94 -0.27 0.13 0.37 0.62
+EN-PORTHUGHESE 86.51 -10.84 -1.83 -1.44 -0.81 -0.01 -0.14
+EN-SPANISH 87.26 -8.09 -1.30 -1.36 -1.13 0.20 0.17
+EN-FINISH 84.85 -20.00 -8.09 -2.77 -0.97 -0.06 -0.86
+EN-ITALIAN 91.35 -13.97 -3.35 -2.66 -1.34 -0.01 0.27
+EN-SLOVENIAN 89.64 -16.46 -2.41 -1.09 -0.18 0.34 0.19
+EN-CZECH 83.39 -19.62 -3.93 -0.73 -0.56 0.21 0.29
+EN-POLISH 81.45 -13.33 -3.52 -1.19 -1.22 -0.50 -0.16
+EN-HINDI 65.43 -10.04 -2.70 -2.89 -3.25 3.00 0.28
+EN-CHINESE 67.89 -3.04 -2.82 -3.59 -0.29 0.66 0.29
+EN-JAPANESE 48.86 -2.19 1.52 -1.51 -1.13 1.42 1.79
+EN-X(MEAN) 79.37 -8.94 -2.49 -1.66 -0.88 0.20 -0.14
+RU-RUSSIAN 96.90 -0.52 -0.55 -0.40 -0.07 0.02 -0.03
+RU-ENGLISH 82.55 -20.72 -7.06 -5.01 -3.93 0.74 -1.57
+RU-ARABIC 79.30 -4.04 -1.48 -2.06 0.64 0.01 0.47
+RU-FRENCH 86.02 -18.66 -4.64 -4.10 -9.00 -0.13 -1.84
+RU-GERMAN 84.90 -12.50 -4.80 -2.79 -3.90 0.47 -1.82
+RU-TURKISH 69.92 -15.20 -2.06 -0.55 -1.41 -0.11 0.68
+RU-INDO 71.16 -8.33 -3.44 -1.03 -0.56 -0.73 0.15
+RU-PORTHUGHESE 84.24 -19.56 -7.15 -3.00 -7.78 -0.15 -2.08
+RU-SPANISH 84.84 -13.64 -4.09 -2.66 -7.67 -0.35 -2.48
+RU-FINISH 81.08 -18.55 -5.42 -1.37 -1.00 -0.16 0.02
+RU-ITALIAN 85.56 -21.04 -5.11 -3.41 -8.21 -0.20 -3.36
+RU-SLOVENIAN 85.37 -14.65 -3.53 -1.72 -2.00 -0.15 -0.15
+RU-CZECH 87.37 -8.43 -1.99 -0.71 -1.16 -0.50 -0.28
+RU-POLISH 86.42 -4.41 -1.89 -0.64 -0.44 -0.21 0.09
+RU-HINDI 65.49 -1.16 0.41 -1.49 -2.17 1.13 3.20
+RU-CHINESE 65.85 -5.12 -1.43 -0.32 -0.74 -0.13 -0.47
+RU-JAPANESE 46.91 -0.72 2.16 0.00 -1.30 1.15 1.12
+RU-X(MEAN) 79.25 -10.08 -2.83 -1.65 -2.74 0.01 -0.45
+AR-ARABIC 79.28 -0.35 -0.49 -0.36 -0.19 -0.05 -0.00
+AR-ENGLISH 63.26 -3.32 -1.09 -1.72 -1.68 -1.03 -1.78
+AR-FRENCH 63.33 -4.41 -1.53 -1.14 -1.30 -0.44 -0.92
+AR-GERMAN 63.23 -4.95 -2.97 -1.04 -1.58 -0.53 -2.09
+AR-TURKISH 60.99 -13.76 -8.74 -2.86 -4.49 -1.08 -1.88
+AR-INDO 64.24 -5.11 -3.43 -1.87 -0.58 -0.28 -0.63
+AR-RUSSIAN 74.52 -4.01 -2.37 -2.40 -1.84 -1.69 -2.03
+AR-PORTHUGHESE 67.28 -6.51 -2.84 -1.30 -1.23 0.04 -0.96
+AR-SPANISH 64.84 -3.08 -0.51 -0.74 -0.48 0.02 -0.14
+AR-FINISH 64.28 -19.72 -8.32 -3.72 -2.56 -1.64 -3.03
+AR-ITALIAN 63.55 -4.25 -1.60 -0.94 -1.15 0.14 -0.64
+AR-SLOVENIAN 68.06 -12.21 -4.31 -2.17 -1.85 0.68 -1.81
+AR-CZECH 72.65 -13.57 -3.14 -1.88 -1.77 -1.35 -1.57
+AR-POLISH 75.00 -8.87 -2.94 -1.46 -0.62 -1.00 -1.37
+AR-HINDI 62.29 -7.31 -6.07 -2.42 -1.26 0.19 -1.72
+AR-CHINESE 56.51 -5.02 -4.94 -2.10 -1.35 -1.02 -1.77
+AR-JAPANESE 47.06 -3.34 -3.34 -0.65 -0.89 -1.54 -0.35
+AR-X(MEAN) 64.81 -6.73 -3.50 -1.63 -1.56 -0.73 −1.29
+Table7: POStaggingRelativeZeroshotCross-LingualperformanceofmBERTwithRANDOM-INIT(section2.1)
+onpairsofconsecutivelayerscomparedtomBERTwithoutanyrandom-initialization(REF). InSRC -TRG,SRC
+indicatesthesourcelanguageonwhichwefine-tunemBERT,andTRG thetargetlanguageonwhichweevaluate
+it. SRC-Xistheaverageacrossall17targetlanguagewithX (cid:54)=SRC. ≥REF <REF ≤-2points ≤-5points
+.
+RANDOM-INIToflayers
+Source-Target REF ∆0-1 ∆2-3 ∆4-5 ∆6-7 ∆8-9 ∆10-11
+NER
+EN-ENGLISH 83.27 -2.64 -2.12 -1.41 -0.61 -0.21 -0.14
+EN-FRENCH 76.20 -4.41 -2.72 -2.09 -0.30 0.51 0.08
+EN-GERMAN 75.58 -8.25 -4.65 -2.50 -0.40 0.06 0.26
+EN-TURKISH 66.23 -8.71 -6.57 -2.16 -1.01 0.51 0.51
+EN-INDO 50.24 -2.94 -1.43 -2.54 2.49 -0.70 0.82
+EN-PORTHUGHESE 76.09 -4.66 -0.88 -1.16 -0.57 0.62 -0.70
+EN-SPANISH 67.00 -0.99 4.37 2.03 -1.69 1.57 -1.38
+EN-FINISH 75.61 -11.89 -4.47 -2.29 0.63 0.54 -0.37
+EN-ITALIAN 78.48 -6.65 -3.64 -3.08 -1.32 -0.30 -0.28
+EN-SLOVENIAN 72.80 -10.37 -2.96 -3.11 -0.36 0.10 -0.72
+EN-CZECH 76.90 -8.02 -6.81 -3.17 0.09 1.00 0.39
+EN-RUSSIAN 60.20 -5.87 -6.65 -5.71 -2.82 -0.82 -0.37
+EN-ARABIC 39.15 -8.98 -5.31 -1.97 1.56 0.31 -0.98
+EN-POLISH 77.20 -8.32 -5.53 -3.05 -0.06 0.67 0.09
+EN-HINDI 60.61 -12.08 -13.88 -9.23 -0.91 -1.25 2.08
+EN-CHINESE 37.74 -13.68 -6.49 -4.59 -2.41 -5.23 -1.00
+EN-JAPANESE 25.19 -11.40 -7.54 -4.67 -2.53 -3.45 -0.23
+EN-X(MEAN) 64.17 -8.28 -5.09 -3.07 -0.79 -0.47 -0.13
+RU-RUSSIAN 88.20 -2.08 -2.13 -1.52 -0.64 -0.33 -0.13
+RU-ENGLISH 56.62 -13.83 -8.52 -4.70 -1.50 -0.76 1.38
+RU-FRENCH 67.35 -18.45 -9.70 -4.32 -1.76 -1.77 2.29
+RU-GERMAN 69.23 -13.94 -9.01 -5.80 -2.98 -1.65 0.40
+RU-TURKISH 63.64 -18.52 -10.06 -6.01 -4.16 -0.67 -0.27
+RU-INDO 41.92 -10.29 -7.20 -5.19 -1.20 -1.91 0.50
+RU-PORTHUGHESE 67.33 -21.23 -8.27 -8.84 -2.83 -1.83 1.51
+RU-SPANISH 69.15 -16.74 -10.00 -8.16 -5.80 -1.66 0.26
+RU-FINISH 73.03 -17.17 -8.70 -5.88 -2.12 0.86 1.48
+RU-ITALIAN 70.05 -19.47 -9.54 -6.90 -3.06 0.73 1.04
+RU-SLOVENIAN 71.18 -12.02 -9.48 -3.61 -0.70 1.16 2.14
+RU-CZECH 74.87 -17.93 -10.59 -6.34 -4.02 0.17 -0.23
+RU-ARABIC 38.63 -8.67 -6.81 -0.13 -0.65 -1.34 -0.29
+RU-POLISH 75.16 -15.38 -7.97 -6.33 -3.07 -0.63 1.34
+RU-HINDI 58.01 -19.60 -12.36 -6.18 0.93 -1.64 1.17
+RU-CHINESE 43.86 -23.73 -11.68 -6.80 -4.27 -4.13 -6.01
+RU-JAPANESE 30.79 -16.80 -11.29 -5.26 -2.77 -3.99 -6.91
+RU-X(MEAN) 62.13 -15.85 -9.36 -5.50 -2.44 -1.16 -0.06
+AR-ARABIC 87.97 -2.37 -2.11 -0.96 -0.39 -0.15 0.21
+AR-FRENCH 75.21 -18.71 -8.31 -3.76 -0.19 0.82 1.07
+AR-GERMAN 74.24 -15.25 -7.19 -3.72 -1.38 -0.04 0.27
+AR-TURKISH 68.45 -14.89 -8.65 -2.78 -0.30 0.98 1.90
+AR-INDO 54.65 -13.86 -10.95 -8.53 -4.66 -2.82 0.09
+AR-PORTHUGHESE 74.67 -20.42 -10.54 -3.17 -1.59 0.10 1.28
+AR-SPANISH 74.88 -18.16 -12.18 -3.06 -1.95 0.52 0.63
+AR-FINISH 78.01 -18.79 -8.84 -4.30 -2.03 -0.30 0.19
+AR-ITALIAN 75.76 -16.37 -7.73 -3.98 -1.49 -0.06 0.74
+AR-SLOVENIAN 63.08 -11.13 -5.49 4.79 0.88 2.17 0.79
+AR-CZECH 74.70 -21.93 -10.95 -5.84 -2.42 -1.36 0.09
+AR-RUSSIAN 45.51 -7.59 -5.81 -2.63 0.15 -0.22 0.47
+AR-ENGLISH 57.94 -12.79 -6.03 -4.57 -0.32 0.29 1.65
+AR-POLISH 77.29 -20.61 -9.47 -5.93 -2.64 -1.09 -0.19
+AR-HINDI 65.31 -14.95 -9.12 -3.84 -1.48 0.72 0.98
+AR-CHINESE 45.88 -25.72 -10.67 -3.99 -1.41 -2.72 0.57
+AR-JAPANESE 24.75 -14.66 -5.19 -3.82 -0.99 -1.17 1.50
+AR-X(MEAN) 65.59 -16.10 -8.42 -3.73 -1.40 -0.25 0.67
+Table8: NER(F1score)RelativeZeroshotCross-LingualperformanceofmBERTwithRANDOM-INIT (section
+2.1)onpairsofconsecutivelayerscomparedtomBERTwithoutanyrandom-initialization(REF). InSRC -TRG,
+SRC indicates the source language on which we fine-tune mBERT, and TRG the target language on which we
+evaluate it. SRC-X is the average across all 17 target language with X (cid:54)= SRC ≥REF <REF ≤-2points
+≤-5points
+0.9
+0.8
+0.7
+0.6
+0.5
+0.40 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity of French to English
+0.9
+0.8
+0.7
+0.6
+Pretrained
+NER 0.5
+Parser
+POS
+0.40 2 4 6 8 10
+Hidden Layer Index
+(a)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity of German to English
+Pretrained
+NER
+Parser
+POS
+(b)
+0.9
+0.8
+0.7
+0.6
+0.5
+0.40 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity of Turkish to English
+0.9
+Pretrained
+NER
+Parser 0.8
+POS
+0.7
+0.6
+0.5
+0.40 2 4 6 8 10
+Hidden Layer Index
+(c)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity of Indonesian to English
+Pretrained
+NER
+Parser
+POS
+(d)
+0.9
+0.8
+0.7
+0.6
+0.5
+0.40 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity of Arabic to English
+Pretrained
+NER
+Parser
+POS
+(e)
+Figure5:Cross-Lingualsimilarity(CKA)similarity(§4.2)ofhiddenrepresentationsofasourcelanguage(English)
+sentences with a target language sentences on fine-tuned and pretrained mBERT. The higher the CKA value the
+greaterthesimilarity.
+0.90
+0.85
+0.80
+0.75
+0.70
+0.65
+0.60
+0.55
+0.500 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity French with English per layer
+0.90
+0.85
+0.80
+0.75
+0.70
+0.65
+Random-Init 8-11 0.60
+Random-Init 4-7
+Standard 0.55
+Random-Init 0-3
+0.500 2 4 6 8 10
+Hidden Layer Index
+(a)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity German with English per layer
+Random-Init 8-11
+Random-Init 4-7
+Standard
+Random-Init 0-3
+(b)
+0.90
+0.85
+0.80
+0.75
+0.70
+0.65
+0.60
+0.55
+0.500 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Turkish with English per layer
+0.90
+Random-Init 8-11
+Random-Init 4-7 0.85
+Standard
+Random-Init 0-3 0.80
+0.75
+0.70
+0.65
+0.60
+0.55
+0.500 2 4 6 8 10
+Hidden Layer Index
+(c)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Indonesian with English per layer
+Random-Init 8-11
+Random-Init 4-7
+Standard
+Random-Init 0-3
+(d)
+0.90
+0.85
+0.80
+0.75
+0.70
+0.65
+0.60
+0.55
+0.500 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Arabic with English per layer
+Random-Init 8-11
+Random-Init 4-7
+Standard
+Random-Init 0-3
+(e)
+Figure6:Cross-Lingualsimilarity(CKA)(§4.2)ofhiddenrepresentationsofasourcelanguage(English)sentences
+with target languages sentences on fine-tuned Parsing models with and without RANDOM-INIT. The higher the
+CKAvaluethegreaterthesimilarity.
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.10 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity French with English per layer
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+Random-Init 8-11 0.3
+Standard
+Random-Init 0-3 0.2
+Random-Init 4-7
+0.10 2 4 6 8 10
+Hidden Layer Index
+(a)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity German with English per layer
+Random-Init 8-11
+Standard
+Random-Init 0-3
+Random-Init 4-7
+(b)
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.10 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Turkish with English per layer
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+Random-Init 8-11 0.3
+Standard
+Random-Init 0-3 0.2
+Random-Init 4-7
+0.10 2 4 6 8 10
+Hidden Layer Index
+(c)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Indonesian with English per layer
+Random-Init 8-11
+Standard
+Random-Init 0-3
+Random-Init 4-7
+(d)
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.10 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Arabic with English per layer
+Random-Init 8-11
+Standard
+Random-Init 0-3
+Random-Init 4-7
+(e)
+Figure7:Cross-Lingualsimilarity(CKA)(§4.2)ofhiddenrepresentationsofasourcelanguage(English)sentences
+with target languages sentences on fine-tuned POS models with and w/o RANDOM-INIT. The higher the CKA
+valuethegreaterthesimilarity.
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.10 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity French with English per layer
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+Random-Init 4-7 0.3
+Random-Init 8-11
+Standard 0.2
+Random-Init 0-3
+0.10 2 4 6 8 10
+Hidden Layer Index
+(a)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity German with English per layer
+Random-Init 4-7
+Random-Init 8-11
+Standard
+Random-Init 0-3
+(b)
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.10 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Turkish with English per layer
+0.9
+Random-Init 4-7
+Random-Init 8-11 0.8
+Standard
+Random-Init 0-3 0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.10 2 4 6 8 10
+Hidden Layer Index
+(c)
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Indonesian with English per layer
+Random-Init 4-7
+Random-Init 8-11
+Standard
+Random-Init 0-3
+(d)
+0.9
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.10 2 4 6 8 10
+Hidden Layer Index
+hsilgnE
+ot
+ytiralimis
+AKC
+Similarity Arabic with English per layer
+Random-Init 4-7
+Random-Init 8-11
+Standard
+Random-Init 0-3
+(e)
+Figure8:Cross-Lingualsimilarity(CKA)(§4.2)ofhiddenrepresentationsofasourcelanguage(English)sentences
+with target languages sentences on fine-tuned NER models with and w/o RANDOM-INIT. The higher the CKA
+valuethegreaterthesimilarity.

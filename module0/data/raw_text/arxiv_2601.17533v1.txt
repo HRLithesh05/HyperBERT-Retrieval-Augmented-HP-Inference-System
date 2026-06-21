@@ -1,0 +1,1067 @@
+Reconstructing Training Data from Adapter-based Federated
+Large Language Models
+SilongChen YuchuanLuo∗ GuilinDeng YiLiu∗
+NationalUniversityof NationalUniversityof NationalUniversityof CityUniversityofHong
+DefenseTechnology DefenseTechnology DefenseTechnology Kong
+Changsha,China Changsha,China Changsha,China HongKong,China
+chensilong@nudt.edu.cn luoyuchuan09@nudt.edu.cn dengguilin@nudt.edu.cn yiliu247-
+c@my.cityu.edu.hk
+MingXu ShaojingFu XiaohuaJia
+NationalUniversityof NationalUniversityof CityUniversityofHong
+DefenseTechnology DefenseTechnology Kong
+Changsha,China Changsha,China HongKong,China
+xuming@nudt.edu.cn fushaojing@nudt.edu.cn csjia@cityu.edu.hk
+Abstract Keywords
+Adapter-basedFederatedLargeLanguageModels(FedLLMs)are FederatedLearning,LargeLanguageModels,GradientInversion
+widely adopted to reduce the computational, storage, and com- Attacks,FederatedLLMs
+municationoverheadoffull-parameterfine-tuningforweb-scale
+applicationswhilepreservinguserprivacy.Byfreezingtheback- ACMReferenceFormat:
+boneandtrainingonlycompactlow-rankadapters,thesemethods SilongChen,YuchuanLuo,GuilinDeng,YiLiu,MingXu,ShaojingFu,
+appeartolimitgradientleakageandthwartexistingGradientIn- andXiaohuaJia.2026.ReconstructingTrainingDatafromAdapter-based
+versionAttacks(GIAs). FederatedLargeLanguageModels.InProceedingsoftheACMWebConference
+Contrarytothisassumption,weshowthatlow-rankadapterscre-
+2026(WWW’26),April13–17,2026,Dubai,UnitedArabEmirates.ACM,New
+York,NY,USA,12pages.https://doi.org/10.1145/3774904.3792182
+atenew,exploitableleakagechannels.WeproposetheUnordered-
+word-bag-basedTextReconstruction(UTR)attack,anovelGIAtai-
+loredtotheuniquestructureofadapter-basedFedLLMs.UTRover-
+1 Introduction
+comesthreecorechallenges—low-dimensionalgradients,frozen
+backbones,andcombinatoriallylargereconstructionspaces—by: Inmodernwebapplications,suchaspersonalizedwebagents[5,22],
+(i)inferringtokenpresencefromattentionpatternsinfrozenlay- intelligentchatbots[20],andcollaborativecontentgenerationplat-
+ers,(ii)performingsentence-levelinversionwithinthelow-rank forms[36],thereisanincreasingdemandfordataandmodelcollab-
+subspaceofadaptergradients,and(iii)enforcingsemanticcoher- orationacrossmultipleusersordevicestoenhanceperformanceand
+ence through constrained greedy decoding guided by language userexperience.However,suchcollaborationoftenrequiresaccess
+priors.Extensiveexperimentsacrossdiversemodels(GPT2-Large, toandprocessingofsensitiveuserprivateinformation,including
+BERT,Qwen2.5-7B)anddatasets(CoLA,SST-2,RottenTomatoes) personal messages, browsing histories, and transaction records,
+demonstratethatUTRachievesnear-perfectreconstructionaccu- therebyraisingseriousprivacyconcerns[25].Directdatasharing
+racy(ROUGE-1/2>99),evenwithlargebatchsizes—settingswhere posessignificantrisksofdataleakageormisuse,particularlyunder
+priorGIAsfailcompletely.Ourresultsrevealafundamentaltension stringentdataprotectionregulationssuchastheGDPR[35]and
+betweenparameterefficiencyandprivacyinFedLLMs,challeng- CCPA[3].Asaresult,developingprivacy-preservingtechniquesfor
+ing the prevailing belief that lightweight adaptation inherently collaborativelearninghasbecomeanimportantresearchchallenge
+enhancessecurity.Ourcodeanddataareavailableatlink. inbothacademiaandindustry[9,28].
+FederatedLargeLanguageModel(FedLLM)[18,40,46]frame-
+CCSConcepts work(e.g.,Federatedscope-LLM[18])hasemergedasapromising
+solutiontoprivacyconcernsincollaborativelearningbycombining
+•Securityandprivacy;•Computingmethodologies→Ma-
+thepowerfulcapabilitiesofLLMswiththeprivacy-preservingprin-
+chinelearning;
+ciplesofFL.Thisparadigmenablesdecentralizedmodeltraining
+withouttheneedforcentralizeddatacollection[25].Inparticular,
+∗YuchuanLuoandYiLiuareco-correspondingauthors.
+multipleclientscollaborativelytrainasharedglobalmodelbyex-
+changingonlylocalmodelupdates(e.g.,gradientsorparameters)
+whilekeepingtheirrawdatasecurelystoredonlocaldevices[23].
+ThisworkislicensedunderaCreativeCommonsAttribution4.0InternationalLicense. GiventhatLLMstypicallycontainmillionsorevenbillionsofparam-
+WWW’26,Dubai,UnitedArabEmirates eters,adapter-basedFedLLMframeworks[1,4,24,37]havebecome
+©2026Copyrightheldbytheowner/author(s). amainstreamapproachwithinFedLLMsystemstoenhancetrain-
+ACMISBN979-8-4007-2307-0/2026/04
+https://doi.org/10.1145/3774904.3792182 ingefficiencyandreducecommunicationoverhead.Adaptersare
+6202
+naJ
+42
+]RC.sc[
+1v33571.1062:viXra
+WWW’26,April13–17,2026,Dubai,UnitedArabEmirates SilongChenetal.
+lightweight,parameter-efficientmodules(e.g.,Low-RankAdapta- fromattentionlayersinfull-parametertuning,sufferreduced
+tion(LoRA)[15])thatcanbeseamlesslyintegratedintopre-trained inversionaccuracywhensuchlayersareinaccessible.
+LLMs,enablingfine-tuningforspecifictaskswithminimalcomputa- • C3:ExtensiveSolutionSpace.Thesolutionspaceofpossible
+tionalandcommunicationcosts.Byupdatingonlyasmallsubsetof reconstructionsexpandsdramaticallyduetothelargevector
+parameters,adapter-basedFedLLMsachieveefficientmodeladapta- spaceinducedbytheembeddingadapters.Directtraversalor
+tionwithoutcompromisingperformance,makingthemparticularly beamsearch,asusedinpriorgradientinversionapproaches[2,
+suitableforresource-constrainedenvironmentsandexpandingtheir 10,29],becomescomputationallyinfeasiblewhenthebatchsize
+applicabilityacrossdiversedomains. islarge(e.g.,⩾32).
+Despitetheseadvantages,thesecurityandprivacyguarantees
+ToaddressC1,UTRabandonstraditionalgradientvectorfitting
+ofadapter-basedFedLLMs1maynotbeasrobustastheyappear.
+methods(e.g.,distance-basedoptimization)andinsteadleverages
+Wearguethisfortwoprimaryreasons.First,gradientinversion
+thefrozenattentionlayersoftheLLMtodirectlyinfertokenpres-
+attacks[13,29,48,49]areawell-establishedthreatthatcancom-
+encefromthevocabulary,determiningwhetheraspecifictoken
+promisedataprivacybyrecoveringsensitivetrainingdatafrom
+wasusedduringtraining.ToaddressC2,weobservethatadapter
+sharedgradients.Forinstance,Zhuetal.[50]demonstratedthe
+layersinfrozenLLMsexhibitlow-rankproperties;UTRexploits
+DeepGradientLeakage(DGL)attackagainsttraditionalFLsystems,
+thegradient-generatedsubspaceofthisstructuretoestimatethe
+revealingthatadversariescanreconstructprivateclientdatafrom
+degreeofsentenceinversion,therebyenhancingreconstruction
+exchangedgradients,posingoneofthemostsevereprivacyrisksin
+accuracy.ToaddressC3,UTRincorporatesgrammatical,seman-
+collaborativelearning.Second,similartostandardFL,adapter-based
+tic,andcontextualcontinuityconstraintstodrasticallyreducethe
+FedLLMsrelyontheexchangeofmodelparametersorgradients
+searchspace,applyingagreedysearchstrategyforefficientand
+duringtraining,inherentlycreatinganattacksurfaceformalicious
+coherenttextreconstruction.Moreover,weassessthedegreeof
+participantsoreavesdroppers.Whilesuchattacksaregenerally
+informationleakageinFedLLMs,focusingonhowmuchinputdata
+morechallengingtoexecuteinpracticalFedLLMsettings,since
+canpotentiallybeinferredfromasinglegradientupdate.Thispro-
+existingmethodsprimarilytargetfull-parameterfine-tuningset-
+videdinsightsintobalancingprivacyprotectionandperformance
+tings[1,2,10,12,32,41]wheregradientscarryricherinformational
+trade-offs.
+content,theriskisnotentirelymitigated.Adapter-basedFedLLMs
+Tovalidatetheeffectivenessofourattacks,weperformexperi-
+updateonlyasmallsubsetofparameters,whichcanobscurecertain
+mentsusingGPT-2[33],BERT[16],andQwen2.5-7B[45]onthe
+datafeaturesandreducetheattacksurface.Nevertheless,adaptive
+populardatasetsCoLA[38],SST[34],andRottenTomatoes[26]
+adversariesmaystillrefinetheirtechniquestoexploitevensparse
+forbatchsizesupto128.Wedemonstratethatourattackcanrecon-
+gradientinformation,indicatingthatprivacyleakageremainsa
+structlargebatchsizeswithROUGE-1/2>99[19]incaseswherethe
+tangibleandevolvingthreatinthisparadigm.
+parametersarefrozen.UTRsignificantlyoutperformsthestate-of-
+In this paper, we disclose that adapter-based FedLLM frame-
+the-art(SOTA)baselines(i.e.,LAMP[2]andDAGER[29]),achiev-
+worksremainvulnerabletoseriousprivacyattacksandpropose
+ingimprovementsofatleast26pointsforsmallbatchsizesand90
+theUnordered-word-bag-basedTextReconstruction(UTR)attack,
+pointsforlargeronesintermsofreconstructionquality(ROUGE-
+whichisanewattackdesignedtorecoversensitivetrainingtext.
+1/2).WealsoconductdefensiveexperimentsbyincorporatingDif-
+UTRpursuestwoprimaryobjectives:(1)accuratelyreconstruct
+ferentialPrivacy(DP)[11]andGradientPruning(GP)[44]into
+privatetextualtrainingexamples,and(2)evadecommondefensive
+theadapterupdates.TheresultsshowthatDPisamoreeffective
+mechanisms. We further demonstrate that UTR transfers effec-
+defensemethodcomparedtoGP,butitsignificantlyundermines
+tivelyacrossarangeofFedLLMconfigurations,includingdifferent
+themodeleffectivenessandisnotapplicabletotherealworld.We
+adapterdesignsandunderlyingLLMbackbones.Achievingsuch
+summarizeourcontributionshere:
+apowerfulattackisnon-trivial;belowwesummarizethethree
+principalchallengesweconfronted: • We demonstrate that even when most model parameters are
+frozen,adapter-basedFedLLMscanstillbereconstructedbyan
+• C1:LowerDimensionalityofUpdates.Adapter-basedframe-
+adversarywithhighprobability.
+worksupdateonlyasmallfractionofparameters,drastically
+reducinggradientdimensionalityandlimitingrawinformation • WeproposeaUTRattacktoefficientlyreconstructspecificdis-
+leakage.Consequently,traditionaloptimization-basedgradient creteinputsinFedLLMs.Furthermore,wetailortheattackalgo-
+inversionattacks(e.g.,DLG[50]),whichdependonrichgradient rithmtodifferentusageconditions.
+signals,failtoreconstructinputsaccurately[10,29]. • WeshowtheextentofinformationleakageinFedLLMs,focusing
+• C2:FrozenBackbone.Inadapter-basedFedLLM,thebackbone ontheconditionsunderwhichthemodelleaksmoreinformation
+ofthepre-trainedLLMremainsfrozen,meaningitsparameters based on the provided input. We find that the unidirectional
+arenotupdatedduringtraining[15].Consequently,attackerscan attentionmechanism,commonlyusedingenerativeLLMs,may
+onlyaccessgradientsfromtheadapterlayers,whilethekeyin- poseasignificantriskofinformationleakage.
+put–outputmappingsembeddedintheattentionandtransformer • Weexperimentallyshowthatouralgorithmcannotonlyrecon-
+layersofthebackboneremainhidden.Evenstate-of-the-artmeth- structtheinputexactlybutalsoeffectivelyreconstructcomplete
+odssuchasDAGER[29],whichcanaccuratelyreconstructtext batchesofsize𝑏upto128intheadapter-basedFedLLMs.The
+resultsindicatethatouralgorithmcanalsoachievehighaccuracy
+1To avoid ambiguity in terminology, the terms “adapter-based FedLLMs” and withROUGE-1/2>99.
+“FedLLMs”areusedinterchangeablythroughouttheremainderofthispaper.
+ReconstructingTrainingDatafromAdapter-basedFederatedLargeLanguageModels WWW’26,April13–17,2026,Dubai,UnitedArabEmirates
+recoveringdiscretetextfromcontinuousgradients,LAMP[2]in-
+troducesanalternatingcontinuous–discreteoptimizationstrategy,
+achievingbetterreconstructionfidelitythanTAG.
+AconceptualshiftwasintroducedbyFILM[13],whichdeparts
+fromoptimization-basedapproaches.FILMleveragesgradientin-
+formationfromtheembeddinglayerandthediscretenatureof
+textualinputstoinferwordsdirectly.However,itsperformance
+isconstrainedbylimitedtokensetsandheuristicinferencerules.
+DAGER[29]improvesFILMbyexploitingtheone-to-onemapping
+betweenembeddingoutputsanddiscretetokens,achievingnearly
+perfectreconstructionforsmallvocabularies—butatthecostof
+substantialcomputationalinefficiencyduetobrute-forcesearch.
+Insummary,existingGIAslargelyfocusonFedLLMsemploying
+Figure1:Standardarchitecturesofadapter-basedFedLLMs.
+full-parameterfine-tuning,relyingongradientsfromembedding
+orTransformerlayersforreconstruction.However,full-parameter
+tuningiscomputationallyexpensiveandunrepresentativeofmain-
+2 RelatedWork
+streamadapter-basedFedLLMparadigms,whichtypicallyfreeze
+2.1 Adapter-basedFedLLMs pre-trainedparameterstoreduceresourceconsumption.Conse-
+quently,theprivacyrisksofadapter-basedFedLLMsremainunder-
+WiththecontinuousdevelopmentofLLMs,theparametersizeof
+explored,highlightingtheneedforsystematicevaluationoftheir
+thesemodelshasincreasedsignificantly[4],amplifyingtheneedfor
+vulnerabilitytoreconstructionattacks.
+high-qualitypublicdata.FedLLMsnaturallyemergeasasolutionto
+thischallengeandhavebecomeakeydirectioninLLMdevelopment.
+However,duetotheenormousparametersizeofLLMs,directly 3 BackgroundandThreatModel
+applyingFLforpre-trainingorfull-parameterfine-tuningleadsto 3.1 Adapter-basedFedLLMs
+substantialcomputational,storage,andresourceoverhead,whichis
+impracticalformostLLMusers[42].Therefore,reducingresource Overview. Webeginbyintroducingthecorecomponentsof
+theadapter-basedFedLLMarchitecture,asillustratedinFig.1.The
+overheadistheprimarychallengeforachievingFedLLMs.
+systemcomprisesaserver,multipleclients,thefrozenparameters
+Currentapproachesincludepartialparameterfine-tuning[47],
+ofapre-trainedLLM,andtrainableadaptermodulesthatcanbe
+adapter-basedfine-tuning[7,8,31],LoRAfine-tuning[15,18,43],
+insertedeitherwithinorbetweenlayers.Theprimarypurposeof
+prompttuning[6,12],andprefixtuning[21].Amongthese,adapter-
+theseadaptersistosubstantiallyreducethenumberoftrainable
+basedfine-tuning,asillustratedinFigure1,providesapractical
+parameters,therebyloweringthecomputational,storage,andcom-
+trade-offbetweenefficiency,performance,andprivacy.Byfreezing
+municationoverhead.Basedontheirinsertionlocations,adapters
+thebasemodelandtrainingonlylightweightadaptermodules,this
+canbecategorizedintotwotypes:embeddingadaptersandlayer
+approachsubstantiallyreducesbothcommunicationandcomputa-
+adapters.Adaptersplacedaftertheembeddinglayerarereferredto
+tioncosts,makingitwell-suitedforresource-constrainedclients.
+asembeddingadapters,whilethoseinsertedwithinTransformer
+Itpreservesthepretrainedknowledgeofthebackbonewhileen-
+layers are called layer adapters. For example, the MAD-X [31]
+ablingeffectivepersonalizationandmulti-taskadaptationacross
+frameworkintegratesadaptersaftertheembeddinglayer,achieving
+clients.Becauseonlysmalladapterupdatesareshared,privacyrisks
+strongcross-lingualandcross-taskperformance[17,27,31],and
+andaggregationoverheadaremitigated,whilethemodulardesign
+hassincebeenincorporatedintotheHuggingFacelibrary[32].
+supportsseamlessintegrationoftask-ordomain-specificexper-
+tise[24].Overall,adapter-basedFedLLMsachievebetterscalability Adapter. AsdepictedinFig.1,eachadapterisalightweight,
+andpracticalitythanfullfine-tuning[42],whiletypicallyoffering trainable module typically composed of three components: a
+strongerperformanceandflexibilitythansimplerapproachessuch downsamplinglayer,anactivationfunction,andanupsampling
+aspromptorprefixtuning. layer[14,30].Thedownsamplinglayerprojectshigh-dimensional
+hiddenrepresentationsintoalower-dimensionalbottleneckspace,
+whiletheupsamplinglayerrestoresthemtotheoriginaldimension-
+2.2 GradientInversionAttacksagainstFedLLMs ality.Althoughspecificadapterimplementationsmayvary,most
+Gradientinversionattacks(GIAs)[48]aimtoreconstructtraining sharethisfundamentaldesign.Akeyhyperparameterinadapter
+databyexploitingsharedmodelgradientsorparameters.These configurationisthebottleneckdimension(d .),whichisde-
+bottleneck
+attacksposesevereprivacyrisksbyexposingsensitiveclientin- terminedbythereductionfactor(reduction ).Thereductionfac-
+factor
+formation,motivatingextensiveresearchintoprivacy-preserving tordefinestheratiobetweenthehiddenlayerdimension(𝑑 )
+ℎ𝑖𝑑𝑑𝑒𝑛
+learningtechniques.EarlyGIAsprimarilytargetedtheimagedo- andthebottleneckdimension,formallyexpressedas:
+main,wheremethodssuchasDGL[50]reconstructimagesbymin-
+d
+imizingthedistancebetweenreconstructedandoriginalgradients. reduction = hidden (1)
+factor d
+BuildinguponDGL,TAG[10]adaptsthisideatoTransformer-based bottleneck
+models,improvingtextualreconstructionqualityandreducingdi- Discussion. Thispaperfocusesexclusivelyonadaptersfollow-
+vergencefromthetruedata.Toovercometheinherentdifficultyof ingtheaforementionedarchitecture,astheyarethemostwidely
+WWW’26,April13–17,2026,Dubai,UnitedArabEmirates SilongChenetal.
+adoptedinreal-worlddeployments.Thisarchitectureisthebasis
+forinfluentialframeworkslikeMAD-Xandisastandardoption Input text Token Vocabulary {the, jason}, {child,
+inlibrarieslikeFATEandHuggingFaceadapters.Ononehand, persuaded}, {was,
+medea}, {never, hat}
+mostexistingstudiesemploythisdesign,ensuringconsistencyand Token Embedding ##ved, should, ne-
+...
+ver, [CLS], [SEP],
+c ao lim gnp sar wab iti hlit py rw aci tt ih cap lri co or nw sio dr ek r. aO tin onth se inot Fh ee dr Lh La Mnd s, cth ei ns aa rr ic oh s,it wec htu err ee Embedding adapter d she ec ,, h# e# ,e ci,
+h
+# il# de
+,
+a …,
+{jason
+persuac do em db }in
+,
+a {t ji aon
+computingresourcesaretypicallyconstrained,makingparameter- son child}, {the child
+efficientdesignsessentialforfeasibleandscalabledeployment.The Token Embedding was}, {the persuaded}
+attackwouldnotdirectlyapplytootherPEFTapproaches,which (  0) filtering
+areoutofscope.
+Trans. Span {jason persuaded},
+{the child was}
+(    )
+… {the, jason}, {chi
+3.2 ThreatModel ld, persuaded}, Span
+{was, medea}, {n evaluating
+Adversary’sGoal. Followingtheattackgoalsestablishedin Loss ever, that}, ... Input( T  e  x  t)
+priorwork,theadversaryseekstoreconstructasmuchofavictim  Word Bag Inference Data Inference
+client’strainingdataaspossibleusingonlytheobservablegradient
+information,therebycompromisingclientprivacy.Weconsider Figure2:OverviewoftheproposedUTRattack.
+theattacksuccessfulwhenthereconstructedoutputmeaningfully
+Stage1:WordBagInference. Thisinitialstagetargetsthe
+matchestheoriginaltrainingdata—forexample,whenitattains
+embeddingadaptertoinferanunorderedsetofvocabularytokens
+highsemanticsimilarityorotherwisepreservesthesensitivecon-
+presentintheclient’sprivateinput.Byleveragingthefrozenembed-
+tentofthetrueexamples.
+dinglayerandthegradientsfromtheembeddingadapter,thisstage
+Adversary’sIdentity. Theadversarycouldbeanyentityaiming bypassestraditionalcontinuousoptimization.Itdirectlyreduces
+toextractprivateinformationfromtheclient.Examplesinclude,but thereconstructionsearchspace,therebyaddressingthechallenge
+arenotlimitedto,anhonest-but-curiousserver,arogueemployee oflow-dimensionalupdates(i.e.,C1)(see§4.2).
+ofaservercompany,amaliciousthirdpartycontrollingtheserver,
+Stage2:DataInference. Thissubsequentstagetakestheout-
+acompetingcompany,orahacker.Themethodofobtainingthe
+put“wordbag”fromthefirststageandassemblescoherenttext
+client’sgradientsandtheassociateddifficultyvaryamongthesead-
+sequences.Itemploysaconstrainedsearch,guidedbygrammatical,
+versaries.Forinstance,anhonest-but-curiousservercanefficiently
+semantic,andcontextualfilterstopruneinvalidtokencombinations.
+performtheattackduetoitsroleinmodelselection,parameter
+Byusinggradientsfromthelayeradaptertoperformmembership
+distribution,andgradientaggregation,whichinherentlyprovides
+inference,thisstagenavigatestheextensivesolutionspace(i.e.,C3)
+thenecessaryknowledgeandaccess.Similarly,rogueemployees
+andcompensatesfortheinaccessibilityofthefrozenbackbone(i.e.,
+benefitfromcomparableadvantages.Incontrast,adversariessuch
+C2)(see§4.3).
+ascompetingcompaniesorhackersmayneedtostealgradient
+informationactivelythroughtargetedattacks.Forsimplicity,we Discussion. UTRdeploysthetwostagesinasequentialpipeline,
+enablingnear-exactreconstructionofclientdataevenatlargebatch
+focusonthehonest-but-curiousserverastheadversaryinthis
+sizes and revealing a critical vulnerability. Importantly, UTR is
+study,representingthemostcommonattackmodelinFedLLMs.
+model-agnostic,targetingtheadaptermodulesasauniversalattack
+Adversary’sBackgroundKnowledge. Asnotedabove,we surfacetoachievehigheffectivenessacrossvariousLLMarchitec-
+assumethattheadversaryhasfullknowledgeofthepre-trained
+turesandadapterconfigurations.Finally,weestablishaTextRecon-
+model’sarchitectureandparameters.Inaddition,sinceFedLLM
+structionAbilityAssessment(see§4.4)toquantifythefundamental
+trainingtypicallyproceedsovermultipleepochs,theadversaryis
+limitsofthisattack.Thisassessmentdefinestheattack’scapability
+assumedtoobservethegradientssharedbythevictimclientduring
+asthemaximumnumberofwordsitcanaccuratelyreconstruct,
+eachtraininground.However,theadversarycannotcolludewith
+whichisfundamentallydeterminedbytherepresentationalcapacity
+anysubsetofclientsandhasnodirectaccessto,orpriorknowledge
+ofthelow-rankspace𝑆derivedfromtheadapter’sgradients.
+of,theclient’slocaltrainingdata.
+4.2 “WordBag”InferenceStage
+4 OurProposedUTR
+Key Idea. The first stage identifies vocabulary tokens likely
+4.1 Overview present in the client’s input. Exploiting gradients from the em-
+ToaddresstheuniquechallengesofFedLLMs,i.e.,thelowdimen- beddingadapter,UTRevaluatesvocabularyitemswithintheem-
+sionalityofupdates,thefrozenmodelbackbone,andtheextensive beddingspacetodeterminetokenmembership.Thisproducesa
+solutionspace,weproposeUTRattack(seeFig.2),atwo-stage “wordbag”—asetofcandidatetokensinferredtoappearintheorig-
+pipelinedesignedtosystematicallytacklethesecoreissues.The inalinput.Comparedwithtraditionaloptimization-basedmethods,
+keyinsightbehindUTRisthatcoarsetokenrecognitioncanbe thisapproachavoidscontinuousvectorfittingandleveragesthe
+progressivelyrefinedintofine-grainedsequencereconstructionby discretemappingbetweenembeddingsandtokens,substantially
+exploitingtheintrinsicstructuralpropertiesofadaptermodules reducingthereconstructionsearchspace.Specifically,inadapter-
+andfrozenLLMs,enablinghigh-fidelityrecoveryofprivatetraining basedFedLLMs,frozenembeddingscanbetreatedasadeterministic
+data.Next,weintroducetheworkflowofeachstageasfollows: function𝑓 ,whichmapsinputwordindicestoembeddingvectors.
+0
+ReconstructingTrainingDatafromAdapter-basedFederatedLargeLanguageModels WWW’26,April13–17,2026,Dubai,UnitedArabEmirates
+Theseembeddingvectorsarethenpassedtotheembeddingadapter determinewhetherahiddenembeddingvectorbelongstothespace
+asinput.“Wordbag”inferencetargetstheembeddingadapterby S is to check if the hidden embedding vector can be expressed
+iteratingoverallwords𝑥inthemodel’svocabulary,inputtingthem asalinearcombinationofthebasisvectorsofspaceS.Thisisa
+intotheembeddinglayer,andcheckingwhethertheoutput𝑓 0(𝑥) straightforwardcomputationinlinearalgebra.
+matchestheembeddingadapter’sinputdata.
+Inthiscontext,the“wordbag”inferencetargetinganadapteres- 4.3 DataInferenceStage
+sentiallyinvolvesusingthegradientinformationfromtheadapter
+KeyIdea. FollowingtheWordBagInferencestage,whichpro-
+toinferwhetherspecificinputdata𝑥 belongstotheclient’sinput
+ducesanunorderedsetofcandidatetokens𝑊 ,theDataInference
+dataset.Here,wefirstanalyzethepropertiesofneuronsinagener- 𝑏
+stage aims to assemble these tokens into the original, coherent
+allyfullyconnected(FC)layer.Lettheinputtothefullyconnected
+trainingtextsequences.Thisstagesystematicallyconstructsand
+layerbeavectorf(𝑥).ForanyneuroninthislayerwithweightW
+validatescandidatesentencesagainsttheclient’sprivatedataby
+andbias𝑏,iftheinputvectorf(𝑥)activatestheneuron,thenthe
+leveraginggradientsfromthelayeradapterandapplyingaseries
+output𝑦oftheneuroncanbeexpressedas:
+offilteringconstraints.
+𝑦=ReLU(W·f(𝑥)+𝑏) Thecoreofthisstageisastructuredsearchprocess,asformalized
+(cid:40) W·f(𝑥)+𝑏, ifW·f(𝑥)+𝑏 >0. (2) inAlgorithm1(Lines12-34).Thealgorithmconstructscandidate
+= sentencesbyiterativelycombiningtokensfrom𝑊 .Tomanage
+0, ifW·f(𝑥)+𝑏 ≤0 𝑏
+theexponentialcomplexityofthissearchspace(C3),itemploysa
+Accordingtothechainrule,thegradientsoftheloss𝐿withrespect setofBooleanfilterfunctionsaftereachtokenextension:EICW()
+totheweightWandbias𝑏arecalculatedasfollows: (ConsecutiveIdenticalWordDetection),CG()(GrammarCheck)
+(cid:40)𝜕𝐿 = 𝜕𝐿 · 𝜕𝑦 andCS()(SemanticCheck).Thespecificimplementationdetailsare
+𝜕𝑏 𝜕𝑦 𝜕𝑏 . (3) providedinAppendixB.
+𝜕𝜕 W𝑓 = 𝜕𝜕𝐿 𝑦 · 𝜕𝜕 W𝑦 = 𝜕𝜕𝐿 𝑦 ·f(𝑥) Thefinalandcriticalstepismembershipinference,whichverifies
+Since𝜕𝑦/𝜕𝑏 =1,substitutingthisintoEq.(3)yields: whetheracandidatesentencematchestheclient’struetraining
+data.Thisisachievedbyfeedingthecandidatesequencethrough
+𝜕𝑓 𝜕𝐿
+= ·f(𝑥). (4) theFedLLMtoobtainthecorrespondinghiddenembeddings𝑓 𝑖(𝑥)
+𝜕W 𝜕𝑏
+thatserveasinputtothefirstlayeradapter.Thecoreinsightis
+FromEq.(4),f(𝑥)canbecalculatedasfollows:
+thatforthecorrectcandidate,thesehiddenembeddings𝑓 𝑖(𝑥)must
+𝜕𝑓 liewithinthelow-ranksubspace𝑆 spannedbythebasisvectors
+f(𝑥)= 𝜕W =
+∇W
+, (5)
+constructedfromtheclient’sshar𝐿 e𝐴
+dlayeradaptergradients(as
+𝜕𝐿 ∇𝑏
+𝜕𝑏 derivedinEq.(6)).Theverificationisperformedbycheckingif
+where∇Wand∇𝑏representthegradientsoftheweightsandbiases, 𝑓 𝑖(𝑥)canbeexpressedasalinearcombinationofthebasisof𝑆 𝐿𝐴,
+respectively.Theratio∇W/∇𝑏isdefinedastheRatioofWeightto adirectcomputationinlinearalgebra.
+BiasGradient(RWBG). ImpactofLLMArchitecture. Thearchitectureoftheunderly-
+Whenmultiplevectorsarefedintothefullyconnectedlayerina ingLLMinfluencesthereconstructionoutcome.Formodelswith
+batchf(𝑋),itispossiblethatmorethanonevectorsimultaneously bidirectionalattentionmechanisms(e.g.,BERT),thehiddenem-
+activates the neuron. In this case, the relationship between the beddingsareinformedbytheentireinputcontext,enablingthe
+gradientoftheneuron’sweightandbiasandtheinputdatacanbe reconstructionofthecompletetextinasinglestep.Incontrast,
+describedasfollows: formodelswithunidirectionalattention(e.g.,GPT),thehidden
+∇W =∑︁ f(𝑋)𝑖, (6) embeddingforatokenisonlyinfluencedbyprecedingtokens.This
+∇𝑏 often results in the reconstruction of the text in a truncated or
+𝑖
+prefix-wisemanner,requiringmorecandidatesamplestoassemble
+wheref(𝑋)𝑖 isavectorinf(𝑋)whichcanactivatetheneuron.
+thefullsequence.
+ForthenetworkarchitectureshowninFig.1,bycalculatingthe
+Throughthisprocessofconstrainedcandidategenerationand
+RWBGsforallneuronsinFC1,alinearspaceScanbeconstructed
+gradient-basedmembershipverification,theDataInferencestage
+basedontheRWBGs,asfollows:
+successfullytransformsanunorderedbagofwordsintoaccurate
+∇W𝑚up ·1 𝑛 reconstructionsoftheclient’sprivatetrainingtexts.Thealgorithm
+S= 
+
+∇ .B .u mp .1   . (7) descriptionofthetechnicaldetailsoftheabovetwostagesissum-
+ ∇W𝑚up ·𝑖 𝑛
+
+marizedinAlgorithm1intheAppendixB.
+
+
+∇Bu mp𝑖 
+
+ThislinearspaceSisessentiallyspannedbyallthehiddenem- 4.4 TextReconstructionAbilityAssessment
+beddingvectorsfedintothelinearlayer.Since𝑛>𝑚,thespaceSis Thecoremechanismoftextreconstructionattacksinvolvesinfer-
+alow-rankspace,whichresultsinalimitedrepresentationalcapac- ringpossibleinputwordsfromthemodel’svocabulary(“wordbag”)
+ity.ThehiddenembeddingvectorsofLLMsarestronglycorrelated andcombiningthemintocoherenttext.Theattack’scapabilityis
+withtheinputdata.Therefore,ifthereexistsahiddenembedding thereforedefinedasthemaximumnumberofwordsthealgorithm
+vectorinf(𝑋) belongstothespaceS,itcanbeinferredthat𝑋 canaccuratelyreconstruct.Whentheclient’sinputexceedsthis
+ispartofthecurrenttrainingbatchoftheclient.Themethodto threshold,accuratereconstructionbecomesinfeasible.
+WWW’26,April13–17,2026,Dubai,UnitedArabEmirates SilongChenetal.
+Wethenanalyzethisthresholdmathematically.Letaclient’s settings and try to find the best-performing threshold for it. In
+trainingbatchcontain𝑏sequencescomprisingatotalof𝑛unique particular,weemployreduction ∈{1,2,4,8}toadjustthebest
+factor
+tokens.Eachtoken𝑡 ismappedthroughthefrozenembedding thresholdoftheproposedframework.Thestructureofadaptersis
+𝑖
+layertoahiddenrepresentationvector𝑣
+𝑖
+∈R𝑑hidden.Thedownsam- setasFig.1,andwesetthehyperparameterreduction
+factor
+=2in
+plinglayeroftheadapter,implementedasafullyconnectedlayer, themainexperimentsofourpaper.Theotherswillbepresentedin
+performsthefollowingtransformation,i.e.,𝑍 =ReLU(𝑊𝑉 +𝑏), the§5.4.Weinserttheadaptersbetweenthemodel’slayersrather
+where𝑊 ∈R𝑑bottleneck×𝑑hidden istheweightmatrix,𝑉 ∈R𝑑hidden×𝑛is thaninside.Duringtheexperimentation,weutilizedonlythefirst
+thematrixofinputhiddenembeddings(eachcolumncorresponds twoTransformerlayersofthemodel.
+to a token embedding𝑣 𝑖),𝑏 ∈ R𝑑bottleneck is the bias vector, and Baselines. Wecompareourattackwiththefollowingmethods,
+𝑍 ∈R𝑑bottleneck×𝑛istheactivatedoutput. includingtheoptimization-basedmethod(i.e.,LAMP[2])andthe
+Priorknowledge. Asmentionedin§4.2,forthe“wordbag”in- embedding-basedmethod(i.e.,DAGER[29])designedforGIAsin
+ferencetobesuccessful,thehiddenembeddingvector𝑣 ofatoken FedLLMs.MoredetailscanbefoundintheAppendixD.
+mustliewithinthelow-ranksubspace𝑆 spannedbytheclient’s EvaluationMetrics. Followingpriorwork,weevaluatethe
+actualinputdata.Thisisdeterminedbyanalyzingthegradients. qualityoftextreconstructionusingROUGE-1/2scores[19].ROUGE-
+FollowingtheEqs.(4)–(7),forasingleneuron 𝑗 inthedownsam- 1andROUGE-2arewidelyadoptedmetricsforassessingthequality
+plinglayer,therelationshipbetweenitsweightgradient(∇𝑊 𝑗),bias oftextsummarizationormachine-generatedtextbycomparingit
+gradient(∇𝑏 𝑗),andtheinputdataisgivenbytheRWBG: tohuman-writtenreferencesummaries.ROUGE-Niscomputedas
+𝑅𝑊𝐵𝐺
+𝑗
+=∇𝑊 𝑗/∇𝑏
+𝑗
+=Σ 𝑙∈𝐴𝑗𝑣 𝑙, (8) follows:
+w
+𝑗
+(h ie .er .e ,𝑊𝐴 𝑗 𝑗i ·s 𝑣t 𝑙h +e 𝑏se 𝑗t >of 0i )n .d Ti hce es so uf bi sn pp au ct ev 𝑆ec it so tr hs et nha ct oa nc st ti rv ua cte ted dn ae sur to hn
+e
+𝑅𝑂𝑈𝐺𝐸−𝑁 = Σ
+𝑖𝐶Σ
+𝑜𝑖
+𝑢𝐶 𝑛𝑜 𝑡𝑢 𝑖𝑛 (𝑛𝑡
+𝑖
+−(𝑚 𝑔𝑎 𝑟𝑡 𝑎𝑐 𝑚ℎ𝑒 𝑠𝑑 𝑖𝑛𝑛− 𝑅𝑒𝑔 𝑓𝑟 𝑒𝑎 𝑟𝑚 𝑒𝑛𝑠)
+𝑐𝑒 𝑖) (10)
+spanofalltheseRWBGvectorsacrossthe𝑑 neurons:
+𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘 5.2 AttackPerformanceEvaluation
+𝑆 =𝑠𝑝𝑎𝑛{𝑅𝑊𝐵𝐺 1,𝑅𝑊𝐵𝐺 2,...,𝑅𝑊𝐵𝐺 𝑑𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘} (9) Inthissection,weaimtoevaluatetheeffectivenessoftheproposed
+UTRattackagainstadapter-basedFedLLMs.WecompareUTR’s
+Sinceeach𝑅𝑊𝐵𝐺 isalinearcombinationoftheinputvectors𝑣 ,
+𝑗 𝑙
+textreconstructionperformancewithbaselinemethods,i.e.,LAMP
+thesubspace𝑆isasubspaceof𝑠𝑝𝑎𝑛{𝑉},thecolumnspaceofthe
+and DAGER, across three benchmark datasets (CoLA, SST, and
+inputembeddingmatrix.Thus,therepresentationalcapacityofthe
+Rotten Tomatoes) and three representative model architectures
+attackisfundamentallyconstrainedbytherankofthesubspace𝑆.
+(BERT,GPT2-large,andQwen2.5-7B).AnexampleofaUTRattack
+Theorem 4.1. Let𝑉 be a vector space over a field 𝐹. If𝑆 is a canbefoundintheAppendixE.
+subspaceof𝑉 spannedbyasetof𝑚vectors,thendim(𝑆)≤𝑚.
+AttackPerformanceunderDifferentDataVolumes. Specif-
+Theorem 4.2. (Rank-Capacity.) The maximum number of lin- ically,wevarythebatchsizefrom1to8toevaluateperformance
+earlyindependenthiddenembeddingvectors𝑣 𝑖 thatcanbeperfectly underdifferentdatavolumes.AsshowninTable1,UTRachieves
+represented in the subspace 𝑆 is at most 𝑟𝑎𝑛𝑘(𝑆). Further imore, nearly perfect text reconstruction, with ROUGE-1/2 scores ap-
+𝑟𝑎𝑛𝑘(𝑆)≤𝑚𝑖𝑛(𝑑 𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘,𝑛,𝑑 ℎ𝑖𝑑𝑑𝑒𝑛). proaching100%acrossallmodelsanddatasets.Incontrast,LAMP
+exhibits substantial performance degradation as batch size in-
+Proof. ForthespecificproofdetailsofTheorems4.1and4.2, creases,whileDAGERfailscompletelyunderthefrozenbackbone
+pleaserefertotheAppendixA.Basedonthetheorem,wecanget setting—highlightingUTR’ssuperiorrobustnessandadaptability.
+theCorollarybelowdirectly. □ ThisperformancegaparisesbecauseLAMPformulatesreconstruc-
+tionasanoptimizationproblem,oftenresultinginunstablecon-
+Corollary4.3. (MaximumRecoverableTokens.)Theattackcan, vergence,whereasUTRdirectlyexploitsgradientinformationfor
+atmost,uniquelyidentifyandrecoveranumberoftokens𝑘 𝑚𝑎𝑥 such deterministicreconstruction.DAGER’sfailure,ontheotherhand,
+that𝑘 𝑚𝑎𝑥 ≤𝑟𝑎𝑛𝑘(𝑆)≤𝑑 𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘. isattributedtoitsrelianceongradientsfromTransformerattention
+layers,whicharetypicallyfrozenduringfine-tuning.Notethat
+5 Experiments asDAGERisnotopen-sourced,ourimplementationisbasedon
+itspublisheddescription,whichmayleadtominorreproduction
+5.1 ExperimentalSetup
+discrepancies.
+Model and Dataset. We will mainly carry out the main ex- AttackPerformanceunderLargeBatchSize. Toevaluate
+perimentsonthreedatasets,i.e.,CoLA[38],SST[34],andRotten scalabilityinpracticallarge-batchscenarios,weevaluatetherecon-
+Tomatoes(RT)[26].Weevaluatetheattackperformanceofthe structioncapabilityofUTRontheGPT2-LargeandQwen2.5-7B
+proposedUTRattackonthreemodels:Bert-Base[16],GPT2-Large modelswithsubstantiallyincreasedbatchsizes.Specifically,we
+[33],andQwen2.5-7B[45].Detailedinformationaboutthemodels setthebatchsizeto16,32,64,and128ontheCoLA,SST,andRT
+anddatasetscanbefoundinAppendixC. datasets.TheresultsareshowninTable2,wherewediscoverthat
+TrainingandAdapterSettings. Intheadapter-basedFedLLMs, UTRmaintainsperfectornear-perfectreconstruction(ROUGE-1/2
+properhyperparameterselection,i.e.,reduction ,isanotable ≈100)forQwenandonCoLAforGPT2-Large,evenatabatchsize
+factor
+factorthatdeterminestheproposedattackperformance.Weinves- of128.However,wefindthattheattackonGPT2-Largefailson
+tigatetheperformanceoftheproposedframeworkwithdifferent theSSTandRTdatasetsforbatcheslargerthan32,indicatingthat
+ReconstructingTrainingDatafromAdapter-basedFederatedLargeLanguageModels WWW’26,April13–17,2026,Dubai,UnitedArabEmirates
+Table1:Attackperformanceevaluationresults.TheR-1andR-2denotetheROUGE-1andROUGE-2scores,respectively.
+BERT GPT2 Qwen
+Batch Method Metrics
+CoLA SST RT CoLA SST RT CoLA SST RT
+R-1 100 100 100 100 100 100 100 100 100
+Ours
+R-2 100 100 100 100 99 100 100 100 100
+R-1 73.3 62.2 31.4 89.6 88.8 64.7 / / /
+𝐵=1 LAMP
+R-2 43.3 31.8 9.3 51.9 56.8 16.5 / / /
+R-1 100 100 100 100 100 100 0 0 0
+DAGER
+R-2 100 100 100 100 100 100 0 0 0
+R-1 100 100 100 99.83 100 100 100 100 100
+Ours
+R-2 100 100 100 99.83 100 100 100 100 100
+R-1 26.8 21.4 11.2 77.8 82.4 46.4 / / /
+𝐵=2 LAMP
+R-2 11.0 9.2 0.9 31.5 45.7 7.6 / / /
+R-1 100 99.3 98.1 100 100 100 0 0 0
+DAGER
+R-2 100 99.0 96.5 100 100 100 0 0 0
+R-1 100 100 100 99.92 100 100 100 100 100
+Ours
+R-2 100 100 100 99.88 99.25 100 100 100 100
+R-1 13.4 9.8 6.3 66.2 69.5 35.1 / / /
+𝐵=4 LAMP
+R-2 3.9 2.7 0.9 21.8 32.5 4.2 / / /
+R-1 94.0 95.6 66.8 100 57.45 29.56 0 0 0
+DAGER
+R-2 89.9 93.0 50.1 100 52.63 21.65 0 0 0
+R-1 100 100 100 99.92 100 100 100 100 100
+Ours
+R-2 100 100 100 99.83 99.63 100 100 100 100
+R-1 8.9 8.1 6.8 52.9 56.9 27.3 / / /
+𝐵=8 LAMP
+R-2 1.9 0.7 0.3 13.1 19.1 2.0 / / /
+R-1 67.8 74.1 37.1 88.18 18.51 20.37 0 0 0
+DAGER
+R-2 48.8 59.8 11.4 84.50 7.98 13.06 0 0 0
+Table2:MainresultsontheGPT2-LargeandQwen-7Bmodels Table3:Effectivenessofdefensesagainstourattack.
+withlargebatchsizesonvariousdatasets. BERT GPT2 Qwen
+Defense Parameter
+𝐵=16 𝐵=32 𝐵=64 𝐵=128 R-1 R-2 R-1 R-2 R-1 R-2
+R-1 R-2 R-1 R-2 R-1 R-2 R-1 R-2 𝜎=0.01 ∼100% ∼100% ∼100% ∼100% ∼100% ∼100%
+DP 𝜎=1.5 ∼15% ∼15% ∼13% ∼17% ∼0% ∼0%
+CoLA QG wPT en2 11 00 00 .. 00 11 00 00 .. 00 11 00 00 .. 00 11 00 00 .. 00 1 10 00 0. .0
+0
+11 00 00 .. 00 11 00 00 .. 00 11 00 00 .. 00 𝜎 𝜎= =2 3. .0
+0
+< ∼02 %% < ∼02 %% < ∼02 %% < ∼02 %% ∼ ∼0 0%
+%
+∼ ∼0 0%
+%
+SST-2 QG wPT en2 11 00 00 .. 00 19 09 0.4 .0 11 00 00 .. 00 19 09 0.7 .0 10 00.0 .0 100 0.0 .0 100 0.0 .0 100 0.0 .0 GP 𝑟 𝑟= =9 90 9% % ∼ ∼6 25 5% % ∼ ∼6 25 5% % ∼ ∼6 25 5% % ∼ ∼6 25 5% % ∼ ∼6 20 6% % ∼ ∼6 20 5% %
+GPT2 100.0 100.0 100.0 100.0 0.0 0.0 0.0 0.0 𝑟=99.9% <5% <5% <5% <5% <5% <5%
+RT Qwen 100.0 100.0 100.0 100.0 100.0 100.0 100.0 100.0
+AttackPerformanceunderDP. AsshowninTable3,theUTR
+attackachieveda100%attacksuccessrateatanoiselevel(𝜎 =0.01)
+theunidirectionalattentionmechanisminGPTmodelsmayposea
+thatdoesnotdestroytheeffectivenessofthemodel.At𝜎 =1.0,the
+greaterchallengeforreconstructinglongersequencesfromlarge
+defensebecamenearlyimpenetrable,withsuccessratesdropping
+batches.
+below2%andreconstructedtextdevolvingintononsensicalword
+sequences(e.g.,“Aestheticvolumeconferencebicycle”).Asetting
+5.3 AttackPerformanceEvaluationunder of𝜎 =1.5renderedtheattackcompletelyineffective,achievinga
+Defenses 0%successrate.ThisdemonstratesthatDPprovidesamathemati-
+This section empirically evaluates the defensive efficacy of Dif- callygroundedanddefinitivedefenseagainstgradientinversion
+ferentialPrivacy(DP)[39]andGradientPruning(GP)[50].We attacks,withitsstrengthpreciselycontrollableviathe𝜎parameter.
+benchmarkthesedefensemethodsagainsttheUTRattackacross However,wedemonstrateintheAppendixFthatsuchDP
+modelarchitectures,assessingtheirimpactonbothmodelutility defensestrengthrendersthemodelunusable.
+andprivacyprotection.WeimplementacentralizedDPframework AttackPerformanceunderGP. Incontrast,GPoffersfragile
+wheretheserverinjectsGaussiannoiseintotheaggregatedadapter andunreliableprotection.Underamildpruningregime(𝑟 =90%),
+gradientsfromclients.Thedefensestrengthisprimarilygoverned theattackremainedhighlyviablewithasuccessrateof65%,asthe
+bythenoisemultiplier(𝜎),forwhichweexplorearangeofval- retainedtopgradientscontainedsufficientinformationforrecon-
+ues𝜎 ∈ {0.01,1.5,2.0,3.0}withafixedclippingboundof1.0.As struction.Aggressivepruning(𝑟 =99%)reducedthesuccessrate
+aheuristicdefense,GPdiscardsgradientelementswithabsolute toapproximately25%,yetthisstillpermittedsignificantleakage
+valuesbelowaspecifiedthreshold,therebyperturbingthegradient ofkeytokensandsemanticconcepts.Itwasonlyatanextreme,
+signal.Weevaluatepruningrates(𝑟)∈{90%,95%,99.9%},where𝑟 utility-destroyingthreshold(𝑟 =99.9%)thattheattackwaseffec-
+denotestheproportionofelementssettozero. tivelythwarted(successrate<5%).Thisfundamentallimitation
+WWW’26,April13–17,2026,Dubai,UnitedArabEmirates SilongChenetal.
+600
+400
+200
+0
+0 200 400 600
+#truetokens
+snekotdetciderp#
+#inferredtoken
+y=x 500
+#neurons
+400
+300
+200
+100
+0
+rorrEtluseR
+1000
+800
+600
+400
+200
+0
+0 250 500 750 1000
+#truetokens
+(a)BERT
+snekotdetciderp#
+#inferredtoken 1000
+y=x
+#neurons 800
+600
+400
+200
+0
+rorrEtluseR
+2500
+2000
+1500
+1000
+500
+0
+0 1000 2000
+#truetokens
+(b)GPT-Large
+snekotdetciderp#
+#inferredtoken
+y=x 2000
+#neurons
+1500
+1000
+500
+0
+rorrEtluseR
+(c)Qwen-7B
+Figure3:Relationshipbetweenthenumberofrecoveredtokensinthegradientinformationoftheembeddingadapterandthe
+numberoftruetokens.
+100 90
+80
+70
+60
+50 1 2 4BatchSize8 16 32
+secnetneSderotseRfoegatnecrePegarevAehT 95 reductionfactor=1 105 90 85
+80
+8892 83
+78
+8588
+80 76
+8285
+78 74 7880
+75r r r 7e e e 2d d du u uc c ct t t 7i i io o o 2n n n 75f f fa a a 7c c c 0t t to o o 6r r r 8= = =2 4 8 10 8990 505
+80
+75
+70 1 2 4BatchSize8 16 32
+(a)𝑟𝑒𝑑𝑢𝑐𝑡𝑖𝑜𝑛 𝑓𝑎𝑐𝑡𝑜𝑟
+secnetneSderotseRfoegatnecrePegarevAehT numericalprecisionunderminestheattack’sstabilitywhenscaling 100100100100 100100100100 100100100100 100100100100 100100100100 computations. 93.2
+91.32 88.54 5.5 EffectivenessAnalysisofUTRAttack
+(cid:15) (cid:15)= =0 0. .1 01 Thissectionevaluatesthefundamentalcapabilityofadaptergra-
+(cid:15) (cid:15)= =0 0. .0 00 01 01 72.57 dientstocapturemeaningfulinformation,whichdirectlydictates
+theupperboundoftextreconstruction,asdescribedin§4.4.To
+(b)𝑎𝑡𝑜𝑙 validatethis,weconductedalarge-scaleexperimentontheCoLA
+dataset,correlatingthenumberoftokensreconstructedviathe
+Figure4:Theperformanceacrossvarious𝑟𝑒𝑑𝑢𝑐𝑡𝑖𝑜𝑛 𝑓𝑎𝑐𝑡𝑜𝑟 and
+embeddingadapter’sgradientsagainstthetruenumberoftokens
+𝑎𝑡𝑜𝑙 settings.
+intheoriginaltext.Wevariedthebatchsizefrom1to256toensure
+awidedistributionoftokencounts,performingfiveroundsfora
+underscoresthatGP’sprotectionisheuristicandbrittle,failing
+totalof1,280trials.
+tosecurelysafeguarddatawithoutsimultaneouslynegatingthe
+Theresults,plottedinFig.3,showtherelationshipbetweenthe
+model’slearningcapacity.
+inferredandtruetokencounts.Twokeypatternsemergefromthe
+data.First,theeffectiveinformationcapturedbythegradientsis
+5.4 ImpactoftheAdapterSettings consistentlyslightlylessthanthetotalnumberofdownsampling
+Inthissection,wefurtherinvestigatetheimpactoftheadapter’s layer neurons. This aligns with our theoretical analysis in §4.4.
+bottlenecksizeandthespansimilaritythreshold,controlledbythe Second,theamountofinformationeffectivelycapturedispositively
+𝑟𝑒𝑑𝑢𝑐𝑡𝑖𝑜𝑛 𝑓𝑎𝑐𝑡𝑜𝑟 ∈ {1,2,4,8},andthe𝜖 ∈ {0.1,0.01,0.001,0.0001}, correlatedwiththesizeoftheadapter’sdownsamplinglayer.A
+onthesuccessofourreconstructionattacks. comparisonofthesubfiguresinFig.3confirmsthattheadapterin
+Impact of𝑟𝑒𝑑𝑢𝑐𝑡𝑖𝑜𝑛 𝑓𝑎𝑐𝑡𝑜𝑟. The results, illustrated in Fig. 4a, Qwen,withthemostneurons,capturesthemostinformation.This
+indicateastronginversecorrelationbetweenthe𝑟𝑒𝑑𝑢𝑐𝑡𝑖𝑜𝑛 patterndirectlyexplainsthesuperiorattackperformanceofQwen
+𝑓𝑎𝑐𝑡𝑜𝑟
+andattackperformance.Asthe𝑟𝑒𝑑𝑢𝑐𝑡𝑖𝑜𝑛 increases,thedi- notedinpriorsections.
+𝑓𝑎𝑐𝑡𝑜𝑟
+mensionalityoftheadapter’shiddenrepresentationdecreases,cre-
+atinga moresevereinformation bottleneck. Thisbottleneckdi- 6 Conclusion
+rectlydegradesthequalityandcompletenessofthegradientin- Thispaperinvestigatestheprivacyrisksofadapter-basedFedLLMs
+formation available for inversion. Consequently, while a larger undergradientinversionattacks(GIAs).Weproposeaunifiedframe-
+𝑟𝑒𝑑𝑢𝑐𝑡𝑖𝑜𝑛 offersimprovedparameterefficiencyforfederated workforanalyzingGIAsanduncoverthatadapterstructurescreate
+𝑓𝑎𝑐𝑡𝑜𝑟
+tuning,italsoinherentlyenhancesprivacybyattenuatingthesignal newprivacyvulnerabilities.Toexploitthese,weintroduceUTR
+thatcanbeexploitedbygradient-basedattacks. fordatareconstructionbyleveragingdiscreteLLMproperties(e.g.,
+ImpactofSpanSimilarityThreshold𝜖. Theexperimental positionalembeddings,self-attention).Finally,wequantifyinforma-
+results,illustratedinFig.4brevealacriticaltrade-offbetweenthe tionleakagefromsinglegradientupdates,offeringinsightsintothe
+interactionofbatchsizeandsolvertolerance(Atol).Thekeyfind- privacy–performancetrade-off.Ourworkadvancesunderstanding
+ingisthatahighertolerancevalueallowstheattacktomaintaina anddefenseofprivacyinadapter-basedFedLLMs.
+perfectornear-perfectsuccessrateacrossawiderangeofbatch
+sizes,demonstratingthatefficientlarge-batchprocessingcanbe Acknowledgments
+achievedwithoutperformanceloss.Conversely,whenaverystrict ThisworkwassupportedbytheNationalNaturalScienceFounda-
+toleranceisenforced,theattackbecomeshighlyfragile;itsperfor- tionofChina(GrantNo.62472431)andtheInnovationResearch
+manceremainsperfectforsmallbatchesbutcollapsesdramatically Foundation of the National University of Defense Technology
+asthebatchsizeincreases.Thisindicatesthatstrivingforhigh (GrantNo.ZK25-17).
+ReconstructingTrainingDatafromAdapter-basedFederatedLargeLanguageModels WWW’26,April13–17,2026,Dubai,UnitedArabEmirates
+References [26] BoPangandLillianLee.2005.SeeingStars:ExploitingClassRelationshipsfor
+[1] JiamuBai,DaoyuanChen,BingchenQian,LiuyiYao,andYaliangLi.2024.Feder- SentimentCategorizationwithRespecttoRatingScales.InProc.ofACL.
+atedfine-tuningoflargelanguagemodelsunderheterogeneoustasksandclient [27] MarinelaParovic,AlanAnsell,IvanVulic,andAnnaKorhonen.2023. Cross-
+[2]
+r Mes iso lu ar vc Bes a. luIn noP vro icc ,. Dof imNe itu ar rIP IS ..
+Dimitrov,NikolaJovanovic,andMartinT.Vechev.
+L ofin Ag Cu Lal .TransferwithTargetLanguage-ReadyTaskAdapters.InProc.ofFindings
+[28] LePeng,GaoxiangLuo,SichengZhou,JiandongChen,ZiyueXu,JuSun,andRui
+2022.LAMP:ExtractingTextfromGradientswithLanguageModelPriors.In
+Zhang.2024.Anin-depthevaluationoffederatedlearningonbiomedicalnatural
+[3] P Rr oo bc. Bo of nN taeu .2rI 0P 2S 2. .Californiaconsumerprivacyact(CCPA).RetrievedfromState
+[29]
+l Ia vn og Pu ea tg roe vp ,r Do ic mes is tain rg Ilf ieo vri Dn if mor im troa vti ,o Mn ae xx it mra ic lit aio nn B. aN aP dJ erD ,Mig ait r. kM Ned ikic lain se M7 u, e1 ll( e2 r0 ,2 a4 n) d.
+ofCaliforniaDepartmentofJustice:https://oag.ca.gov/privacy/ccpa(2022).
+MartinVechev.2024. DAGER:ExactGradientInversionforLargeLanguage
+[4] DongqiCai,YaozongWu,ShangguangWang,FelixXiaozhuLin,andMengwei
+Xu.2023.Efficientfederatedlearningformodernnlp.InProc.ofMobicom.
+[30]
+JM onod asel Ps. feIn iffP er ro ,c A. io sf hN we au rr yI aPS K.
+amath,AndreasRücklé,KyunghyunCho,andIryna
+[5] HongruCai,YongqiLi,WenjieWang,FengbinZhu,XiaoyuShen,WenjieLi,
+Gurevych.2021.AdapterFusion:Non-DestructiveTaskCompositionforTransfer
+andTat-SengChua.2025.Largelanguagemodelsempoweredpersonalizedweb
+agents.InProc.ofWWW.
+[31]
+L Joe na arn si Pn fg e. iffIn erP ,r Io vc a. nof VE uA liC c,L I.
+rynaGurevych,andSebastianRuder.2020.MAD-X:
+[6] TianshiChe,JiLiu,YangZhou,JiaxiangRen,JiwenZhou,VictorS.Sheng,Huaiyu
+Dai,andDejingDou.2023. FederatedLearningofLargeLanguageModels
+AnAdapter-BasedFrameworkforMulti-TaskCross-LingualTransfer.InProc.of
+withParameter-EfficientPromptTuningandAdaptiveOptimization.InProc.of
+[32]
+E CM lifN toL nP.
+Poth,HannahSterz,IndraneilPaul,SukannyaPurkayastha,LeonEnglän-
+EMNLP.
+der,TimoImhof,IvanVulić,SebastianRuder,IrynaGurevych,andJonasPfeiffer.
+[7] HaokunChen,YaoZhang,DenisKrompass,JindongGu,andVolkerTresp.2024.
+2023.Adapters:AUnifiedLibraryforParameter-EfficientandModularTransfer
+FedDAT:AnApproachforFoundationModelFinetuninginMulti-ModalHetero-
+geneousFederatedLearning.InProc.ofAAAI.
+[33]
+L Ae lea crn Rin adg f. oIn rdP ,r Jo ec ff. Wof uE ,M RN ewLP o.
+nChild,DavidLuan,DarioAmodei,IlyaSutskever,
+[8] HaokunChen,YaoZhang,DenisKrompass,JindongGu,andVolkerTresp.2024.
+JeffreyDean,andSanjayGhemawat.2019.LanguageModelsareUnsupervised
+FedDAT:AnApproachforFoundationModelFinetuninginMulti-ModalHetero-
+geneousFederatedLearning.InProc.ofAAAI,MichaelJ.Wooldridge,JenniferG.
+[34]
+M Riu chlt ait ra ds Sk oL ce ha er rn ,Aer ls e. xIn PeP rr eo lyc. go inf ,O JeS aD nI.
+Wu,JasonChuang,ChristopherDManning,
+Dy,andSriraamNatarajan(Eds.).
+AndrewYNg,andChristopherPotts.2013.Recursivedeepmodelsforsemantic
+[9] ShengchaoChen,GuodongLong,TaoShen,andJingJiang.2023.PromptFeder-
+atedLearningforWeatherForecasting:TowardFoundationModelsonMeteoro-
+compositionalityoverasentimenttreebank.InProc.ofEMNLP.
+[35] PaulVoigtandAxelVondemBussche.2017. Theeugeneraldataprotection
+[10]
+l Jo ieg ri ec nal DD ea nta g. ,In YiP juro ec. Wof aI nJ gC ,A JI i.
+Li,ChenghongWang,ChaoShang,HangLiu,
+regulation(gdpr).Apracticalguide,1sted.,Cham:SpringerInternationalPublishing
+10,3152676(2017),10–5555.
+SanguthevarRajasekaran,andCaiwenDing.2021. TAG:GradientAttackon
+[36] YidanWang,ZhaochunRen,WeiweiSun,JiyuanYang,ZhixiangLiang,Xin
+Transformer-basedLanguageModels.InProc.ofFindingsofEMNLP.
+Chen,RuobingXie,SuYan,XuZhang,PengjieRen,etal.2024.Content-based
+[11] C toy mn at th ai ,a laD nw guo ark ge. s2 ,0 a0 n6 d. pD roiff ge rare mn mtia inl gp .r Siv pa ric ny g. eI rn ,1In –t 1e 2r .nationalcolloquiumonau-
+[37]
+c Zo iyll aa obo Wra at niv ge ,g Ze hn ee yr uati So hn enfo ,r Yr ee xc io am om He en ,Gde ur os hy es nte gm Ss u. nIn ,HPr oo nc g.o yf iC WIK anM g.
+,Lingjuan
+[12] TaoGuo,SongGuo,andJunxiaoWang.2023.Pfedprompt:Learningpersonalized
+Lyu,andAngLi.2024.Flora:Federatedfine-tuninglargelanguagemodelswith
+[13]
+p Saro mm yp aktf Gor upv tis ai ,o Yn a- nla gn sg ibu oag He um ano gd ,e Zls exin uafe nd Zer ha ot ne gd ,l Tea iar nn yin ug G.I an oP ,Kro ac i. Lo if ,W anW dW Da.
+nqi
+heterogeneouslow-rankadaptations.InProc.ofNeurIPS.
+[38] AlexWarstadt,AmanpreetSingh,andSamuelRBowman.2019. Neuralnet-
+Chen.2022.Recoveringprivatetextinfederatedlearningoflanguagemodels.In
+[14]
+P Nr eo ic l. Hof oN ule su br yIP ,AS.
+ndreiGiurgiu,StanislawJastrzebski,BrunaMorrone,Quentin
+w Lio nr gk uia sc tc ice sp 7ta (b 2i 0li 1t 9y ),ju 6d 2g 5m –6e 4n 1t .s.TransactionsoftheAssociationforComputational
+[39] WenqiWei,LingLiu,MargaretLoper,Ka-HoChow,MehmetEmreGursoy,Stacey
+deLaroussilhe,AndreaGesmundo,MonaAttariyan,andSylvainGelly.2019.
+Truex,andYanzhaoWu.2020. Aframeworkforevaluatinggradientleakage
+[15]
+P Ea dr wa am rdet Jer H-E uffi ,Yc ei le on nt gT Sra hn ensf ,e Pr hL ie lla iprn Win ag llf io s,r ZN eL yP u. aI nn AP lr lo ec n. -o Zf hI uC ,M YL u.
+anzhiLi,Shean
+attacksinfederatedlearning.arXivpreprintarXiv:2004.10397(2020).
+[40] HerbertWoisetschläger,AlexanderErben,ShiqiangWang,RubenMayer,and
+Wang,LuWang,WeizhuChen,etal.2022.Lora:Low-rankadaptationoflarge
+Hans-ArnoJacobsen.2024.ASurveyonEfficientFederatedLearningMethods
+[16]
+l Ja an cog bua Dg ee vm linod Mel is n.. gI -n WP er io Cc. ho af nI gCL KR e.
+ntonandLeeKristinaToutanova.2019.Bert:
+forFoundationModelTraining.InProc.ofIJCAI.
+[41] NanWu,XinYuan,ShuoWang,HongshengHu,andMinhuiXue.2024.Cardi-
+Pre-trainingofdeepbidirectionaltransformersforlanguageunderstanding.In
+nalitycountingin"alcatraz":Aprivacy-awarefederatedlearningapproach.In
+[17]
+P Mro ac te. uof szN KA lA imC aL s- zH eL wT s.
+ki,PiotrAndruszkiewicz,andAlexandraBirch.2025.No
+Proc.ofWWW.
+[42] MengweiXu,DongqiCai,YaozongWu,XiangLi,andShangguangWang.2024.
+TrainbutGain:LanguageArithmeticfortraining-freeLanguageAdaptersen-
+FwdLLM:EfficientFederatedFinetuningofLargeLanguageModelswithPer-
+[18]
+h Wa en ic ruem iKe un at. nI gn ,BPr inoc g. co hf eA nC QL ia.
+n,ZitaoLi,DaoyuanChen,DaweiGao,XuchenPan,
+turbedInferences.InProc.ofUSENIXATC.
+[43] YuhuiXu,LingxiXie,XiaotaoGu,XinChen,HengChang,HenghengZhang,
+YuexiangXie,YaliangLi,BolinDing,andJingrenZhou.2024.Federatedscope-llm:
+ZhengsuChen,XiaopengZhang,andQiTian.2024.QA-LoRA:Quantization-
+Acomprehensivepackageforfine-tuninglargelanguagemodelsinfederated
+learning.InProc.ofKDD.
+[44]
+A Luw la ure XL uo e,w S- hR ea nn gk sA had nap Hta ut ,io Rn uo izf hL ia Zrg he aoL ,a Ln eg oua Yg ue ZM ho ad ne gl ,s. SI hn eP nr go qc i. no gfI HC uL ,R L.
+ichao
+[19] Chin-YewLin.2004.ROUGE:aPackageforAutomaticEvaluationofSummaries.
+Sun,andDezhongYao.2024.Revisitinggradientpruning:Adualrealizationfor
+[20]
+I Cn hP ero Lc i. uo ,f JuW no fr ek ns gho Jp iao nf gA ,C CL h.
+aoXiong,YiYang,andJiepingYe.2020. Towards
+defendingagainstgradientattacks.InProc.ofAAAI.
+[45] AnYang,BaosongYang,BeichenZhang,BinyuanHui,andetal.2024.Qwen2.5
+buildinganintelligentchatbotforcustomerservice:Learningtorespondatthe
+appropriatetime.InProc.ofKDD.
+[46]
+T Re uc ih Yn ei ,c Wal eR nhep aoor Wt. aa nr gX ,i Jv inp gr yep iCri hn at ia ,r DX ii hv a:2 n4 L1 i2 ,. Z15 e1 x1 i5 Li( ,2 Y0 i2 n4 d) a.
+Xu,YaxinDu,Yanfeng
+[21] XiaoLiu,KaixuanJi,YichengFu,WengTam,ZhengxiaoDu,ZhilinYang,andJie
+Wang,andSihengChen.2024.Openfedllm:Traininglargelanguagemodelson
+Tang.2022.P-Tuning:PromptTuningCanBeComparabletoFine-tuningAcross
+ScalesandTasks.InProc.ofACL.
+[47]
+d Ee lac den Btr ea nliz Ze ad kp er ni ,va Yt oe ad vat Ga ov li da bf ee rd ge ,r aa nte dd Sle ha ar un li in Rg. aI vn foP gr eo lc ..o 2f 02K 2D .D.
+BitFit:Simple
+[22] YiLiu,CongWang,andXingliangYuan.2025.FedMobile:EnablingKnowledge
+Parameter-efficientFine-tuningforTransformer-basedMaskedLanguage-models.
+Contribution-awareMulti-modalFederatedLearningwithIncompleteModalities.
+InProc.ofWWW.
+[48]
+I Rn uP ir Zo hc a. nof g,A SC oL n.
+gGuo,JunxiaoWang,XinXie,andDachengTao.2022.ASurvey
+[23] YiLiu,LeiXu,XingliangYuan,CongWang,andBoLi.2022. Therighttobe
+forgotteninfederatedlearning:Anefficientrealizationwithrapidretraining.In
+onGradientInversion:Attacks,DefensesandFutureDirections.InProc.ofIJCAI.
+[49] JoshuaC.Zhao,AtulSharma,AhmedRoushdyElkordy,YahyaH.Ezzeldin,
+Proc.ofINFOCOM.
+SalmanAvestimehr,andSaurabhBagchi.2024. Loki:Large-scaleDataRecon-
+[24] GuodongLong,TaoShen,JingJiang,MichaelBlumenstein,etal.2024. Dual-
+structionAttackagainstFederatedLearningthroughModelManipulation.In
+[25]
+p Be rers no dn aa nliz Ming cMad aa hp at ne ,rf Eo ir df ee rde Mra ote od ref ,ou Dn ad nat ieio ln Rm ao md ae gls e. ,In SP etr hoc. Hof aN me pu sr oIP nS ,.
+and
+Proc.ofSP.
+[50] LigengZhu,ZhijianLiu,andSongHan.2019.Deepleakagefromgradients.In
+BlaiseAgüerayArcas.2017.Communication-EfficientLearningofDeepNet-
+worksfromDecentralizedData.InProc.ofAISTATS.
+NeurIPS.
+WWW’26,April13–17,2026,Dubai,UnitedArabEmirates SilongChenetal.
+Algorithm1UTRAttack thenthereexistsapropersubsetof𝑊 thatformsabasisfor𝑆,and
+Require: Embedding-Adaptergradients𝐺 𝐸𝐴, thus,dim(𝑆) <𝑚.Therefore,inallcases,dim(𝑆)≤𝑚. □
+Layer-Adaptergradients𝐺 ,
+𝐿𝐴 Proof. Weprovethetheorembyestablishingtheboundsonthe
+vocabularyW,
+rankof𝑆throughthefollowingarguments:
+projectionthresholds𝜀 and𝜀 ,
+maximumreconstructio𝐸𝐴 nlength𝐿𝐴 𝐿 , Step1: Bydefinition,thesubspace𝑆isspannedbythe𝑑 bottleneck
+max vectors 𝑅𝑊𝐵𝐺 . By Theorem 4.1, the dimension of a subspace
+andconstrainedbeamwidth𝐵 𝑗
+Ensure: ReconstructedsentencecandidatesScand cannotexceedthenumberofvectorsinitsspanningset,therefore
+wehave:
+Preprocessing:
+1: Compute subspace bases: 𝑆 𝐸𝐴 ← span(𝐺 𝐸𝐴), 𝑆 𝐿𝐴 ← 𝑟𝑎𝑛𝑘(𝑆)≤𝑑 𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘. (11)
+span(𝐺 𝐿𝐴) Step 2: Each 𝑅𝑊𝐵𝐺 𝑗 is a linear combination of the𝑛 input
+2: Definein_span(𝑣,𝑆,𝜀)asthepredicate hiddenembeddingvectors𝑣𝑛.Therefore,𝑆 isasubspaceofthe
+𝑖
+3: ∥𝑣−𝑃 𝑆(𝑣)∥2 <𝜀,where𝑃 𝑆(𝑣)istheorthogonalprojectionof spanof𝑣 𝑖𝑛,whichhasdimensionatmostmin(𝑛,𝑑 ℎ𝑖𝑑𝑑𝑒𝑛).Thus:
+𝑣onto𝑆
+𝑟𝑎𝑛𝑘(𝑆)≤𝑚𝑖𝑛(𝑛,𝑑 ℎ𝑖𝑑𝑑𝑒𝑛) (12)
+Step1:InferCandidateWordBag
+4: Initializecandidatewordbag:W𝑏 ←∅ Step3: CombiningtheboundsfromStep1andStep2,themost
+5: forall𝑤 ∈Wdo restrictiveboundistheminimumofthesethreevalues.Inpractical
+6: 𝑣 𝑤 ←𝑓 0(𝑤) ⊲Word-levelrepresentationof𝑤 FedLLMscenarios,𝑑 𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘 istypicallymuchsmallerthanboth
+7: ifin_span(𝑣 𝑤,𝑆 𝐸𝐴,𝜀 𝐸𝐴)then nand𝑑 ℎ𝑖𝑑𝑑𝑒𝑛(e.g.,𝑑 𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘 =512,𝑑 ℎ𝑖𝑑𝑑𝑒𝑛 =4096,𝑛canbeinthe
+8: W𝑏 ←W𝑏∪{𝑤} thousandsforalargebatch).Therefore,thebottleneckdimension
+9: if |W𝑏|=0then istheeffectiveupperlimit:
+10: return∅ ⊲Norecoverablewordsfound 𝑟𝑎𝑛𝑘(𝑆)≤𝑚𝑖𝑛(𝑑 𝑏𝑜𝑡𝑡𝑙𝑒𝑛𝑒𝑐𝑘,𝑛,𝑑 ℎ𝑖𝑑𝑑𝑒𝑛) (13)
+Step2:SentenceReconstructionviaBeamSearch
+Finally,themaximumnumberoflinearlyindependentvectorsthat
+11: Initializebeam:B←{(seq=[], score=0)}
+canbeperfectlyrepresentedin𝑆ispreciselyrank(𝑆),bythedefi-
+12: for𝑙 =1to𝐿 maxdo
+nitionofdimension.Thiscompletestheproof. □
+13: Bnew←∅
+14: forall(seq, score) ∈Bdo We analyze UTR attacks within an ideal setting to delineate
+15: forall𝑤 ∈W𝑏 do thetheoreticallimitsoftheirefficacy.Bycharacterizingthisupper
+16: ifEICW(seq,𝑤)then⊲Excludeif𝑤 alreadyinseq bound,weprovidethenecessaryanalyticalgroundworktoinform
+17: continue thedesignofprovablyresilientcountermeasures.
+18: seq′ ←seq⊕[𝑤] ⊲Append𝑤 tosequence
+19: ifCG_score(seq’)orCS_score(seq’)then B Algorithm
+20: continue ⊲Skipifgrammaticallyimplausible Thepseudo codeofthe detailedexecutionsteps oftheUTRat-
+orsemanticallyincoherent
+tackisshowninthefollowingalgorithm.Thealgorithmconstructs
+21: 𝑣 seq′ ←𝑓 1(seq′) ⊲Sequence-levelrepresentation candidatesentencesbyiterativelycombiningtokensfrom𝑊 𝑏.To
+22: 𝑝 𝑠 ←span_similarity(𝑣 seq′,𝑆 𝐿𝐴) managetheexponentialcomplexityofthissearchspace(C3),it
+23: ifin_span(𝑣 seq′,𝑆 𝐿𝐴,𝜀 𝐿𝐴)then employsasetofBooleanfilterfunctionsaftereachtokenextension:
+24: Add(seq′,𝑝 𝑠)toBnew EICW()(ConsecutiveIdenticalWordDetection):Prunescandidates
+25: ifBnew=∅then containingrepeatedconsecutivetokens,whichareuncommonin
+26: break ⊲Novalidextensions;terminateearly validtext.CG()(GrammarCheck):Filtersoutsequencesthatexhibit
+27: Prune:Keeptop-𝐵sequencesinBnewwithhighest𝑝 𝑠
+obvioussyntacticerrors.Itisevaluatedusinglanguage_tool_python
+28: B←Bnew
+withover50syntacticrules.CS()(SemanticCheck):Discardscom-
+binationsthatlackbasicsemanticcoherence.Wemeasureitvia
+29: ifconvergenceorearly-stoppingcriterionismetthen
+cosinesimilarity>0.2inSBERTembeddingspace.Thesefilters
+30: break
+collectivelyguidethesearchtowardslinguisticallyplausiblese-
+Step3:ReturnFinalCandidates
+quences,drasticallyreducingthenumberofcandidatesthatrequire
+31: SortBbydescending𝑝 𝑠 toobtainScand
+computationallyexpensiveverification.
+32: returnScand
+C ModelsandDatasets
+A Proofs Table4provideskeyinformationaboutthesemodels,including
+whethertheirembeddinglayersincorporatepositionalencoding
+Therepresentationalcapacityoftheattackisfundamentallycon-
+mechanisms,whethertheyutilizeunidirectionalorbidirectional
+strainedbytherankofthesubspace𝑆.WethenproveTheorems
+attentionmechanisms,andtheirhiddendimensionsizes.These
+4.1and4.2asfollows:
+featuresareidentifiedascriticalbecausetheyinfluencetheimple-
+Proof. Let𝑊 =w1,w2,...,w𝑚beaspanningsetfor𝑆.If𝑊 is mentationoftheattackandimpacttheeffectivenessoftheattack.
+linearlyindependent,thendim(𝑆)=𝑚.If𝑊 islinearlydependent, Adetailedanalysisofthesefactorswillbeconductedduringthe
+experimentalprocess.
+ReconstructingTrainingDatafromAdapter-basedFederatedLargeLanguageModels WWW’26,April13–17,2026,Dubai,UnitedArabEmirates
+Table5:Basicinformationofthedataset. Itssignificancestemsfromitsrealismandsimplicity,providinga
+robust testbed for a model’s performance on a straightforward,
+Dataset Mintextlen Maxtextlen Ave.textlen real-worldopinionminingtask,anditisoftenusedindirectcom-
+CoLA 2 42 7.7 parisonwithothersentimentdatasetstoevaluategeneralizability
+SST 2 52 19.14 androbustness.
+RT 1 59 20.99
+D Baselines
+Table4:Basicinformationofmodels.PEmeanswhetherthe Wecompareourattackwiththefollowingmethods,includingthe
+modelhaspositionembedding. optimization-basedmethod(i.e.,LAMP[2])andtheembedding-
+basedmethod(i.e.,DAGER[29])designedforGIAsinFedLLMs.
+Model PE Self/Bidirect HiddenEmbedding LAMP. LAMP[2]isanovelandhighlyeffectivereconstruc-
+BERT-Base ✓ Bidirect 786 tionattackdesignedtoextractprivate,client-heldtextdatafrom
+thegradientupdatesexchangedduringthefederatedlearningof
+GPT2-Large ✓ Self 1280
+transformer-basedlanguagemodels.ThecoreinnovationofLAMP
+Qwen2.5-7B × Bidirect 4096 liesinitstwo-prongedattackstrategy,whichalternatesbetween
+continuousanddiscreteoptimization.Thecontinuousphaserefines
+Thisworkleveragesthreebenchmarkdatasets,i.e.,theCorpusof
+asetofdummytokenembeddingsbyminimizingthedifferencebe-
+LinguisticAcceptability(CoLA),theStanfordSentimentTreebank
+tweentheirresultinggradientsandthetargetclient’struegradients.
+(SST-2),andtheRottenTomatoes(RT)moviereviewdataset,each
+Crucially,toovercomelocaloptimaandguidethereconstructionto-
+probingadistinctfacetofthiscapability.Thenumericalinformation
+wardscoherenttext,LAMPintroducesadiscreteoptimizationphase
+oftheabovedatasetcanbefoundinTable5.
+thatusesanauxiliarylanguagemodel,suchasGPT-2,asaprior.
+CoLADataset. CoLAisaspecializeddatasetdesignedtoevalu- Thisphasegeneratescandidatesequencesthroughtextualtransfor-
+ateamodel’sfundamentalgraspofEnglishsyntaxandgrammatical mationsandselectstheonethatbestbalancesgradient-matching
+structure.Unliketasksfocusedonmeaningorsentiment,CoLA losswithlowlinguisticperplexity.Thissynergisticapproachen-
+frameslanguageunderstandingasabinaryclassificationproblemof ablesLAMPtosignificantlyoutperformpriorattacks,successfully
+grammaticalityjudgment,whereamodelmustdeterminewhether reconstructinglonger,moreaccuratetextsequences,includingin
+agivensentenceislinguisticallyacceptableorunacceptable.The challengingscenarioswithbatchsizeslargerthanoneandagainst
+sentencesaredrawnfromexpertlinguisticspublicationsandanno- defendedmodels,therebyexposingagreatervulnerabilitytopri-
+tatedbytrainedlinguists,ensuringhigh-qualitylabelsforcomplex vacyleakageinfederatedlearningsystemsthanpreviouslyknown.
+grammaticalphenomena.Thisincludestestingforsubtleviolations
+DAGER. DAGER[29]isagroundbreakinggradientinversion
+insubject-verbagreement,verbargumentstructure,andanomalous
+attackthat,forthefirsttime,achievestheexactreconstructionof
+wordsequences.AsacorecomponentoftheGLUEbenchmark,
+entirebatchesofprivatetextinputtolargelanguagemodels(LLMs)
+CoLAprovidesacrucialtestofamodel’ssyntacticcompetence,
+fromtheirgradients.Departingfromtheapproximate,optimization-
+probingitsabilitytointernalizetheformalrulesofthelanguage
+based approaches of prior methods, DAGER leverages two key
+ratherthanjuststatisticalpatternsinthedata.
+propertiesoftransformermodels:thelow-rankstructureofself-
+SSTDataset. SST-2offersacomprehensivebenchmarkforfine- attentionlayergradientsandthediscretenatureoftokenizedtext.
+grainedsentimentanalysisbymovingbeyondsimpledocument- Itscoremechanisminvolvesahighlyefficient“spancheck”that
+level classification. Derived from movie reviews, this dataset is verifies whether a candidate token’s embedding lies within the
+uniqueinthatitprovidessentimentlabelsnotonlyforentiresen- columnspaceoftheobservedgradientmatrices.ThisallowsDAGER
+tencesbutforeverysinglephraseandconstituentwithintheirparse to first recover the set of all tokens present in a client’s batch
+trees.Thisrich,granularannotationallowsmodelstobetrained andthen,throughagreedyalgorithmfordecodersoraheuristic
+andevaluatedonunderstandinghowsentimentiscompositionally searchforencoders,reassemblethemintotheoriginalsequences
+builtfromsmallerunits,capturingthenuancedimpactofnegations, withperfectaccuracy.ThisapproachenablesDAGERtoscaleto
+contrasts,andintensifiers.Thetaskisabinaryclassificationofsenti- significantlylargerbatchsizes(upto128)andlongersequences
+mentintopositiveornegativecategories.SST-2’sprimarychallenge thanpreviouslypossible,achievingnear-perfectROUGEscoresand
+andsignificancelieinpushingmodelstodevelopamoreprofound, dramaticallyoutperformingpriorattacksinbothreconstruction
+structuredunderstandingofsentimentcomposition,makingita qualityandcomputationalspeed.
+standardforassessingnuancedsemanticunderstanding.
+Discussion. Duringexperiments,weemployedonlythefirst
+RTDataset. RTmoviereviewdatasetservesasaclassicand twoTransformerlayersfortworeasons.First,UTRrequiresgradi-
+widely-adoptedbenchmarkforbinarysentimentclassificationat entdatafromtheembeddingandfirst-layeradapterstoevaluate
+thedocumentorsnippetlevel.Sourcedfromthecriticalreview privacy leakage, and these are fully captured within the initial
+aggregatorwebsite,itconsistsofrawtextsnippetsfromprofes- layers.Second,duetocomputationalconstraints—specifically,a
+sionalmoviereviews,eachlabeledwithabroadpositiveornegative singleNVIDIARTX4090GPU(24GBVRAM)onaWindowssys-
+sentiment.Incontrasttothephrase-leveldetailofSST-2,theRT tem—runningthefullmodelwasinfeasible.Thus,restrictingto
+datasettypicallypresentsamoredirectandpracticalsentiment two layers provided an effective and practical balance between
+analysistask:classifyingtheoverallpolarityofagiventextsegment. experimentalvalidityandresourcelimitations.
+WWW’26,April13–17,2026,Dubai,UnitedArabEmirates SilongChenetal.
+Figure5:TheshowcaseoftheUTRattack.
+Table6:AnexampleofUTRonCoLAwithbatchsize2.
+Thechildwasneverdeceived.
+Origintext
+JasonpersuadedMedeathatsheshoulddesertherfamily.
+‘##ved’,‘should’,‘never’,‘desert’,‘dec’,‘med’,‘the’,‘was ’,‘child’,‘that’,
+wordbag
+‘her’, ‘she’,‘[CLS]’,‘[SEP]’,‘family’,‘jason’,‘.’,‘persuaded’,‘##ei’,‘##ea’
+BERT
+the child was never deceived.
+Recon.text
+jason persuaded medea that she should desert her family.
+‘.’,‘was ’,‘that’,‘The’,‘her’,‘she’,‘should’,‘child’,‘never’,‘family’,‘Med’,
+wordbag
+‘desert’,‘ea’,‘persuaded’,‘Jason’,‘deceived’,‘<|endoftext|>’
+GPT
+the child was never deceived.
+Recon.text
+Jason persuaded Medea that she should desert her family.
+‘.’, ‘ that’, ‘ was ’, ‘The’, ‘ her’, ‘ should’, ‘ she’, ‘ child’, ‘ never’,
+wordbag
+‘ea’, ‘ desert’, ‘Jason’, ‘ persuaded’, ‘ deceived’
+Qwen
+The child was never deceived.
+Recon.text
+Jason persuaded Medea that she should desert her family.
+Table8:Computationalresourceoverheadfordatarecon- F AdditionalExperimentalResults
+structionacrossmethodsandtasks.
+ModelUtilityEvaluationunderDP. AsillustratedinTable7,
+Task Method 𝐵 GPUTime(s) whenstrongDifferentialPrivacy(DP)guaranteesareenforced,the
+model’sutilitydropsto69.20%.Thisperformancelevelremains
+RT-GPT2 UTR 128 6,125
+substantiallybelowwhatisconsideredsufficientforreal-world
+RT-GPT2 FILM 128 ∼26,000 deployment(80%-82%).
+CoLA-GPT2 UTR 64 900
+AttackPerformanceEvaluationunderStructuralDefense.
+CoLA-GPT2 FILM 64 ∼54,000 Inresponsetothesuggestionregardingstructuraldefenses,wenote
+thatwhilesucharchitecturalmodificationsaregenerallyavoided
+topreventclient-sideheterogeneity,theyoffervaluableinsights
+Table7:ModelutilityevaluationunderDP. inanexperimentalcontext.Oursupplementarytestsrevealthat
+architecturalhardeningprovidesmeasurablebenefits:substituting
+BERT
+Defense Parameter
+ReLUwithGELUloweredreconstructionby≈15%,whileutilizing
+Loss Accuracy deeperadapters(depth=3)reducedleakageby≈10%(𝐵 <64)and
+≈80%(𝐵≥64).Theseresultsalignwithandsupportourprimary
+𝜎 =0.0001 ∼0.42 ∼81.2% defenseanalysis.
+DP
+𝜎 =10.0 ∼0.61 ∼69.2% AttackEffortsEvaluation. Wefurtherevaluatedthecomputa-
+tionalefficiencyofUTRonopen-sourcebenchmarks.Assumma-
+rizedinTable8,UTRachievessignificantlylowercomputational
+E AttackExampleofUTR overheadcomparedtostate-of-the-artmethods.Forinstance,onthe
+SampleReconstruction. Weshowsamplesequencereconstruc- RTdataset(𝐵=128),UTRrequiresonly6,125GPU-seconds(∼1.7
+tionsfromUTRonCoLAwith𝐵=2inTable6.Wecanobservethat GPU-hours)toreconstructallbatches,whichisover5×moreeffi-
+ourreconstructioniscoherent,whichcansuccessfullyreconstruct cientthanFILM.Moreover,ontheCoLA-GPT2task(𝐵=64),UTR
+theaccurateoriginaltextandFig.5illustratestheshowcaseofour completesreconstructioninapproximately15minutes,yieldinga
+UTR. speedupofmorethan60×relativetoFILM.

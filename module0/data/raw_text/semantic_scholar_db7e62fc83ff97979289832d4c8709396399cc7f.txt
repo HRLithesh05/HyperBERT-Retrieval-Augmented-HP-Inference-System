@@ -1,0 +1,848 @@
+Vakili et al. BMC Medical Informatics and
+BMC Medical Informatics and Decision Making (2024) 24:162
+Decision Making
+https://doi.org/10.1186/s12911-024-02546-8
+RESEARCH Open Access
+End-to-end pseudonymization of fine-tuned
+clinical BERT models
+Privacy preservation with maintained data utility
+Thomas Vakili1*, Aron Henriksson1 and Hercules Dalianis1
+Abstract
+Many state-of-the-art results in natural language processing (NLP) rely on large pre-trained language models (PLMs).
+These models consist of large amounts of parameters that are tuned using vast amounts of training data. These fac-
+tors cause the models to memorize parts of their training data, making them vulnerable to various privacy attacks.
+This is cause for concern, especially when these models are applied in the clinical domain, where data are very
+sensitive.
+Training data pseudonymization is a privacy-preserving technique that aims to mitigate these problems. This tech-
+nique automatically identifies and replaces sensitive entities with realistic but non-sensitive surrogates. Pseudonymi-
+zation has yielded promising results in previous studies. However, no previous study has applied pseudonymization
+to both the pre-training data of PLMs and the fine-tuning data used to solve clinical NLP tasks.
+This study evaluates the effects on the predictive performance of end-to-end pseudonymization of Swedish clinical
+BERT models fine-tuned for five clinical NLP tasks. A large number of statistical tests are performed, revealing minimal
+harm to performance when using pseudonymized fine-tuning data. The results also find no deterioration from end-
+to-end pseudonymization of pre-training and fine-tuning data. These results demonstrate that pseudonymizing train-
+ing data to reduce privacy risks can be done without harming data utility for training PLMs.
+Keywords Natural language processing, Language models, BERT, Electronic health records, Clinical text,
+De-identification, Pseudonymization, Privacy preservation, Swedish
+Introduction competitive in many NLP benchmarks. PLMs typically
+The popularization of the transformer architecture [1] consist of hundreds of millions, even billions, of param-
+in the past few years has led to rapid advances in natural eters which are trained on enormous amounts of unla-
+language processing (NLP). Many benchmarks are now beled training data. The sizes of the corpora used to
+dominated by pre-trained language models (PLMs) that pre-train these models are typically in the range of tens
+learn to model language using unlabeled corpora. There of gigabytes or even terabytes of data. The BERT models
+are many PLM architectures, and this article focuses used in this study consist of over 100 million parameters
+on the BERT architecture [2], which is widely used and and are pre-trained on around 6 billion tokens [2, 3]. On
+the other end of the scale, the largest publicly available
+version of Llama 2 consists of 70 billion parameters tuned
+*Correspondence:
+using a corpus spanning 2 trillion tokens [4].
+Thomas Vakili
+thomas.vakili@dsv.su.se PLMs have shown great promise in several NLP
+1 Department of Computer and Systems Sciences, Stockholm University, domains, and the clinical domain is no exception. State-
+P.O. Box 7003, 164 07 Kista, Stockholm, Sweden
+of-the-art results in clinical NLP tend to rely on PLMs,
+© The Author(s) 2024. Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give appropriate credit to the
+original author(s) and the source, provide a link to the Creative Commons licence, and indicate if changes were made. The images or
+other third party material in this article are included in the article’s Creative Commons licence, unless indicated otherwise in a credit line
+to the material. If material is not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder. To view a copy of this
+licence, visit http://creativecommons.org/licenses/by/4.0/. The Creative Commons Public Domain Dedication waiver (http://creativecom-
+mons.org/publicdomain/zero/1.0/) applies to the data made available in this article, unless otherwise stated in a credit line to the data.
+Vakili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 2 of 15
+e.g., for temporal relation extraction [5], text similarity • Comparing all models in terms of F to determine if
+1
+[6], concept normalization [7], adverse drug event extrac- any statistically significant differences in predictive
+tion [8], medication event extraction [9] and informa- performance exist.
+tion extraction [10]. However, while PLMs are generally
+pre-trained using readily available corpora in the general The results show that end-to-end pseudonymization
+domain – e.g., Wikipedia and other data sources on the can be successfully applied to the pre-training and fine-
+Internet – research suggests that using generic PLMs in tuning of language models. We find that end-to-end
+highly specialized domains such as healthcare may be pseudonymization preserves privacy and simultaneously
+suboptimal due to significant domain differences [11, retains the utility of the data for domain-adaptive pre-
+12], even in the presence of large language models like training and fine-tuning of PLMs.
+T5-XL and GPT-3 [13]. This has motivated efforts to
+develop domain-specific clinical PLMs. There are dif- Background
+ferent approaches to developing domain-specific PLMs This study focuses on mitigating the privacy issues of
+[14], including pre-training a new language model from modern transformer models in NLP using pseudonymi-
+scratch with in-domain data, e.g., in the form of clinical zation. This section gives a more detailed motivation for
+text from electronic health records (EHRs). An alterna- how these models are vulnerable to privacy attacks and
+tive approach is to adapt an existing, generic PLM to why pseudonymization is a good privacy-preserving
+the target domain by continuing to pre-train it with technique. Other privacy-preserving techniques are dis-
+in-domain data. The vocabulary of the model can be cussed, and previous works on pseudonymization are
+retained or adapted to account for domain differences. presented to provide the context in which this study is
+This continued pre-training is known as domain-adap- situated.
+tive pre-training [15–17].
+While PLMs have shown great promise in solving Privacy attacks
+important NLP problems, their reliance on increasingly As mentioned in the introduction, large language mod-
+large numbers of parameters and vast corpora causes els can be susceptible to privacy attacks. This suscepti-
+models to memorize parts of their training data [18–20]. bility is partially due to the self-supervised pre-training
+This tendency is undesirable in many use cases but also objectives that tend to involve reconstructing a noisy or
+has important implications for privacy. When models are obscured version of the training data. For example, BERT
+domain-adapted using clinical data, these privacy risks models are pre-trained using masked language modeling
+must be mitigated. Clinical data often describes sensitive [2], which involves reconstructing a version of the train-
+information that must be protected, not just for ethical ing data in which some tokens have been replaced with
+reasons but also due to current regulations. [MASK] tokens. The pre-training is then performed
+One way to reduce the privacy risks of using clinical using large text corpora with unknown quantities of sen-
+data is to remove sensitive information. An important sitive information, and the learned features are encoded
+technique for doing so is called pseudonymization, which in millions or billions of parameters.
+involves locating sensitive passages using named entity Privacy attacks targeting PLMs aim to extract infor-
+recognition (NER) and substituting them with realistic mation about their training corpora. The attacks do so
+surrogate data. This technique has been applied to data by targeting the information encoded in the parameters
+for pre-training language models [21, 22] and for fine- of the models. Depending on the objective, these attacks
+tuning models [20, 23], with successful results. However, can be categorized into two main classes. Training data
+previous research has only studied these two training extraction attacks aim to reconstruct data used to train
+steps in isolation. a model. This is a severe form of attack since it can result
+In this paper, we demonstrate the first example of in the disclosure of sensitive information about persons
+a clinical language model that has been fully pseu- described in the training data of a model. In the clini-
+donymized in both the domain-adaptive pre-training and cal domain, this could mean exposing the details of a
+fine-tuning steps. This is done by: patient’s medical history. Training data extraction attacks
+require an effective algorithm for sampling information
+• Pseudonymizing datasets for five clinical down- from a model; however, such algorithms are not (yet)
+stream tasks. described for all models [24–27]. Nevertheless, there are
+• Fine-tuning and evaluating a total of 300 models examples of successful training data extraction attacks
+through 10-fold cross-validation of 30 different com- targeting generative systems such as GPT-2 and Chat-
+binations of pseudonymized data and models. GPT [19, 28].
+V akili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 3 of 15
+M(X |D)
+Membership inference attacks aim to discern whether or data, meaning that both X and are knowable
+not a particular datapoint has been used to train a target only to the person using the model [29]. Homomorphic
+model [29]. In a clinical context, this information could encryption allows users to use a model owned by another
+reveal if a patient associated with an EHR has visited a set party safely. The technique enables private inferences that
+of clinical units associated with particular health prob- do not disclose any information about the data to the
+lems. This category of attacks typically involves meas- owner of the model nor to any potential eavesdropper.
+uring the reaction of a model to a set of datapoints and However, it does not protect the owner of the model from
+using this information to distinguish between members attacks such as membership inference attacks or training
+and non-members of the training data [30, 31]. Success- data extraction attacks since the output of the inference
+ful membership inference attacks may pose a privacy is made available to the user initiating the inference.
+threat in themselves, but are also often used as a building With the growing availability of models capable of
+block in training data extraction attacks when determin- high-quality natural language generation, some have con-
+ing whether the algorithm has extracted a real or spuri- sidered creating synthetic training data. This data, being
+ous datapoint. synthetic, is assumed to be non-sensitive. By synthesiz-
+ing data, the use of sensitive clinical data can be reduced
+Privacy‑preserving techniques [37] or done away with entirely [38, 39]. Synthetic data
+Several privacy-preserving techniques have been devel- has been used in several studies to train well-performing
+oped to mitigate the privacy threats described in the fine-tuned clinical NLP models while limiting the risk
+previous section. In this section, a non-exhaustive list of of exposing private information from the original data
+techniques will be described to provide context for why [37–39]. There are fewer examples of models pre-trained
+this study focuses on the pseudonymization of training using synthetic data. This is likely due to, at least in part,
+data. Other promising and oft-mentioned techniques the computational costs of operating the large language
+include differential privacy, homomorphic encryption, models required to produce enough high-quality syn-
+and synthetic training data. thetic text. However, the example of GatorTronS [40]
+Differential privacy is a notion of privacy that was shows that this approach is indeed possible and that
+originally designed for database records. The idea is models pre-trained on synthetic text can perform well.
+D′
+that, given a datapoint d and two datasets D and dif- On the other hand, the extent to which a synthetic text
+d ∈D d ∈/ D′
+fering only in that while , the output of any itself may contain sensitive data is poorly understood.
+aggregation of these datasets should be close to indistin- The risk that the synthesizing language model acciden-
+(ǫ,δ)
+guishable [32]. As it is typically formulated, we have tally generates parts of its own training data cannot be
+-differential privacy [33] for an aggregation M with range ruled out.
+R if
+P[M(D)∈R]≤eǫP[M(D′)∈R]+δ. Automatic de‑identification and pseudonymization
+Many of the aforementioned privacy-preserving tech-
+Differential privacy has also been adapted for deep niques are not specific to natural language data. Differ-
+learning. The DP-SGD algorithm [34] is a differentially ential privacy, for example, was originally designed for
+private version of the stochastic gradient descent algo- database-style structured data where each row is to be
+rithm commonly used to train neural networks. While protected. Unstructured natural language data stands out
+differentially private learning has the advantage of hav- as a particularly high-dimensional data form. In contrast
+ǫ δ
+ing a formal mathematical definition, the and param- to structured database rows, it can be difficult to exhaus-
+eters can be difficult to choose and interpret. This issue is tively specify all of the information contained in an EHR.
+compounded by the fact that effective differential privacy On the other hand, another feature of textual data is
+typically works by adding noise to the aggregation (e.g., that many words or phrases can be replaced with similar
+the training algorithm), which may hinder efficient train- information without changing the overarching meaning
+ing [35]. Furthermore, differential privacy was originally of a text. Examples of this phenomenon are synonyms
+designed for database records, and some have argued which, broadly speaking, are interchangeable words that
+that it is ill-suited to the unstructured nature of natural have the same meaning.
+language [36]. Automatic de-identification typically relies on NER
+In contrast to differential privacy, homomorphic to remove sensitive entities, such as data constituting
+encryption aims to protect the result of an input X and its personally identifiable information (PII). These entities
+M(X |D)
+output rather than D (e.g., the data used to train usually cover direct identifiers such as names, but also
+a machine learning model M) itself. This is achieved by cover quasi-identifiers such as locations, ages, and dates.
+implementing M using operations that handle encrypted Quasi-identifiers are PII that do not directly identify a
+Vakili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 4 of 15
+Fig. 1 The HIPAA regulation in the United States lists 18 types of PII, called Protected Health Information (PHI), that should be removed for privacy
+reasons. These cover most of the PII types that are typically considered to be direct identifiers. However, as the figure illustrates, there are many
+quasi-identifiers that are not covered by this PHI definition
+Fig. 2 The pseudonymizers used in this study replace detected sensitive entities with realistic surrogates. The figure illustrates some of the entities
+considered by the system. The surrogate values are selected to preserve as much information as possible. However, an adversary with knowledge
+of Swedish geography would realize that, in this example, Kluk is an unlikely place to go skiing
+person, but that may do so when combined with other much semantic information as possible without harming
+quasi-identifiers or with auxiliary information. A com- privacy. An example of how this process can work is illus-
+monly used set of PII is the collection of entities desig- trated in Fig. 2.
+nated as personal health information (PHI) by the HIPAA The goal of pseudonymization is to remove the PII
+regulation [41] in the United States. Examples of PII, PHI, most likely to be used to re-identify individuals. How-
+and how they relate to different types of identifiers can be ever, it is important to recognize that pseudonymizers are
+found in Fig. 1. In this article, we use the broader term never perfect. The NER models that power them often
+PII. However, the set of PII covered by the de-identifiers have imperfect recall and precision. Imperfect recall is a
+is based on the PHI described by the HIPAA regulation privacy issue since low recall implies that the model will
+[42]. miss sensitive entities that should be sanitized. On the
+De-identification is typically done in two main steps. other hand, low precision will result in many non-sensi-
+First, the NER model of the de-identifier is used to detect tive entities being replaced with inappropriate values. In
+entities that are PII. Next, these are sanitized in some the worst case, poor precision can lead to task-relevant
+way. Examples of sanitization techniques include replac- words being replaced with irrelevant information, cor-
+ing entities with their class name, masking them with a rupting the datapoint and potentially having a negative
+nondescript placeholder, and replacing them with sur- impact on data utility. Both the low-recall and low-preci-
+rogate values. This study focuses on the last strategy— sion scenarios are illustrated in Fig. 3.
+pseudonymization—which replaces sensitive entities Pseudonymization is related to but different from
+with realistic replacement values of the same entity type. anonymization. Although the terms are sometimes
+These should preferably be chosen cleverly to preserve as used interchangeably in the literature, anonymization
+V akili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 5 of 15
+Fig. 3 The NER models that power pseudonymizers are never perfect. When recall is insufficient, they will miss names such as Lundvall, which
+will remain exposed in the text. When there are problems with precision, non-sensitive words will be changed to irrelevant replacement values. In
+the worst case, a clinically relevant term like fracture may be replaced with a surrogate PII entity that harms data utility
+is typically associated with stronger privacy guarantees. datasets, but that this harm was small. The results also
+For example, when the term is used in the GDPR1 it is show that pseudonymization yields the strongest perfor-
+often understood as implying complete and irreversible mance among the considered sanitization strategies.
+removal of any information that can be used to partially Another study using sanitized text for machine learn-
+or fully identify an individual [44]. Pseudonymization, ing is described by Berg et al. [47]. The authors pseu-
+as understood in this study, does not fulfill this stricter donymized Swedish clinical texts and then used them to
+requirement. Rather, it is a process that enhances the pri- train two different machine learning algorithms to detect
+vacy of data. PII. These algorithms were then evaluated on real Swed-
+In contrast to other techniques within the field of pri- ish clinical text data. The study aimed to enable sanitized
+vacy-preserving machine learning, pseudonymization is a training data to be transferred between hospitals for per-
+text-specific technique for privacy preservation that har- forming de-identification tasks. The authors tried two
+nesses the particular characteristics of natural language. machine learning algorithms: conditional random fields
+When successfully applied, pseudonymization preserves (CRF) and long short-term memory (LSTM) networks.
+the overall semantics of a datapoint while removing sen- CRF gave the best results on training on sanitized text
+sitive information. This scenario increases the privacy of and de-identifying real clinical text; however, the per-
+a dataset while preserving its utility. However, when pre- formance on identifying several PII classes deteriorated,
+cision is not high enough, erroneous classifications and with the overall recall decreasing from 85% to 50%. This
+subsequent replacements will lead to a corruption of the effect was primarily observed for the PII classes Location,
+data. The aim of this study is to demonstrate that, with a Health Care Units and Full Date.
+reasonably strong NER model, this does not happen often Berg et al. conducted another study [48] using four dif-
+enough to harm the utility of the data for pre-training or ferent strategies to sanitize the training data for down-
+fine-tuning clinical BERT models. stream tasks, where models with different levels of recall
+were used to sanitize a set of Swedish datasets for clinical
+Utility for machine learning using sanitized text NER. Using a model with high recall is a good strategy in
+An early study on using pseudonymized EHRs is terms of privacy since it will identify more sensitive enti-
+described by Yeniterzi et al. [45]. The authors trained ties. However, these benefits may come at the expense of
+NER models for detecting PII using both the pseu- lower precision and more false positives. The study eval-
+donymized and the original data. They found that the uated four different strategies for sanitizing the datasets:
+results deteriorated significantly when training on pseu- pseudonymization, masking the sensitive entities, replac-
+donymized data and evaluating on unaltered text, with ing them with their class name, and removing the entire
+the F score falling from 0.862 to 0.728. sentences in which sensitive entities were detected. The
+1
+Lothritz et al. [23] study the impact of de-identification impact of sanitizing the data was evaluated by training
+on a wide range of general-domain datasets. They employ CRF models for three clinical NER tasks using different
+a variety of sanitization strategies, including two pseu- sanitized datasets. Overall, the pseudonymization strat-
+donymization strategies of different sophistication. They egy had the smallest negative impact on the downstream
+evaluate these strategies using ERNIE [46] and BERT tasks, while the sentence removal strategy resulted in a
+models on eight different downstream tasks. Their results larger performance deterioration.
+show that de-identification harms the utility of their The overlap between PII and clinical entities is a
+source of potential harm to utility and has been thor-
+oughly investigated by Berg et al. [48]. It was found that
+1 The GDPR is the General Data Protection Regulation of that is applied only one percent of clinical entities were affected by the
+throughout the European Union [43].
+Vakili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 6 of 15
+Fig. 4 This study uses two different clinical BERT models created in earlier studies. SweClin-BERT is trained on a sensitive version of the Health
+Bank corpus [51], whereas SweDeClin-BERT is trained on a version that has been automatically pseudonymized [22]. Both models are initialized
+with the weights of KB-BERT [52]
+de-identification process. The worst affected PII classes Methods and materials
+were Health Care Unit and Person (first and last name), This study relies on a large number of datasets and mod-
+which tended to overlap with the clinical entities drug, els, mainly created using data from the Swedish Health
+body part, disorder and finding. A later study [49] indi- Record Research Bank (Health Bank)2. The original data
+cated that the risk of misclassifying eponyms (e.g., dis- were collected from the Karolinska University Hospital
+eases like Alzheimer disease that are named after medical [50] and consist of a large number of Swedish EHRs3.
+doctors) is lower when using BERT-based PII classifiers This section describes the data and models used in the
+compared to earlier approaches. However, clinical enti- experiments, and how these experiments were carried
+ties are diverse, and there are other cases where misclas- out.
+sifications could be an issue.
+Vakili et al. [22] evaluated the impact of pre-training Clinical BERT models
+BERT models using de-identified and unaltered data. This study examines the impact of pseudonymization
+Two sanitizing strategies were used: pseudonymization applied to data for domain-adaptive pre-training and
+and sentence removal. Two models were adapted to the fine-tuning BERT models. As illustrated in Fig. 4, two dif-
+clinical domain by pre-training using clinical data sani- ferent PLMs are used. One—SweDeClin-BERT—that has
+tized with each strategy. The resulting models were then been trained using pseudonymized pre-training data [22],
+evaluated on six downstream tasks. The results showed and another model—SweClin-BERT—that was trained on
+no negative impact from pre-training using de-identified the unaltered version of the same dataset [51]. Both mod-
+data compared to using unaltered data. Similarly, Vakili els were initialized using weights from the Swedish gen-
+& Dalianis [20] evaluated the impact of fine-tuning a eral-domain KB-BERT model [52] and were adapted to
+clinical BERT model using pseudonymized or unaltered the clinical domain by pre-training for three epochs over
+datasets. They evaluated their approach using three the Health Bank corpus. Figure B1 in Appendix B con-
+downstream tasks, again finding no significant differ- tains a diagram showing how the models relate to other
+ence between training on unaltered or pseudonymized parts of the Health Bank.
+data. This study further builds upon the previous stud- The Health Bank corpus used for domain-adaptive
+ies and provides deeper examinations of the interactions pre-training consists of approximately 2.8 billion words
+between pseudonymization and data utility. Further-
+more, we demonstrate that pseudonymization can be
+applied both to the pre-training and fine-tuning data
+without harming the performance on clinical NLP tasks. 2 http:// www. dsv. su. se/ healt hbank
+3 This research has been approved by the Swedish Ethical Review Authority
+under permission no. 2019-05679.
+V akili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 7 of 15
+Table 1 The five tasks were based on four different clinical Stockholm EPR Diagnosis Factuality Corpus (Factuality NER)
+corpora from the Health Bank. This table lists the size of each
+A factuality diagnosis dataset specifying six levels of
+corpus in terms of the number of documents and tokens. The
+confidence regarding the factuality of a diagnosis. The
+table also specifies the number of possible classes and whether dataset encompasses 6,865 annotated entities5 labeled
+the tasks are document-level or token-level classification tasks
+as Certainly Positive, Probably Positive, Possibly Positive,
+Corpus Documents Tokens Classes Level Possibly Negative, Probably Negative, or Certainly Nega-
+tive [57, 58]. The task consists of identifying tokens in the
+ICD-10 6,062 930,550 10 Document
+corpus specifying diagnoses and assigning them a factu-
+ADE 21,725 931,778 2 Document
+ality label.
+Factuality 3,710 102,223 6 Document
+Factuality NER 3,822 286,205 6 Token
+Stockholm EPR Diagnosis Factuality Corpus (Factuality)
+Clinical NER 3,120 178,672 4 Token
+A dataset which is a variation of the Stockholm EPR Diag-
+nosis Factuality NER Corpus that instead assigns a factu-
+ality level to the entire document. The classification task
+which is comparable to the 3.3 billion words used to train
+is a multi-label classification problem where the model
+KB-BERT [3]. We did not pre-train for more than three
+needs to predict the factuality of each document. The
+epochs for reasons of resource efficiency. This is justi-
+labels are the same as in the NER version of the task.
+fied by prior work using the same data [53] showing that
+longer pre-training was unnecessary when starting from Stockholm EPR ADE ICD‑10 Corpus (ADE)
+a general-domain model.
+The ADE corpus contains 21,725 discharge summaries
+describing adverse drug events (ADEs). The task is a
+Five clinical downstream tasks
+binary classification task, where positive samples have
+The utility of the models and datasets after and before
+been assigned an ICD-10 code that denotes an ADE.
+pseudonymization was assessed using five clinical NLP
+Negative text samples in each group have been assigned
+tasks. The five tasks are based on corpora from the Health
+an ICD-10 code describing a diagnosis that is not drug-
+Bank infrastructure and are summarized4 in Table 1 and
+induced. The task is to determine whether the diagnosis
+described in this section. The utility of each pseudonymi-
+defined by the ICD-10 code was induced by an ADE or
+zation configuration was examined by measuring the
+not [22].
+performance of models fine-tuned on these tasks. Below
+is a list of the datasets as well as the abbreviated names
+used in Table 1 and other tables in the paper.
+Pseudonymization
+The pseudonymization performed in this study relies on
+Stockholm EPR Gastro ICD‑10 Corpus I (ICD‑10)
+NER to locate sensitive entities that should be replaced.
+The Gastro ICD-10 dataset consists of gastro-related dis-
+Two such NER models are used. Both are based on BERT
+charge summaries and their assigned ICD-10 diagnosis
+and are fine-tuned on the Stockholm EPR PHI Cor-
+codes. The discharge summaries relate to 4,985 unique
+pus [42]. This corpus contains 380,000 tokens and 4,480
+patients. The ICD-10 codes are divided into 10 groups
+manually annotated entities in nine classes based on the
+corresponding to different body parts; the ICD-10 codes
+American HIPAA regulation. One model pseudo+ uses
+range from K00 to K99. Each group contains several
+a non-pseudonymized Swedish clinical BERT model
+codes [55].
+[59] and another, slightly weaker model called pseudo is
+based on SweDeClin-BERT [22]. Tables 2 and 3 list the
+Stockholm EPR Clinical Entity Corpus (Clinical NER)
+per-class performance of both NER models as measured
+A clinical entity dataset encompassing 157,123 tokens
+using the test splits of their training data. Figure B2 in
+and 20,675 annotated entities assigned to four clinical
+Appendix B shows how these models relate to other parts
+entity classes Diagnosis, Findings, Body parts, and Drugs
+of the Health Bank.
+[56]. The goal of the task is to identify and correctly label
+Two pseudonymized versions of each dataset described
+the clinical entities.
+in the previous section were created, one for each NER
+model. Sensitive entities were detected and then replaced
+with realistic surrogate values based on the method
+4 The number of tokens was calculated using the Punkt tokenizer for Swed- 5 The dataset also contains 199 entities annotated for purposes irrelevant to
+ish in NLTK [54]. our experiments. These annotations were ignored.
+Vakili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 8 of 15
+Table 2 The recall and precision of the pseudo+ model for each Table 4 Sensitive entities detected by the pseudo model
+PII type are displayed. The model is a clinical BERT model [59] that
+PII Class Factuality Clinical ICD‑10 Factuality ADE
+has been fine-tuned and evaluated using the Stockholm EPR PHI
+NER NER
+Corpus [42]
+Age 1,392 1,149 3,060 1,353 2,995
+PII Class Recall Precision
+First Name 528 274 1,185 510 3,965
+Age 100% 100% Last Name 1,105 274 1,829 1,062 4,257
+First Name 100% 100% Partial Date 681 554 11,371 644 4,305
+Last Name 98% 98% Full Date 128 137 18,875 125 22,296
+Partial Date 99% 97% Phone 148 45 141 142 460
+Full Date 90% 91% Number
+Phone Number 81% 68% Health Care 3,554 2,005 3,365 3,406 7,635
+Unit
+Health Care Unit 85% 94%
+Location 110 78 510 105 689
+Location 100% 100%
+Organization 5 1 37 4 59
+Organization 71% 100%
+Total words 253,124 191,202 798,120 239,722 788,930
+Table 3 The recall and precision of the pseudo model for each Table 5 Sensitive entities detected by the pseudo+ model
+PII type are displayed. The model is based on the pseudonymized
+PII Class Factuality Clinical ICD‑10 Factuality ADE
+SweDeClin-BERT model and has been fine-tuned and evaluated
+NER NER
+using the Stockholm EPR PHI Corpus [42]
+Age 955 764 2,565 929 2,257
+PII Class Recall Precision
+First Name 523 283 1,378 506 3,884
+Age 100% 100% Last Name 1,055 707 1,904 1,016 4,064
+First Name 97% 98% Partial Date 369 316 5,740 355 2,995
+Last Name 96% 97% Full Date 110 121 12,703 107 17,552
+Partial Date 99% 98% Phone 118 39 75 113 172
+Full Date 87% 91% Number
+Phone Number 93% 89% Health Care 4,285 2,282 12,654 4,117 9,751
+Unit
+Health Care Unit 89% 88%
+Location 182 102 1,217 172 985
+Location 89% 81%
+Organization 4 12 6 1 66
+Organization 29% 80%
+Total words 253,124 191,202 798,120 239,722 788,930
+described in this section. The number of sensitive entities organizations. As shown in Tables 4 and 5, organizations
+detected by the pseudonymizers is displayed in Tables 4 are very infrequent, meaning that the privacy and perfor-
+and 5. These numbers include both false and true posi- mance implications are limited.
+tives and indicate the degree to which the data were The pseudonymizer created by Dalianis [60] replaces
+altered in the pseudonymization process. many entities using word lists. For example, a gendered
+An overview of the algorithm for surrogate selection is name is replaced with another name typically associ-
+available in Dalianis [60], which describes the first ver- ated with the same gender, and a gender-neutral name is
+sion of the pseudonymizer. The system has been further replaced with a gender-neutral name. Streets and places
+refined since its initial conception. One adaption made in Stockholm randomly with other streets in Stock-
+from the original pseudonymizer is that the name lists holm. Similarly, other locations in Sweden are replaced
+used to replace first and last names have been expanded with locations in the same county, and similar logic
+to include a wider range of names. The original system exists to replace country names with names of countries
+only considered the most common Swedish names, while in the same continent. Health care units are changed
+the current system chooses from 244,000 first names to other health care units using a list of known clinics.
+and 34,000 surnames. However, a limitation of the pseu- Other entities are changed using rules. Postal codes are
+donymizer is that it lacks functionality for replacing replaced with more common postal codes with large
+V akili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 9 of 15
+Fig. 5 Every dataset described in the “Five clinical downstream tasks” section was pseudonymized using both the pseudo and pseudo+
+de-identifiers. SweDeClin-BERT and SweClin-BERT were fine-tuned using the non-pseudonymized and the two pseudonymized versions
+of the datasets. All models were compared based on the F scores aggregated from the 10-fold cross-validation of each model
+1
+populations. Dates are shifted one or two weeks earlier In total, 30 different combinations of models and
+or later. Years and ages are handled similarly and are datasets were evaluated using 10-fold cross-validation.
+increased or decreased by a small and random number For every downstream task, we compare the differ-
+of years. Phone numbers are changed to other phone ence in the performance of all combinations of mod-
+numbers according to the formatting rules for Swedish els and pseudonymization approaches. The difference
+phone numbers. between each pair was tested for statistical significance
+using a Mann-Whitney U test7 [64, 65] by compar-
+Evaluating the impact of pseudonymization ing the F scores of every fold in both models’ 10-fold
+1
+As previously discussed, pseudonymization often entails cross-validations.
+a certain degree of data corruption. The main experiment
+Results
+in this study examines this effect on the downstream per-
+formance of clinical BERT models pre-trained and fine- The 30 different model-dataset configurations combined
+tuned on pseudonymized clinical training data. with the 10-fold cross-validation resulted in 300 fine-
+Once the datasets for the five clinical downstream tuned models. The evaluations of these models were used
+tasks had been pseudonymized, a series of evaluations to produce F for each configuration and downstream
+1
+were carried out. Each version of every dataset was used task. The means and standard deviations of each evalu-
+to fine-tune and test both BERT models using 10-fold ation are listed in Table 6. From studying the columns of
+cross-validation [61], as illustrated in Fig. 5. Since the the table, it is apparent that most of the values are within
+pseudonymization procedure is a deterministic pre-pro- a standard deviation of each other.
+cessing step, the pseudonymized models are tested on Comparing every configuration within each down-
+pseudonymized folds. The repeated training and evalu- stream task resulted in 150 Mann-Whitney U tests
+ation using different splits resulted in a range of evalu- being performed. Out of these, 126 comparisons
+ation metrics used to estimate the mean and standard showed no statistically significant difference for
+p<0.05
+deviation of each configuration. The configurations . The remaining 24 comparisons showed vary-
+were compared based on their F scores6 [63]. All fine- ing degrees of statistical significance. To facilitate a
+1
+tuning configurations ran for a maximum of 10 epochs, focused analysis of the results, a curated sample of the
+with early stopping implemented to avoid overfitting and significant results is listed in Table 7. These are limited
+unnecessary computations. to the cases where using real data outperformed using
+pseudonymized data, as these examples challenge the
+6 Metrics for the token classification tasks were calculated using the
+seqeval library [62] in strict mode. 7 This test is also sometimes referred to as a Wilcoxon rank-sum test.
+Vakili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 10 of 15
+Table 6 The table compares the performance of each combination of models and datasets. The scores are the mean F scores
+1
+together with their standard deviation based on the results from the 10 folds. P stands for pre-training data and F for fine-tuning
+data. A ✗ denotes that no pseudonymization was done, a ✓ that it was done using the pseudo model and a means that
++
+pseudonymization was performed using the pseudo+ model
+Pseudonymized Factuality Clinical Entity ICD‑10 Factuality ADE
+P F NER NER Classification Classification Classification
+✗ ✗ 0.686±0.013 0.851±0.012 0.821±0.012 0.729±0.020 0.186±0.009
+✗ ✓ 0.639±0.038 0.843±0.011 0.810±0.011 0.725±0.021 0.190±0.017
+✗ 0.668±0.024 0.841±0.011 0.814±0.008 0.726±0.018 0.188±0.014
++
+✓ ✗ 0.696±0.019 0.861±0.011 0.835±0.010 0.726±0.025 0.188±0.011
+✓ ✓ 0.663±0.048 0.856±0.009 0.825±0.010 0.716±0.016 0.198±0.013
+✓ 0.695±0.013 0.853±0.011 0.832±0.007 0.733±0.022 0.205±0.018
++
+Table 7 Out of 24 statistically significant results, 11 are cases where using non-pseudonymized data yields better results than using
+pseudonymized data. All of these find this effect with regard to the fine-tuning data. The p-value is the result of the Mann-Whitney U
+test for determining if the Weaker model performs worse than the Stronger model. For each model, P indicates whether the pre-training
+data was pseudonymized, and F indicates if the fine-tuning data was pseudonymized. Again, a ✗ denotes that no pseudonymization
+was done, a ✓ that it was done using the pseudo model and a means that pseudonymization was performed using the pseudo+
++
+model
+Row Task Weaker model Stronger model p‑value
+P F P F
+(1) ICD-10 ✗ ✓ ✗ ✗ 0.0378
+(2) Factuality NER ✗ ✓ ✗ ✗ 0.0014
+(3) Clinical NER ✗ ✗ ✗ 0.0269
++
+(4) ICD-10 ✗ ✓ ✓ ✗ 0.0007
+(5) Clinical NER ✗ ✓ ✓ ✗ 0.0029
+(6) Factuality NER ✗ ✓ ✓ ✗ 0.0005
+(7) ICD-10 ✗ ✓ ✗ 0.0011
++
+(8) Clinical NER ✗ ✓ ✗ 0.0022
++
+(9) Factuality NER ✗ ✓ ✗ 0.0156
++
+(10) ICD-10 ✗ ✗ ✓ ✗ 0.0086
+(11) Clinical NER ✗ ✗ ✓ ✗ 0.0226
+main hypothesis of the study. The full list of the 24 sta- The first three rows in Table 7 show that training Swe-
+tistically significant differences is provided in Table A1 Clin-BERT using non-pseudonymized data sometimes
+of Appendix A. yields statistically significant improvements compared to
+Notably, none of the statistically significant differ- using pseudonymized data. This is found for one pair of
+ences were cases where SweClin-BERT outperformed configurations for three of the tasks. There are no exam-
+SweDeClin-BERT. This is apparent from the P column for ples where training on real data outperforms both forms
+the Weaker model only containing ✗’s. This implies that of pseudonymized data. For example, the first row finds
+SweDeClin-BERT is a stronger model for the downstream a statistically significant improvement from using real
+tasks in this study. In that case, this difference in general ICD-10 data rather than data pseudonymized using the
+model performance explains rows 4–11 of Table 7. Fur- pseudo model, but no significant difference is found if the
+thermore, there are no examples where training SweDe- pseudo+ model is used.
+Clin-BERT on different forms of fine-tuning data yielded
+statistically significant differences in performance.
+V akili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 11 of 15
+Discussion Quantifying privacy benefits
+The previous section presents several interesting find- An important limitation of this study is that the privacy
+ings. In this section, the results of the study are analyzed benefits of pseudonymization are only quantified in
+and contextualized. We also provide ideas for future work terms of the number of removed sensitive entities. This
+and discuss the limitations of our study. assumes that the sensitivity of the training data directly
+corresponds to the sensitivity of the model. This assump-
+Interpreting the significant results tion may be pessimistic since it is unlikely that the trained
+The results of this study are based on a large number of model will memorize all remaining sensitive entities. On
+Whitney-Mann U tests. When performing 150 statis- the other hand, relying on metrics such as recall and
+tical tests, there is a non-trivial risk of finding spurious precision also obscures any particularities in the specific
+statistical differences. The standard cut-off of
+p<0.05
+entities that are missed and if these could be more at risk
+still risks finding differences by chance 1 out of 20 times. of memorization.
+Nevertheless, there are some trends in Table 7 that are Previous research has suggested that membership infer-
+interesting to discuss. ence attacks can be used for estimating the degree of
+First, it is notable that none of the statistically signifi- memorization in a model [30, 31, 66]. This approach can
+cant comparisons find that pre-training with real data be effective for some privacy-preserving techniques, such
+outperforms pre-training with pseudonymized data. as differentially private learning [34]. Unfortunately, this
+A similar result was indicated in a previous study by method has been shown to work poorly when applied to
+Vakili et al. [22]. However, it is important to note that models trained using pseudonymized data [67].
+only two pre-trained models were compared in this The lack of robust methods for quantifying the privacy
+study. While the results strongly suggest that SweDe- gains of pseudonymizing training data remains a signifi-
+Clin-BERT is better than SweClin-BERT, this does not cant drawback of the technique. For example, differen-
+mean that pre-training with pseudonymized data is tially private learning, as described in the background,
+better in general. Examining this would require pre- gives rigorous mathematical privacy guarantees. In con-
+training many more BERT models with and without trast, while the results in this article show that privacy
+pseudonymizing the data. It would likely also require can be gained without sacrificing data utility, the exact
+comparing pre-trained models initialized from random privacy gains remain unknown. However, the estimated
+weights rather than the weights of a general-domain amount of remaining PII in the training data provides
+model. While this could be interesting to study, it is an upper bound concerning the entities covered by the
+beyond the computational constraints imposed by the pseudonymizer. In any case, there is no consensus on
+scope of this study. how privacy should be measured from a regulatory stand-
+Some of the statistically significant results in Table 7 point. Indeed, according to some strict but prominent
+do indicate that fine-tuning a non-pseudonymized interpretations of the GDPR, legal use of data containing
+model using unaltered data can yield stronger results PII may be next to impossible [44]. The development of
+than fine-tuning with pseudonymized data. However, GDPR-compliant privacy metrics should preferably be
+this is only found for three of the five downstream conducted in communication with the legal community.
+tasks. Furthermore, none of these results hold for both
+Domain‑adaptive pre‑training
+of the pseudonymizers. The results in Table 6 also show
+that these examples are still within a standard devia- Both pre-trained models—SweDeClin-BERT and Swe-
+tion of each other. The results where fine-tuning on Clin-BERT—are initialized with the weights of the
+real data does outperform using both pseudonymized general-domain Swedish KB-BERT model. As shown
+data (such as rows 4 and 7 of Table 7) are results where by Lamproudis et al. [53], this allows them to converge
+SweDeClin-BERT outperforms SweClin-BERT. Thus, faster when compared to pre-training from randomly
+these cases are better explained by the overall stronger initialized weights. This is beneficial from a resource per-
+results of SweDeClin-BERT. Crucially, for the pur- spective, as pre-training is both time and energy consum-
+poses of this study, there are no examples of statisti- ing. It can also have positive benefits for privacy, as the
+cally significant differences where a model trained using models have been trained using both sensitive and non-
+end-to-end pseudonymization is outperformed by a sensitive corpora.
+non-pseudonymized version. The hypothesis of this While there are benefits to initializing the models from
+study holds since we find no evidence of any significant an already capable general-domain model, this decision
+deterioration from pre-training and fine-tuning using is also a possible limitation of our methodology. While
+automatically pseudonymized data. the previous study by Lamproudis et al. showed that
+Vakili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 12 of 15
+domain-adapted models and models pre-trained from However, previous work evaluating the impact of pseu-
+scratch eventually converge, they did not look at whether donymization on the performance of clinical NER tasks
+pseudonymization may affect this result. Although PII showed that training pseudonymizers with higher recall
+constitutes a very small portion of the total data [68], it at the expense of lower precision does eventually harm
+is plausible that pseudonymization introduces variability data utility [48]. In future work, it would be interesting to
+to the pre-training corpora. This added variability could determine at what point – e.g., at a certain level of preci-
+make it easier or harder to learn. Whether pseudonymiz- sion – that data utility starts to be significantly impacted.
+ing the pre-training corpora has any substantial impact However, this tolerance threshold would likely need to be
+on the rate of convergence or the final quality of a model determined separately for different downstream tasks.
+trained from scratch is an interesting idea for future
+research. Sharing data and models
+The clinical language model SweDeClin-BERT and the
+Identifying PII in clinical text Stockholm EPR Gastro ICD-10 Pseudo Corpus are avail-
+The effectiveness of end-to-end pseudonymization as a able for academic use worldwide9. Based on the results
+privacy-preserving technique depends largely on the abil- of this study, we plan to make the other pseudonymized
+ity to accurately identify PII in the corpora used for pre- corpora used in this study available as well. However, this
+training and fine-tuning the clinical language models. In requires supplementary ethical approval from the Swed-
+this study, a manually annotated PII corpus [42] was used ish Ethical Review Authority. Moving forward, an inter-
+to fine-tune clinical BERT models to identify PII. The esting issue is whether it is also possible to make these
+performance of these models – estimated through eval- pseudonymized clinical corpora and language models
+uations on held-out test data from the Stockholm EPR available to industry. This would enable commercial
+PHI Corpus – is reported in Table 2 and 3. While both applications that could be used in real clinical settings.
+precision and recall are fairly high for most PII classes, The benefits of sharing data and models must also be bal-
+we have not evaluated the performance of the model to anced against the privacy risks of doing so. From a legal
+identify PII in the downstream task corpora, nor in the standpoint, sharing data among academics can be justi-
+pre-training corpus. A previous study showed that the fied due to the explicit provisions that the GDPR makes
+performance of a CRF model trained on this PII corpus for research. These provisions do not apply to commer-
+performed worse when applied to other types of clinical cial use, making sharing data with commercial partners
+notes and that the performance varied quite considerably difficult.
+across different types of clinical notes, i.e. produced in As noted earlier in the discussion, there is no consen-
+different clinical specialties, written by persons in differ- sus regarding how privacy should be quantified when
+ent professional roles, and under different headings [69]. dealing with NLP models. The current flora of PLMs is
+In part, this may also be explained by the fact that the heterogeneous, including both masked language models
+prevalence of PII varies across different types of clinical like BERT and generative models such as the GPT family.
+notes. While the overall PII density8 was estimated to be Risk assessments should likely be done on a per-model
+around 1.57%, it was estimated to be as low as 0.97% for basis, given the vast differences between models in terms
+notes written by physiotherapists and as high as 2.19% in of architectures, the scale of their pre-training data, their
+discharge notes [68]. number of parameters, and what privacy-preserving
+The results of this study show that the utility of the techniques have been applied. The models used in this
+models was not negatively affected by being trained on study are based on the modestly-sized B ERT model,
+BASE
+pseudonymized data compared to using the original sen- a non-generative model composed of approximately 110
+sitive data, allowing privacy risks to be reduced without million parameters. Although there have been several
+sacrificing predictive performance. However, the utility studies on the matter [24–27], there are no known exam-
+would likely, at some point, be reduced if a pseudonymi- ples of successful training data extraction attacks target-
+zation system with poor precision substantially distorted ing BERT models.
+the data. Here, two pseudonymizers with different per- It is important to note that the performance measures
+formance levels were evaluated and the results did not attained in this study do not necessarily hold for other
+indicate any significant difference in terms of their impact sets of hospitals. All models and datasets use data from
+on data utility for fine-tuning clinical BERT models. the Health Bank research infrastructure, which come
+8 Defined as the number of PII-labeled tokens divided by the total number 9 Contact the authors for details on how to gain access to the data and mod-
+of tokens. els.
+V akili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 13 of 15
+from a specific set of medical clinical units. It is well- Availability of data and materials
+The datasets generated and analyzed during the current study are not pub-
+known that models trained on one set of data sources
+licly available due to legal and ethical privacy concerns, as discussed in the
+may perform worse when confronted with novel data section on “Sharing data and models”. The pseudonymized versions of the
+[37]. Indeed, as noted in the previous section, perfor- ICD-10 corpus as well as the pre-trained SweDeClin-BERT model, are available
+from the corresponding author on reasonable request.
+mance can vary even within a set of data sources. Further
+complicating the situation, the clinical domain gener-
+Declarations
+ally struggles with the many restrictions on sharing data.
+While understandable and justified from a privacy per- Ethics approval and consent to participate
+spective, these restrictions make it difficult to evaluate This research has been approved by the Swedish Ethical Review Authority
+under permission no. 2019-05679. Collecting informed consent was not
+models and datasets cross-institutionally. Nevertheless,
+possible due to the nature of the data. All methods were carried out in accord-
+two studies applying SweDeClin-BERT to new data have ance with the Declaration of Helsinki [72]. In compliance with item 32 of the
+been carried out [70, 71], with encouraging results. Declaration of Helsinki, the need for informed consent was waived by the
+Swedish Ethical Review Authority.
+Conclusion
+Consent for publication
+This study evaluates the impact of pre-training and Not applicable.
+fine-tuning using automatically pseudonymized train-
+Competing interests
+ing data. Two clinical BERT models, one trained on The authors declare no competing interests.
+real data and one trained on pseudonymized data, are
+evaluated on five clinical downstream tasks. The data-
+Received: 28 August 2023 Accepted: 21 May 2024
+sets for these tasks are used both in unaltered form and
+in pseudonymized versions. The results from evaluating
+all different configurations of models and datasets are
+tested using Mann-Whitney U tests. References
+The analysis of the statistically significant tests finds 1. Vaswani A, Shazeer N, Parmar N, Uszkoreit J, Jones L, Gomez AN, et al.
+Attention is all you need. In: Advances in Neural Information Processing
+limited evidence supporting that, in some cases, fine-
+Systems, vol. 30. Curran Associates, Inc.; 2017. https:// papers. nips. cc/
+tuning non-pseudonymized PLMs may work better if paper/ 2017/ hash/ 3f5ee 24354 7dee9 1fbd0 53c1c 4a845 aa- Abstr act. html.
+using non-pseudonymized data. Such an effect, if real, 2. Devlin J, Chang MW, Lee K, Toutanova K. BERT: pre-training of deep
+bidirectional transformers for language understanding. In: Proceedings of
+is small. Furthermore, we find no cases where pre-
+the 2019 Conference of the North American Chapter of the Association
+training and fine-tuning using pseudonymized data for Computational Linguistics: Human Language Technologies, Volume
+end-to-end harms utility. This demonstrates that pseu- 1 (Long and Short Papers). Minneapolis: Association for CompLinguistics;
+2019. pp. 4171–4186. https:// doi. org/ 10. 18653/ v1/ N19- 1423. https://
+donymization can decrease the privacy risks of using
+aclan tholo gy. org/ N19- 1423.
+clinical data for NLP without harming the utility of the 3. Vakili T. Attacking and Defending the Privacy of Clinical Language Models
+machine learning models. [Licentiate thesis]. Stockholm University. Kista: Department of Computer
+and Systems Sciences, Stockholm University; 2023. https:// urn. kb. se/ resol
+Supplementary Information
+ve? urn= urn: nbn: se: su: diva- 216693.
+4. Touvron H, Martin L, Stone K, Albert P, Almahairi A, Babaei Y, et al.. Llama
+The online version contains supplementary material available at https:// doi. 2: Open Foundation and Fine-Tuned Chat Models. 2023. https:// doi. org/
+org/ 10. 1186/ s12911- 024- 02546-8. 10. 48550/ arXiv. 2307. 09288. ArXiv: 2307. 09288.
+5. Lin C, Miller T, Dligach D, Bethard S, Savova G. A BERT-based universal
+model for both within-and cross-sentence clinical temporal relation
+Supplementary Material 1.
+extraction. In: Proceedings of the 2nd Clinical Natural Language Process-
+ing Workshop. Minneapolis: Association for Computational Linguistics;
+Acknowledgements 2019. pp. 65–71.
+We are grateful for the support for this study from the DataLEASH project and 6. Wang Y, Fu S, Shen F, Henry S, Uzuner O, Liu H, et al. The 2019 n2c2/
+its funder, Digital Futures. ohnlp track on clinical semantic textual similarity: overview. JMIR Med Inf.
+2020;8(11):e23375.
+Authors’ contributions 7. Luo YF, Henry S, Wang Y, Shen F, Uzuner O, Rumshisky A. The 2019 n2c2/
+Thomas Vakili performed all the experiments and wrote the main parts of UMass Lowell shared task on clinical concept normalization. J Am Med
+the article. Aron Henriksson gave suggestions on the experiment setup, Inform Assoc. 2020;27(10):1529–e1.
+contributed to the article, and commented on all parts. Hercules Dalianis gave 8. Mahendran D, McInnes BT. Extracting adverse drug events from clinical
+suggestions on the experiment setup, contributed to the article, and com- notes. In: AMIA Summits on Translational Science Proceedings, vol. 2021.
+mented on all parts. 2021. pp. 420.
+9. Mahajan D, Liang JJ, Tsou CH, Uzuner Ö. Overview of the. n2c2 shared
+Funding task on Contextualized Medication event extraction in clinical notes. J
+Open access funding provided by Stockholm University. Thomas Vakili and Biomed Inform. 2022;2023:104432.
+Hercules Dalianis were funded by DataLEASH: LEarning And SHaring under 10. Agrawal M, Hegselmann S, Lang H, Kim Y, Sontag D. Large language
+Privacy Constraints through Digital Futures and the Strategic Research Area models are few-shot clinical information extractors. In: Proceedings of the
+Information and Communication Technology the Next Generation (ICT TNG) 2022 Conference on Empirical Methods in Natural Language Process-
+of the Swedish government. ing. Abu Dhabi: Association for Computational Linguistics; 2022. pp.
+1998–2022.
+Vakili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 14 of 15
+11. Lewis P, Ott M, Du J, Stoyanov V. Pretrained Language Models for Bio- the AAAI 2021 Fall Symposium on Human Partnership with Medical AI:
+medical and Clinical Tasks: Understanding and Extending the State-of- Design, Operationalization, and Ethics (AAAI-HUMAN 2021). 2021. https://
+the-Art. In: Proceedings of the 3rd Clinical Natural Language Processing ceur- ws. org/ Vol- 3068.
+Workshop. Virtual: Association for Computational Linguistics; 2020. pp. 28. Nasr M, Carlini N, Hayase J, Jagielski M, Cooper AF, Ippolito D, et al.. Scal-
+146–157. able Extraction of Training Data from (Production) Language Models.
+12. Gu Y, Tinn R, Cheng H, Lucas M, Usuyama N, Liu X, et al. Domain-specific 2023. https:// doi. org/ 10. 48550/ arXiv. 2311. 17035. ArXiv: 2311. 17035.
+language model pretraining for biomedical natural language processing. 29. Torra V. Guide to Data Privacy: Models, Technologies, Solutions. Under-
+ACM Trans Comput Healthc (HEALTH). 2021;3(1):1–23. graduate Topics in Computer Science. Cham: Springer International
+13. Lehman E, Hernandez E, Mahajan D, Wulff J, Smith MJ, Ziegler Z, et al. Do Publishing; 2022. https:// doi. org/ 10. 1007/ 978-3- 031- 12837-0. https:// link.
+We Still Need Clinical Language Models? 2023. ArXiv: 2302. 08091. sprin ger. com/ 10. 1007/ 978-3- 031- 12837-0.
+14. Lamproudis A, Henriksson A, Dalianis H. Evaluating Pretraining Strategies 30. Murakonda SK, Shokri R. ML Privacy Meter: Aiding Regulatory Compli-
+for Clinical BERT Models. In: Proceedings of the Thirteenth International ance by Quantifying the Privacy Risks of Machine Learning. 2020. https://
+Conference on Language Resources and Evaluation (LREC 2022). Mar- doi. org/ 10. 48550/ arXiv. 2007. 09339. ArXiv: 2007. 09339.
+seille: ELRA Language Resources Association; 2022. pp. 410–416. 31. Mireshghallah F, Goyal K, Uniyal A, Berg-Kirkpatrick T, Shokri R. Quan-
+15. Tai W, Kung H, Dong XL, Comiter M, Kuo CF. exBERT: Extending Pre- tifying Privacy Risks of Masked Language Models Using Membership
+trained Models with Domain-specific Vocabulary Under Constrained Inference Attacks. In: Proceedings of the 2022 Conference on Empirical
+Training Resources. In: Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing. Abu Dhabi: Association for
+Methods in Natural Language Processing: Findings. Virtual: Association Computational Linguistics; 2022. pp. 8332–8347.
+for Computational Linguistics; 2020. pp. 1433–1439. 32. Dwork C, McSherry F, Nissim K, Smith A. Calibrating Noise to Sensitivity
+16. Koto F, Lau JH, Baldwin T. IndoBERTweet: A Pretrained Language Model in Private Data Analysis. In: Halevi S, Rabin T, editors. Theory of Cryptog-
+for Indonesian Twitter with Effective Domain-Specific Vocabulary Initiali- raphy. Lecture Notes in Computer Science. Berlin: Springer; 2006. pp.
+zation. In: Proceedings of the 2021 Conference on Empirical Methods in 265–284. https:// doi. org/ 10. 1007/ 11681 878_ 14.
+Natural Language Processing. Punta Cana: Association for Computational 33. Dwork C, Kenthapadi K, McSherry F, Mironov I, Naor M. Our Data, Our-
+Linguistics; 2021. pp. 10660–10668. selves: Privacy Via Distributed Noise Generation. In: Vaudenay S, editor.
+17. Lamproudis A, Henriksson A, Dalianis H. Vocabulary modifications for Advances in Cryptology - EUROCRYPT 2006. Lecture Notes in Computer
+domain-adaptive pretraining of clinical language models. In: Proceedings Science. Berlin: Springer; 2006. pp. 486–503. https:// doi. org/ 10. 1007/
+of the 15th International Joint Conference on Biomedical Engineering 11761 679_ 29.
+Systems and Technologies – HEALTHINF, vol. 5. Virtual: SciTePress; 2022. 34. Abadi M, Chu A, Goodfellow I, McMahan HB, Mironov I, Talwar K, et al.
+pp. 180–188. Deep Learning with Differential Privacy. In: Proceedings of the 2016 ACM
+18. Bender EM, Gebru T, McMillan-Major A, Shmitchell S. On the Dangers of SIGSAC Conference on Computer and Communications Security. CCS
+Stochastic Parrots: Can Language Models Be Too Big? In: Proceedings of ’16. New York: Association for Computing Machinery; 2016. pp. 308–318.
+the 2021 ACM Conference on Fairness, Accountability, and Transparency. https:// doi. org/ 10. 1145/ 29767 49. 29783 18.
+FAccT ’21. New York: Association for Computing Machinery; 2021. pp. 35. Anil R, Ghazi B, Gupta V, Kumar R, Manurangsi P. Large-Scale Differentially
+610–623. https:// doi. org/ 10. 1145/ 34421 88. 34459 22. Private BERT. In: Findings of the Association for Computational Linguistics:
+19. Carlini N, Tramèr F, Wallace E, Jagielski M, Herbert-Voss A, Lee K, et al. EMNLP 2022. Abu Dhabi: Association for Computational Linguistics; 2022.
+Extracting Training Data from Large Language Models. In: Proceedings pp. 6481–6491. https:// aclan tholo gy. org/ 2022. findi ngs- emnlp. 484.
+of the 30th USENIX Security Symposium. 2021. pp. 2633–2650. https:// 36. Brown H, Lee K, Mireshghallah F, Shokri R, Tramèr F. What Does it Mean for
+www. usenix. org/ confe rence/ useni xsecu rity21/ prese ntati on/ carli ni- extra a Language Model to Preserve Privacy? In: 2022 ACM Conference on Fair-
+cting. ness, Accountability, and Transparency. FAccT ’22. New York: Association
+20. Vakili T, Dalianis H. Utility Preservation of Clinical Text After De-Identifica- for Computing Machinery; 2022. pp. 2280–2292. https:// doi. org/ 10. 1145/
+tion. In: Proceedings of the 21st Workshop on Biomedical Language Pro- 35311 46. 35346 42.
+cessing at ACL 2022. Dublin: Association for Computational Linguistics; 37. Li J, Zhou Y, Jiang X, Natarajan K, Pakhomov SV, Liu H, et al. Are syn-
+2022. pp. 383–388. https:// doi. org/ 10. 18653/ v1/ 2022. bionlp- 1. 38. https:// thetic clinical notes useful for real natural language processing tasks:
+aclan tholo gy. org/ 2022. bionlp- 1. 38. A case study on clinical entity recognition. J Am Med Inform Assoc.
+21. Verkijk S, Vossen P. Efficiently and Thoroughly Anonymizing a Transformer 2021;28(10):2193–201. https:// doi. org/ 10. 1093/ jamia/ ocab1 12. https://
+Language Model for Dutch Electronic Health Records: a Two-Step www. ncbi. nlm. nih. gov/ pmc/ artic les/ PMC84 49609/
+Method. In: Proceedings of the Thirteenth Language Resources and 38. Libbi CA, Trienes J, Trieschnigg D, Seifert C. Generating Synthetic Training
+Evaluation Conference. Marseille: European Language Resources Associa- Data for Supervised De-Identification of Electronic Health Records. Futur
+tion; 2022. pp. 1098–1103. https:// aclan tholo gy. org/ 2022. lrec-1. 118. Internet. 2021;13(5):136. https:// doi. org/ 10. 3390/ fi130 50136. https://
+22. Vakili T, Lamproudis A, Henriksson A, Dalianis H. Downstream Task Per- www. mdpi. com/ 1999- 5903/ 13/5/ 136. Multidisciplinary Digital Publishing
+formance of BERT Models Pre-Trained Using Automatically De-Identified Institute
+Clinical Data. In: Proceedings of the 13th Language Resources and Evalu- 39. Hiebel N, Ferret O, Fort K, Névéol A. Can Synthetic Text Help Clinical
+ation Conference LREC 2022. Marseille; 2022. pp. 4245–4252. https:// Named Entity Recognition? A Study of Electronic Health Records in
+aclan tholo gy. org/ 2022. lrec-1. 451/. French. In: Proceedings of the 17th Conference of the European Chapter
+23. Lothritz C, Lebichot B, Allix K, Ezzini S, Bissyandé TF, Klein J, et al. Evaluat- of the Association for Computational Linguistics. Dubrovnik: Association
+ing the Impact of Text De-Identification on Downstream NLP Tasks. In: for Computational Linguistics; 2023. pp. 2320–2338. https:// aclan tholo gy.
+The 24rd Nordic Conference on Computational Linguistics, NoDaLiDa org/ 2023. eacl- main. 170.
+2023. Tórshavn; 2023. https:// aclan tholo gy. org/ 2023. nodal ida-1. 2/. 40. Peng C, Yang X, Chen A, Smith KE, PourNejatian N, Costa AB, et al. A study
+24. Nakamura Y, Hanaoka S, Nomura Y, Hayashi N, Abe O, Yada S, et al. KART: of generative large language model for medical research and healthcare.
+Privacy Leakage Framework of Language Models Pre-trained with Clinical NPJ Digit Med. 2023;6(1):1–10. https:// doi. org/ 10. 1038/ s41746- 023-
+Records. 2020. ArXiv: 2101. 00036. 00958-w. https:// www. nature. com/ artic les/ s41746- 023- 00958-w. Nature
+25. Jagannatha A, Rawat BPS, Yu H. Membership Inference Attack Susceptibil- Publishing Group
+ity of Clinical Language Models. 2021. ArXiv: 2104. 08305. 41. CMS. The Health Insurance Portability and Accountability Act of 1996
+26. Lehman E, Jain S, Pichotta K, Goldberg Y, Wallace B. Does BERT pretrained (HIPAA). 1996. http:// www. cms. hhs. gov/ hipaa/. Accessed 28 Aug 2023.
+on clinical notes reveal sensitive data? In: Proceedings of the 2021 Con- 42. Dalianis H, Velupillai S. De-identifying Swedish clinical text - refinement
+ference of the North American Chapter of the Association for Computa- of a gold standard and experiments with Conditional random fields. J
+tional Linguistics: Human Language Technologies. Online: Association for Biomed Semant. 2010;1(1):6. https:// doi. org/ 10. 1186/ 2041- 1480-1-6.
+Computational Linguistics; 2021. pp. 946–959. https:// doi. org/ 10. 18653/ 43. European Union. Regulation (EU) 2016/679 of the European Parlia-
+v1/ 2021. naacl- main. 73. https:// aclan tholo gy. org/ 2021. naacl- main. 73. ment and of the Council of 27 April 2016 on the protection of natural
+27. Vakili T, Dalianis H. Are Clinical BERT Models Privacy Preserving? The persons with regard to the processing of personal data and on the free
+Difficulty of Extracting Patient-Condition Associations. In: Proceedings of movement of such data, and repealing Directive 95/46/EC (General Data
+V akili et al. BMC Medical Informatics and Decision Making (2024) 24:162 Page 15 of 15
+Protection Regulation) (Text with EEA relevance). Legislative Body: EP, Pseudonymisation, September 30, 2019, Turku, Finland. 166. Linköping
+CONSIL; 2016. http:// data. europa. eu/ eli/ reg/ 2016/ 679/ oj/ eng. University Electronic Press; 2019. pp. 16–23.
+44. Weitzenboeck EM, Lison P, Cyndecka M, Langford M. The GDPR and 61. James G, Sohil F, Sohali MU, Shabbir J, Witten D, Hastie T, et al. An intro-
+unstructured data: is anonymization possible? Int Data Priv Law. duction to statistical learning with applications in R. New York: Springer
+2022;12(3):184–206. Science and Business Media; 2013. https:// www. tandf online. com/ doi/
+45. Yeniterzi R, Aberdeen J, Bayer S, Wellner B, Hirschman L, Malin B. Effects of full/ 10. 1080/ 24754 269. 2021. 19802 61.
+personal identifier resynthesis on clinical text de-identification. J Am Med 62. Nakayama H. seqeval: A Python framework for sequence labeling evalu-
+Inform Assoc. 2010;17(2):159–68. ation. 2018. https:// github. com/ chakki- works/ seqev al. Accessed 12 Apr
+46. Sun Y, Wang S, Li Y, Feng S, Tian H, Wu H, et al. ERNIE 2.0: A Continual Pre- 2024.
+Training Framework for Language Understanding. Proc AAAI Conf Artif 63. Manning CD, Raghavan P, Schütze H. Introduction to information
+Intell. 2020;34(05):8968–8975. https:// doi. org/ 10. 1609/ aaai. v34i05. 6428. retrieval. Cambridge University Press; 2008.
+https:// ojs. aaai. org/ index. php/ AAAI/ artic le/ view/ 6428. 64. Mann HB, Whitney DR. On a Test of Whether one of Two Random Varia-
+47. Berg H, Chomutare T, Dalianis H. Building a De-identification System bles is Stochastically Larger than the Other. Ann Math Stat. 1947;18(1):50–
+for Real Swedish Clinical Text Using Pseudonymised Clinical Text. In: 60. https:// doi. org/ 10. 1214/ aoms/ 11777 30491. https:// proje cteuc lid. org/
+Proceedings of the Tenth International Workshop on Health Text Mining journ als/ annals- of- mathe matic al- stati stics/ volume- 18/ issue-1/ On-a- Test-
+and Information Analysis (LOUHI 2019). Hong Kong; 2019. pp. 118–125. of- Wheth er- one- of- Two- Random- Varia bles/ 10. 1214/ aoms/ 11777 30491.
+https:// aclan tholo gy. org/ D19- 6215/. full. Institute of Mathematical Statistics.
+48. Berg H, Henriksson A, Dalianis H. The Impact of De-identification on 65. Demšar J. Statistical Comparisons of Classifiers over Multiple Data Sets.
+Downstream Named Entity Recognition in Clinical Text. In: Proceedings of J Mach Learn Res. 2006;7(1):1–30. http:// jmlr. org/ papers/ v7/ demsa r06a.
+the 11th International Workshop on Health Text Mining and Information html.
+Analysis, Louhi 2020, in conjunction with EMNLP 2020. Virtual: Associa- 66. Mireshghallah F, Uniyal A, Wang T, Evans DK, Berg-Kirkpatrick T. An Empiri-
+tion for Computational Linguistics; 2020. pp. 1–11. cal Analysis of Memorization in Fine-tuned Autoregressive Language
+49. Vakili T, Hullmann T, Henriksson A, Dalianis H. When Is a Name Sensitive? Models. In: Proceedings of the 2022 Conference on Empirical Methods in
+Eponyms in Clinical Text and Implications for De-Identification. In: Pro- Natural Language Processing. 2022. pp. 1816–1826. https:// aclan tholo gy.
+ceedings of the Workshop on Computational Approaches to Language org/ 2022. emnlp- main. 119.
+Data Pseudonymization (CALD-pseudo 2024). St. Julian’s: Association for 67. Vakili T, Dalianis H. Using Membership Inference Attacks to Evaluate
+Computational Linguistics; 2024. pp. 76–80. https:// aclan tholo gy. org/ Privacy-Preserving Language Modeling Fails for Pseudonymizing Data. In:
+2024. caldp seudo-1.9. Proceedings of the 24th Nordic Conference on Computational Linguistics
+50. Dalianis H, Henriksson A, Kvist M, Velupillai S, Weegar R. HEALTH BANK - A (NoDaLiDa). Tórshavn: NEALT Proceedings Series; 2023. pp. 318–323.
+workbench for data science applications in healthcare. In: CEUR Work- https:// aclan tholo gy. org/ 2023. nodal ida-1. 33.
+shop Proceedings. CEUR-WS; 2015. 68. Henriksson A, Kvist M, Dalianis H. Prevalence estimation of protected
+51. Lamproudis A, Henriksson A, Dalianis H. Developing a Clinical Language health information in Swedish clinical text. In: Informatics for Health: Con-
+Model for Swedish: Continued Pretraining of Generic BERT with In- nected Citizen-Led Wellness and Population Health. IOS Press; 2017. pp.
+Domain Data. In: Proceedings of the International Conference on Recent 216–220.
+Advances in Natural Language Processing (RANLP 2021). Held Online: 69. Henriksson A, Kvist M, Dalianis H. Detecting protected health infor-
+INCOMA Ltd.. 2021. pp. 790–797. https:// aclan tholo gy. org/ 2021. ranlp- mation in heterogeneous clinical notes. Stud Health Technol Inform.
+main. 90. 2017;245:393–7.
+52. Malmsten M, Börjeson L, Haffenden C. Playing with Words at the National 70. Jerdhaf O, Santini M, Lundberg P, Bjerner T, Al-Abasse Y, Jonsson A, et al.
+Library of Sweden – Making a Swedish BERT. 2020. arXiv: 2007. 01658. Evaluating Pre-Trained Language Models for Focused Terminology Extrac-
+53. Lamproudis A, Henriksson A, Dalianis H. Evaluating Pretraining Strategies tion from Swedish Medical Records. In: Proceedings of the Workshop
+for Clinical BERT Models. In: Calzolari N, Béchet F, Blache P, Choukri K, on Terminology in the 21st century: Many Faces, Many Places. Marseille:
+Cieri C, Declerck T, et al., editors. Proceedings of the Thirteenth Language European Language Resources Association; 2022. pp. 30–32. https:// aclan
+Resources and Evaluation Conference. Marseille: European Language tholo gy. org/ 2022. term-1.6.
+Resources Association; 2022. pp. 410–416. https:// aclan tholo gy. org/ 2022. 71. Bridal O, Vakili T, Santini M. Cross-Clinic De-Identification of Swedish Elec-
+lrec-1. 43. tronic Health Records: Nuances and Caveats. In: Proceedings of the Work-
+54. Bird S, Loper E. NLTK: The Natural Language Toolkit. In: Proceedings of the shop on Ethical and Legal Issues in Human Language Technologies and
+ACL Interactive Poster and Demonstration Sessions. Barcelona: Associa- Multilingual De-Identification of Sensitive Data In Language Resources
+tion for Computational Linguistics; 2004. pp. 214–217. https:// aclan tholo within the 13th Language Resources and Evaluation Conference, LREC
+gy. org/ P04- 3031. 2022. Marseille; 2022. pp. 49–52. https:// aclan tholo gy. org/ 2022. lrec-1.
+55. Remmer S, Lamproudis A, Dalianis H. Multi-label Diagnosis Classifica- 451/.
+tion of Swedish Discharge Summaries – ICD-10 Code Assignment Using 72. World Medical Association. World Medical Association Declaration of
+KB-BERT. In: Proceedings of RANLP 2021: Recent Advances in Natural Helsinki: ethical principles for medical research involving human subjects.
+Language Processing, RANLP 2021, 1-3 Sept 2021, Varna, Bulgaria; 2021. JAMA. 2013;310(20):2191–4. https:// doi. org/ 10. 1001/ jama. 2013. 281053.
+pp. 1158–1166.
+56. Skeppstedt M, Kvist M, Nilsson GH, Dalianis H. Automatic recognition
+Publisher’s Note
+of disorders, findings, pharmaceuticals and body structures from clini-
+cal text: An annotation and machine learning study. J Biomed Inform. Springer Nature remains neutral with regard to jurisdictional claims in pub-
+2014;49:148–58. lished maps and institutional affiliations.
+57. Velupillai S, Dalianis H, Kvist M. Factuality levels of diagnoses in Swedish
+clinical text. In: User Centred Networked Health Care. IOS Press; 2011. pp.
+559–563.
+58. Velupillai S. Automatic classification of factuality levels: A case study on
+Swedish diagnoses and the impact of local context. In: Fourth Interna-
+tional Symposium on Languages in Biology and Medicine, LBM 2011.
+Singapore; 2011.
+59. Lamproudis A, Henriksson A, Dalianis H. Vocabulary Modifications for
+Domain-adaptive Pretraining of Clinical Language Models. 2022. pp.
+180–188. https:// www. scite press. org/ Publi catio nsDet ail. aspx? ID= lLgTQ
+0V6lDU= &t=1.
+60. Dalianis H. Pseudonymisation of Swedish electronic patient records using
+a rule-based approach. In: Proceedings of the Workshop on NLP and

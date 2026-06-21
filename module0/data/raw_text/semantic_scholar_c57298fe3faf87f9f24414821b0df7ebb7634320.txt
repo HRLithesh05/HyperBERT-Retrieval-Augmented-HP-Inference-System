@@ -1,0 +1,408 @@
+A Surprisingly Robust Trick for the Winograd Schema Challenge
+VidKocijan1,Ana-MariaCret¸u2,Oana-MariaCamburu1,3,YordanYordanov1,ThomasLukasiewicz1,3
+1UniversityofOxford
+2ImperialCollegeLondon
+3AlanTuringInstitute,London
+firstname.lastname@cs.ox.ac.uk, a.cretu@imperial.ac.uk
+Abstract tothesmallexistingdatasetsmakingitdifficultto
+trainneuralnetworksdirectlyonthetask.
+The Winograd Schema Challenge (WSC) da-
+Neural networks have proven highly effective
+taset WSC273 and its inference counterpart
+in natural language processing (NLP) tasks, out-
+WNLIarepopularbenchmarksfornaturallan-
+guage understanding and commonsense rea- performing other machine learning methods and
+soning. Inthispaper,weshowthattheperfor- evenmatchinghumanperformance(Hassanetal.,
+mance of three language models on WSC273 2018; Nangia and Bowman, 2018). However, su-
+consistentlyandrobustlyimproveswhenfine- pervised models require many per-task annotated
+tuned on a similar pronoun disambiguation
+training examples for a good performance. For
+problem dataset (denoted WSCR). We addi-
+tasks with scarce data, transfer learning is often
+tionally generate a large unsupervised WSC-
+applied (Howard and Ruder, 2018; Johnson and
+like dataset. By fine-tuning the BERT lan-
+guage model both on the introduced and on Zhang, 2017), i.e., a model that is already trained
+the WSCR dataset, we achieve overall accu- on one NLP task is used as a starting point for
+racies of 72.5% and 74.7% on WSC273 and otherNLPtasks.
+WNLI, improving the previous state-of-the- A common approach to transfer learning in
+art solutions by 8.8% and 9.6%, respectively.
+NLP is to train a language model (LM) on large
+Furthermore, our fine-tuned models are also
+amountsofunsupervisedtext(HowardandRuder,
+consistently more accurate on the “complex”
+2018) and use it, with or without further fine-tu-
+subsets of WSC273, introduced by Trichelair
+ning, to solve other downstream tasks. Build-
+etal.(2018).
+ing on top of a LM has proven to be very suc-
+1 Introduction
+cessful, producing state-of-the-art (SOTA) results
+(Liu et al., 2019; Trinh and Le, 2018) on bench-
+The Winograd Schema Challenge (WSC) (Leves-
+que et al., 2012, 2011) was introduced for testing
+mark datasets like GLUE (Wang et al., 2019) or
+AIagentsforcommonsenseknowledge. Here,we
+WSC273 (Levesqueetal.,2011).
+In this work, we first show that fine-tuning
+refer to the most popular collection of such sen-
+tences as WSC273, to avoid confusion with other
+existing LMs on WSCR is a robust method of
+improving the capabilities of the LM to tackle
+slightlymodifieddatasets, suchas PDP60, (Davis
+et al., 2017) and the Definite Pronoun Resolution
+WSC273 and WNLI. This is surprising, because
+dataset (Rahman and Ng, 2012), denoted WSCR
+previous attempts to generalize from the WSCR
+in the sequel. WSC273 consists of 273 instan-
+dataset to WSC273 did not achieve a major im-
+provement (Opitz and Frank, 2018). Secondly,
+cesofthepronoundisambiguationproblem(PDP)
+we introduce a method for generating large-scale
+(Morgenstern et al., 2016). Each is a sentence (or
+two)withapronounreferringtooneofthetwoor
+WSC-likeexamples. Weusethismethodtocreate
+a 2.4M dataset from English Wikipedia1, which
+morenouns; thegoalistopredictthecorrectone.
+The task is challenging, since WSC examples are
+we further use together with WSCR for fine-
+constructed to require human-like commonsense
+tuning the pre-trained BERT LM (Devlin et al.,
+2018). The dataset will be made publicly avail-
+knowledge and reasoning. The best known solu-
+able. We achieve accuracies of 72.5% and 74.7%
+tionsusedeeplearningwithanaccuracyof63.7%
+(OpitzandFrank,2018;TrinhandLe,2018). The
+on WSC273 and WNLI, improving the previous
+problemisdifficulttosolvenotonlybecauseofthe
+1https://dumps.wikimedia.org/enwiki/
+commonsense reasoning challenge, but also due dumpid:enwiki-20181201
+bestsolutionsby8.8%and9.6%,respectively. sentence remains grammatically correct, but
+thereferentofthepronounchanges.
+2 Background
+Additionally, commonsense reasoning must be
+This section introduces the main LM used in our
+requiredtoanswerthequestion.
+work, BERT (Devlin et al., 2018), followed by a
+A detailed analysis by Trichelair et al. (2018)
+detailed description of WSC and its relaxed form,
+shows that not all WSC273 examples are equally
+theDefinitePronounResolutionproblem.
+difficult. They introduce two complexity mea-
+BERT. Our work uses the pre-trained Bidirec- sures (associativity and switchability) and, based
+tional Encoder Representations from Transform- onthem,refineevaluationmetricsfor WSC273.
+ers (BERT) LM (Devlin et al., 2018) based on In associative examples, one of the parties is
+thetransformerarchitecture(Vaswanietal.,2017). more commonly associated with the rest of the
+Due to its high performance on natural language question than the other one. Such examples are
+understanding (NLU) benchmarks and the sim-
+seenas“easier”thantherestandrepresent13.5%
+plicity to adapt its objective function to our fine- ofWSC273. Theremaining86.5%ofWSC273is
+tuningneeds,weuse BERTthroughoutthiswork.
+callednon-associative.
+BERTisoriginallytrainedontwotasks: masked
+47%oftheexamplesare“switchable”,because
+token prediction, where the goal is to predict the the roles of the parties can be changed, and ex-
+missing tokens from the input sequence, and next amples still make sense. A model is tested on the
+sentenceprediction,wherethemodelisgiventwo original, “unswitched” switchable subset and on
+sequencesandaskedtopredictwhetherthesecond the same subset with switched parties. The con-
+sequencefollowsafterthefirstone. sistency between the two results is computed by
+Wefocusonthefirsttasktofine-tune BERT us- comparinghowoftenthemodelcorrectlychanges
+ing WSC-like examples. We use masked token theanswerwhenthepartiesareswitched.
+prediction on a set of sentences that follow the
+Definite Pronoun Resolution. Since collecting
+WSC structure,whereweaimtodeterminewhich
+examples that meet the criteria for WSC is hard,
+ofthecandidatesisthecorrectreplacementforthe
+Rahman and Ng (2012) relax the criteria and
+maskedpronoun.
+construct the Definite Pronoun Resolution (DPR)
+WinogradSchemaChallenge. Havingintrodu- dataset, following the structure of WSC, but also
+ced the goal of the Winograd Schema Challenge accepting easier examples. The dataset, referred
+inSection1,weillustrateitwiththefollowingex- throughoutthepaperasWSCR,issplitintoatrain-
+ample: ing set with 1322 examples and test set with 564
+examples. Sixexamplesinthe WSCR trainingset
+Thetrophydidn’tfitintothesuitcasebecauseit
+reappearin WSC273. Weremovetheseexamples
+wastoo[large/small].
+from WSCR. We use the WSCR training and test
+Question: Whatwastoo[large/small]?
+setsforfine-tuningtheLMsandforvalidation,re-
+Answer: thetrophy/thesuitcase
+spectively.
+The pronoun “it” refers to a different noun,
+based on the word in the brackets. To correct- WNLI. One of the 9 GLUE benchmark tasks
+ly answer both versions, one must understand the (Wang et al., 2019), WNLI is very similar to the
+meaning of the sentence and its relation to the WSC273 dataset, but is phrased as an entailment
+changedword. Morespecifically,atextmustmeet problem instead. A WSC schema is given as a
+thefollowingcriteriatobeconsideredforaWino- premise. Thehypothesisisconstructedbyextract-
+gradSchema(Levesqueetal.,2011): ing the sentence part where the pronoun is, and
+1. Twopartiesmustappearinthetext. replacingthepronounwithonecandidate. Thela-
+2. Apronounappearsinthesentenceandrefers belis1,ifthecandidateisthecorrectreplacement,
+to one party. It would be grammatically cor- and0,otherwise.
+rectifthepronounreferredtotheother.
+3 RelatedWork
+3. Thequestionaskstodeterminewhatpartythe
+pronounrefersto. There have been several attempts at solving
+4. A “special word” appears in the sentence. WSC273. Previous work is based on Google
+When switched to an “alternative word”, the queriesforknowledge(Emamietal.,2018)(58%),
+sequenceranking(OpitzandFrank,2018)(63%), MaskedWiki Dataset. To get more data for
+and using an ensemble of LMs (Trinh and Le, fine-tuning, we automatically generate a large-
+2018)(63%). scale collection of sentences similar to WSC.
+A critical analysis (Trichelair et al., 2018) More specifically, our procedure searches a large
+showedthatthemainreasonforsuccesswhenus- textcorpusforsentencesthatcontain(atleast)two
+inganensembleofLMs(TrinhandLe,2018)was occurrences of the same noun. We mask the sec-
+largely due to imperfections in WSC273, as dis- ondoccurrenceofthisnounwiththe[MASK]to-
+cussedinSection2. ken. Severalpossiblereplacementsforthemasked
+The only dataset similar to WSC273 is an eas- tokenaregiven,foreachnouninthesentencedif-
+ierbutlarger(1886examples)variationpublished ferent from the replaced noun. We thus obtain
+by Rahman and Ng (2012) and earlier introduced examples that are structurally similar to those in
+as WSCR. The sequence ranking approach uses WSC, although we cannot ensure that they fulfill
+WSCR for training and attempts to generalize to alltherequirements(seeSection2).
+WSC273. Thegapinperformancescoresbetween To generate such sentences, we choose the En-
+WSCR and WSC273 (76% vs. 63%) implies that glish Wikipedia as source text corpus, as it is a
+examples in WSC273 are much harder. We note large-scale and grammatically correct collection
+that Opitz and Frank (2018) do not report remov- oftextwithdiverseinformation. WeusetheStan-
+ingtheoverlappingexamplesbetweenWSCRand ford POS tagger (Manning et al., 2014) for find-
+WSC273. ingnouns. Weobtainadatasetwithapproximately
+Another important NLU benchmark is GLUE 130Mexamples. Wedownsamplethedatasetuni-
+(Wang et al., 2019), which gathers 9 tasks and is formly at random to obtain a dataset of manage-
+commonly used to evaluate LMs. The best score able size. After downsampling, the dataset con-
+has seen a huge jump from 0.69 to over 0.82 in a sists of 2.4M examples. All experiments are con-
+singleyear. However,WNLIisanotoriouslydiffi- ductedwiththisdownsampleddatasetonly.
+culttaskinGLUEandremainsunsolvedbytheex- Todeterminethequalityofthedataset,200ran-
+istingapproaches. Noneofthemodelshavebeaten domexamplesaremanuallycategorizedinto4cat-
+themajoritybaselineat65.1,whilehumanperfor- egories:
+manceliesat95.9(NangiaandBowman,2018).
+• Unsolvable: the masked word cannot be un-
+4 OurApproach ambiguouslyselectedwiththegivencontext.
+Example: Palmer and Crenshaw both used
+WSC Approach. We approach WSC by fine-
+Wilson8802putters,with[MASK]’sreceiv-
+tuning the pre-trained BERT LM (Devlin et al.,
+ingthemoniker“LittleBen”duetohispro-
+2018) on the WSCR training set and further on
+ficiencywithit. [Palmer/Crenshaw]
+a very large Winograd-like dataset that we intro-
+• Hard: the answer is not trivial to figure out.
+duce. Below,wepresentourfine-tuningobjective
+Example: AtthetimeofPlath’ssuicide,As-
+functionandtheintroduceddataset.
+sia was pregnant with Hughes ’s child , but
+Given a training sentence s, the pronoun to be
+she had an abortion soon after [MASK] ’s
+resolvedismaskedoutfromthesentence,andthe
+death. [Plath/Assia]
+LM is used to predict the correct candidate in the
+placeofthemaskedpronoun. Letc 1 andc 2 bethe • Easy: The alternative sentence is grammati-
+two candidates. BERT for Masked Token Predic- cally incorrect or is very visibly an inferior
+tionisusedtofindP(c 1|s)andP(c 2|s). Ifacandi- choice. Example: The syllables are pro-
+date consists of several tokens, the corresponding nounced strongly by Gaga in syncopation
+number of [MASK] tokens is used in the masked while her vibrato complemented Bennett’s
+sentence. Then, logP(c|s) is computed as the av- characteristicjazzvocalsandswing. Olivier
+erage of log-probabilities of each composing to- added , “ [MASK] ’s voice , when stripped
+ken. Ifc 1 iscorrect,andc 2 isnot,thelossis: of its bells and whistles, showcases a time-
+lessness thatlends itselfwell tothe genre. ”
+L = −logP(c |s)+ (1)
+1 [Gaga/syncopation]
++α·max(0,logP(c |s)−logP(c |s)+β),
+2 1
+• Noise: The example is a result of a parsing
+whereαandβ arehyperparameters. error.
+Intheanalyzedsubset,8.5%ofexampleswereun- and BERT WIKI WSCR.
+solvable, 45% were hard, 45.5% were easy, and The WSCR test set was used as the validation
+1%fellintothenoisecategory. set. Thefine-tuningprocedurewasthesameasthe
+trainingprocedureonMaskedWiki,exceptthat30
+WNLI Approach. Models are additionally
+epochs were used. The model was validated af-
+tested on the test set of the WNLI dataset. To use
+ter every epoch, and the model with highest per-
+the same evaluation approach as for the WSC273
+formance on the validation set was retained. The
+dataset, we transform the examples in WNLI
+hyperparameters α and β and learning rate were
+from the premise–hypothesis format into the
+selectedwithgridsearchfromthesamesetsasfor
+masked words format. Since each hypothesis is
+MaskedWikitraining.
+just a substring of the premise with the pronoun
+For comparison, experiments are also con-
+replaced for the candidate, finding the replaced
+ductedontwootherLMs, BERT-base(BERT with
+pronounandonecandidatecanbedonebyfinding
+less parameters) and General Pre-trained Trans-
+the hypothesis as a substring of the premise.
+former(GPT)byRadfordetal.(2018). Thetrain-
+All other nouns in the sentence are treated as
+ingonBERT-basewasconductedinthesameway
+alternative candidates. The Stanford POS-tagger
+as for the other models. When using GPT, the
+(Manningetal.,2014)isusedtofindthenounsin
+probability of a word belonging to the sentence
+the sentence. The probability for each candidate
+P(c|s)iscomputedaspartiallossinthesameway
+is computed to determine whether the candidate
+asbyTrinhandLe(2018).
+in the hypothesis is the best match. Only the test
+Due to WSC’s “special word” property, exam-
+set of the WNLI dataset is used, because it does
+plescomeinpairs. Apairofexamplesonlydiffers
+not overlap with WSC273. We do not train or
+in a single word (but the correct answers are dif-
+validateonthe WNLI trainingandvalidationsets,
+ferent). The model BERT WIKI WSCR no pairs
+because some of the examples share the premise.
+is the BERT WIKI model, fine-tuned on WSCR,
+Indeed,whenupperrephrasingoftheexamplesis
+where only a single example from each pair is
+used, the training, validation, and test sets start to
+retained. The size of WSCR is thus halved.
+overlap.
+The model BERT WIKI WSCR pairs is obtained
+5 Evaluation by fine-tuning BERT WIKI on half of the WSCR
+dataset. Thistime,allexamplesinthesubsetcome
+In this work, we use the PyTorch implementa-
+inpairs,justlikeintheunreduced WSCR dataset.
+tion2 of Devlin et al.’s (2018) pre-trained model,
+We evaluate all models on WSC273 and the
+BERT-large. To obtain BERT WIKI, we train on
+WNLI test dataset, as well as the various subsets
+MaskedWiki starting from the pre-trained BERT.
+of WSC273, as described in Section 2. The re-
+The training procedure differs from the training
+sultsarereportedinTable1andwillbediscussed
+of BERT (Devlin et al., 2018) in a few points.
+next.
+The model is trained with a single epoch of the
+MaskedWikidataset,usingbatchesofsize64(dis- Discussion. Firstly,wenotethatmodelsthatare
+tributed on 8 GPUs), Adam optimizer, a learn- fine-tuned on the WSCR dataset consistently out-
+ing rate of 5.0 · 10−6, and hyperparameter val- perform their non-fine-tuned counterparts. The
+ues α = 20 and β = 0.2 in the loss function BERT WIKI WSCRmodeloutperformsotherlan-
+(Eq. (1)). The values were selected from α ∈ guagemodelson5outof6setsthattheyarecom-
+{5,10,20} and β ∈ {0.1,0.2,0.4} and learning pared on. In comparison to the LM ensemble by
+rate from {3 · 10−5,1 · 10−5,5 · 10−6,3 · 10−6} TrinhandLe(2018),theaccuracyismoreconsis-
+using grid search. To speed up the hyperparame- tent between associative and non-associative sub-
+tersearch,thetraining(forhyperparametersearch sets and less affected by the switched parties.
+only)isdoneonarandomlyselectedsubsetofsize However, it remains fairly inconsistent, which is
+100,000. The performance is then compared on ageneralpropertyofLMs.
+the WSCR testset. Secondly,theresultsofBERT WIKIseemtoin-
+Both BERT and BERT WIKI are fine-tuned on dicate that this dataset alone does not help BERT.
+theWSCRtrainingdatasettocreateBERT WSCR However, when additionally fine-tuned to WSCR,
+theaccuracyconsistentlyimproves.
+2https://github.com/huggingface/
+pytorch-pretrained-BERT Finally, the results of BERT WIKI no pairs
+WSC273 non-assoc. assoc. unswitched switched consist. WNLI
+BERT WIKI 0.619 0.597 0.757 0.573 0.603 0.389 0.712
+BERT WIKI WSCR 0.725 0.720 0.757 0.732 0.710 0.550 0.747
+BERT 0.619 0.602 0.730 0.595 0.573 0.458 0.658
+BERT WSCR 0.714 0.699 0.811 0.695 0.702 0.550 0.719
+BERT-base 0.564 0.551 0.649 0.527 0.565 0.443 0.630
+BERT-base WSCR 0.623 0.606 0.730 0.611 0.634 0.443 0.705
+GPT 0.553 0.525 0.730 0.595 0.519 0.466 –
+GPT WSCR 0.674 0.653 0.811 0.664 0.580 0.641 –
+BERT WIKI WSCR no pairs 0.663 0.669 0.622 0.672 0.641 0.511 –
+BERT WIKI WSCR pairs 0.703 0.695 0.757 0.718 0.710 0.565 –
+LMensemble 0.637 0.606 0.838 0.634 0.534 0.443 –
+KnowledgeHunter 0.571 0.583 0.5 0.588 0.588 0.901 –
+Table1: ResultsonWSC273anditssubsets. ThecomparisonbetweeneachlanguagemodelanditsWSCR-tuned
+model is given. For each column, the better result of the two is in bold. The best result in the column overall
+is underlined. Results for the LM ensemble and Knowledge Hunter are taken from Trichelair et al. (2018). All
+modelsconsistentlyimprovetheiraccuracywhenfine-tunedontheWSCRdataset.
+and BERT WIKI pairs show that the existence of 1123106,andbyanEPSRCVacationBursary. We
+WSC-likepairsinthetrainingdataaffectstheper- also acknowledge the use of the EPSRC-funded
+formanceofthetrainedmodel. MaskedWikidoes Tier2facilityJADE(EP/P020275/1).
+notcontainsuchpairs.
+6 SummaryandOutlook References
+This work achieves new SOTA results on the Ernest Davis, Leora Morgenstern, and Charles L. Or-
+tiz.2017. ThefirstWinogradSchemaChallengeat
+WSC273 and WNLI datasets by fine-tuning the
+IJCAI-16. AIMagazine,38(3):97–98.
+BERT languagemodelonthe WSCR datasetanda
+newlyintroducedMaskedWikidataset. Theprevi- Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+ous SOTA results on WSC273 and WNLI are im- Kristina Toutanova. 2018. BERT: Pre-training
+of deep bidirectional transformers for language
+proved by 8.8% and 9.6%, respectively. To our
+understanding. Computing Research Repository,
+knowledge, this is the first model that beats the
+arXiv:1810.04805.
+majoritybaselineon WNLI.
+Weshowthatbyfine-tuningon WSC-likedata, Ali Emami, Noelia De La Cruz, Adam Trischler,
+Kaheer Suleman, and Jackie Chi Kit Cheung.
+the language model’s performance on WSC con-
+2018. Aknowledgehuntingframeworkforcommon
+sistently improves. The consistent improvement
+sense reasoning. Computing Research Repository,
+of several language models indicates the robust- arXiv:1810.01375.
+nessofthismethod. Thisisparticularlysurprising,
+Hany Hassan, Anthony Aue, Chang Chen, Vishal
+because previous work (Opitz and Frank, 2018)
+Chowdhary, Jonathan Clark, Christian Feder-
+impliesthatgeneralizingto WSC273 ishard.
+mann,XuedongHuang,MarcinJunczys-Dowmunt,
+In future work, other uses and the statistical William Lewis, Mu Li, Shujie Liu, Tie-Yan Liu,
+significance of MaskedWiki’s impact and its ap- RenqianLuo,ArulMenezes,TaoQin,FrankSeide,
+plications to different tasks will be investigated. XuTan,FeiTian,LijunWu,ShuangzhiWu,Yingce
+Xia, Dongdong Zhang, Zhirui Zhang, and Ming
+Furthermore, to further improve the results on
+Zhou. 2018. Achieving human parity on automatic
+WSC273, data-filtering procedures may be intro- ChinesetoEnglishnewstranslation. ComputingRe-
+ducedtofindharder WSC-likeexamples. searchRepository,arXiv:1803.05567.
+Acknowledgments JeremyHowardandSebastianRuder.2018. Fine-tuned
+language models for text classification. Computing
+ThisworkwassupportedbytheAlanTuringInsti- ResearchRepository,arXiv:1801.06146.
+tute under the UK EPSRC grant EP/N510129/1,
+Rie Johnson and Tong Zhang. 2017. Deep pyramid
+by the EPSRC grant EP/R013667/1, by the
+convolutional neural networks for text categoriza-
+EPSRC studentship OUCS/EPSRC-NPIF/VK/ tion. InProceedingsofACL,pages562–570.ACL.
+Hector J. Levesque, Ernest Davis, and Leora Mor-
+genstern. 2011. The Winograd Schema Challenge.
+AAAISpringSymposium: LogicalFormalizationsof
+CommonsenseReasoning,46.
+HectorJ.Levesque, ErnestDavis, andLeoraMorgen-
+stern. 2012. The Winograd Schema Challenge. In
+ProceedingsofKR.AAAIPress.
+XiaodongLiu,PengchengHe,WeizhuChen,andJian-
+feng Gao. 2019. Multi-task deep neural networks
+fornaturallanguageunderstanding. ComputingRe-
+searchRepository,arXiv:1901.11504.
+ChristopherD.Manning,MihaiSurdeanu,JohnBauer,
+Jenny Finkel, Steven J. Bethard, and David Mc-
+Closky. 2014. The Stanford CoreNLP natural lan-
+guageprocessingtoolkit. InAssociationforCompu-
+tational Linguistics (ACL) System Demonstrations,
+pages55–60.
+LeoraMorgenstern,ErnestDavis,andCharlesL.Ortiz.
+2016. Planning,executingandevaluatingtheWino-
+gradSchemaChallenge. AIMagazine.
+NikitaNangiaandSamuelR.Bowman.2018. Acon-
+servative human baseline estimate for GLUE: Peo-
+plestill(mostly)beatmachines.
+Juri Opitz and Anette Frank. 2018. Addressing the
+Winograd Schema Challenge as a sequence rank-
+ing task. In Proceedings of the First International
+Workshop on Language Cognition and Computa-
+tionalModels,pages41–52.ACL.
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+Ilya Sutskever. 2018. Improving language under-
+standingbygenerativepre-training.
+AltafRahmanandVincentNg.2012. Resolvingcom-
+plex cases of definite pronouns: The Winograd
+SchemaChallenge. InProceedingsofEMNLP.
+Paul Trichelair, Ali Emami, Jackie Chi Kit Cheung,
+Adam Trischler, Kaheer Suleman, and Fernando
+Diaz. 2018. On the evaluation of common-sense
+reasoninginnaturallanguageunderstanding. Com-
+putingResearchRepository,arXiv:1811.01778.
+T. H. Trinh and Q. V. Le. 2018. A Simple Method
+forCommonsenseReasoning. ComputingResearch
+repository,arXiv:1806.02847.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is
+all you need. Computing Research Repository,
+arXiv:1706.03762.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Hill, Omer Levy, and Samuel R. Bowman. 2019.
+GLUE: A multi-task benchmark and analysis plat-
+form for natural language understanding. In Pro-
+ceedingsofICLR.

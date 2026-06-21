@@ -1,0 +1,1006 @@
+On the Role of Bidirectionality in Language Model Pre-Training
+MikelArtetxe JingfeiDu NamanGoyal LukeZettlemoyer VesStoyanov
+MetaAI
+{artetxe,jingfeidu,naman,lsz,ves}@meta.com
+Abstract ing objectives, often focusing on different appli-
+cations. Forinstance,BERT(Devlinetal.,2019)
+Prior work on language model pre-training
+pre-trainedmaskedlanguagemodelsforNLUfine-
+has explored different architectures and learn-
+tuning, BART (Lewis et al., 2020) pre-trained
+ing objectives, but differences in data, hyper-
+seq2seq models on denoising for both NLU and
+parameters and evaluation make a principled
+generationtasks,andGPT-3(Brownetal.,2020)
+comparison difficult. In this work, we fo-
+cus on bidirectionality as a key factor that scaled autoregressive language models focusing
+differentiatesexistingapproaches,andpresent on zero- and few-shot priming. However, such
+a comprehensive study of its role in next to- modelsdifferonmanyfactorsinadditiontotheir
+ken prediction, text infilling, zero-shot prim- architecture and learning objective (e.g., the pre-
+ingandfine-tuning. Weproposeanewframe-
+trainingdata,computeandhyperparameters),mak-
+work that generalizes prior approaches, in-
+ingaprincipledcomparisondifficult. Motivatedby
+cluding fully unidirectional models like GPT,
+that,Raffeletal.(2020)presentedacomprehensive
+fully bidirectional models like BERT, and hy-
+brid models like CM3 and prefix LM. Our studyexploringvariouspre-trainingobjectiveand
+frameworkdistinguishesbetweentwonotions architecture variants in a controlled environment.
+of bidirectionality—bidirectional context and However,theyconductedmostoftheexploration
+bidirectional attention—and allows us to con- usingsmallmodels,whilerecentworkhasfound
+trol each of them separately. We find that the thatdifferentapproachesbehavedifferentlyatscale
+optimal configuration is largely application-
+(Tayetal.,2022a,b),andtheirevaluationwaslim-
+dependent(e.g.,bidirectionalattentionisbene-
+itedtofine-tuning.
+ficialforfine-tuningandinfilling,butharmful
+for next token prediction and zero-shot prim- In this paper, we focus on a key factor
+ing). Wetrainmodelswithupto6.7Bparame- thatdifferentiatesmanypre-trainingapproaches—
+ters, and find differences to remain consistent bidirectionality—andstudyitindifferentsettings
+at scale. While prior work on scaling has fo-
+as a function of scale. We propose a new frame-
+cused on left-to-right autoregressive models,
+workthatdistinguishesbetweentwonotionsofbidi-
+our results suggest that this approach comes
+rectionality: bidirectional context (whether the
+with some trade-offs, and it might be worth-
+predictionofagiventokenisconditionedonboth
+whiletodevelopverylargebidirectionalmod-
+els. therightandtheleftcontext,oronlyoneitherof
+them),andbidirectionalattention(whetherthere
+areblocksoftokensthatcanallattendtoeachother,
+1 Introduction
+contrastingwithtriangularattentionmasking). Our
+NLPhasundergoneaparadigmshiftdrivenbypre- frameworkoffersknobstocontroleachofthemsep-
+trainedmodelslikeGPTandBERT(Bommasani arately,generalizingseveralpreviousapproaches
+et al., 2021). These models are trained on unla- (e.g. BERTleveragesbothtypesofbidirectionality,
+beled corpora in a self-supervised fashion, and GPT does not use any, prefix LMs only leverage
+canbeeffectivelyadaptedtodownstreamtasksei- bidirectional attention, and CM3 only leverages
+therthroughconventionalfine-tuning(Devlinetal., bidirectionalcontext).
+2019)orfew-shotpriming(Brownetal.,2020). Wetrainatotalof24modelscovering6variants
+Despitetheirwidespreaduse,thereisnotauni- ofourframeworkand5modelsizeswithupto6.7B
+versalformulatopre-trainlanguagemodels: prior parameters, and evaluate them on 4 settings: lan-
+workhasexploreddifferentarchitecturesandlearn- guagemodeling,textinfilling,zero-shotpriming,
+2202
+tcO
+62
+]LC.sc[
+2v62711.5022:viXra
+n
+mask
+Output: tok j tok j+2 … </s> tok i … tok j
+</s> tok 1 … tok i-1 tok i+1 … tok j-1 tok j+1 … tok n-1 <mask> … <mask>
+Input:
+pos 0 pos 1 … pos i-1 pos i+1 … pos j-1 pos j+1 … pos n-1 pos i … pos j
+n n
+bidir predict
+Figure 1: Proposed framework. Starting from the original document, we mask n tokens at random and
+mask
+movethem—alongwiththeirpositionalembeddings—totheend. Wedefineourlossoverthelastn tokens,
+predict
+predicting the masked token for the last n , and the next token for the remaining n −n . We use
+mask predict mask
+bidirectionalattentionoverthefirstn tokens,andunidirectionalattentionovertherest. RefertoAppendixA
+bidir
+foramoredetaileddescription.
+Name n n n Relatedmodels
+mask bidir predict
+NXTUNI 0 0 n GPT(Radfordetal.,2018,2019;Brownetal.,2020)
+NXTPRE† 0 U(1,n) n−n
+bidir
+PrefixLM(Raffeletal.,2020;Wuetal.,2021)
+MSKUNI B(n,0.15) 0 n
+mask
+–
+MSKBI B(n,0.15) n n
+mask
+BERT(Devlinetal.,2019),RoBERTa(Liuetal.,2019)
+HYBUNI† B(n,0.15) 0 n CM3(Aghajanyanetal.,2022)
+HYBPRE† B(n,0.15) U(1,n) max(n−n bidir,n mask) –
+Table1: Variantsoftheproposedframeworkexploredinthiswork. ndenotesthedocumentlength; B(n,p)
+denotes the binomial distribution; U(a,b) denotes the discrete uniform distribution. †We set n = 0 and
+bidir
+n =0withprobabilityp=0.1,sothatthemodelgetsmoreexposuretoregularlanguagemodeling.
+mask
+andfine-tuning. Wefindthatbidirectionalattention • n controlshowmanytokensaremasked.
+mask
+andcontexthaveadifferentimpactdependingon Masked tokens are moved to the end along
+the use case, and there is not a single configura- withtheirpositionalembeddings.
+tionthatisoptimalforallscenarios. Moreover,we
+findthisbehaviortoremainconsistentatthescale • n predict controls the length of the suffix for
+range considered in this study. With recent scal- whichwedefineoursupervisorysignal. We
+ingworkfocusingonfullyunidirectionalmodels, usethecross-entropylosstotrainthemodel,
+thissuggeststhatthereispotentialforalternative predicting the masked tokens for the last
+architecturesandlearningobjectivesthatmightbe n mask, and the next token for the remaining
+bettersuitedforotherusecases. n predict−n mask.1
+As such, our framework allows us to vary the
+2 Proposedframework
+two notions of bidirectionality discussed above:
+n controlstheweightofbidirectionalattention,
+As illustrated in Figure 1, we propose a general- bidir
+whereas n and n control the weight of
+izedframeworktopre-traintransformermodelson mask predict
+bidirectionalcontext. Inaddition,largervaluesof
+unlabeledcorpora. Ourframeworksupportsboth
+n resultinmoretokensofsupervision.
+unidirectionalandbidirectionalattention,aswell predict
+Table1summarizesthespecificvariantsofthis
+asnexttokenpredictionandsingle-tokeninfilling,
+general framework that we explore in our experi-
+usingthefollowingparameterstobalancethem:
+ments,alongwithadescriptivenamethatwewill
+use to refer to each of them. Some variants are
+• n controls the length of the prefix using
+bidir
+equivalentorcloselyrelatedtoexistingapproaches.
+bidirectionalattention,whereastherestofthe
+documentusesunidirectionalattention. More
+Inparticular,NXTUNIisequivalenttoconventional
+concretely,wesettheattentionmasksothat
+autoregressive language models, and NXTPRE is
+theithtokencanattendtothejthtokenifand
+1Wesetn ≤n−n +n soweonlypredict
+predict bidir mask
+onlyifj ≤ max(i,n bidir). tokensthatareeithermaskedorcannotattendtothemselves.
+size cost l d h bs lr Ourimplementationisbasedinfairseq(Ottetal.,
+2019). Weapplytheproceduredescribedin§2to
+125M 0.11 12 768 12 0.5M 6e-4
+355M 0.31 24 1024 16 0.5M 3e-4 each document separately, and combine multiple
+1.3B 1.11 24 2048 32 1M 2e-4
+documentsintoasinglesequencetospeeduptrain-
+2.7B 2.23 32 2560 32 1M 1.6e-4
+6.7B 5.49 32 4096 32 2M 1.2e-4 ing.3 As such, we move the masked tokens to
+theendofeachdocument(asopposedtotheend
+ofthewholesequence),andapplyabidirectional
+Table 2: Model details. size: number of parameters,
+cost: trainingZFLOPs,l: layers,d: hiddendimension, attention prefix to each document rather than the
+h: attentionheads,bs: batchsize,lr: learningrate. All sequenceasawhole.4
+models are trained for 100B tokens with a maximum
+sequence length of 1024 tokens. We estimate training 3.2 Evaluation
+ZFLOPsanalyticallyfollowingArtetxeetal.(2021).
+Weevaluateourmodelsinthefollowingsettings:
+Languagemodeling. Weevaluatetheabilityof
+equivalent to prefix language models. MSKBI is
+ourmodelstopredictthenexttokeninasequence
+closelyrelatedtotheRoBERTaobjective,2 except
+asmeasuredbyperplexity.5 Differentfromtraining,
+thatwedonotreplace10%ofthemaskedtokens
+wedonotconcatenatedifferentdocumentsintothe
+with the original or a randomly picked one. HY-
+samesequence,andinsteadscoreeachdocument
+BUNIissimilartotheCM3objective,exceptthat
+asaseparatesequence.6 GiventhatNXTPREand
+wemaskindividualtokensinsteadofspansandwe
+HYBPRE are primarily trained to predict the last
+drawthenumberofmasksfromabinomialdistribu-
+part of a document conditioned on the first part,
+tion. Finally,weintroduceMSKUNIasavariantof
+we also measure the perplexity at predicting the
+MSKBI usingunidirectionalattention(or,froman-
+last20%tokensineachdocumentconditionedon
+otherperspective,avariantofHYBUNIpredicting
+the first 80%. So as to understand whether using
+maskedtokensalone),andHYBPREasavariantof
+bidirectionalattentionintheprefixisusefultothat
+HYBUNIusingabidirectionalattentionprefix.
+end,wetrydifferentvaluesofn accordingto
+bidir
+a ratio r , so that n = r ×n and
+3 Experimentalsettings bidir bidir bidir prefix
+n = 0.8n is the length of the prefix we are
+prefix
+3.1 Models conditioningon.
+For each variant in Table 1, we train models at
+Singletokeninfilling. Wemaskasinglewordin
+differentscalesusingthesamesettingsasArtetxe
+eachdocumentatrandom,andmeasuretheaccu-
+etal.(2021),whichatthesametimeroughlyfollow
+racyatpredictingit.7 Tothatend,weusethesame
+Brown et al. (2020). So as to reduce the compu-
+procedureusedfortraining(illustratedinFigure1),
+tational cost of our exploration, we differ from
+whichmovesthemasktokentotheendofthese-
+Artetxe et al. (2021) in two ways: (i) we use a
+quence.8 Thisapproachisnotsuitableformodels
+maximumsequencelengthof1024tokensinstead
+trained exclusively on next token prediction like
+of2048,and(ii)wetrainfor100Btokensinstead
+NXTUNIandNXTPRE,astheycanonlybecondi-
+of 300B. At the same time, we only train 125M
+tionedontherightcontext. However,onecanstill
+and355MmodelsfortheNXTPREandMSKUNI
+variants. Table2summarizesthesettingsthatwe 3Weachievethisusing—sample-break-mode complete
+infairseq.ThisisdifferentfromArtetxeetal.(2021),whocon-
+useforeachmodel.
+catenatedalldocumentsandsplittheresultingsequenceinto
+We use the same training data as Artetxe et al. non-overlappingblockswithoutrespectingdocumentbound-
+(2021), which combines BookCorpus (Zhu et al., aries(—sample-break-mode none).
+4Asaconsequence,agiventokencannotattendtotokens
+2015), CC-News (Nagel, 2016), OpenWebText
+infuturedocumentsevenwhenn =n,butalltokenscan
+bidir
+(Gokaslan and Cohen, 2019), CC-Stories (Trinh attendtotokensinpreviousdocuments.
+andLe,2018),andEnglishCC100(Wenzeketal., 5WeexcludeMSKBIandMSKUNIastheyarenottrained
+onnexttokenprediction.
+2020),totalling112Btokens. Followingthem,we
+6This corresponds to the —sample-break-mode
+alsousethesameBPEencodingasGPT-2(Radford
+complete_docoptioninfairseq.
+etal.,2019)withavocabularyof50k. 7Similartolanguagemodelingevaluation,wefeedeach
+documentasaseparatesequence.
+2Moving masked tokens to the end becomes irrelevant 8Formodelstrainedwithabidirectionalattentionprefix,
+whenn =n,astheirpositionalembeddingsmovewith we try different values of r at inference time, so that
+bidir bidir
+themandtransformersoperateoversets. n =r ×n.
+bidir bidir
+20
+18
+16
+14
+12
+10
+ytixelprep
+xiffuS
+78
+76
+74
+72
+70
+68
+ycarucca
+gnillifnI
+67.5
+65.0
+62.5
+60.0
+57.5
+55.0
+52.5
+125M 355M 1.3B 2.7B 6.7B
+Model size
+ycarucca
+tohs-oreZ
+90
+88
+86
+84
+125M 355M 1.3B 2.7B 6.7B
+Model size
+ycarucca
+gninut-eniF
+Variant
+NxtUni
+NxtPre
+MskUni
+MskBi
+HybUni
+HybPre
+Attn
+Unidir
+Bidir
+Figure2: Mainresults. Unidir andBidir denoteusingn = 0andn = nafterpre-training,respectively
+bidir bidir
+(orn =n forsuffixperplexity).
+bidir prefix
+usesuchmodelsforinfillinginagenerativefash- withsingle-tokenverbalizers—onecanalsoscore
+ion,replacingthemaskedtokenwitheachelement such token directly in an infilling fashion. So as
+inthevocabulary,scoringtheresultingsequences tounderstandhowbothapproachescompare, we
+autoregressively, and predicting the token yield- further evaluate our models on MNLI (Williams
+ing the highest scoring sequence. In addition to etal.,2018),usingasingle-tokenverbalizerplaced
+ourprimaryevaluation,wecomparebothofthese inthemiddleoftheprompt.11
+approaches,whichwerefertoasinfill(directinfill-
+Fine-tuning. Weexperimentwiththefollowing
+ing)andfull(fullsequencescoring). Giventhatfull
+tasks from GLUE (Wang et al., 2019): COLA
+can be prohibitively expensive when considering
+(Warstadtetal.,2019),MNLI-m(Williamsetal.,
+thefullvocabulary,weconstrainthesetofoptions
+2018),MRPC(DolanandBrockett,2005),QNLI
+to the top 32 candidates generated by the 125M
+(Rajpurkaretal.,2016),RTE(Daganetal.,2006;
+MSKBImodel.9
+Haimetal.,2006;Giampiccoloetal.,2007;Ben-
+Zero-shot priming. We evaluate our models tivoglietal.,2009)andSST-2(Socheretal.,2013).
+on zero-shot priming using the exact same set- Our fine-tuning approach closely follows BERT
+tings and tasks as Artetxe et al. (2021), which andsimilarmodels: weplaceaspecial</s>token
+comprises ReCoRD (Zhang et al., 2018), Hel- attheendofthesequence(analogoustothespecial
+laSwag (Zellers et al., 2019), PIQA (Bisk et al., <CLS>tokenusedbyBERT)andlearnanewclas-
+2020),WinoGrande(Sakaguchietal.,2020),Sto- sification head on top. We ran a grid search with
+ryCloze (Mostafazadeh et al., 2016) and Open- the learning rate in {1e-0.5, 2e-05, 5e-05, 5e-06}
+BookQA (Mihaylov et al., 2018). These are all andbatchsizein{16,32,64},andreportthebest
+multiple choice tasks, so we score the populated developmentaccuracyforeachmodel. Therestof
+promptcorrespondingtoeachoptioninanautore- hyperparametersfollowRoBERTa. Forallvariants,
+gressive fashion and predict the highest scoring wetriedfine-tuningbothwithfullyunidirectional
+one.10 However, whentheoptionsdifferinasin- attention(r = 0)andfullybidirectionalatten-
+bidir
+gletoken—asitiscommonforclassificationtasks tion (r = 1). Refer to Appendix B for more
+bidir
+details.
+9Thetop32candidatescontainthecorrectonein95.19%
+ofthecases,whichistheupperboundaccuracyinthissetting. 11We use <premise>, right? {Yes|No|Also},
+10Refer to Artetxe et al. (2021) for a description of the <hypothesis> as our template and report results on the
+scoringfunctionusedforeachtaskandtheevaluatioprotocol. matcheddevelopmentset.
+125M 355M 1.3B 2.7B 6.7B r 125M 355M 1.3B 2.7B 6.7B
+bidir
+NXTUNI 22.23 17.49 14.07 12.55 11.44 MSKUNI 0.00 69.61 73.43 – – –
+NXTPRE 22.75 18.06 – – –
+HYBUNI 23.26 18.19 14.65 13.16 12.03
+MSKBI 1.00 71.00 75.06 77.43 78.46 79.16
+HYBPRE 23.91 18.81 15.33 13.92 12.86 HYBUNI 0.00 66.86 71.88 75.56 77.19 78.29
+0.00 67.70 72.25 75.49 76.95 78.02
+Table3: Fulldocumentperplexity. 0.25 68.02 72.57 75.77 77.25 78.22
+HYBPRE 0.50 68.23 72.85 76.05 77.48 78.52
+0.75 68.47 73.13 76.32 77.74 78.70
+r bidir 125M 355M 1.3B 2.7B 6.7B 1.00 68.71 73.38 76.59 78.00 78.91
+NXTUNI 0.00 19.99 15.67 12.57 11.17 10.15
+0.00 20.29 16.05 – – – Table 5: Single token infilling accuracy. We mask a
+0.25 20.25 16.00 – – – randomtokenineachvalidationdocumentandmeasure
+NXTPRE 0.50 20.21 15.96 – – – theaccuracyatpredictingit,usingn = r ×n
+bidir bidir
+0.75 20.17 15.92 – – –
+forinference.
+1.00 20.16 15.88 – – –
+HYBUNI 0.00 20.91 16.30 13.08 11.73 10.70
+0.00 21.34 16.74 13.60 12.32 11.35 igateit.
+0.25 21.30 16.69 13.56 12.29 11.33 Table4reportssuffixperplexityresults,where
+HYBPRE 0.50 21.26 16.66 13.54 12.26 11.30
+wepredictthelast20%ofthetokensineachdoc-
+0.75 21.23 16.62 13.51 12.23 11.28
+1.00 21.18 16.56 13.46 12.19 11.24 ument conditioned on the rest. Compared to the
+previous results, NXTPRE and HYBPRE reduce
+Table 4: Suffix perplexity. We measure perplexity at thegapwithNXTUNIandHYBUNI,buttheystill
+predictingthelast20%ofthetokensineachdocument lag behind them. In both cases, we find that the
+conditioned on the first 80%, using n bidir = r bidir × modelsbenefitfromusingbidirectionalattention
+n prefixforinference,wheren
+prefix
+=0.8nisthelength
+intheprefixatinferencetime(i.e.,highervaluesof
+oftheprefixweareconditioningon.
+r yieldlowerperplexity),buttheimprovement
+bidir
+is relatively small. It is intriguing that NXTUNI
+4 Results outperformsNXTPRE,whenthelatterwastrained
+onsuffixpredictionandcanleveragebidirectional
+WevisualizeourmainresultsinFigure2,anddis- attention. Weattributethistothebidirectionalpre-
+cusseachsettinginmoredetailnext. fix reducing the number of tokens of supervision
+duringtraining.
+4.1 Languagemodeling
+We report full document perplexities in Table 3. 4.2 Singletokeninfilling
+NXTUNIobtainsthebestresults,followedby HY-
+WereportinfillingresultsinTable5. MSKBI ob-
+BUNI and HYBPRE,and NXTPRE doingslightly
+tains the best results, which can be explained by
+better than HYBUNI at small scale. This is con-
+its use of bidirectional attention and the fact that
+sistentwithhowclosethepre-trainingobjectiveis
+it is exclusively trained on masking. Our results
+totheendtask: NXTUNIisexclusivelytrainedon
+suggest that both of these factors play a role, but
+nexttokenprediction, HYBUNI combinesitwith
+theirimpactvariesatscale. Asforthefirstfactor,
+masking (which is not used here), and HYBPRE
+wefindthatbidirectionalattentionhasalargerim-
+further combines it with a bidirectional attention
+pactoninfillingcomparedtonexttokenprediction
+prefix(whichisnotusedhereeither). However,it
+(§4.1),asreflectedby MSKBI doingsubstantially
+is interesting that scaling up does not reduce the
+betterthan MSKUNI. Moreover,wefindthatthis
+gapbetweenthem. Thissuggeststhatthereissome
+alsoholdsatscale,asreflectedbyHYBPREdoing
+fundamentalinterferencebetweenthesedifferent
+betterwithlargervaluesofr ,whileoutperform-
+capabilities,12andincreasingcapacitydoesnotmit- bidir
+ingHYBUNI. Regardingthesecondfactor,wefind
+12Therearevariousfactorsthatcouldexplainthis. Both that combining masking with next token predic-
+maskingandthebidirectionalattentionprefixreducethesu- tion significantly hurts infilling performance for
+pervisiononnexttokenprediction,andmaskingfurtherintro-
+smallmodels,asreflectedbythelargegapbetween
+ducessomenoiseintheoriginalsequence.Moreover,training
+tousebothunidirectionalandbidirectionalattentionand/or MSKUNI and HYBUNI. However, we also find
+contextmightprovideaconflictingsignal,althoughourresults
+laterin§4.2suggestthatthisdoesnothaveamajorimpactat scale.
+125M 355M 1.3B 2.7B 6.7B RE HS PI WG SC OB avg
+NXTUNI full 69.83 73.13 75.90 77.26 77.98 NXTUNI 66.7 32.2 65.3 51.9 64.3 33.0 52.3
+NXTPRE 65.8 31.2 64.1 54.1 63.5 35.0 52.3
+NXTPRE full 69.40 72.75 – – – 125M HYBUNI 65.4 30.8 63.1 50.9 63.6 34.4 51.4
+MSKUNI infill 69.65 73.39 – – –
+HYBPRE 64.9 30.5 64.2 51.9 63.0 35.2 51.6
+MSKBI infill† 71.00 74.98 77.17 78.07 78.70 N NX XT TU PRN EI 7 74 4. .8
+3
+4 41 0. .0
+0
+6 69 8. .5
+9
+55 22 .. 62 67 90 .. 20 3 38 7. .6
+8
+5 57 7. .7
+1
+355M
+full 68.94 72.77 75.43 76.61 77.76 HYBUNI 73.9 39.3 68.1 52.3 69.3 37.2 56.7
+HYBUNI
+infill 67.02 71.90 75.38 76.90 77.88
+HYBPRE 72.9 37.8 67.6 50.4 68.4 37.4 55.8
+full 68.53 72.05 74.75 76.03 76.87
+NXTUNI 81.0 52.6 73.8 55.6 74.1 43.6 63.5
+1.3B HYBUNI 80.0 50.3 72.1 53.7 74.1 43.0 62.2
+HYBPRE infill 67.82 72.24 75.35 76.66 77.63
+infill† 68.78 73.35 76.36 77.63 78.47
+HYBPRE 79.4 48.5 71.4 52.9 73.9 38.2 60.7
+NXTUNI 83.8 58.8 75.0 60.1 76.6 50.8 67.5
+2.7B HYBUNI 83.1 57.5 73.9 58.0 76.9 45.8 65.9
+Table 6: Single token infilling accuracy, re-ranking HYBPRE 81.7 54.7 72.4 56.7 75.3 46.6 64.6
+thetop32candidatesfrom125MMSKBI. † denotes NXTUNI 85.2 63.6 76.2 60.0 77.6 51.6 69.0
+n
+bidir
+= n, the rest use n
+bidir
+= 0. Refer to §3.2 for 6.7B HYBUNI 84.2 61.7 75.5 59.7 76.8 49.0 67.8
+moredetails. HYBPRE 83.9 58.9 73.9 58.7 76.9 50.8 67.2
+Table 7: Zero-shot priming accuracy. We use
+the impact of this to vanish at scale, as reflected n =0forinference. RE:ReCoRD,HS:HellaSwag,
+bidir
+by the gap between MSKBI and HYBPRE with PI:PIQA,WG:WinoGrande,SC:StoryCloze,OB:Open-
+r = 1.0 becoming smaller for larger models. BookQA.
+bidir
+Thisalsoexplainswhy HYBPREwithr
+bidir
+= 0.0
+outperforms HYBUNI for small models, but the 125M 355M 1.3B 2.7B 6.7B
+trendisreversedaswescaleup: thebidirectional NXTUNI full 44.79 50.12 53.63 55.09 55.27
+prefix in HYBPRE reduces the relative weight of
+NXTPRE full 45.41 49.15 – – –
+next token prediction during training, which out-
+MSKUNI infill 41.69 44.15 – – –
+weighsthediscrepancywithnotusingbidirectional
+MSKBI infill† 41.56 48.34 52.24 55.59 53.97
+attention at inference time for small models, but
+not for larger ones. Interestingly, this is different HYBUNI full 45.12 47.92 52.59 53.40 54.47
+infill 43.03 44.54 48.13 49.94 51.26
+fromthebehaviorobservedforlanguagemodeling
+full 43.37 47.54 51.53 52.36 54.01
+in§4.1,wherescaledidnotsignificantlymitigate
+HYBPRE infill 42.16 44.47 47.36 49.98 50.24
+thenegativeimpactofcombiningmaskingandnext infill† 42.95 46.57 49.13 51.85 52.41
+tokenpredictionduringtraining. Weattributethis
+tomaskingintroducingnoiseintheoriginaldocu-
+Table 8: Zero-shot MNLI accuracy. † denotes
+ment,aswellasreducingtheamountoftokensthat n =n,therestusen =0.
+bidir bidir
+wetrainonnexttokenprediction.13
+Table6reportsinfillingresultsre-rankingthetop
+ingbidirectionalattentionwhich,consistentwith
+32candidatesfromthe125M MSKBI model. The
+ourpreviousresults,seemsstronglybeneficialfor
+best results are still obtained by MSKBI, but we
+infilling. Nevertheless,wealsofinddirectinfilling
+find the generative approach described in §3.2 to
+(infill)toscalebetterthangenerativefullsequence
+becompetitive,withNXTUNIobtainingthesecond
+bestresultsat125Mandthethirdbestresultsfor
+scoring(full)forboth HYBUNI and HYBPRE,al-
+thoughthiscould(partly)beexplainedbytheinter-
+larger models. This suggests that models trained
+ferencebetweennexttokenpredictionandmasking
+exclusively on next token prediction can also be
+diminishingatscaleasdiscussedpreviously.
+used for infilling as long as the set of candidates
+is small, even outperforming hybrid models like
+4.3 Zero-shotpriming
+HYBUNI that are trained both on next token pre-
+dictionandinfillingitself. Infact,itisremarkable Wereportzero-shotprimingresultsinTable7. We
+that NXTUNI isonlyoutperformedbymodelsus- observe the same general trends as in language
+modeling (§4.1), with NXTUNI performing best,
+13Note that the reverse is not true: the addition of next followed by HYBUNI and HYBPRE. The results
+tokenpredictioninHYBUNIdoesnotreducetheamountof
+aregenerallyconsistentacrosstasks.
+supervisiononinfillingwithrespecttoMSKUNI,asweuse
+thesamevalueofn inbothcases. Table 8 reports MNLI results, comparing full
+mask
+r 125M 355M 1.3B 2.7B 6.7B bidirectionalcontexthasnoclearimpact,withNX-
+bidir
+0.0 83.6 85.8 87.2 88.7 88.6
+TUNI and HYBUNI performingsimilarly. Incon-
+NXTUNI
+1.0 75.9 77.1 79.0 79.2 80.3 trast, when using bidirectional attention, bidirec-
+0.0 84.2 85.8 – – – tionalcontextseemsbeneficial,withHYBPREper-
+NXTPRE
+1.0 83.5 86.2 – – – formingbetterthan NXTPRE atsmallscale. This
+0.0 82.7 85.2 – – – suggests that pre-training with bidirectional con-
+MSKUNI
+1.0 83.2 85.1 – – – text is important for the model to learn to make
+0.0 79.6 81.0 81.9 81.6 82.6 effectiveuseofbidirectionalattention.
+MSKBI
+1.0 84.4 88.0 89.6 90.8 91.0
+0.0 83.5 85.9 87.6 88.6 88.8 5 Relatedwork
+HYBUNI
+1.0 80.8 82.5 84.0 85.0 84.7
+0.0 83.6 86.1 87.1 88.2 88.2 While it was once common to use random ini-
+HYBPRE
+1.0 84.8 86.7 88.8 89.8 90.3
+tialization for supervised learning, a series of
+worksshowedsubstantialimprovementsfrompre-
+Table9: Averagefine-tuningaccuracy.
+trainingautoregressivemodelsonnexttokenpre-
+diction (Dai and Le, 2015; Peters et al., 2018;
+Howard and Ruder, 2018; Radford et al., 2018).
+sequence scoring and direct infilling. Consistent
+Thepre-train/fine-tuneparadigmwasfurtherpopu-
+with the intrinsic evaluation in §4.2, we find full
+larizedbyBERT(Devlinetal.,2019)anditsderiva-
+sequencescoringwithNXTUNItobecompetitive
+tives like RoBERTa (Liu et al., 2019), which ob-
+with direct infilling with MSKBI. In fact, full se-
+tainedfurthergainsfrompre-trainingbidirectional
+quencescoringdoesevenbettercomparatively,ob-
+encoders on masked language modeling. Subse-
+tainingthebestresultsinallbutoneofthemodel
+quentworkexploredmaskingspansinsteadofin-
+sizes. Moreover, it is remarkable that both HY-
+dividualtokens,usingeitherbidirectionalencoder-
+BUNIandHYBPREobtainbetterresultswithfull
+onlymodels(Joshietal.,2020)orencoder-decoder
+sequencescoringcomparedtodirectinfillinginall
+models (Lewis et al., 2020; Raffel et al., 2020).
+cases. Consistent with our previous results, this
+Morerecently,therehasbeenarebornintereston
+suggeststhatleft-to-rightlanguagemodelscanbe
+scalingleft-to-rightautoregressivelanguagemod-
+avalidorevensuperioralternativetomaskedlan-
+elswithafocusonfew-shotpriming(Radfordetal.,
+guage models for single-token infilling tasks, as
+2019; Brown et al., 2020; Rae et al., 2021; Hoff-
+longasonecanaffordscoringeachcandidatesepa-
+mannetal.,2022;Smithetal.,2022;Chowdhery
+rately.
+etal.,2022;Zhangetal.,2022).
+While unidirectional and bidirectional models
+4.4 Fine-tuning
+havelargelybeendevelopedasseparatestrainsof
+We report average fine-tuning results comparing work serving a different purpose, there have also
+unidirectionalandbidirectionalattentioninTable been some attempts to combine the best of both
+9,andfullresultsfortheoptimalsettingforeach worlds. XLNet(Yangetal.,2019)pre-trainedau-
+variantinTable10. toregressive models over all permutations of the
+Our results show that bidirectional attention is factorizationorder,enablingthemodeltousebidi-
+helpful for fine-tuning regardless of scale, with rectionalcontextwithstrongresultsonfine-tuning.
+fully bidirectional models (MSKBI) performing Similarly,CM3(Aghajanyanetal.,2022)trained
+the best, followed by models pre-trained with a left-to-rightautoregressivemodels,maskingsome
+bidirectionalattentionprefix(HYBPRE,NXTPRE), spansthatarepredictedattheendofthesequence.
+and fully unidirectional models performing the ERNIE 3.0 (Sun et al., 2021) proposed a modu-
+worst (HYBUNI, NXTUNI, MSKUNI). Interest- lararchitecture,combiningasharedunidirectional
+ingly, changing the attention type at fine-tuning modulewitheitheranotherunidirectionalmodule
+time(usingunidirectionalattentionforpre-training for NLG or a bidirectional module for NLU. Fi-
+and bidirectional attention for fine-tuning, or the nally, Raffel et al. (2020) and Wu et al. (2021)
+otherwayaround)workspoorly. exploredsplittingdocumentsintwohalvesandpre-
+Atthesametime,wefindthattheroleofbidirec- dictingthesecondoneconditionedonthefirstone,
+tionalcontextisdependantonthetypeofattention using unidirectional attention for the former and
+used. When using fully unidirectional attention, bidirectionalattentionforthelatter.
+COLA MNLI MRPC QNLI RTE SST2 avg
+NXTUNI 82.4 83.1 82.8 88.8 70.4 93.9 83.6
+NXTPRE 81.3 83.3 83.1 90.1 69.3 93.7 83.5
+MSKUNI 82.6 82.2 81.4 88.4 68.6 93.1 82.7
+125M
+MSKBI 83.2 84.8 85.5 91.0 68.6 93.5 84.4
+HYBUNI 82.7 83.1 83.6 89.3 69.3 93.0 83.5
+HYBPRE 82.5 84.2 85.5 90.9 72.6 93.2 84.8
+NXTUNI 84.2 85.8 84.1 91.2 74.7 94.8 85.8
+NXTPRE 83.8 86.3 86.5 92.0 73.3 95.4 86.2
+MSKUNI 84.0 84.4 84.6 90.5 73.6 94.2 85.2
+355M
+MSKBI 85.2 87.7 89.7 92.9 76.2 96.2 88.0
+HYBUNI 85.4 85.3 85.3 91.0 73.3 94.8 85.9
+HYBPRE 84.5 86.5 87.3 92.5 74.4 95.2 86.7
+NXTUNI 87.0 87.3 85.3 92.4 75.1 95.9 87.2
+MSKBI 85.7 89.1 89.7 93.9 82.3 96.8 89.6
+1.3B
+HYBUNI 86.3 87.0 86.0 92.3 78.0 96.3 87.6
+HYBPRE 85.1 88.4 90.0 93.6 79.4 96.2 88.8
+NXTUNI 86.0 88.5 85.5 93.0 83.0 96.2 88.7
+MSKBI 87.2 89.8 91.7 94.0 85.2 96.8 90.8
+2.7B
+HYBUNI 86.2 88.1 86.8 93.0 80.9 96.7 88.6
+HYBPRE 86.2 89.4 89.5 94.1 82.7 96.7 89.8
+NXTUNI 86.3 88.5 85.8 93.4 81.2 96.7 88.6
+MSKBI 86.7 89.6 90.9 94.5 87.7 96.8 91.0
+6.7B
+HYBUNI 86.7 88.4 87.7 93.4 80.5 96.1 88.8
+HYBPRE 86.0 89.5 89.5 94.3 85.6 96.7 90.3
+Table10: Fine-tuningaccuracy. Weusen
+bidir
+=0forNXTUNI,MSKUNIandHYBUNI,andn
+bidir
+=nforthe
+rest.
+Despite the large body of work on language andbidirectionalcontext,like HYBUNI,lag
+modelpre-training,thereislittleworkcomparing behindregularlanguagemodelsonnexttoken
+differentapproachesinasystematicmanner. Asa prediction, and scale does not mitigate this.
+notable exception, Raffel et al. (2020) compared Suchmodelsalsolagbehindpuremaskedlan-
+variousarchitecturesandlearningobjectiveswith guagemodelsoninfilling,butscaledoeshelp
+a focus on fine-tuning. Concurrent to our work, closethisgapaslongastheyaretrainedwitha
+Wangetal.(2022)conductacomprehensivestudy bidirectionalattentionprefix. Forfine-tuning,
+withafocusonzero-shotlearningandmulti-task bidirectionalcontextisbeneficialwhenused
+fine-tuning. In contrast, we focus on the specific inconjunctionwithbidirectionalattention,but
+roleofbidirectionality,andcomparemodelsofdif- notwhenusedwithunidirectionalattention.
+ferentsizes.
+• While direct infilling requires bidirectional
+6 Conclusions contextandbenefitsfrombidirectionalatten-
+tionasdiscussedabove,modelsusingunidi-
+Inthiswork,westudytheroleofbidirectionalityin
+rectionalcontextandattentionarealsocom-
+languagemodelpre-trainingthroughanewframe-
+petitive in infilling when one can separately
+work that generalizes previous approaches. Our
+scoreeachcandidate. Forsettingswherethe
+mainfindingsareasfollows:
+setofcandidatesissmall(e.g.,zero-shotprim-
+• Bidirectionalattentionisstronglybeneficial ingforclassification),regularlanguagemod-
+forinfillingandfine-tuning. Incontrast,prefix elsobtaincomparableorevensuperiorresults
+languagemodelslagbehindregularlanguage tomodelspre-trainedoninfilling.
+modelsonnexttokenprediction,evenifthey
+Allinall,ourresultsshowthatthereisnotasin-
+get a small benefit from leveraging bidirec-
+gleconfigurationthatisoptimalforallusecases,
+tionalattentionintheprefix. Thisbehavioris
+and this remains generally consistent within the
+consistentatscale.
+scalerangeexploredinthiswork. Whilepriorwork
+• Models trained jointly to use unidirectional onscalinghasfocusedonleft-to-rightautoregres-
+sivemodels,thissuggeststhattheremightbeother Rishi Bommasani, Drew A. Hudson, Ehsan Adeli,
+objectives and architectures that are better suited Russ Altman, Simran Arora, Sydney von Arx,
+Michael S. Bernstein, Jeannette Bohg, Antoine
+for other applications like fine-tuning. Given the
+Bosselut,EmmaBrunskill,ErikBrynjolfsson,Shya-
+costofpre-trainingseveralmodels,wewouldlike
+mal Buch, Dallas Card, Rodrigo Castellon, Niladri
+toexploremodular(Sunetal.,2021)oradaptation Chatterji,AnnieChen,KathleenCreel,JaredQuincy
+(Wangetal.,2022)approachesinthefuture,where Davis, Dora Demszky, Chris Donahue, Moussa
+Doumbouya, Esin Durmus, Stefano Ermon, John
+onewouldeitherhaveasinglemodelwithmodular
+Etchemendy,KawinEthayarajh,LiFei-Fei,Chelsea
+componentsspecializedfordifferentusecases,or
+Finn, Trevor Gale, Lauren Gillespie, Karan Goel,
+efficientlyadaptanexistingmodelbychangingthe Noah Goodman, Shelby Grossman, Neel Guha,
+parameters in our framework instead of training Tatsunori Hashimoto, Peter Henderson, John He-
+witt, Daniel E. Ho, Jenny Hong, Kyle Hsu, Jing
+severalmodelsfromscratch.
+Huang, Thomas Icard, Saahil Jain, Dan Jurafsky,
+Pratyusha Kalluri, Siddharth Karamcheti, Geoff
+Limitations
+Keeling, Fereshte Khani, Omar Khattab, Pang Wei
+Koh, Mark Krass, Ranjay Krishna, Rohith Kudi-
+Ourstudyfocusesontheroleofbidirectionalityon tipudi, Ananya Kumar, Faisal Ladhak, Mina Lee,
+languagemodelpre-training,anddoesnotexplore Tony Lee, Jure Leskovec, Isabelle Levent, Xi-
+ang Lisa Li, Xuechen Li, Tengyu Ma, Ali Malik,
+otherfactorsthatmightaffectmodelperformance.
+Christopher D. Manning, Suvir Mirchandani, Eric
+In particular, we mask individual tokens without
+Mitchell, Zanele Munyikwa, Suraj Nair, Avanika
+considering longer spans, and do not explore the Narayan, Deepak Narayanan, Ben Newman, Allen
+impact of the masking rate. In addition, we do Nie, Juan Carlos Niebles, Hamed Nilforoshan, Ju-
+lian Nyarko, Giray Ogut, Laurel Orr, Isabel Pa-
+notconsidersequence-to-sequencemodelsinour
+padimitriou,JoonSungPark,ChrisPiech,EvaPorte-
+study,whichcombinebidirectionalattentioninthe
+lance, Christopher Potts, Aditi Raghunathan, Rob
+encoderandunidirectionalattentioninthedecoder. Reich, Hongyu Ren, Frieda Rong, Yusuf Roohani,
+Finally,wetrainallvariantsforthesamenumber Camilo Ruiz, Jack Ryan, Christopher Ré, Dorsa
+of tokens, making them comparable in terms of Sadigh, Shiori Sagawa, Keshav Santhanam, Andy
+Shih, Krishnan Srinivasan, Alex Tamkin, Rohan
+trainingcost,butresultinginmodelsusingabidi-
+Taori, Armin W. Thomas, Florian Tramèr, Rose E.
+rectional attention prefix or a masking objective
+Wang,WilliamWang,BohanWu,JiajunWu,Yuhuai
+seeinglesstokensofsupervision. Wu, Sang Michael Xie, Michihiro Yasunaga, Jiax-
+uan You, Matei Zaharia, Michael Zhang, Tianyi
+Zhang, Xikun Zhang, Yuhui Zhang, Lucia Zheng,
+Kaitlyn Zhou, and Percy Liang. 2021. On the op-
+References
+portunitiesandrisksoffoundationmodels.
+Armen Aghajanyan, Bernie Huang, Candace Ross,
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie
+VladimirKarpukhin,HuXu,NamanGoyal,Dmytro
+Subbiah, Jared D Kaplan, Prafulla Dhariwal,
+Okhonko,MandarJoshi,GargiGhosh,MikeLewis,
+Arvind Neelakantan, Pranav Shyam, Girish Sastry,
+and Luke Zettlemoyer. 2022. Cm3: A causal
+Amanda Askell, Sandhini Agarwal, Ariel Herbert-
+maskedmultimodalmodeloftheinternet.
+Voss, Gretchen Krueger, Tom Henighan, Rewon
+Child, Aditya Ramesh, Daniel Ziegler, Jeffrey Wu,
+Mikel Artetxe, Shruti Bhosale, Naman Goyal, Todor
+Clemens Winter, Chris Hesse, Mark Chen, Eric
+Mihaylov, Myle Ott, Sam Shleifer, Xi Victoria Lin,
+Sigler,MateuszLitwin,ScottGray,BenjaminChess,
+Jingfei Du, Srinivasan Iyer, Ramakanth Pasunuru,
+Jack Clark, Christopher Berner, Sam McCandlish,
+Giri Anantharaman, Xian Li, Shuohui Chen, Halil
+Alec Radford, Ilya Sutskever, and Dario Amodei.
+Akin, Mandeep Baines, Louis Martin, Xing Zhou,
+2020. Language models are few-shot learners. In
+PunitSinghKoura,BrianO’Horo,JeffWang,Luke
+AdvancesinNeuralInformationProcessingSystems,
+Zettlemoyer, Mona Diab, Zornitsa Kozareva, and
+volume 33, pages 1877–1901. Curran Associates,
+Ves Stoyanov. 2021. Efficient large scale language
+Inc.
+modelingwithmixturesofexperts.
+Aakanksha Chowdhery, Sharan Narang, Jacob Devlin,
+Luisa Bentivogli, Peter Clark, Ido Dagan, and Danilo Maarten Bosma, Gaurav Mishra, Adam Roberts,
+Giampiccolo.2009. Thefifthpascalrecognizingtex- Paul Barham, Hyung Won Chung, Charles Sutton,
+tualentailmentchallenge. InTAC. Sebastian Gehrmann, Parker Schuh, Kensen Shi,
+Sasha Tsvyashchenko, Joshua Maynez, Abhishek
+YonatanBisk,RowanZellers,RonanLebras,Jianfeng Rao, Parker Barnes, Yi Tay, Noam Shazeer, Vin-
+Gao, andYejinChoi.2020. Piqa: Reasoningabout odkumar Prabhakaran, Emily Reif, Nan Du, Ben
+physical commonsense in natural language. Pro- Hutchinson, Reiner Pope, James Bradbury, Jacob
+ceedingsoftheAAAIConferenceonArtificialIntel- Austin, Michael Isard, Guy Gur-Ari, Pengcheng
+ligence,34(05):7432–7439. Yin, Toju Duke, Anselm Levskaya, Sanjay Ghe-
+mawat, Sunipa Dev, Henryk Michalewski, Xavier Katie Millican, George van den Driessche, Bogdan
+Garcia, Vedant Misra, Kevin Robinson, Liam Fe- Damoc, Aurelia Guy, Simon Osindero, Karen Si-
+dus, Denny Zhou, Daphne Ippolito, David Luan, monyan, Erich Elsen, Jack W. Rae, Oriol Vinyals,
+HyeontaekLim,BarretZoph,AlexanderSpiridonov, andLaurentSifre.2022. Trainingcompute-optimal
+RyanSepassi,DavidDohan,ShivaniAgrawal,Mark largelanguagemodels.
+Omernick,AndrewM.Dai,ThanumalayanSankara-
+narayana Pillai, Marie Pellat, Aitor Lewkowycz, JeremyHowardandSebastianRuder.2018. Universal
+Erica Moreira, Rewon Child, Oleksandr Polozov, languagemodelfine-tuningfortextclassification. In
+Proceedings of the 56th Annual Meeting of the As-
+KatherineLee,ZongweiZhou,XuezhiWang,Bren-
+sociation for Computational Linguistics (Volume 1:
+nanSaeta,MarkDiaz,OrhanFirat,MicheleCatasta,
+Jason Wei, Kathy Meier-Hellstern, Douglas Eck,
+LongPapers),pages328–339,Melbourne,Australia.
+Jeff Dean, Slav Petrov, and Noah Fiedel. 2022. AssociationforComputationalLinguistics.
+Palm: Scalinglanguagemodelingwithpathways.
+Mandar Joshi, Danqi Chen, Yinhan Liu, Daniel S.
+Weld, Luke Zettlemoyer, and Omer Levy. 2020.
+Ido Dagan, Oren Glickman, and Bernardo Magnini.
+SpanBERT: Improving pre-training by representing
+2006. The pascal recognising textual entailment
+and predicting spans. Transactions of the Associa-
+challenge. In Machine Learning Challenges. Eval-
+tionforComputationalLinguistics,8:64–77.
+uatingPredictiveUncertainty,VisualObjectClassi-
+fication,andRecognisingTectualEntailment,pages
+Mike Lewis, Yinhan Liu, Naman Goyal, Mar-
+177–190, Berlin, Heidelberg. Springer Berlin Hei-
+jan Ghazvininejad, Abdelrahman Mohamed, Omer
+delberg.
+Levy, Veselin Stoyanov, and Luke Zettlemoyer.
+2020. BART:Denoisingsequence-to-sequencepre-
+AndrewMDaiandQuocVLe.2015. Semi-supervised
+trainingfornaturallanguagegeneration,translation,
+sequencelearning. In AdvancesinNeuralInforma-
+andcomprehension. InProceedingsofthe58thAn-
+tion Processing Systems, volume 28. Curran Asso-
+nual Meeting of the Association for Computational
+ciates,Inc.
+Linguistics, pages 7871–7880, Online. Association
+forComputationalLinguistics.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+deep bidirectional transformers for language under-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+standing. In Proceedings of the 2019 Conference
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+of the North American Chapter of the Association
+Roberta: A robustly optimized bert pretraining ap-
+for Computational Linguistics: Human Language
+proach.
+Technologies, Volume 1 (Long and Short Papers),
+pages4171–4186,Minneapolis,Minnesota.Associ- TodorMihaylov,PeterClark,TusharKhot,andAshish
+ationforComputationalLinguistics. Sabharwal.2018. Canasuitofarmorconductelec-
+tricity? a new dataset for open book question an-
+WilliamB.DolanandChrisBrockett.2005. Automati- swering. InProceedingsofthe2018Conferenceon
+callyconstructingacorpusofsententialparaphrases. EmpiricalMethodsinNaturalLanguageProcessing,
+InProceedingsoftheThirdInternationalWorkshop pages 2381–2391, Brussels, Belgium. Association
+onParaphrasing(IWP2005). forComputationalLinguistics.
+Danilo Giampiccolo, Bernardo Magnini, Ido Dagan, NasrinMostafazadeh,NathanaelChambers,Xiaodong
+andBillDolan.2007. ThethirdPASCALrecogniz- He, Devi Parikh, Dhruv Batra, Lucy Vanderwende,
+ingtextualentailmentchallenge. InProceedingsof Pushmeet Kohli, and James Allen. 2016. A cor-
+the ACL-PASCAL Workshop on Textual Entailment pusandclozeevaluationfordeeperunderstandingof
+and Paraphrasing, pages 1–9, Prague. Association commonsense stories. In Proceedings of the 2016
+forComputationalLinguistics. Conference of the North American Chapter of the
+Association for Computational Linguistics: Human
+Aaron Gokaslan and Vanya Cohen. 2019. Open- LanguageTechnologies,pages839–849,SanDiego,
+webtext corpus. http://web.archive. California. Association for Computational Linguis-
+org/save/http://Skylion007.github.io/
+tics.
+OpenWebTextCorpus.
+Sebastian Nagel. 2016. Cc-news. http:
+RBarHaim,IdoDagan,BillDolan,LisaFerro,Danilo //web.archive.org/save/http://commoncrawl.
+Giampiccolo,BernardoMagnini,andIdanSzpektor. org/2016/10/news-dataset-available.
+2006. Thesecondpascalrecognisingtextualentail-
+mentchallenge. InProceedingsoftheSecondPAS- Myle Ott, Sergey Edunov, Alexei Baevski, Angela
+CAL Challenges Workshop on Recognising Textual Fan, Sam Gross, Nathan Ng, David Grangier, and
+Entailment,volume7. Michael Auli. 2019. fairseq: A fast, extensible
+toolkit for sequence modeling. In Proceedings of
+JordanHoffmann,SebastianBorgeaud,ArthurMensch, the 2019 Conference of the North American Chap-
+Elena Buchatskaya, Trevor Cai, Eliza Rutherford, teroftheAssociationforComputationalLinguistics
+DiegodeLasCasas,LisaAnneHendricks,Johannes (Demonstrations), pages 48–53, Minneapolis, Min-
+Welbl, Aidan Clark, Tom Hennigan, Eric Noland, nesota.AssociationforComputationalLinguistics.
+MatthewE.Peters,MarkNeumann,MohitIyyer,Matt Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhaga-
+Gardner, Christopher Clark, Kenton Lee, and Luke vatula, and Yejin Choi. 2020. Winogrande: An ad-
+Zettlemoyer. 2018. Deep contextualized word rep- versarial winograd schema challenge at scale. Pro-
+resentations. In Proceedings of the 2018 Confer- ceedingsoftheAAAIConferenceonArtificialIntel-
+ence of the North American Chapter of the Associ- ligence,34(05):8732–8740.
+ation for Computational Linguistics: Human Lan-
+guageTechnologies,Volume1(LongPapers),pages Shaden Smith, Mostofa Patwary, Brandon Norick,
+2227–2237, New Orleans, Louisiana. Association Patrick LeGresley, Samyam Rajbhandari, Jared
+forComputationalLinguistics. Casper, Zhun Liu, Shrimai Prabhumoye, George
+Zerveas, Vijay Korthikanti, Elton Zhang, Rewon
+Alec Radford, Karthik Narasimhan, Time Salimans, Child,RezaYazdaniAminabadi,JulieBernauer,Xia
+and Ilya Sutskever. 2018. Improving language un- Song, Mohammad Shoeybi, Yuxiong He, Michael
+derstanding with unsupervised learning. Technical Houston, Saurabh Tiwary, and Bryan Catanzaro.
+report,OpenAI. 2022. Using deepspeed and megatron to train
+megatron-turing nlg 530b, a large-scale generative
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan, languagemodel.
+DarioAmodei,andIlyaSutskever.2019. Language
+modelsareunsupervisedmultitasklearners. Techni- Richard Socher, Alex Perelygin, Jean Wu, Jason
+calreport,OpenAI. Chuang, ChristopherD.Manning, AndrewNg, and
+Christopher Potts. 2013. Recursive deep models
+Jack W. Rae, Sebastian Borgeaud, Trevor Cai, Katie
+forsemanticcompositionalityoverasentimenttree-
+Millican, Jordan Hoffmann, Francis Song, John bank. In Proceedings of the 2013 Conference on
+Aslanides, Sarah Henderson, Roman Ring, Susan- EmpiricalMethodsinNaturalLanguageProcessing,
+nah Young, Eliza Rutherford, Tom Hennigan, Ja-
+pages1631–1642,Seattle,Washington,USA.Asso-
+cobMenick,AlbinCassirer,RichardPowell,George
+ciationforComputationalLinguistics.
+van den Driessche, Lisa Anne Hendricks, Mari-
+beth Rauh, Po-Sen Huang, Amelia Glaese, Jo-
+Yu Sun, Shuohuan Wang, Shikun Feng, Siyu Ding,
+hannes Welbl, Sumanth Dathathri, Saffron Huang,
+Chao Pang, Junyuan Shang, Jiaxiang Liu, Xuyi
+Jonathan Uesato, John Mellor, Irina Higgins, An-
+Chen, Yanbin Zhao, Yuxiang Lu, Weixin Liu, Zhi-
+tonia Creswell, Nat McAleese, Amy Wu, Erich
+hua Wu, Weibao Gong, Jianzhong Liang, Zhizhou
+Elsen, Siddhant Jayakumar, Elena Buchatskaya,
+Shang, Peng Sun, Wei Liu, Xuan Ouyang, Dian-
+David Budden, Esme Sutherland, Karen Simonyan,
+hai Yu, Hao Tian, Hua Wu, and Haifeng Wang.
+Michela Paganini, Laurent Sifre, Lena Martens,
+2021. Ernie 3.0: Large-scale knowledge enhanced
+Xiang Lorraine Li, Adhiguna Kuncoro, Aida Ne-
+pre-trainingforlanguageunderstandingandgenera-
+matzadeh, Elena Gribovskaya, Domenic Donato,
+tion.
+Angeliki Lazaridou, Arthur Mensch, Jean-Baptiste
+Lespiau, Maria Tsimpoukelli, Nikolai Grigorev,
+YiTay,MostafaDehghani,SamiraAbnar,HyungWon
+Doug Fritz, Thibault Sottiaux, Mantas Pajarskas,
+Chung,WilliamFedus,JinfengRao,SharanNarang,
+Toby Pohlen, Zhitao Gong, Daniel Toyama, Cy-
+VinhQ.Tran, DaniYogatama, andDonaldMetzler.
+prien de Masson d’Autume, Yujia Li, Tayfun Terzi,
+2022a. Scaling laws vs model architectures: How
+Vladimir Mikulik, Igor Babuschkin, Aidan Clark,
+doesinductivebiasinfluencescaling?
+Diego de Las Casas, Aurelia Guy, Chris Jones,
+James Bradbury, Matthew Johnson, Blake Hecht-
+Yi Tay, Mostafa Dehghani, Jinfeng Rao, William Fe-
+man,LauraWeidinger,IasonGabriel,WilliamIsaac,
+dus, Samira Abnar, Hyung Won Chung, Sharan
+EdLockhart, SimonOsindero, LauraRimell, Chris
+Narang,DaniYogatama,AshishVaswani,andDon-
+Dyer, Oriol Vinyals, Kareem Ayoub, Jeff Stan-
+aldMetzler.2022b. Scaleefficiently: Insightsfrom
+way, Lorrayne Bennett, Demis Hassabis, Koray
+pretrainingandfinetuningtransformers. InInterna-
+Kavukcuoglu, and Geoffrey Irving. 2021. Scal-
+tionalConferenceonLearningRepresentations.
+inglanguagemodels: Methods, analysis&insights
+fromtraininggopher.
+TrieuH.TrinhandQuocV.Le.2018. Asimplemethod
+Colin Raffel, Noam Shazeer, Adam Roberts, Kather- forcommonsensereasoning.
+ine Lee, Sharan Narang, Michael Matena, Yanqi
+Zhou, Wei Li, and Peter J. Liu. 2020. Exploring Alex Wang, Amanpreet Singh, Julian Michael, Felix
+thelimitsoftransferlearningwithaunifiedtext-to- Hill, Omer Levy, and Samuel R. Bowman. 2019.
+text transformer. Journal of Machine Learning Re- GLUE: A multi-task benchmark and analysis plat-
+search,21(140):1–67. form for natural language understanding. In Inter-
+nationalConferenceonLearningRepresentations.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+PercyLiang.2016. SQuAD:100,000+questionsfor Thomas Wang, Adam Roberts, Daniel Hesslow,
+machine comprehension of text. In Proceedings of Teven Le Scao, Hyung Won Chung, Iz Beltagy,
+the2016ConferenceonEmpiricalMethodsinNatu- Julien Launay, and Colin Raffel. 2022. What lan-
+ralLanguageProcessing,pages2383–2392,Austin, guage model architecture and pretraining objective
+Texas.AssociationforComputationalLinguistics. workbestforzero-shotgeneralization?
+AlexWarstadt,AmanpreetSingh,andSamuelR.Bow- task #ofupdates
+man.2019. Neuralnetworkacceptabilityjudgments.
+CoLA 5336
+Transactions of the Association for Computational
+SST-2 20935
+Linguistics,7:625–641.
+MNLI 123873
+QNLI 33112
+GuillaumeWenzek,Marie-AnneLachaux,AlexisCon- MRPC 2296
+neau, Vishrav Chaudhary, Francisco Guzmán, Ar- RTE 2036
+mand Joulin, and Edouard Grave. 2020. CCNet:
+Extracting high quality monolingual datasets from
+Table11: Numberoffine-tuningupdatesforeachtask.
+web crawl data. In Proceedings of the 12th Lan-
+guageResourcesandEvaluationConference,pages
+4003–4012, Marseille, France. European Language
+A Proposedframework
+ResourcesAssociation.
+Figure3providesastep-by-stepdescriptionofhow
+Adina Williams, Nikita Nangia, and Samuel Bowman.
+wedefineourobjectivestartingfromtheoriginal
+2018. A broad-coverage challenge corpus for sen-
+tenceunderstandingthroughinference. InProceed- sequence.
+ingsofthe2018ConferenceoftheNorthAmerican
+Chapter of the Association for Computational Lin- B Fine-tuningsettings
+guistics: Human Language Technologies, Volume
+1 (Long Papers), pages 1112–1122, New Orleans, Forfine-tuning,wedidgridsearchonlearningrate
+Louisiana. Association for Computational Linguis- ∈ {5e−06,5e−05,1e−05,2e−05}andbatch
+tics.
+size∈ {16,32,64}. Foreachtask,wetrainedthe
+samenumbersofupdatesfordifferentsetupsand
+ShaohuaWu,XudongZhao,TongYu,RongguoZhang,
+Chong Shen, Hongli Liu, Feng Li, Hong Zhu, Jian- reported the best numbers across the grid. The
+gang Luo, Liang Xu, and Xuanwei Zhang. 2021. detailsoffine-tuningtasksandnumbersofupdates
+Yuan 1.0: Large-scale pre-trained language model can be found in Table 11, which were chosen to
+inzero-shotandfew-shotlearning.
+follow the original settings from RoBERTa. We
+used Adam and polynomial decay scheduler for
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+bonell,RussRSalakhutdinov,andQuocVLe.2019. optimization.
+Xlnet: Generalized autoregressive pretraining for
+language understanding. In Advances in Neural In-
+formation Processing Systems, volume 32. Curran
+Associates,Inc.
+Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali
+Farhadi, and Yejin Choi. 2019. HellaSwag: Can
+a machine really finish your sentence? In Pro-
+ceedings of the 57th Annual Meeting of the Asso-
+ciation for Computational Linguistics, pages 4791–
+4800,Florence,Italy.AssociationforComputational
+Linguistics.
+Sheng Zhang, Xiaodong Liu, Jingjing Liu, Jianfeng
+Gao, Kevin Duh, and Benjamin Van Durme. 2018.
+Record: Bridging the gap between human and ma-
+chinecommonsensereadingcomprehension.
+Susan Zhang, Stephen Roller, Naman Goyal, Mikel
+Artetxe,MoyaChen,ShuohuiChen,ChristopherDe-
+wan,MonaDiab,XianLi,XiVictoriaLin,TodorMi-
+haylov,MyleOtt,SamShleifer,KurtShuster,Daniel
+Simig, Punit Singh Koura, Anjali Sridhar, Tianlu
+Wang,andLukeZettlemoyer.2022. OPT:Openpre-
+trainedtransformerlanguagemodels.
+Yukun Zhu, Ryan Kiros, Richard Zemel, Ruslan
+Salakhutdinov, Raquel Urtasun, Antonio Torralba,
+andSanjaFidler.2015. Aligningbooksandmovies:
+Towards story-like visual explanations by watching
+moviesandreadingbooks.
+Output: tok 1 tok 2 … tok i tok i+1 tok i+2 … tok j tok j+1 tok j+2 … </s>
+❶
+</s> tok 1 … tok i-1 tok i tok i+1 … tok j-1 tok j tok j+1 … tok n-1
+Input:
+pos 0 pos 1 … pos i-1 pos i pos i+1 … pos j-1 pos j pos j+1 … pos n-1
+Output: tok 1 tok 2 … tok i tok i tok i+2 … tok j tok j tok j+2 … </s>
+❷
+</s> tok 1 … tok i-1 <mask> tok i+1 … tok j-1 <mask> tok j+1 … tok n-1
+Input:
+pos 0 pos 1 … pos i-1 pos i pos i+1 … pos j-1 pos j pos j+1 … pos n-1
+Output: tok 1 tok 2 … tok i tok i+2 … tok j tok j+2 … </s> tok i … tok j
+❸
+</s> tok 1 … tok i-1 tok i+1 … tok j-1 tok j+1 … tok n-1 <mask> … <mask>
+Input:
+pos 0 pos 1 … pos i-1 pos i+1 … pos j-1 pos j+1 … pos n-1 pos i … pos j
+n
+mask
+Output: tok j tok j+2 … </s> tok i … tok j
+❹
+</s> tok 1 … tok i-1 tok i+1 … tok j-1 tok j+1 … tok n-1 <mask> … <mask>
+Input:
+pos 0 pos 1 … pos i-1 pos i+1 … pos j-1 pos j+1 … pos n-1 pos i … pos j
+n n
+bidir predict
+Figure 3: Proposed framework. 1) We start with the original sequence in the input, and predict the next token
+in the output; 2) We choose n tokens at random, replace them with the special <mask> token in the input,
+mask
+andpredictthemaskedtoken(ratherthanthenexttoken)intheoutput;3)Wemovethemaskedtokensandtheir
+corresponding positional embeddings to the end; 4) We only predict the last n tokens, using bidirectional
+predict
+attentionforthefirstn tokensandunidirectionalattentionfortherest(finalobjective).
+bidir

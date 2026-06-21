@@ -1,0 +1,944 @@
+SPECTER: Document-level Representation Learning using
+Citation-informed Transformers
+ArmanCohan†∗ SergeyFeldman†∗ IzBeltagy† DougDowney† DanielS.Weld†,‡
+†AllenInstituteforArtificialIntelligence
+‡PaulG.AllenSchoolofComputerScience&Engineering,UniversityofWashington
+armanc,sergey,beltagy,dougd,danw @allenai.org
+{ }
+Abstract or sentences, extensions to whole-document em-
+beddings are relatively underexplored. Likewise,
+Representation learning is a critical ingre-
+methodsthatdouseinter-documentsignalstopro-
+dient for natural language processing sys-
+ducewhole-documentembeddings(Tuetal.,2017;
+tems. Recent Transformer language mod-
+Chen et al., 2019) have yet to incorporate state-
+els like BERT learn powerful textual repre-
+of-the-artpretrainedLMs. Here,westudyhowto
+sentations, but these models are targeted to-
+wards token- and sentence-level training ob- leveragethepowerofpretrainedlanguagemodels
+jectives and do not leverage information on tolearnembeddingsforscientificdocuments.
+inter-documentrelatedness,whichlimitstheir Apaper’stitleandabstractproviderichseman-
+document-level representation power. For ap- tic content about the paper, but, as we show in
+plications on scientific documents, such as
+thiswork,simplypassingthesetextualfieldstoan
+classification and recommendation, the em-
+“off-the-shelf”pretrainedlanguagemodel—evena
+beddings power strong performance on end
+state-of-the-artmodeltailoredtoscientifictextlike
+tasks. WeproposeSPECTER,anewmethodto
+generate document-level embedding of scien- the recent SciBERT (Beltagy et al., 2019)—does
+tific documents based on pretraining a Trans- not result in accurate paper representations. The
+former language model on a powerful signal languagemodelingobjectivesusedtopretrainthe
+of document-level relatedness: the citation modeldonotleadittooutputrepresentationsthat
+graph. Unlike existing pretrained language
+arehelpfulfordocument-leveltaskssuchastopic
+models, SPECTER can be easily applied to
+classificationorrecommendation.
+downstreamapplicationswithouttask-specific
+In this paper, we introduce a new method for
+fine-tuning. Additionally,toencouragefurther
+learninggeneral-purposevectorrepresentationsof
+research on document-level models, we intro-
+duce SCIDOCS, a new evaluation benchmark scientificdocuments. Oursystem, SPECTER,2 in-
+consistingofsevendocument-leveltasksrang- corporatesinter-documentcontextintotheTrans-
+ingfromcitationprediction,todocumentclas- former (Vaswani et al., 2017) language models
+sificationandrecommendation. Weshowthat (e.g., SciBERT (Beltagy et al., 2019)) to learn
+SPECTERoutperformsavarietyofcompetitive
+documentrepresentationsthatareeffectiveacross
+baselinesonthebenchmark.1
+a wide-variety of downstream tasks, without the
+need for any task-specific fine-tuning of the pre-
+1 Introduction
+trainedlanguagemodel. Wespecificallyusecita-
+As the pace of scientific publication continues to tions as a naturally occurring, inter-document in-
+increase,NaturalLanguageProcessing(NLP)tools cidentalsupervisionsignalindicatingwhichdocu-
+thathelpuserstosearch,discoverandunderstand mentsaremostrelatedandformulatethesignalinto
+thescientificliteraturehavebecomecritical. Inre- a triplet-loss pretraining objective. Unlike many
+centyears,substantialimprovementsinNLPtools priorworks,atinferencetime,ourmodeldoesnot
+havebeenbroughtaboutbypretrainedneurallan- require any citation information. This is critical
+guagemodels(LMs)(Radfordetal.,2018;Devlin forembeddingnewpapersthathavenotyetbeen
+etal.,2019;Yangetal.,2019). Whilesuchmodels cited. In experiments, we show that SPECTER’s
+arewidelyusedforrepresentingindividualwords representationssubstantiallyoutperformthestate-
+∗Equalcontribution 2SPECTER:ScientificPaperEmbeddingsusingCitation-
+1https://github.com/allenai/specter informedTransformERs
+of-the-artonavarietyofdocument-leveltasks,in- Querypaper( PQ) Relatedpaper( P+) Unrelatedpaper( P−)
+cludingtopicclassification,citationprediction,and
+recommendation. Transformer(initializedwithSciBERT)
+Asanadditionalcontributionofthiswork,wein-
+troduceandreleaseSCIDOCS3 ,anovelcollection
+ofdatasetsandanevaluationsuitefordocument- Tripletloss=max d PQ, P+ −d PQ, P− +m ,0
+n(cid:16) (cid:0) (cid:1) (cid:0) (cid:1) (cid:17) o
+level embeddings in the scientific domain. SCI-
+Figure1: OverviewofSPECTER.
+DOCScoversseventasks,andincludestensofthou-
+sandsofexamplesofanonymizedusersignalsof
+documentrelatedness. Wealsoreleaseourtraining 2.2 Background: PretrainedTransformers
+set(hundredsofthousandsofpapertitles,abstracts
+Recently, pretrained Transformer networks have
+and citations), along with our trained embedding
+demonstratedsuccessonvariousNLPtasks(Rad-
+modelanditsassociatedcodebase.
+ford et al., 2018; Devlin et al., 2019; Yang et al.,
+2019; Liu et al., 2019); we use these models as
+2 Model thefoundationfor SPECTER. Specifically,weuse
+SciBERT(Beltagyetal.,2019)whichisanadap-
+2.1 Overview tation of the original BERT (Devlin et al., 2019)
+architecture to the scientific domain. The BERT
+Our goal is to learn task-independent representa- modelarchitecture(Devlinetal.,2019)usesmulti-
+tions of academic papers. Inspired by the recent plelayersofTransformers(Vaswanietal.,2017)to
+successofpretrainedTransformerlanguagemodels encodethetokensinagiveninputsequence. Each
+acrossvariousNLPtasks,weusetheTransformer layerconsistsofaself-attentionsublayerfollowed
+modelarchitectureasbasisofencodingtheinput byafeedforwardsublayer. Thefinalhiddenstate
+paper. ExistingLMssuchasBERT,however,are associatedwiththespecial[CLS]tokenisusually
+primarilybasedonmaskedlanguagemodelingob- calledthe“pooledoutput”,andiscommonlyused
+jective, only considering intra-document context asanaggregaterepresentationofthesequence.
+and do not use any inter-document information.
+Thislimitstheirabilitytolearnoptimaldocument DocumentRepresentation Ourgoalistorepre-
+representations. To learn high-quality document- sentagivenpaper asadensevectorvthatbest
+P
+levelrepresentationsweproposeusingcitationsas representsthepaperandcanbeusedindownstream
+an inter-document relatedness signal and formu- tasks. SPECTERbuildsembeddingsfromthetitle
+lateitasatripletlosslearningobjective. Wethen and abstract of a paper. Intuitively, we would ex-
+pretrain the model on a large corpus of citations pectthesefieldstobesufficienttoproduceaccurate
+usingthisobjective,encouragingittooutputrep- embeddings,sincetheyarewrittentoprovideasuc-
+resentations that are more similar for papers that cinctand comprehensive summaryofthe paper.4
+shareacitationlinkthanforthosethatdonot. We Assuch,weencodetheconcatenatedtitleandab-
+callourmodel SPECTER, whichlearnsScientific stractusingaTransformerLM(e.g.,SciBERT)and
+PaperEmbeddingsusingCitation-informedTrans-
+takethefinalrepresentationofthe[CLS]tokenas
+formERs. Withrespecttotheterminologyusedby
+theoutputrepresentationofthepaper:5
+Devlinetal.(2019),unlikemostexistingLMsthat v = Transformer(input) [CLS], (1)
+are“fine-tuningbased”,ourapproachresultsinem-
+where Transformer is the Transformer’s for-
+beddingsthatcanbeappliedtodownstreamtasks
+wardfunction,andinputistheconcatenationof
+ina“feature-based”fashion,meaningthelearned
+the[CLS]tokenandWordPieces(Wuetal.,2016)
+paper embeddings can be easily used as features,
+of the title and abstract of a paper, separated by
+with no need for further task-specific fine-tuning.
+In the following, as background information, we 4We also experimented with additional fields such as
+brieflydescribehowpretrainedLMscanbeapplied venuesandauthorsbutdidnotfindanyempiricaladvantage
+inusingthose(see§6). See§7foradiscussionofusingthe
+fordocumentrepresentationandthendiscussthe
+fulltextofthepaperasinput.
+detailsof SPECTER. 5Itisalsopossibletoencodetitleandabstractsindividually
+andthenconcatenateorcombinethemtogetthefinalembed-
+ding.However,inourexperimentsthisresultedinsub-optimal
+3https://github.com/allenai/scidocs performance.
+the[SEP]token. WeuseSciBERTasourmodel Givenaquerypaper,intuitivelywewouldexpect
+initialization as it is optimized for scientific text, themodeltobeabletodistinguishbetweencited
+thoughour formulationis generaland any Trans- papers,anduncitedpaperssampledrandomlyfrom
+formerlanguagemodelinsteadofSciBERT.Using the entire corpus. This inductive bias has been
+theabovemethodwithan“off-the-shelf”SciBERT alsofoundtobeeffectiveincontent-basedcitation
+does not take global inter-document information recommendationapplications(Bhagavatulaetal.,
+intoaccount. ThisisbecauseSciBERT,likeother 2018). But,randomnegativesmaybeeasyforthe
+pretrainedlanguagemodels,istrainedvialanguage modeltodistinguishfromthepositives. Toprovide
+modelingobjectives,whichonlypredictwordsor a more nuanced training signal, we augment the
+sentencesgiventheirin-document,nearbytextual randomlydrawnnegativeswithamorechallenging
+context. Incontrast,weproposetoincorporateci- second set of negative examples. We denote as
+tationsintothemodelasasignalofinter-document “hardnegatives”thepapersthatarenotcitedbythe
+relatedness,whilestillleveragingthemodel’sex- querypaper,butarecitedbyapapercitedbythe
+istingstrengthinmodelinglanguage. query paper, i.e. if 1 cite 2 and 2 cite 3
+P −−→ P P −−→ P
+but 1 cite 3,then 3 isacandidatehardnega-
+2.3 Citation-BasedPretrainingObjective P −−(cid:54) → P P
+tiveexamplefor 1. Weexpectthehardnegatives
+Acitationfromonedocumenttoanothersuggests P
+tobesomewhatrelatedtothequerypaper,buttypi-
+thatthedocumentsarerelated. Toencodethisrelat-
+callylessrelatedthanthecitedpapers. Asweshow
+ednesssignalintoourrepresentations,wedesign
+inourexperiments( 6),includinghardnegatives
+alossfunctionthattrainstheTransformermodel §
+resultsinmoreaccurateembeddingscomparedto
+tolearncloserrepresentationsforpaperswhenone
+usingrandomnegativesalone.
+cites the other, and more distant representations
+otherwise. Thehigh-leveloverviewofthemodelis 2.5 Inference
+showninFigure1.
+Atinferencetime,themodelreceivesonepaper, ,
+Inparticular,eachtraininginstanceisatripletof P
+anditoutputsthe SPECTER’sTransfomerpooled
+papers: aquerypaper Q,apositivepaper +and
+outputactivationasthepaperrepresentationfor
+P P
+anegativepaper −. Thepositivepaperisapaper P
+P
+(Equation1). Wenotethatforinference,SPECTER
+thatthequerypapercites,andthenegativepaper
+requires only the title and abstract of the given
+isapaperthatisnotcitedbythequerypaper(but
+inputpaper;themodeldoesnotneedanycitation
+thatmaybecitedby +). Wethentrainthemodel
+informationabouttheinputpaper. Thismeansthat
+P
+usingthefollowingtripletmarginlossfunction:
+SPECTER can produce embeddings even for new
+L=max d PQ,P+ −d PQ,P− +m ,0 (2) papers that have yet to be cited, which is critical
+forapplicationsthattargetrecentscientificpapers.
+where d i(cid:110)s(cid:16)a d(cid:0)istance f(cid:1)unct(cid:0)ion and(cid:1)m is(cid:17)the(cid:111)loss
+margin hyperparameter (we empirically choose
+3 SCIDOCS EvaluationFramework
+m = 1). Here,weusetheL2normdistance:
+d( A, B) = v v , Previousevaluationsofscientificdocumentrepre-
+A B 2
+P P (cid:107) − (cid:107) sentations in the literature tend to focus on small
+wherev isthevectorcorrespondingtothepooled
+A datasetsoveralimitedsetoftasks,andextremely
+outputoftheTransformerrunonpaperA(Equation
+high(99%+)AUCscoresarealreadypossibleon
+1).6 StartingfromthetrainedSciBERTmodel,we
+thesedataforEnglishdocuments(Chenetal.,2019;
+pretraintheTransformerparametersonthecitation
+Wangetal.,2019). New,largerandmorediverse
+objectivetolearnpaperrepresentationsthatcapture
+benchmarkdatasetsarenecessary. Here,weintro-
+documentrelatedness.
+duceanewcomprehensiveevaluationframework
+tomeasuretheeffectivenessofscientificpaperem-
+2.4 SelectingNegativeDistractors
+beddings,whichwecallSCIDOCS. Theframework
+Thechoiceofnegativeexamplepapers − isim-
+consistsofdiversetasks,rangingfromcitationpre-
+P
+portantwhentrainingthemodel. Weconsidertwo
+diction,topredictionofuseractivity,todocument
+setsofnegativeexamples: thefirstsetsimplycon-
+classificationandpaperrecommendation. Notethat
+sistsofrandomlyselectedpapersfromthecorpus.
+SPECTERwillnotbefurtherfine-tunedonanyof
+thetasks;wesimplyplugintheembeddingsasfea-
+6Wealsoexperimentedwithotherdistancefunctions(e..g,
+normalizedcosine),buttheyunderperformedtheL2loss. turesforeachtask. Below,wedescribeeachofthe
+tasks in detail and the evaluation data associated DirectCitations Inthistask,themodelisasked
+withit. Inadditiontoourtrainingdata,werelease topredictwhichpapersarecitedbyagivenquery
+allthedatasetsassociatedwiththeevaluationtasks. paper from a given set of candidate papers. The
+evaluationdatasetincludesapproximately30Kto-
+3.1 DocumentClassification tal papers from a held-out pool of papers, con-
+sistingof1Kquerypapersandacandidatesetof
+Animportanttestofadocument-levelembeddingis
+up to 5 cited papers and 25 (randomly selected)
+whetheritispredictiveoftheclassofthedocument.
+uncitedpapers. Thetaskistorankthecitedpapers
+Here, we consider two classification tasks in the
+higher than the uncited papers. For each embed-
+scientificdomain:
+ding method, we require only comparing the L2
+distancebetweentherawembeddingsofthequery
+MeSHClassification Inthistask,thegoalsisto
+andthecandidates,withoutanyadditionaltrainable
+classifyscientificpapersaccordingtotheirMedi-
+calSubjectHeadings(MeSH)(Lipscomb,2000).7 parameters.
+Weconstructadatasetconsistingof23Kacademic Co-Citations This task is similar to the direct
+medicalpapers,whereeachpaperisassignedone citations but instead of predicting a cited paper,
+of 11 top-level disease classes such as cardiovas- thegoalistopredictahighlyco-citedpaperwith
+culardiseases,diabetes,digestivediseasesderived a given paper. Intuitively, if papers A and B are
+from the MeSH vocabulary. The most populated cited frequently together by several papers, this
+categoryisNeoplasms(cancer)with5.4Kinstances showsthatthepapersarelikelyhighlyrelatedand
+(23.3%ofthetotaldataset)whilethecategorywith agoodpaperrepresentationmodelshouldbeable
+leastnumberofsamplesisHepatitis(1.7%ofthe to identify these papers from a given candidate
+totaldataset). WefollowtheapproachofFeldman set. Thedatasetconsistsof30Ktotalpapersandis
+etal.(2019)inmappingtheMeSHvocabularyto constructedsimilartothedirectcitationstask.
+thediseaseclasses.
+3.3 UserActivity
+PaperTopicClassification Thistaskispredict-
+Theembeddingsforsimilarpapersshouldbeclose
+ingthetopicassociatedwithapaperusingthepre-
+to each other; we use user activity as a proxy for
+definedtopiccategoriesoftheMicrosoftAcademic
+identifyingsimilarpapersandtestthemodel’sabil-
+Graph (MAG) (Sinha et al., 2015)8. MAG pro-
+itytorecoverthisinformation. Multipleuserscon-
+videsadatabaseofpapers,eachtaggedwithalist
+sumingthesameitemsasoneanotherisaclassic
+oftopics. Thetopicsareorganizedinahierarchy
+relatednesssignalandformsthefoundationforrec-
+of5levels, wherelevel1isthemostgeneraland
+ommendersystemsandotherapplications(Schafer
+level 5 is the most specific. For our evaluation,
+et al., 2007). In our case, we would expect that
+we derive a document classification dataset from
+when users look for academic papers, the papers
+the level 1 topics, where a paper is labeled by its
+theyviewinasinglebrowsingsessiontendtobe
+correspondinglevel1MAGtopic. Weconstructa
+related. Thus,accuratepaperembeddingsshould,
+datasetof25Kpapers,almostevenlysplitoverthe
+allelsebeingequal,berelativelymoresimilarfor
+19differentclassesoflevel1categoriesinMAG.
+papersthatarefrequentlyviewedinthesameses-
+sion than for other papers. To build benchmark
+3.2 CitationPrediction
+datasets to test embeddings on user activity, we
+As argued above, citations are a key signal of re- obtained logs of user sessions from a major aca-
+latednessbetweenpapers. Wetesthowwelldiffer- demicsearchengine. Wedefinethefollowingtwo
+entpaperrepresentationscanreproducethissignal tasksonwhichwebuildbenchmarkdatasetstotest
+throughcitationpredictiontasks. Inparticular,we embeddings:
+focusontwosub-tasks: predictingdirectcitations,
+Co-Views Our co-views dataset consists of ap-
+and predicting co-citations. We frame these as
+proximately30Kpapers. Toconstructit,wetake
+rankingtasksandevaluateperformanceusing MAP 1K random papers that are not in our train or de-
+andnDCG,standardrankingmetrics.
+velopmentsetandassociatewitheachoneupto5
+frequentlyco-viewedpapersand25randomlyse-
+7https://www.nlm.nih.gov/mesh/meshhome.
+lectedpapers(similartotheapproachforcitations).
+html
+8https://academic.microsoft.com/ Then,werequiretheembeddingmodeltorankthe
+co-viewed papers higher than the random papers ontheofflinedatasettranslateintoimprovements
+bycomparingtheL2distancesofrawembeddings. ontheonlinerecommendationtask( 5).
+§
+We evaluate performance using standard ranking
+4 Experiments
+metrics,nDCGandMAP.
+Co-Reads If the user clicks to access the PDF Training Data To train our model, we use a
+of a paper from the paper description page, this subset of the Semantic Scholar corpus (Ammar
+isapotentiallystrongersignofinterestinthepa- etal.,2018)consistingofabout146Kquerypapers
+per. Insuchacaseweassumetheuserwillreadat (around 26.7M tokens) with their corresponding
+leastpartsofthepaperandrefertothisasa“read” outgoingcitations,andweuseanadditional32K
+action. Accordingly, we define a “co-reads” task papersforvalidation. Foreachquerypaperwecon-
+anddatasetanalogoustotheco-viewsdatasetde- structupto5trainingtriplescomprisedofaquery,
+scribedabove. Thisdatasetisalsoapproximately a positive, and a negative paper. The positive pa-
+30Kpapers. pers are sampled from the direct citations of the
+query,whilenegativepapersarechoseneitherran-
+3.4 Recommendation domlyorfromcitationsofcitations(asdiscussedin
+2.4). Weempiricallyfoundithelpfultouse2hard
+Intherecommendationtask,weevaluatetheabil-
+§
+negatives (citations of citations) and 3 easy neg-
+ity of paper embeddings to boost performance in
+atives (randomly selected papers) for each query
+a production recommendation system. Our rec-
+paper. Thisprocessresultsinabout684Ktraining
+ommendationtaskaimstohelpusersnavigatethe
+triplesand145Kvalidationtriples.
+scientificliteraturebyrankingasetof“similarpa-
+pers” for a given paper. We use a dataset of user
+Training and Implementation We implement
+clickthrough data for this task which consists of
+our model in AllenNLP (Gardner et al., 2018).
+22K clickthrough events from a public scholarly
+WeinitializethemodelfromSciBERTpretrained
+search engine. We partitioned the examples tem-
+weights(Beltagyetal.,2019)sinceitisthestate-
+porallyintotrain(20Kexamples),validation(1K),
+of-the-artpretrainedlanguagemodelonscientific
+andtest(1K)sets. Asistypicalinclickthroughdata
+text. Wecontinuetrainingallmodelparameterson
+onrankedlists,theclicksarebiasedtowardthetop
+our training objective (Equation 2). We perform
+oforiginalrankingpresentedtotheuser. Tocoun-
+minimal tuning of our model’s hyperparameters
+teractthiseffect, wecomputedpropensityscores
+based on the performance on the validation set,
+using a swap experiment (Agarwal et al., 2019).
+while baselines are extensively tuned. Based on
+Thepropensityscoresgive,foreachpositioninthe
+initialexperiments,weuseamarginm=1forthe
+rankedlist,therelativefrequencythattheposition
+triplet loss. For training, we use the Adam opti-
+isover-representedinthedataduetoexposurebias.
+mizer (Kingma and Ba, 2014) following the sug-
+Wecanthencomputede-biasedevaluationmetrics
+gestedhyperparametersinDevlinetal.(2019)(LR:
+bydividingthescoreforeachtestexamplebythe
+2e-5,SlantedTriangularLRscheduler10 (Howard
+propensityscorefortheclickedposition. Wereport
+andRuder,2018)withnumberoftrainstepsequal
+propensity-adjustedversionsofthestandardrank-
+to training instances and cut fraction of 0.1). We
+ing metrics Precision@1
+(P@ˆ1)
+and Normalized
+train the model on a single Titan V GPU (12G
+DiscountedCumulativeGain(nDˆ CG).
+memory) for 2 epochs, with batch size of 4 (the
+Wetestdifferentembeddingsontherecommen-
+maximum that fit in our GPU memory) and use
+dation task by including cosine embedding dis-
+gradientaccumulationforaneffectivebatchsizeof
+tance9 asafeaturewithinanexistingrecommenda-
+32. Eachtrainingepochtakesapproximately1-2
+tionsystemthatincludesseveralotherinformative
+days to complete on the full dataset. We release
+features (title/author similarity, reference and ci- ourcodeanddatatofacilitatereproducibility. 11
+tation overlap, etc.). Thus, the recommendation
+experimentsmeasurewhethertheembeddingscan Task-Specific Model Details For the classifica-
+boosttheperformanceofastrongbaselinesystem tion tasks, we used a linear SVM where embed-
+onanendtask. For SPECTER,wealsoperforman dingvectorsweretheonlyfeatures. TheC hyper-
+onlineA/Btesttomeasurewhetheritsadvantages parameterwastunedviaaheld-outvalidationset.
+9EmbeddingsareL2normalizedandinthiscasecosine 10Learningratelinearwarmupfollowedbylineardecay.
+distanceisequivalenttoL2distance. 11https://github.com/allenai/specter
+For the recommendation tasks, we use a feed- predictinguseractivityisshowninthe“Useractiv-
+forwardrankingneuralnetworkthattakesasinput ity”columnsofTable1. SPECTERachievesa MAP
+tenfeaturesdesignedtocapturethesimilaritybe- scoreof83.8ontheco-viewtask,and84.5onco-
+tween each query and candidate paper, including read,improvingoverthebestbaseline(Citeomatic
+thecosinesimilaritybetweenthequeryandcandi- in this case) by 2.7 and 4.0 points, respectively.
+dateembeddingsandmanually-designedfeatures We observe similar trends for the “citation” and
+computedfromthepapers’citations,titles,authors, “co-citation”tasks,withourmodeloutperforming
+andpublicationdates. virtuallyallotherbaselinesexceptforSGC,which
+hasaccesstothecitationgraphattrainingandtest
+BaselineMethods Ourworkfallsintotheinter-
+time.12 Note that methods like SGC cannot be
+section of textual representation, citation mining,
+used in real-world setting to embed new papers
+andgraphlearning,andweevaluateagainststate-
+that are not cited yet. On the other hand, on co-
+of-the-artbaselinesfromeachoftheseareas. We
+citationdataourmethodisabletoachievethebest
+compare with several strong textual models: SIF
+results with nDCG of 94.8, improving over SGC
+(Arora et al., 2017), a method for learning docu-
+with2.3points. Citeomaticalsoperformswellon
+ment representations by removing the first prin-
+thecitationtasks,asexpectedgiventhatitsprimary
+cipalcomponentofaggregatedword-levelembed-
+designgoalwascitationprediction. Nevertheless,
+dingswhichwepretrainonscientifictext;SciBERT
+ourmethodslightlyoutperformsCiteomaticonthe
+(Beltagyetal.,2019)astate-of-the-artpretrained
+directcitationtask,whilesubstantiallyoutperform-
+TransformerLMforscientifictext;andSent-BERT
+ingitonco-citations(+2.0nDCG).
+(ReimersandGurevych,2019),amodelthatuses
+negativesamplingtotuneBERTforproducingop- Finally, for recommendation task, we observe
+timalsentenceembeddings. Wealsocomparewith thatSPECTERoutperformsallothermodelsonthis
+Citeomatic (Bhagavatula et al., 2018), a closely task as well, with nDCG of 53.9. On the recom-
+relatedpaperrepresentationmodelforcitationpre- mendations task, as opposed to previous experi-
+dictionwhichtrainscontent-basedrepresentations ments, the differences in method scores are gen-
+with citation graph information via dynamically erally smaller. This is because for this task the
+sampled triplets, and SGC (Wu et al., 2019a), a embeddings are used along with several other in-
+state-of-the-artgraph-convolutionalapproach. For formativefeaturesintherankingmodel(described
+completeness, additional baselines are also in- undertask-specificmodelsin 4),meaningthatem-
+§
+cluded; due to space constraints we refer to Ap- beddingvariantshavelessopportunityforimpact
+pendix A for detailed discussion of all baselines. onoverallperformance.
+Wetunehyperparametersofbaselinestomaximize
+Wealsoperformedanonlinestudytoevaluate
+performanceonaseparatevalidationset.
+whether SPECTERembeddingsoffersimilaradvan-
+tagesinaliveapplication. Weperformedanonline
+5 Results
+A/B test comparing our SPECTER-based recom-
+Table 1 presents the main results corresponding mendertoanexistingproductionrecommendersys-
+toourevaluationtasks(describedin 3). Overall, temforsimilarpapersthatrankspapersbyatextual
+§
+we observe substantial improvements across all similaritymeasure. Inadatasetof4,113clicks,we
+taskswithaverageperformanceof80.0acrossall foundthat SPECTERrankerimprovedclickthrough
+metrics on all tasks which is a 3.1 point absolute rateoverthebaselineby46.5%,demonstratingits
+improvementoverthenext-bestbaseline. Wenow superiority.
+discusstheresultsindetail.
+We emphasize that our citation-based pretrain-
+For document classification, we report macro
+ing objective is critical for the performance of
+F1, a standard classification metric. We observe
+SPECTER;removingthisandusingavanillaSciB-
+thattheclassifierperformancewhentrainedonour
+ERTresultsindecreasedperformanceonalltasks.
+representationsisbetterthanwhentrainedonany
+otherbaseline. Particularly,ontheMeSH(MAG)
+dataset,weobtainan86.4(82.0)F1scorewhichis
+abouta∆=+2.3(+1.5)pointabsoluteincrease 12ForSGC,weremovedevelopmentandtestsetcitations
+andco-citationsduringtraining. Wealsoremoveincoming
+overthebestbaselineoneachdatasetrespectively.
+citationsfromdevelopmentandtestsetqueriesasthesewould
+Our evaluation of the learned representations on notbeavailableattesttimeinproduction.
+Task→ Classification Useractivityprediction Citationprediction
+Recomm.
+Avg.
+Subtask→ MAG MeSH Co-View Co-Read Cite Co-Cite
+Model↓/Metric→ F1 F1 MAP nDCG MAP nDCG MAP nDCG MAP nDCG nDˆCG P@ˆ1
+Random 4.8 9.4 25.2 51.6 25.6 51.9 25.1 51.5 24.9 51.4 51.3 16.8 32.5
+Doc2vec(2014) 66.2 69.2 67.8 82.9 64.9 81.6 65.3 82.2 67.1 83.4 51.7 16.9 66.6
+Fasttext-sum(2017) 78.1 84.1 76.5 87.9 75.3 87.4 74.6 88.1 77.8 89.6 52.5 18.0 74.1
+SIF(2017) 78.4 81.4 79.4 89.4 78.2 88.9 79.4 90.5 80.8 90.9 53.4 19.5 75.9
+ELMo(2018) 77.0 75.7 70.3 84.3 67.4 82.6 65.8 82.6 68.5 83.8 52.5 18.2 69.0
+Citeomatic(2018) 67.1 75.7 81.1 90.2 80.5 90.2 86.3 94.1 84.4 92.8 52.5 17.3 76.0
+SGC(2019a) 76.8 82.7 77.2 88.0 75.7 87.5 91.6 96.2 84.1 92.5 52.7 18.2 76.9
+SciBERT(2019) 79.7 80.7 50.7 73.1 47.7 71.1 48.3 71.7 49.7 72.6 52.1 17.9 59.6
+Sent-BERT(2019) 80.5 69.1 68.2 83.3 64.8 81.3 63.5 81.6 66.4 82.8 51.6 17.1 67.5
+SPECTER(Ours) 82.0 86.4 83.6 91.5 84.5 92.4 88.3 94.9 88.1 94.8 53.9 20.0 80.0
+Table1: ResultsontheSCIDOCSevaluationsuiteconsistingof7tasks.
+6 Analysis
+CLS USR CITE REC Avg.
+In this section, we analyze several design deci-
+SPECTER 84.2 88.4 91.5 36.9 80.0
+−abstract 82.2 72.2 73.6 34.5 68.1
+sions in SPECTER, provide a visualization of its
++venue 84.5 88.0 91.2 36.7 79.9
+embedding space, and experimentally compare
++author 82.7 72.3 71.0 34.6 67.3
+SPECTER’suseoffixedembeddingsagainstafine-
+Nohardnegatives 82.4 85.8 89.8 36.8 78.4
+tuningapproach.
+Startw/BERT-Large 81.7 85.9 87.8 36.1 77.5
+Ablation Study We start by analyzing how Table 2: Ablations: Numbers are averages of metrics
+adding or removing metadata fields from the in- for each evaluation task: CLS: classification, USR:
+put to SPECTER alters performance. The results Useractivity,CITE:Citationprediction,REC:Recom-
+are shown in the top four rows of Table 2 (for mendation,Avg. averageoveralltasks&metrics.
+brevity,hereweonlyreporttheaverageofthemet-
+rics from each task). We observe that removing
+withpapertopics). ThefactthatSPECTERdoesnot
+theabstractfromthetextualinputandrelyingonly
+requireinputslikeauthorsorvenuesmakesitappli-
+onthetitleresultsinasubstantialdecreaseinper-
+cableinsituationswherethismetadataisnotavail-
+formance. Moresurprisingly,addingauthorsasan
+able,suchasmatchingreviewerswithanonymized
+input (along with title and abstract) hurts perfor-
+submissions, or performing recommendations of
+mance.13 Onepossibleexplanationisthatauthor
+anonymizedpreprints(e.g.,onOpenReview).
+namesaresparseinthecorpus,makingitdifficult
+OnedesigndecisioninSPECTERistouseasetof
+forthemodeltoinferdocument-levelrelatedness
+hardnegativedistractorsinthecitation-basedfine-
+fromthem. Asanotherpossiblereasonofthisbe-
+tuning objective. The fifth row of Table 2 shows
+havior, tokenization using Wordpieces might be
+thatthisisimportant—usingonlyeasynegativesre-
+suboptimalforauthornames. Manyauthornames
+ducesperformanceonalltasks. Whiletherecould
+areout-of-vocabularyforSciBERTandthus,they
+beotherpotentialwaystoincludehardnegativesin
+might be split into sub-words and shared across
+themodel,oursimpleapproachofincludingcita-
+names that are not semantically related, leading
+tionsofcitationsiseffective. Thesixthrowofthe
+to noisy correlation. Finally, we find that adding
+tableshowsthatusingastronggeneral-domainlan-
+venues slightly decreases performance,14 except
+guagemodel(BERT-Large)insteadofSciBERTin
+ondocumentclassification(whichmakessense,as
+SPECTERreducesperformanceconsiderably. This
+we would expect venues to have high correlation
+is reasonable because unlike BERT-Large, SciB-
+13Weexperimentedwithbothconcatenatingauthorswith ERTispretrainedonscientifictext.
+thetitleandabstractandalsoconsideringthemasanadditional
+field.Neitherwerehelpful. Visualization Figure 2 shows t-SNE (van der
+14Venueinformationinourdatacamedirectlyfrompub-
+Maaten, 2014) projections of our embeddings
+lisherprovidedmetadataandthuswasnotnormalized.Venue
+normalizationcouldhelpimproveresults. (SPECTER)comparedwiththeSciBERTbaseline
+Trainingsignal CLSUSRCITEREC All
+SPECTER 84.2 88.4 91.5 36.980.0
+SciBERTfine-tuneonco-view 83.0 84.2 84.1 36.476.0
+SciBERTfine-tuneonco-read 82.3 85.4 86.7 36.377.1
+SciBERTfine-tuneonco-citation 82.9 84.3 85.2 36.676.4
+SciBERTfine-tuneonmultitask 83.3 86.1 88.2 36.078.0
+Table3: Comparisonwithtask-specificfine-tuning.
+the most co-viewed (co-read, or co-cited) papers
+(a)SPECTER (b)SciBERT
+correspondingtothequerypaper. Wealsoinclude
+Figure2:t-SNEvisualizationofpaperembeddingsand both easy and hard distractors as when training
+theircorrespondingMAGtopics.
+SPECTER (forhardnegativeswechoosetheleast
+non-zeroco-viewed(co-read,orco-cited)papers).
+for a random set of papers. When comparing Wealsoconsidertrainingjointlyonalltask-specific
+SPECTERembeddingswithSciBERT,weobserve trainingdatasourcesinamultitasktrainingprocess,
+that our embeddings are better at encoding topi- where the model samples training triplets from a
+cal information, as the clusters seem to be more distributionoverthesources. AsillustratedinTa-
+compact. Further,weseesomeexamplesofcross- ble 3, without any additional final task-specific
+topicrelatednessreflectedintheembeddingspace fine-tuning, SPECTERstilloutperformsaSciBERT
+(e.g., Engineering, Mathematics and Computer modelfine-tunedontheendtasksaswellastheir
+Science are close to each other, while Business multitaskcombination,furtherdemonstratingthe
+and Economics are also close to each other). To effectiveness and versatility of SPECTER embed-
+quantifythecomparisonofvisualizedembeddings dings.15
+in Figure 2, we use the DBScan clustering algo-
+7 RelatedWork
+rithm (Ester et al., 1996) on this 2D projection.
+Weusethecompletenessandhomogeneitycluster-
+Recent representation learning methods in NLP
+ingqualitymeasuresintroducedbyRosenbergand
+relyontraininglargeneurallanguagemodelsonun-
+Hirschberg(2007). Forthepointscorrespondingto
+superviseddata(Petersetal.,2018;Radfordetal.,
+Figure2, thehomogeneityandcompletenessval-
+2018;Devlinetal.,2019;Beltagyetal.,2019;Liu
+ues for SPECTER are respectively 0.41 and 0.72
+etal., 2019). Whilesuccessfulat manysentence-
+comparedwithSciBERT’s0.19and0.63, aclear
+and token-level tasks, our focus is on using the
+improvement on separating topics using the pro-
+modelsfordocument-levelrepresentationlearning,
+jectedembeddings.
+whichhasremainedrelativelyunder-explored.
+Therehavebeenothereffortsindocumentrepre-
+Comparison with Task Specific Fine-Tuning sentationlearningsuchasextensionsofwordvec-
+Whilethefactthat SPECTERdoesnotrequirefine- torstodocuments(LeandMikolov,2014;Ganesh
+tuningmakesitspaperembeddingslesscostlyto etal.,2016;Liuetal.,2017;Wuetal.,2018;Gy-
+use, often the best performance from pretrained seletal.,2017),convolution-basedmethods(Liu
+Transformersisobtainedwhenthemodelsarefine- etal.,2018;Zamanietal.,2018),andvariational
+tuned directly on each end task. We experiment autoencoders (Holmer and Marfurt, 2018; Wang
+with fine-tuning SciBERT on our tasks, and find etal.,2019). Relevanttodocumentembedding,sen-
+thistobegenerallyinferiortousingourfixedrep- tenceembeddingisarelativelywell-studiedareaof
+resentationsfromSPECTER. Specifically,wefine- research. Successfulapproachesincludeseq2seq
+tuneSciBERTdirectlyontask-specificsignalsin- models (Kiros et al., 2015), BiLSTM Siamese
+stead of citations. To fine-tune on task-specific networks (Williams et al., 2018), leveraging su-
+data (e.g., user activity), we used a dataset of co- perviseddatafromothercorpora(Conneauetal.,
+viewswith65Kquerypapers,co-readswith14K 2017), and using discourse relations (Nie et al.,
+query papers, and co-citations (instead of direct 2019), and BERT-based methods (Reimers and
+citations)with83Kquerypapers. Astheendtasks Gurevych, 2019). Unlike our proposed method,
+arerankingtasks,foralldatasetsweconstructup
+15We also experimented with further task-specific fine-
+to 5 triplets and fine-tune the model using triplet
+tuningofourSPECTERontheendtasksbutwedidnotobserve
+rankingloss. Thepositivepapersaresampledfrom additionalimprovements.
+the majority of these approaches do not consider tions. Weachievesubstantialimprovementsover
+anynotionofinter-documentrelatednesswhenem- thestrongestofawidevarietyofbaselines,demon-
+beddingdocuments. strating the effectiveness of our model. We ad-
+Other relevant work combines textual features ditionally introduce SCIDOCS, a new evaluation
+withnetworkstructure(Tuetal.,2017;Zhangetal., suiteconsistingofsevendocument-leveltasksand
+2018;Bhagavatulaetal.,2018;Shenetal.,2018; releasethecorrespondingdatasetstofosterfurther
+Chenetal.,2019;Wangetal.,2019). Theseworks researchinthisarea.
+typicallydonotleveragetherecentpretrainedcon- ThelandscapeofTransformerlanguagemodels
+textualrepresentationsandwithafewexceptions is rapidly changing and newer and larger models
+suchastherecentworkbyWangetal.(2019),they are frequently introduced. It would be interest-
+cannot generalize to unseen documents like our ing to initialize our model weights from more re-
+SPECTER approach. Context-based citation rec- centTransformermodelstoinvestigateifadditional
+ommendationisanotherrelatedapplicationwhere gainsarepossible. Anotheritemoffutureworkis
+modelsrelyoncitationcontexts(Jeongetal.,2019) todevelopbettermultitaskapproachestoleverage
+tomakepredictions. Theseworksareorthogonal multiplesignalsofrelatednessinformationduring
+tooursastheinputtoourmodelisjustpapertitle training. Weusedcitationstobuildtripletsforour
+andabstract. Anotherrelatedlineofworkisgraph- lossfunction,howeverthereareothermetricsthat
+basedrepresentationlearningmethods(Brunaetal., havegoodsupportfromthebibliometricsliterature
+2014; Kipf and Welling, 2017; Hamilton et al., (KlavansandBoyack,2006)thatwarrantexploring
+2017a,b;Wuetal.,2019a,b). Here,wecompareto as a way to create relatedness graphs. Including
+agraphrepresentationlearningmodel,SGC(Sim- otherinformationsuchasoutgoingcitationsasad-
+pleGraphConvolution)(Wuetal.,2019a),which ditional input to the model would be yet another
+isastate-of-the-artgraphconvolutionapproachfor areatoexploreinfuture.
+representationlearning. SPECTER usespretrained
+languagemodelsincombinationwithgraph-based Acknowledgements
+citationsignals,whichenablesittooutperformthe
+WethankKyleLo,DanielKingandOrenEtzioni
+graph-basedapproachesinourexperiments.
+for helpful research discussions, Russel Reas for
+SPECTERembeddingsarebasedononlythetitle
+setting up the public API, Field Cady for help in
+andabstractofthepaper. Addingthefulltextofthe
+initialdatacollectionandtheanonymousreviewers
+paperwouldprovideamorecompletepictureofthe
+(especiallyReviewer1)forcommentsandsugges-
+paper’scontentandcouldimproveaccuracy(Co-
+tions. This work was supported in part by NSF
+henetal.,2010;Lin,2008;Schuemieetal.,2004).
+Convergence Accelerator award 1936940, ONR
+However, the full text of many academic papers
+grant N00014-18-1-2193, and the University of
+isnotfreelyavailable. Further, modernlanguage
+WashingtonWRF/CableProfessorship.
+models have strict memory limits on input size,
+whichmeansnewtechniqueswouldberequiredin
+order to leverage the entirety of the paper within
+References
+the models. Exploring how to use the full paper
+textwithin SPECTERisanitemoffuturework. Anant K. Agarwal, Ivan Zaitsev, Xuanhui Wang,
+ChengYenLi,MarcNajork,andThorstenJoachims.
+Finally, one pain point in academic paper rec-
+2019. Estimatingpositionbiaswithoutintrusivein-
+ommendationresearchhasbeenalackofpublicly terventions. InWSDM.
+available datasets (Chen and Lee, 2018; Kanakia
+et al., 2019). To address this challenge, we re- Waleed Ammar, Dirk Groeneveld, Chandra Bha-
+gavatula, Iz Beltagy, Miles Crawford, Doug
+lease SCIDOCS,ourevaluationbenchmarkwhich
+Downey, Jason Dunkelberger, Ahmed Elgohary,
+includesananonymizedclickthroughdatasetfrom
+Sergey Feldman, Vu Ha, Rodney Kinney, Sebas-
+anonlinerecommendationssystem. tian Kohlmeier, Kyle Lo, Tyler C. Murray, Hsu-
+Han Ooi, Matthew E. Peters, Joanna Power, Sam
+Skjonsberg, Lucy Lu Wang, Christopher Wilhelm,
+8 ConclusionsandFutureWork
+Zheng Yuan, Madeleine van Zuylen, and Oren Et-
+zioni. 2018. Construction of the literature graph in
+Wepresent SPECTER,amodelforlearningrepre-
+semanticscholar. InNAACL-HLT.
+sentations of scientific papers, based on a Trans-
+former language model that is pretrained on cita- Sanjeev Arora, Yingyu Liang, and Tengyu Ma. 2017.
+Asimplebuttough-to-beatbaselineforsentenceem- ChristopheVanGysel, MaartendeRijke, andEvange-
+beddings. InICLR. los Kanoulas. 2017. Neural Vector Spaces for Un-
+supervised Information Retrieval. ACM Trans. Inf.
+Iz Beltagy, Kyle Lo, and Arman Cohan. 2019. SciB- Syst.
+ERT: A Pretrained Language Model for Scientific
+Text. InEMNLP. WillHamilton,ZhitaoYing,andJureLeskovec.2017a.
+InductiveRepresentationLearningonLargeGraphs.
+ChandraBhagavatula,SergeyFeldman,RussellPower, InNIPS.
+andWaleedAmmar. 2018. Content-BasedCitation
+Recommendation. InNAACL-HLT. WilliamL.Hamilton,ZhitaoYing,andJureLeskovec.
+2017b. Inductive representation learning on large
+PiotrBojanowski,EdouardGrave,ArmandJoulin,and
+graphs. InNIPS.
+TomasMikolov.2017. Enrichingwordvectorswith
+subwordinformation. TACL. Erik Holmer and Andreas Marfurt. 2018. Explaining
+away syntactic structure in semantic document rep-
+Joan Bruna, Wojciech Zaremba, Arthur Szlam, and
+resentations. ArXiv,abs/1806.01620.
+Yann LeCun. 2014. Spectral networks and locally
+connectednetworksongraphs. ICLR.
+JeremyHowardandSebastianRuder.2018. Universal
+LanguageModelFine-tuningforTextClassification.
+Liqun Chen, Guoyin Wang, Chenyang Tao, Ding-
+InACL.
+han Shen, Pengyu Cheng, Xinyuan Zhang, Wenlin
+Wang,YizheZhang,andLawrenceCarin.2019. Im-
+Chanwoo Jeong, Sion Jang, Hyuna Shin, Eun-
+proving textual network embedding with global at-
+jeong Lucy Park, and Sungchul Choi. 2019. A
+tentionviaoptimaltransport. InACL.
+context-awarecitationrecommendationmodelwith
+bert and graph convolutional networks. ArXiv,
+Tsung Teng Chen and Maria Lee. 2018. Research Pa-
+abs/1903.06464.
+per Recommender Systems on Big Scholarly Data.
+In Knowledge Management and Acquisition for In-
+Anshul Kanakia, Zhihong Shen, Darrin Eide, and
+telligentSystems.
+KuansanWang.2019. AScalableHybridResearch
+Paper Recommender System for Microsoft Aca-
+K.BretonnelCohen, HelenL.Johnson, KarinM.Ver-
+demic. InWWW.
+spoor, Christophe Roeder, and Lawrence Hunter.
+2010. Thestructuralandcontentaspectsofabstracts
+Diederik P. Kingma and Jimmy Ba. 2014. Adam:
+versusbodiesoffulltextjournalarticlesaredifferent.
+A Method for Stochastic Optimization. ArXiv,
+BMCBioinformatics,11:492–492.
+abs/1412.6980.
+AlexisConneau,DouweKiela,HolgerSchwenk,Lo¨ıc
+Thomas N Kipf and Max Welling. 2017. Semi-
+Barrault, and Antoine Bordes. 2017. Supervised
+supervised classification with graph convolutional
+Learning of Universal Sentence Representations
+networks. ICLR.
+fromNaturalLanguageInferenceData. InEMNLP.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Ryan Kiros, Yukun Zhu, Ruslan Salakhutdinov,
+Kristina Toutanova. 2019. BERT: Pre-training of Richard S. Zemel, Antonio Torralba, Raquel Urta-
+deep bidirectional transformers for language under- sun, and Sanja Fidler. 2015. Skip-thought vectors.
+standing. InNAACL-HLT. InNIPS.
+MartinEster,Hans-PeterKriegel,Jo¨rgSander,Xiaowei Richard Klavans and Kevin W. Boyack. 2006. Iden-
+Xu,etal.1996. ADensity-basedAlgorithmforDis- tifying a better measure of relatedness for mapping
+covering Clusters in Large Spatial Databases with science. JournaloftheAssociationforInformation
+Noise. InKDD. ScienceandTechnology,57:251–263.
+Sergey Feldman, Waleed Ammar, Kyle Lo, Elly Trep- Jey Han Lau and Timothy Baldwin. 2016. An
+man,MadeleinevanZuylen,andOrenEtzioni.2019. empirical evaluation of doc2vec with practical in-
+Quantifying Sex Bias in Clinical Studies at Scale sights into document embedding generation. In
+WithAutomatedDataExtraction. JAMA. Rep4NLP@ACL.
+J Ganesh, Manish Gupta, and Vijay K. Varma. 2016. QuocLeandTomasMikolov.2014. DistributedRepre-
+Doc2sent2vec: A novel two-phase approach for sentationsofSentencesandDocuments. InICML.
+learningdocumentrepresentation. InSIGIR.
+Jimmy J. Lin. 2008. Is searching full text more effec-
+Matt Gardner, Joel Grus, Mark Neumann, Oyvind tivethansearchingabstracts? BMCBioinformatics,
+Tafjord,PradeepDasigi,NelsonF.Liu,MatthewPe- 10:46–46.
+ters,MichaelSchmitz,andLukeZettlemoyer.2018.
+AllenNLP:ADeepSemanticNaturalLanguagePro- CarolynELipscomb.2000. MedicalSubjectHeadings
+cessing Platform. In Proceedings of Workshop for (MeSH). Bulletin of the Medical Library Associa-
+NLPOpenSourceSoftware(NLP-OSS). tion.
+Chundi Liu, Shunan Zhao, and Maksims Volkovs. ArnabSinha,ZhihongShen,YangSong,HaoMa,Dar-
+2018. Unsupervised Document Embedding with rin Eide, Bo-June Paul Hsu, and Kuansan Wang.
+CNNs. ArXiv,abs/1711.04168v3. 2015. AnOverviewofMicrosoftAcademicService
+(MAS)andApplications. InWWW.
+Pengfei Liu, King Keung Wu, and Helen M. Meng.
+2017. A Model of Extended Paragraph Vector
+CunchaoTu,HanLiu,ZhiyuanLiu,andMaosongSun.
+for Document Categorization and Trend Analysis.
+2017. Cane: Context-awarenetworkembeddingfor
+IJCNN.
+relationmodeling. InACL.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+dar S. Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+Luke S. Zettlemoyer, and Veselin Stoyanov. 2019.
+Kaiser,andIlliaPolosukhin.2017. AttentionIsAll
+RoBERTa: A Robustly Optimized BERT Pretrain-
+YouNeed. InNIPS.
+ingApproach. ArXiv,abs/1907.11692.
+Laurens van der Maaten. 2014. Accelerating t-SNE WenlinWang,ChenyangTao,ZheGan,GuoyinWang,
+Using Tree-based Algorithms. Journal of Machine Liqun Chen, Xinyuan Zhang, Ruiyi Zhang, Qian
+LearningResearch. Yang, Ricardo Henao, and Lawrence Carin. 2019.
+Improvingtextualnetworklearningwithvariational
+Allen Nie, Erin Bennett, and Noah Goodman. 2019. homophilicembeddings. InAdvancesinNeuralIn-
+DisSent: Learning Sentence Representations from formationProcessingSystems,pages2074–2085.
+ExplicitDiscourseRelations. InACL.
+Adina Williams, Nikita Nangia, and Samuel Bowman.
+F. Pedregosa, G. Varoquaux, A. Gramfort, V. Michel,
+2018. ABroad-CoverageChallengeCorpusforSen-
+B. Thirion, O. Grisel, M. Blondel, P. Prettenhofer,
+tenceUnderstandingthroughInference. InNAACL-
+R. Weiss, V. Dubourg, J. Vanderplas, A. Passos,
+HLT.
+D.Cournapeau,M.Brucher,M.Perrot,andE.Duch-
+esnay. 2011. Scikit-learn: Machine learning in
+Felix Wu, Amauri H. Souza, Tianyi Zhang, Christo-
+Python. Journal of Machine Learning Research,
+pher Fifty, Tao Yu, and Kilian Q. Weinberger.
+12:2825–2830.
+2019a. Simplifying graph convolutional networks.
+MatthewE.Peters,MarkNeumann,MohitIyyer,Matt InICML.
+Gardner, Christopher Clark, Kenton Lee, and Luke
+Zettlemoyer.2018. DeepContextualizedWordRep- Lingfei Wu, Ian En-Hsu Yen, Kun Xu, Fangli
+resentations. Xu, Avinash Balakrishnan, Pin-Yu Chen, Pradeep
+Ravikumar, and Michael J Witbrock. 2018. Word
+AlecRadford,KarthikNarasimhan,TimSalimans,and Mover’sEmbedding: FromWord2VectoDocument
+Ilya Sutskever. 2018. Improving language under- Embedding. InEMNLP.
+standingbygenerativepre-training. arXiv.
+Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V
+RadimRˇehu˚ˇrekandPetrSojka.2010. SoftwareFrame-
+Le, Mohammad Norouzi, Wolfgang Macherey,
+work for Topic Modelling with Large Corpora. In
+Maxim Krikun, Yuan Cao, Qin Gao, Klaus
+LREC.
+Macherey, et al. 2016. Google’s neural machine
+translationsystem:Bridgingthegapbetweenhuman
+Nils Reimers and Iryna Gurevych. 2019. Sentence-
+andmachinetranslation. ArXiv,abs/1609.08144.
+BERT:SentenceEmbeddingsusingSiameseBERT-
+Networks. InEMNLP.
+Zonghan Wu, Shirui Pan, Fengwen Chen, Guodong
+Andrew Rosenberg and Julia Hirschberg. 2007. V- Long, Chengqi Zhang, and Philip S Yu. 2019b. A
+measure: A Conditional Entropy-based External Comprehensive Survey on Graph Neural Networks.
+ClusterEvaluationMeasure. InEMNLP. ArXiv,abs/1901.00596.
+J Ben Schafer, Dan Frankowski, Jon Herlocker, and
+ZhilinYang, ZihangDai, YimingYang, JaimeG.Car-
+Shilad Sen. 2007. Collaborative filtering recom-
+bonell,RuslanSalakhutdinov,andQuocV.Le.2019.
+mendersystems. InTheadaptiveweb.Springer.
+Xlnet: Generalized autoregressive pretraining for
+languageunderstanding. ArXiv,abs/1906.08237.
+MartijnJ.Schuemie,MarcWeeber,BobJ.A.Schijve-
+naars, Erik M. van Mulligen, C. Christiaan van der
+Hamed Zamani, Mostafa Dehghani, W. Bruce Croft,
+Eijk, Rob Jelier, Barend Mons, and Jan A. Kors.
+Erik G. Learned-Miller, and Jaap Kamps. 2018.
+2004. Distributionofinformationinbiomedicalab-
+From neural re-ranking to neural ranking: Learn-
+stracts and full-text publications. Bioinformatics,
+ingasparserepresentationforinvertedindexing. In
+20(16):2597–604.
+CIKM.
+Dinghan Shen, Xinyuan Zhang, Ricardo Henao, and
+Lawrence Carin. 2018. Improved semantic-aware Xinyuan Zhang, Yitong Li, Dinghan Shen, and
+network embedding with fine-grained word align- Lawrence Carin. 2018. Diffusion maps for textual
+ment. InEMNLP. networkembedding. InNeurIPS.
+A AppendixA-BaselineDetails smooth_idf were all set to False. Since SIF
+isasumofpretrainedfasttextvectors,theresulting
+1. Random Zero-mean 25-dimensional vectors
+dimensionalityis300.
+wereusedasrepresentationsforeachdocument.
+5. ELMoELMo(Petersetal.,2018)providescon-
+2. Doc2Vec Doc2Vec is one of the earlier neural
+textualizedrepresentationsoftokensinadocument.
+document/paragraph representation methods (Le
+Itcanprovideparagraphordocumentembeddings
+andMikolov,2014),andisanaturalcomparison.
+byaveragingeachtoken’srepresentationforall3
+WetrainedDoc2Veconourtrainingsubsetusing
+LSTM layers. We used the 768-dimensional pre-
+Gensim(Rˇehu˚ˇrekandSojka,2010),andchosethe
+trainedELMomodelinAllenNLP(Gardneretal.,
+hyperparameter grid using suggestions from Lau
+2018).
+and Baldwin (2016). The hyperparameter grid
+used: 6. CiteomaticThemostrelevantbaselineisCiteo-
+matic(Bhagavatulaetal.,2018),whichisanaca-
+{’window’: [5, 10, 15],
+demicpaperrepresentationmodelthatistrainedon
+’sample’: [0, 10 ** -6, 10 ** -5], thecitationgraphviasampledtriplets. Citeomatic
+’epochs’: [50, 100, 200]},
+representationsareanL2normalizedweightedsum
+oftitleandabstractembeddings,whicharetrained
+for a total of 27 models. The other parameters
+onthecitationgraphwithdynamicnegativesam-
+were set as follows: vector_size=300,
+pling. Citeomaticembeddingsare75-dimensional.
+min_count=3, alpha=0.025,
+min_alpha=0.0001, negative=5, dm=0, 7. SGCSinceouralgorithmistrainedondatafrom
+dbow=1,dbow_words=0. the citation graph, we also compare to a state-of-
+the-artgraphrepresentationlearningmodel: SGC
+3. Fasttext-Sum This simple baseline is a
+(Simple Graph Convolution) (Wu et al., 2019a),
+weighted sum of pretrained word vectors. We
+which is a graph convolution network. An al-
+trained our own 300 dimensional fasttext embed-
+ternative comparison would have been Graph-
+dings (Bojanowski et al., 2017) on a corpus of
+SAGE (Hamilton et al., 2017b), but SGC (with
+around 3.1B tokens from scientific papers which
+nolearning)outperformedanunsupervisedvariant
+issimilarinsizetotheSciBERTcorpus(Beltagy
+ofGraphSAGEontheRedditdataset16,Notethat
+etal.,2019). Wefoundthatthesepretrainedembed-
+SGC with no learning boils down to graph prop-
+dingssubstantiallyoutperformalternativeoff-the-
+agation on node features (in our case nodes are
+shelfembeddings. Wealsousetheseembeddingsin
+academic documents). Following Hamilton et al.
+otherbaselinesthatrequirepretrainedwordvectors
+(2017a),weusedSIFfeaturesasnoderepresenta-
+(i.e.,SIFandSGCthataredescribedbelow). The
+tions,andappliedSGCwitharangeofparameter
+summedbagofwordsrepresentationhasanumber
+k, which is the number of times the normalized
+ofweightingoptions,whichareextensivelytuned
+adjacencyismultipliedbytheSIFfeaturematrix.
+onavalidationsetforbestperformance.
+Ourrangeofkwas1through8(inclusive),andwas
+4. SIF The SIF method of Arora et al. (2017) is
+chosenwithavalidationset. Forthenodefeatures,
+a strong text representation baseline that takes a
+wechosetheSIFmodelwitha = 0.0001,asthis
+weightedsumofpretrainedwordvectors(weuse
+modelwasobservedtobeahigh-performingone.
+fasttext embeddings described above), then com-
+Thisbaselineisalso300dimensional.
+putesthefirstprincipalcomponentofthedocument
+embeddingmatrixandsubtractsouteachdocument 8. SciBERT To isolate the advantage of
+embedding’sprojectiontothefirstprincipalcom- SPECTER’s citation-based fine-tuning objective,
+ponent. we add a controlled comparison with SciBERT
+(Beltagy et al., 2019). Following Devlin et al.
+We used a held-out validation set to choose a
+(2019) we take the last layer hidden state corre-
+from the range [1.0e-5, 1.0e-3] spaced evenly
+sponding to the [CLS] token as the aggregate
+on a log scale. The word probability p(w) was
+documentrepresentation.17
+estimated on the training set only. When com-
+puting term-frequency values for SIF, we used 16There were no other direct comparisons in Wu et al.
+scikit-learn’s TfidfVectorizer with the same pa- (2019a)
+17Wealsotriedthealternativeofaveragingalltokenrepre-
+rameters as enumerated in the preceding sec-
+sentations,butthisresultedinaslightperformancedecrease
+tion. sublinear_tf, binary, use_idf, comparedwiththe[CLS]pooledtoken.
+9. SentenceBERTSentenceBERT(Reimersand
+Gurevych, 2019) is a general-domain pretrained
+model aimed at embedding sentences. The au-
+thorsfine-tunedBERTusingatripletloss,where
+positivesentenceswerefromthesamedocument
+section as the seed sentence, and distractor sen-
+tences came from other document sections. The
+modelisdesignedtoencodesentencesasopposed
+toparagraphs,soweembedthetitleandeachsen-
+tence in the abstract separately, sum the embed-
+dings, and L2 normalize the result to produce a
+final768-dimensionalpaperembedding.18
+During hyperparameter optimization we chose
+how to compute TF and IDF values weights by
+takingthefollowingnon-redundantcombinations
+ofscikit-learn’sTfidfVectorizer(Pedregosaetal.,
+2011) parameters: sublinear_tf, binary,
+use_idf, smooth_idf. There were a total
+of 9 parameter combinations. The IDF values
+were estimated on the training set. The other
+parameters were set as follows: min_df=3,
+max_df=0.75, strip_accents=’ascii’,
+stop_words=’english’, norm=None,
+lowercase=True. For training of fasttext, we
+used all default parameters with the exception of
+settingdimensionto300andminCountwasset
+to25duetothelargecorpus.
+18Weusedthe‘bert-base-wikipedia-sections-mean-tokens’
+modelreleasedbytheauthors: https://github.com/
+UKPLab/sentence-transformers

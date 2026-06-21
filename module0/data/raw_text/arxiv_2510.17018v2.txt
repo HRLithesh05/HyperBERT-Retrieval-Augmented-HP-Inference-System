@@ -1,0 +1,1574 @@
+CoGate-LSTM: Prototype-Guided Feature-Space Gating for Mitigating
+Gradient Dilution in Imbalanced Toxic Comment Classification
+NoorIslamS.Mohammad1,∗
+islam23@itu.edu.tr
+1IstanbulTechnicalUniversity
+Abstract necessity. Humanmoderationiscostlyandincon-
+sistent(Tiwarietal.,2025;Pateletal.,2024),while
+Toxictextclassificationforonlinemoderation
+transformermodelssuchasBERTachieveastrong remains challenging under extreme class im-
+averageperformancebutsufferdegradedrecallon
+balance, where rare but high-risk labels such
+asthreatandsevere_toxicareconsistentlyun- raretoxicitycategories(threat,severe_toxic,iden-
+derdetectedbyconventionalmodels. Wepro- tity_hate)underthesevereclassimbalancecharac-
+poseCoGate-LSTM,aparameter-efficientre- teristicofreal-worlddatasetsandincurprohibitive
+currentarchitecturebuiltaroundanovelcosine- inferencecost(ReddyandAggarwal,2024;Zhao
+similarityfeaturegatingmechanismthatadap-
+etal.,2024). Classicalandensemblemethodsare
+tively rescales token embeddings by their di-
+efficient but fail to capture contextual or implicit
+rectionalsimilaritytoalearnedtoxicityproto-
+toxicity(Guptaetal.,2024).
+type. Unliketoken-positionattention,thegate
+emphasizesfeaturedirectionsmostinformative WeproposeCoGate-LSTM,alightweightrecur-
+forminoritytoxicclasses.Themodelcombines rentmodelthataddressesextremeclassimbalance
+frozenmulti-sourceembeddings(GloVe,Fast- throughcosine-similarityfeaturegating: adiffer-
+Text, and BERT-CLS), a character-level BiL-
+entiablemechanismthatscalestokenembeddings
+STM,embedding-spaceSMOTE,andweighted
+bytheirdirectionalalignmentwithalearnedtoxic-
+focal loss. On the Jigsaw Toxic Comment
+ityprototype,amplifyingminority-relevantdirec-
+benchmark, CoGate-LSTM achieves 0.881
+tionswhilesuppressingmajority-dominatedones.
+macro-F1(95%CI:[0.873,0.889])and96.0%
+accuracy,outperformingfine-tunedBERTby Unlikestandardattention,whichreweightstoken
+6.9 macro-F1 points (p < 0.001) and XG- positions, cosine gating operates at the feature-
+Boost by 4.7, while using only 7.3M param- dimension level, directly countering the com-
+eters(about15×fewerthanBERT)and48ms pression of minority-class variance that position-
+CPU inference latency. Gains are strongest
+levelreweightingcannotaddress. Combinedwith
+onminoritylabels, withF1improvementsof
+multi-source frozen embeddings (GloVe, Fast-
++71%forsevere_toxic,+33%forthreat,and
+Text,andBERT-CLS),acharacter-levelBiLSTM,
++28% for identity_hate relative to fine-tuned
+embedding-spaceSMOTE,andweightedfocalloss,
+BERT.Ablationsidentifycosinegatingasthe
+primarydriverofperformance(−4.8macro-F1 CoGate-LSTMachieves96.0%accuracyand0.88
+whenremoved),withadditionalbenefitsfrom macro-F1ontheJigsawbenchmark(cjadamsetal.,
+character-level fusion (−2.4) and multi-head 2017)with<50msCPUlatencyand7.3Mparame-
+attention (−2.9). CoGate-LSTM also trans- ters,roughly15×fewerthanfine-tunedBERT.Ab-
+fersreasonablyacrossdatasets,reachinga0.71
+lationsconfirmcosinegatingasthedominantcon-
+macro-F1zero-shotontheContextualAbuse
+tributor (+4.8 macro-F1 points), with the largest
+Dataset and 0.73 with lightweight threshold
+gainsonrarelabels.
+adaptation. Theseresultsshowthatdirection-
+aware feature gating offers an effective and
+efficient alternative to large, fully fine-tuned Contributions. (i) A cosine-similarity feature
+transformersforclassifyingimbalancedtoxic gating mechanism for embedding-level minority
+comments. signalamplification,withcomparisonsagainstlin-
+earandMLPgatingalternatives. (ii)TheCoGate-
+1 Introduction
+LSTM architecture, integrating multi-source em-
+Thescaleofuser-generatedcontenthasmadeau- beddings, character-levelsubwordencoding, and
+tomated detection of toxic comments a practical imbalance-awaretrainingforCPU-deployablein-
+1
+6202
+rpA
+7
+]LC.sc[
+2v81071.0152:viXra
+ference. (iii)ComprehensiveevaluationofJigsaw: amplifies minority-aligned dimensions, a design
+ablations,per-categoryF1,hyperparametersensi- choicevalidatedintheablationstudy(Section8.3)
+tivity,anddeploymentprofilingundermatchedcon- andingatingcomparisons(Section8.4).
+ditions.
+3 Methodology
+2 RelatedWork
+3.1 GradientDilutionUnderClassImbalance
+ClassicalandEnsembleMethods. TF-IDFwith
+LetaminibatchcontainN = N +N samples
+maj min
+linear classifiers (SVM, logistic regression) re-
+withN ≪ N . Underbinarycross-entropy,
+min maj
+mains a computationally efficient baseline, but it
+reliesonlexicaloverlapandcannotmodelcontex- N
+1 (cid:88)(cid:2) (cid:3)
+tualorimplicittoxicity(Chenetal.,2024;Kumar L BCE = − y ilogyˆ i+(1−y i)log(1−yˆ i) .
+N
+etal.,2024). Gradient-boostedensemblescapture i=1
+(1)
+feature interactions yet remain sensitive to class
+Thebatchgradientdecomposesas
+imbalance(Smithetal.,2024;Zhangetal.,2024).
+N N
+Sequential Models. BiLSTMs with pretrained ∇ L = min g¯ + maj g¯ ,
+θ min maj
+N N
+static embeddings model sequential context and,
+1 (cid:88) (2)
+augmentedwithtoken-levelattention(Belaletal., g¯ = ∇ ℓ (θ).
+min θ i
+N
+2023) andcharacter-level encoders(Johnson and min i∈Imin
+Zhang,2023;KwonandPark,2023),improvero-
+sotheminoritycontributiontotheupdateisscaled
+bustnesstoobfuscation. However,allsuchmecha-
+by N /N → 0 as an imbalance grows—a phe-
+nismsreweightpositions: undersevereimbalance, min
+nomenonwetermgradientdilution. Standardat-
+toxicity-relevantfeaturedirectionswithineachto-
+tentionmechanismsreweighttokenpositionsbut
+ken can still be suppressed by the majority-class
+treatallfeaturedimensionsuniformlyandtherefore
+signal. CoGate-LSTMaddressesthisgapbygat-
+donotdirectlycounteractthiscompressionofthe
+ing at the feature-dimension level rather than the
+minoritysignalintheembeddingspace.
+sequencelevel.
+3.2 Cosine-SimilarityFeatureGating
+Transformers. BERTanditsmultilingualvari-
+ants achieve a macro-F1 of 0.81-0.84 on stan- Weaddressgradientdilutionbygatingdirectlyin
+dard toxicity benchmarks (Roy et al., 2023; San- featurespace. Alearnablereferencevectorv ∈ Rd
+thiyaetal.,2023)butareconstrainedbyinference encodes a prototypical toxic direction. For each
+cost and reduced minority-class recall under ex- projectedtokenembeddinge˜ ∈ Rd,cosinesimi-
+t
+treme imbalance (Chen et al., 2023). Parameter- laritywithvis
+efficientmethods(LoRA,adapters)lowertraining
+e˜ ·v
+costs(Leeetal.,2023;Becketal.,2024)butstillre- sim = t ∈ [−1,1], (3)
+t
+∥e˜ ∥ ∥v∥
+quirethefullbackboneatinferencetime. CoGate- t 2 2
+LSTMusesfrozenBERT-CLSrepresentationsas
+wherethedifferentiablescalargateis
+one of three embedding sources, thereby access-
+ingcontextualsemanticswithoutincurringthefull g = σ(βsim ) ∈ (0,1), (4)
+t t
+modelinferencecost.
+where β > 0 controls gate sharpness. The gated
+Imbalance Mitigation. Class weighting, focal
+embeddingis
+loss,andSMOTEarestandardremediesforimbal-
+ancedtextclassification(Wilsonetal.,2023;Lee m = g ·e˜ ∈ Rd, (5)
+t t t
+et al., 2023), yet deep models can still compress
+minorityvarianceintolow-magnituderepresenta- whereg ·e˜ denotesscalar-vectormultiplication:
+t t
+tionsubspaces(Brownetal.,2023). Multi-source g is a scalar that uniformly scales all d dimen-
+t
+embeddingfusionprovidescomplementarylexical, sions of e˜ . When sim > 0 (toxicity-aligned to-
+t t
+morphological,andcontextualsignals(Kumarand ken), g → 1 the embedding is preserved; when
+t
+Singh,2022). CoGate-LSTMintroducesthefirst sim ≪ 0(benign token), g → 0 the embedding
+t t
+combination of embedding-space SMOTE with issuppressed. Cosinesimilarityisscale-invariant,
+a learned, direction-selective gate that explicitly anditmeasuresdirectionalalignmentvregardless
+2
+LSTM CoGate Cells CoGate-LSTM Blocks CoGate-LSTM
+Memory Cells Cross-Gate Cell
++
+Constant Error Carousel + Cosine Similarity Gating
+CoGate Block
+Sigmoid Gating + Cross-Embedding Mixing
+Recurrent Inference
+Cross-Gate Block
+Recurrent Training
+ct=ftct1+itzt CoGate Block
+ht=ot (ct) Low CPU Latency
+N ×
+Cross-Gate Block
+CoGate Cell
++
++ Cosine Similarity Gating
+CoGate Block
++ Multi-Source Embedding
++ SMOTE Augmentation
+Cross-Gate Block
++ Covariance-Free Update
+CoGate Block
+Parallel CPU Friendly
+Figure1: CoGate-LSTMarchitecture. Fromleft: (i)standardLSTMmemorycell;(ii)proposedCross-Gateand
+CFiguore G1: Thae CtoeGatec-LSeTMl falmsily owptimiiztedh for cCPUo lastenicny. Ferom- lesfti tom righit: l 1a. Threi otrigyinal gLSTaM mteimnoryg cella. 2n. Ndew Ccrosrs-Goatse asnd- CeoGmate ceblls eintdrodducinign cosgine siimnilatritey grataingc. t3.i Corossn-Gaste; an(d CioiGiat)e cerllse ins reisidduaul bloackls. C4. StoackGed CaoGtatee-L-STLM bSlockTs yieMld the fbull larochitcectkures
+with low CPU latency.
+forenhancedrepresentation;and(iv)stackedCoGate-LSTM(N×). Thedesignachieveslow-latency,CPU-efficient
+inferencewithmulti-sourceembeddings,SMOTEaugmentation,andcovariance-freeupdatesforrobustlearning.
+ofembeddingmagnitude. Weverifythisprovides Thiswarm-upstartsvinatoxicity-relevantdirec-
+a distinct benefit over unnormalized alternatives tion, reducing the cold-start period before gating
+(lineargateg = σ(w⊤e˜ )andMLPgate)inSec- becomesinformative.
+t t
+tion8.4.
+4 CoGate-LSTMArchitecture
+Proposition 1 (Gradient Concentration (Infor-
+mal)). Under gate separability (Assumption 1), CoGate-LSTM (Figure 1) is a lightweight multi-
+withfeaturegatingg = σ(βsim ),minority-class label toxicity classifier. Frozen GloVe, FastText,
+t t
+token embeddings receive an effective gradient andBERT-CLSembeddingsareconcatenatedand
+scaling α ≳ E[g | y=1]/E[g ] > N /N. As projectedintoasharedspace,thenscaledbycosine
+t t min
+β → ∞ with well-separated embeddings, α → similaritytoalearnedtoxicityprototype—thereby
+N/N ,fullycancellinggradientdilutionforthe amplifyingminority-alignedfeaturedirectionsand
+min
+representation-gradientcomponent. suppressingbenigncontext. Thegatedsequenceis
+encoded by a stacked BiLSTM with multi-head
+Proofsketch. Forminority-alignedtokens,sim >
+t attention and residual normalization; a parallel
+0yieldsg → 1asβ → ∞. Thechainrulegives
+t character-level BiLSTM handles subword obfus-
+∂L/∂e˜ = g · ∂L/∂m + ... minority token
+t,j t t,j cation. Both streams are max-pooled, fused, and
+gradientssotheyarescaledbyg ≈ 1whilebenign
+t passed to a sigmoid classifier. Training applies
+token gradients are scaled by g ≈ 1, increasing
+t 2 embedding-spaceSMOTEandweightedfocalloss
+minoritygradientmassbeyondtheN /N factor.
+min toimproverare-labelrecallundersevereclassim-
+SeeAppendixDfortheformalstatement.
+balance.
+3.3 Initializationofv 4.1 Multi-SourceEmbeddingFusion
+Weinitializevasthecentroidofper-examplemean WeconcatenateGloVe,FastText,andBERT-CLS
+embeddings over |T|=1000 sampled toxic com- embeddings:
+ments:
+eraw = (cid:2) eGloVe ∥ eFastText ∥ eBERT(cid:3) ∈ R1368,
+t t t t
+(cid:32) T (cid:33) (7)
+v(0) = 1 (cid:88) 1 (cid:88) e˜(i) , where eGloVe ∈ R300 (Shah et al., 2021),
+|T| i∈T T t=1 t (6) eF tastTextt ∈ R300 (Kumar et al., 2021), and
+T ⊂ {toxicexamples}, |T| = 1000. eBERT ∈ R768 are frozen BERT-CLS token fea-
+t
+3
+tures(Weietal.,2021). Alinearprojectionreduces with γ=2. Class weights are inverse-frequency
+dimensionality: normalized:
+e˜ t = W projer taw +b proj, W proj ∈ R512×1368. 1−ρ k N k
+α = , ρ = , (19)
+(8) k (cid:80)K j=1(1−ρ j) k N max
+4.2 SequenceEncoder
+where N is the count of positive examples for
+Cosine gating (Eq. 5) is applied e˜ to produce k
+t classk andN = max N isthemajority-class
+m ∈ R512. Atwo-layerBiLSTMthenencodesthe max j j
+t count. Note that α = 0 when k is the major-
+sequence(256unitsperdirection,yielding512-d k
+ity class (ρ = 1), assigning zero positive-term
+concatenatedoutput): k
+weight to the most frequent label. Practitioners
+−−−−→ ←−−−−
+h(1) = LSTM(1)(m ) ∥ LSTM(1)(m ) ∈ R512, shouldverifythatthismatchestheintendedweight-
+t t t
+ingscheme. Weverifiedthatthisweightingdoes
+(9)
+notdestabilizeoptimizationandimprovesmacro-
+(cid:16) (cid:17)
+h( t2) = BiLSTM(2) h( t1) ∈ R512. (10) F1.
+An 8-head self-attention layer with residual con-
+5.2 Embedding-SpaceSMOTE
+nectionandlayernormalizationisapplied:
+(cid:16) (cid:16) (cid:17)(cid:17) Synthetic minority embeddings are generated by
+h = LayerNorm h(2)+MultiHead h(2) ,
+att linearinterpolationwithintheminorityset:
+(11)
+(cid:16) (cid:17)
+followedbyglobalmaxpoolingovertime: (i) (j) (i)
+e = e +λ e −e , λ ∼ U(0,1),
+synth toxic toxic toxic
+h = max h ∈ R512. (12) (20)
+pool att,t
+t∈[1,T] (j) (i)
+where e is a k-NN neighbor of e within
+toxic toxic
+4.3 CharacterEncoder
+theminorityset(k=5)andU isdenoteduniform.
+Aseparatecharacter-levelBiLSTMcapturessub-
+word variants and obfuscations. Character c is 6 OptimizationandTraining
+i
+embeddedandencoded:
+6.1 OptimizerandGradientClipping
+c = Embed (c ) ∈ R200,
+i char i
+(13) WetrainwithAdam(Singhetal.,2021)usingbias-
+hchar = BiLSTM (c ) ∈ R256.
+i char i correctedmomentestimates:
+withglobalmaxpooling:
+µˆ
+h = max hchar ∈ R256. (14) θ = θ −η· √ t ,
+char,pool i i t+1 t νˆ t+ϵ
+(21)
+µ ν
+4.4 Classifier t t
+µˆ = ,νˆ = .
+t 1−βt t 1−βt
+Word-levelandcharacter-levelrepresentationsare 1 2
+concatenated (512 + 256 = 768) and passed
+with η=10−4, β =0.9, β =0.999, ϵ=10−8. Here
+1 2
+throughatwo-layerMLP:
+µ andν denotethefirstandsecondrawmoment
+t t
+h = (cid:2) h ∥ h (cid:3) ∈ R768, (15) estimates,respectively;thesearedistinctfromthe
+final pool char,pool
+z = ReLU(W h +b ) ∈ R256, (16) gatedembeddingm t (Eq.5)andreferencevector
+1 final 1
+v(Eq.3). Gradientsareclippedtounitℓ norm:
+yˆ = σ(W z+b ) ∈ [0,1]6. (17) 2
+2 2
+5 LossandRebalancing ∇ θL
+∇ L ← , (22)
+θ
+max(1, ∥∇ L∥ )
+θ 2
+5.1 WeightedFocalLoss
+Weuseasymmetricweightedfocalloss (Santhiya tostabilizerecurrenttraining(ChenandLi,2020).
+etal.,2023):
+6.2 ScheduleandEarlyStopping
+N K
+1 (cid:88)(cid:88)
+L = − [α (1−p )γlogp ·1 We train for up to 60 epochs with a batch size
+focal
+N
+k i,k i,k y i,k=1
+i=1 k=1 of64andearlystoppingonthevalidationmacro-
++(1−α )pγ log(1−p )·1 ] F1score(patience7),restoringthebestvalidation
+k i,k i,k y i,k=0
+(18) checkpoint.
+4
+7 ExperimentalSetup epochs or rates may yield stronger BERT perfor-
+mance; efficiency comparisons should be inter-
+7.1 DatasetandPreprocessing
+pretedaccordingly.
+We evaluate on the Jigsaw Toxic Comment Clas-
+7.5 GatingComparatorBaselines
+sification dataset (cjadams et al., 2017), compris-
+ing159,571Wikipediatalk-pagecommentsanno- Toisolatethebenefitofcosinesimilarityoverfea-
+tatedwithsixbinarylabels. AsshowninTable9, ture gating in general, we compare two alterna-
+thedatasetisseverelyimbalanced,withthetoxic tives with identical backbones, embeddings, en-
+class (Class 1) accounting for only 10.2% of the coders,andlosses: alineargateg =σ(w⊤e˜ )and
+t t
+totalsamples. Specificminoritylabelfrequencies anMLPgateg =σ(MLP(e˜ ))(twolayers,ReLU).
+t t
+areevenmoreacute: threat(≈0.3%),severe_toxic Onlythegatedefinitionvaries;resultsareinSec-
+(≈1.0%), and identity_hate (≈0.9%). We apply tion8.4.
+an 80/20 train/test split, with an additional 10%
+7.6 Cross-DomainEvaluation
+of the training data reserved for validation. Text
+islowercased,andSentencePiece-BPEtokenized; We assess zero-shot transfer by evaluating the
+wordsequencesarepaddedtoT = 200tokens Jigsaw-trained model on the Contextual Abuse
+max
+andcharactersequencestoT = 500tobalance Dataset(CAD)(Vidgenetal.,2021)(Reddit,Twit-
+char
+coverageandcompute. OOVtokensmapto<UNK> ter,news),andreportalight-adaptationcondition
+andnumericsto<NUM>. using per-class threshold tuning on the CAD val-
+idationset only(no weightupdates). Thisserves
+7.2 Baselines as a sanity check; comprehensive multi-domain
+benchmarkingisdeferredtofuturework.
+We compare against five representative systems:
+TF-IDF + Logistic Regression (ℓ -regularized);
+2 7.7 EvaluationMetrics
+TF-IDF+LinearSVM(SGD)utilizinginverse-
+frequency class weights (D’Sa et al., 2020); XG- Wereportmacro-F1astheprimarymetric,along
+Boosttrainedoncombinedword/characterTF-IDF with micro-F1, per-class F1, accuracy, and Ham-
+features; BiLSTM + GloVe (Jahan and Oussala, mingloss. Uncertaintyisestimatedvia95%boot-
+2023), a two-layer BiLSTM (256 units) with 8- strapCIs(1,000resamples)withpairedt-testsfor
+head attention; and BERT (fine-tuned) (Devlin pairwise comparisons. Latency is measured on a
+et al., 2019) using a weighted cross-entropy loss singleCPUthreadafterwarm-up. CoGate-LSTM
+toaddresstheimbalance. TheBiLSTM+GloVe latency (48ms) is classifier-only with cached
+baselineusesthesametrainingprotocolasCoGate- frozenBERT-CLSfeatures;end-to-endlatencyin-
+LSTMbutlackscosinegatingandcharacterfusion, cluding BERT encoding is ≈570ms. BERT’s re-
+allowingustoisolatethespecificcontributionsof ported520msreflectsfullend-to-endinferenceon
+ourproposedarchitecture. thesamehardware.
+8 ResultsandAnalysis
+7.3 TrainingProtocol
+All models use Adam with gradient clipping (ℓ 8.1 MainResults
+2
+norm1.0)andearlystoppingonvalidationmacro-
+Table 1 and Section 8.3 summarize the evalua-
+F1 (patience 7), restoring the best checkpoint.
+tion. CoGate-LSTMachievesamacro-F1of0.881
+Batch size is 64, and the learning rate is 10−4
+(95%CI:[0.873,0.889]),outperformingBERTby
+unless stated otherwise. Ablations remove one
++6.9points(p<0.001)with15×fewerparameters
+componentatatime—cosinegating,characteren-
+(7.3M vs. 110M), and XGBoost by +4.7 points.
+coder, multi-source fusion, embedding SMOTE,
+Theseresultshighlighttheeffectivenessofcosine-
+focal loss, residual connections, and multi-head
+similaritygatingforamplifyingminoritytoxicity
+attention—holdingallothersettingsfixed.
+signalswithlowcomplexity. Themodelachieves
+48ms inference latency with cached BERT-CLS
+7.4 TransformerBaselineTuning
+features, and approximately 570ms end-to-end
+BERTisfine-tunedwithalearning-ratesweepover (Section 8.5). Overall, CoGate-LSTM balances
+{1×10−5, 2×10−5, 5×10−5}upto3epochs;we accuracy, efficiency, and scalability for real-time
+report the best validation checkpoint. Additional contentmoderation.
+5
+Table1: MainbenchmarkresultsontheJigsawtestset. Macro-F1istheprimarymetric;95%CIsviabootstrap
+resampling(1,000iterations). Bluebold=best,amberbold=secondbest,reditalic=mostexpensivepercolumn.
+CoGate-LSTMlatencyreflectsclassifier-onlyCPUinferencewithprecomputedfrozenBERTembeddings.
+Model Acc MacroF1 95%CI MicroF1 Prec Recall Params(M) Latency(ms)
+LogisticRegression(Belaletal.,2023) 93.6% 0.789 [0.781,0.797] 0.917 0.82 0.76 2.21 0.8
+LinearSVM(SGD)(Dessìetal.,2021) 93.2% 0.801 [0.793,0.809] 0.923 0.83 0.78 3.31 1.2
+XGBoost(Giglouetal.,2021) 94.4% 0.835 [0.827,0.843] 0.941 0.85 0.82 4.45 3.5
+BERT(fine-tuned)†(Devlinetal.,2019) 94.1% 0.812 [0.804,0.820] 0.936 0.84 0.78 110.0 520
+BiLSTM+GloVe(JahanandOussala,2023) 94.7% 0.858 [0.850,0.866] 0.948 0.87 0.84 6.2 12
+CoGate-LSTM(ours) 96.0% 0.881 [0.873,0.889] 0.954 0.89 0.87 7.3 48‡
+†Fine-tunedforupto3epochs;bestcheckpointfromlrsweep{1×10−5, 2×10−5, 5×10−5}.‡Classifier-only;end-to-endincl.
+BERTencoding≈570ms.
+Figure2:CoGate-LSTMachievesthehighestscoresacrossallfourmetrics,reaching0.881Macro-F1,outperforming
+fine-tunedBERTby+6.9points(p<0.001)with15×fewerparameters. Theerrorbardenotesa95%bootstrapCI.
+8.2 Minority-ClassPerformance Table2:Per-categoryF1ontheJigsawtestset,grouped
+by label frequency. Blue bold=best per row, amber
+Table 2 shows per-category F1 grouped by label bold=secondbest, reditalic=near-zero(collapseon
+frequency. CoGate-LSTM achieves the largest minorityclasses).
+gains on the rarest categories: threat 0.51→0.68
+Category Freq LR SVM XGB BERTBiLSTMCoGate
+(+33%), severe_toxic 0.42→0.72 (+71%), and
+Extrememinority
+identity_hate0.58→0.74(+28%)relativetofine- Threat 0.2% 0.08 0.11 0.22 0.51 0.64 0.68
+SevereToxic 0.3% 0.12 0.15 0.31 0.42 0.68 0.72
+tunedBERT.Averagedoverextreme-minorityla-
+Highminority
+bels(threat,severe_toxic),CoGate-LSTMreaches IdentityHate 0.9% 0.31 0.38 0.58 0.58 0.69 0.74
+0.71 F1 vs. 0.47 for BERT (+51% relative) and Moderateminority
+Toxic 4.6% 0.71 0.73 0.78 0.75 0.81 0.84
+0.66forBiLSTM+GloVe. Insult 5.0% 0.79 0.81 0.82 0.78 0.84 0.86
+Obscene 5.3% 0.82 0.83 0.85 0.81 0.86 0.88
+Avg.(Extreme) — 0.10 0.13 0.26 0.47 0.66 0.70
+Avg.(High) — 0.31 0.38 0.58 0.58 0.69 0.74
+8.3 AblationStudy Avg.(Moderate) — 0.77 0.79 0.82 0.78 0.84 0.86
+Table4showscosinegatingisthedominantcon-
+tributor(−4.8%macro-F1),exceedingmulti-head
+8.4 GatingFunctionComparison
+attention (−2.9%) and character fusion (−2.4%).
+Monotonic degradation confirms all components Table5comparescosinegatingtolinearandMLP
+arecomplementary. SMOTEcontributesmodestly gatesunderanidenticalbackboneandtrainingpro-
+(−1.0%),suggestingcosinegatingalreadyrecovers tocol. Cosinegatingperformsbest,indicatingthat
+mostminoritysignals. direction-based,scale-invariantscoringismoreef-
+6
+Figure3: Per-categoryF1heatmap(model×labels). Columnsareorderedbylabelfrequency(left=rarer);
+the orange border marks the per-category best. CoGate-LSTM leads all six categories, with the largest gains
+onextreme-minoritylabels(threat: 0.68,severe_toxic: 0.72). Classicalmodelscollapsetonear-zeroF1onrare
+categories.
+Table3: State-of-the-artcomparisonontheJigsawToxicCommentClassificationbenchmark. Modelsare
+grouped by family and ordered by increasing Macro-F1 within each group. Min-class F1 reports the average
+F1onthetworarestlabels(threat,severe_toxic). Bluebold=bestpercolumn; amberbold=secondbest; red
+italic=worstpercolumn;—=notreported. †Classifier-onlylatencywithprecomputedfrozenBERT-CLSfeatures;
+end-to-endlatencyin≈570ms.
+Family Model AccuracyMacroF1Min-classF1Params(M)Latency(ms)
+NaiveBayesSVM(D’Saetal.,2020) 87.57% 0.683 — 0.01 <1
+Classical LogisticRegression(Belaletal.,2023) 93.64% 0.789 0.10 2.21 0.8
+LinearSVM(SGD)(Dessìetal.,2021) 93.16% 0.801 0.13 3.31 1.2
+RandomForest(Giglouetal.,2021) 76.85% 0.810 — — —
+Ensemble
+XGBoost(Giglouetal.,2021) 94.37% 0.835 0.26 4.45 3.5
+LSTM+weightedloss(Tiwarietal.,2025) 95.21% 0.811 0.00 — —
+Deep BERT(fine-tuned)(Devlinetal.,2019) 94.10% 0.812 0.47 110.0 520
+BiLSTM+GloVe(JahanandOussala,2023) 94.70% 0.858 0.66 6.2 12
+BERTEnsemble(most-conf.)(Tarunetal.,2024) 95.14% 0.843 — 110.0 520
+Ours CoGate-LSTM 96.00% 0.881 0.70 7.3 48†
+Table4: Ablationstudy. Single-componentremoval; Table5: Gatingfunctioncomparison. Identicalback-
+allothersettingsfixed. Reditalic=largestdrop; grey bone,embeddings,andtraining;onlythegatedefinition
+italic=unchangedfromfullmodel. differs. Bluebold=best;reditalic=weakest.
+ModelVariant MacroF1 ∆F1 Rel.∆ Params(M) GateType MacroF1 ∆vs.Cosine ExtraParams
+Co
+w
+wG
+/
+/a
+o
+ote
+C
+M-L
+o
+usS
+li
+tT
+n
+i-eM
+hG
+ea( af dtu
+i
+Al nl g)
+ttn
+0
+0
+0.
+.
+.8
+8
+88
+3
+51
+9
+5
+− −0
+0—
+. .0 04 22
+6
+− −4
+2—
+. .8 9%
+%
+6
+67
+.
+..
+8
+23 MLi Lne Pa :r g: tgt == σσ (M(w L⊤ Pe (et)
+t))
+0 0. .8 86 61
+9
+−− 00 .. 00 12 20 O(d
+d2)
+w/oCharacterFusion 0.860 −0.021 −2.4% 5.2 Cosine(ours):gt=σ(βsimt) 0.881 — d+1
+w/oMulti-sourceEmb 0.864 −0.017 −1.9% 4.1
+w/oFocalLoss(BCE) 0.867 −0.014 −1.6% 7.3
+w/oResidual/LN 0.868 −0.013 −1.5% 7.3
+w/oEmb.-SMOTE 0.872 −0.009 −1.0% 7.3
+comments/s), scaling to ∼166 comments/s on 8
+cores—sufficientfor∼107 comments/dayoncom-
+fective than unnormalized reweighting. Notably, modityhardware. Fullend-to-endlatency,includ-
+theMLPgateaddsO(d2)parametersyetremains
+ingBERTencoding,is≈570ms.
+0.012pointsbelowcosinegatinginmacro-F1,sug-
+gestingthattheangularinductivebias,notcapacity,
+8.6 Cross-DomainGeneralization
+iskeyundersevereimbalance.
+Table 7 reports transfer to CAD (Vidgen et al.,
+8.5 DeploymentEfficiency
+2021). CoGate-LSTMreaches0.73macro-F1with
+Table6compareshardwarefootprintacrossmod- threshold adaptation, +5 points over BERT, sug-
+els. Withcachedembeddings,CoGate-LSTMruns gestingthatcosine-gatedminoritysensitivitypar-
+at 48ms per comment (single CPU core, ∼20.8 tiallytransfersacrossdomains.
+7
+Non-Toxic Toxic
+Predicted Label
+lebaL
+eurT
+cixoT-noN
+cixoT
+Logistic Regression
+27,072 1,598
+(94.4%) (5.6%)
+433 2,812
+(13.3%) (86.7%)
+Non-Toxic Toxic
+Predicted Label
+Acc 0.936 | P 0.638 | R 0.867 | F1 0.735
+lebaL
+eurT
+cixoT-noN
+cixoT
+Linear SVM (SGD)
+26,905 1,765
+(93.8%) (6.2%)
+418 2,827
+(12.9%) (87.1%)
+Non-Toxic Toxic
+Predicted Label
+Acc 0.932 | P 0.616 | R 0.871 | F1 0.721
+lebaL
+eurT
+cixoT-noN
+cixoT
+Random Forest
+22,006 6,664
+(76.8%) (23.2%)
+724 2,521
+(22.3%) (77.7%)
+Non-Toxic Toxic
+Predicted Label
+Acc 0.769 | P 0.274 | R 0.777 | F1 0.406
+lebaL
+eurT
+cixoT-noN
+cixoT
+XGBoost
+25,000 25,000 25,000 25,000
+28,589 81
+20,000 20,000 20,000 (99.7%) (0.3%) 20,000
+15,000 15,000 15,000 15,000
+10,000 10,000 10,000 10,000 1,715 1,530
+(52.9%) (47.1%)
+5,000 5,000 5,000 5,000
+0 0 0 0
+Acc 0.944 | P 0.950 | R 0.471 | F1 0.630
+Diagonal = correct predictions Off-diagonal = misclassifications
+Figure4: Test-setconfusionmatricesacrossbaselineclassifiers. Eachcelldenotesabsolutecountsandrow-
+normalizedrecall. Colorintensityisnormalizedacrossallfourmatricestofacilitatedirectcomparison. Logistic
+RegressionandlinearSVM(SGD)exhibitbalancedperformancewithtoxicrecallnear87%. RandomForest
+performsweakest,sufferingfroma23.2%falsepositiverateandatoxicclassF of0.810. Incontrast,XGBoost
+1
+achievesnear-perfectnon-toxicprecision(99.7%)butsuffersacollapseintoxicrecall(47.1%),highlightingthe
+sensitivityofboostingmethodstosevereclassskew. Summarystatistics(Acc|P|R|F )areprovidedpermodel.
+1
+Table6: Deploymentcharacteristics. Bluebold=best Table8: Macro-F1bycommentlengthbucket. Blue
+per column; red italic=most expensive; amber bold=best per row; green bold=relative gain of
+bold=secondbest. CoGate-LSTMlatencyisclassifier- CoGate-LSTMoverBERT.
+onlywithcachedBERTfeatures.
+LengthRange Count BERTF1 CoGate-LSTMF1 ∆
+Model CPU(ms) GPU(ms) Size(MB) PeakRAM(GB) <50tokens 42,215 0.78 0.84 +7.7%
+50–100tokens 38,900 0.81 0.87 +7.4%
+LogisticRegression 0.8 — 0.05 0.1 100–200tokens 51,234 0.83 0.89 +7.2%
+LinearSVM 1.2 — 0.08 0.1 200–500tokens 21,847 0.82 0.88 +7.3%
+XGBoost 3.5 — 0.5 0.2 >500tokens 5,314 0.79 0.85 +7.6%
+BiLSTM+GloVe 12 2.8 15 0.5
+BERT(fine-tuned) 520 45 418 3.2 All 159,510 0.81 0.88 +7.4%
+CoGate-LSTM 48† 3.2 8.5 0.6
+†Classifier-onlywithcachedBERTfeatures.End-to-endincl.
+BERTencoding≈570msonCPU. 2023;Chenetal.,2023). Annotationsarenoisyand
+sociallycontingent,andisolatedcommentprocess-
+Table7:Cross-domaintransfertoCAD(Vidgenetal.,
+ing ignores conversational context (Jessica et al.,
+2021).Zero-shot:Jigsaw-trainedmodelapplieddirectly.
+2024). Deploymentrequiresthresholdcalibration
+Thr.adapt: thresholdtuningontheCADvalidationset
+forapplication-specificprecision-recalltrade-offs.
+only. Bluebold=bestpercolumn;green=gainfrom
+Futureworkwilladdressmultilingualtransfer,con-
+thresholdadaptation.
+versational context, adversarial robustness, and
+Model Zero-shot Thr.adapt ∆ fairness-aware training (Wang et al., 2021; Shah
+BERT(fine-tuned) 0.65 0.68 +0.03 etal.,2021).
+BiLSTM+GloVe 0.68 0.71 +0.03
+CoGate-LSTM 0.71 0.73 +0.02
+9 Conclusion
+8.7 ErrorAnalysisandCommentLength WepresentedCoGate-LSTM,alightweighttoxic-
+itydetectionmodelthatcombinescosine-similarity
+Table 8 reports macro-F1 by comment length.
+featuregating,multi-sourceembeddings,character-
+CoGate-LSTM consistently outperforms BERT
+level modeling, and class-imbalance mitigation.
+across all buckets (+7.2%–+7.7%), indicating ro-
+OntheJigsawbenchmark,CoGate-LSTMachieves
+bustness beyond short texts. Remaining errors
+96.0%accuracyand0.88macro-F1with15×fewer
+includeimplicittoxicity/sarcasm(falsenegatives)
+trainable parameters and < 50ms classifier-only
+and high-arousal but non-toxic or dialectical lan-
+CPUinference. Ablationsindicatecosinegatingis
+guage(falsepositives).
+the dominant contributor to macro-F1 gains, and
+minority-class results show improved sensitivity
+8.8 Limitations
+torarebuthigh-riskcategories,cross-domainand
+CoGate-LSTMistrainedandevaluatedonEnglish multilingual evaluation, contextual modeling, ro-
+Wikipedia comments; generalization to other do- bustness audits, and fairness assessments for re-
+mainsandlanguagesisunverified(Andersonetal., sponsiblereal-worldmoderationdeployment.
+8
+BroaderImpactStatement challenge. https://kaggle.com/competitions/
+jigsaw-toxic-comment-classification-challenge.
+CoGate-LSTMoffersscalable,CPU-efficientmod-
+Kaggle.
+eration,reducinghumanexposuretoharmfulcon-
+tent. Itsgatingmechanismenhancesinterpretabil- D. Dessì, D. R. Recupero, G. Fenu, and S. Consoli.
+2021. Anassessmentofdeeplearningmodelsand
+ity by highlighting directions of amplified repre-
+wordembeddingsfortoxicitydetection. Electronics,
+sentation. However,riskspersist: biasedtraining
+10(7):779.
+datamayyieldunfairfalsepositivesfordialectsor
+reclaimedslurs,potentiallysilencingmarginalized Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+KristinaToutanova.2019. Bert: Pre-trainingofdeep
+voices, while false negatives may miss implicit
+bidirectionaltransformersforlanguageunderstand-
+toxicity. Deployment also risks misuse for cen- ing. InProceedingsofthe2019Conferenceofthe
+sorshiporsurveillance. Werecommendsubgroup- NorthAmericanChapteroftheAssociationforCom-
+awareevaluation,calibratedthresholds,andhuman- putationalLinguistics: HumanLanguageTechnolo-
+gies,pages4171–4186.
+in-the-loopoversightwithclearappealprocesses.
+High-stakesapplicationsmustincludetransparent A. G. D’Sa, I. Illina, and D. Fohr. 2020. To-
+documentationandcontinuousmonitoringfordis- wardsnon-toxiclandscapes: Toxiccommentdetec-
+tion using deep neural networks. arXiv preprint.
+tributionshiftstomitigateadversarialobfuscation
+ArXiv:1911.08395.
+andensureequitableprotectionacrossdemograph-
+ics(Sapetal.,2019;Leeetal.,2023). H. B. Giglou, A. H. Razavi, and M. Kaedi. 2021.
+Bi-gru with multi-embedding for toxicity detec-
+tion: Semeval-2021 task 5. arXiv preprint.
+ArXiv:2104.13164.
+References
+S. Gupta, R. Patel, and A. Kumar. 2024. Multi-
+P.Anderson,R.White,andS.Green.2023. Multimodal
+modaltoxicitydetectionusingvision-languagemod-
+hatespeechdetection: Combiningtextanduserbe-
+els. IEEE Transactions on Multimedia, 26:1234–
+havior. In Proceedings of the International AAAI
+1246.
+Conference on Web and Social Media, volume 17,
+pages23–34.
+S.JahanandM.Oussala.2023. Leveragingdeeplearn-
+ingfortoxiccommentdetectionincursivelanguages.
+Maximilian Beck, Korbinian Pöppel, Markus Span-
+PeerJComputerScience,9:e1345.
+ring,AndreasAuer,OleksandraPrudnikova,Michael
+Kopp,GünterKlambauer,JohannesBrandstetter,and
+R.Jessica,V.Kumar,andP.Singh.2024. Hybriddeep
+SeppHochreiter.2024. xlstm: Extendedlongshort-
+learningusingbertandcnnfortoxiccommentclassi-
+termmemory. arXivpreprint. ArXiv:2405.04517.
+fication. InProceedingsoftheInternationalConfer-
+enceonInformationManagementandTechnology,
+T.A.Belal,M.S.Hossain,andM.M.Rahman.2023.
+pages393–398.
+Interpretablemulti-labeledbengalitoxiccomments
+classification using deep learning. arXiv preprint.
+L.JohnsonandY.Zhang.2023. Detectingtoxiccom-
+ArXiv:2304.04087.
+mentsusingcnn. IEEETransactionsonNeuralNet-
+worksandLearningSystems,34(7):114–128.
+T. Brown, A. Miller, and L. Garcia. 2023. Few-shot
+learning for toxic comment detection in emerging A.Kumar, S.Singh, andR.Patel.2024. Explainable
+platforms. IEEEAccess,11:45678–45689. aifortoxiccommentclassification: Asurvey. ACM
+ComputingSurveys,56(8):1–35.
+Hsin-YuChenandCheng-TeLi.2020. Henin: Learn-
+ing heterogeneous neural interaction networks for R.Kumar,A.K.Ojha,S.Malmasi,andM.Zampieri.
+explainablecyberbullyingdetection. arXivpreprint. 2021. Commenttoxicitydetectionviaamultichan-
+ArXiv:2010.04576. nelconvolutionalbidirectionalgatedrecurrentunit.
+Neurocomputing,448:140–153.
+X.Chen,L.Wang,andY.Zhang.2023. Cross-lingual
+toxiccommentdetectionwithzero-shotlearning. In S.KumarandV.Singh.2022. Toxiccommentdetection
+ProceedingsoftheInternationalConferenceonMa- usingattention-baseddeeplearningmodels. Journal
+chineLearning,pages567–578. ofAmbientIntelligenceandHumanizedComputing,
+13(5):2457–2468.
+X.Chen,Y.Wang,andZ.Zhang.2024. Cross-domain
+toxiccontentdetectionwithadversarialadaptation. H.KwonandS.Park.2023. Real-timetoxicitymon-
+InProceedingsoftheAAAIConferenceonArtificial itoringusinglightweightlstmmodels. Computers,
+Intelligence,volume38,pages1234–1242. 12(4):88.
+cjadams, Jeffrey Sorensen, Julia Elliott, Lucas J. Lee, S. Kim, and H. Park. 2023. Context-aware
+Dixon, Mark McDonald, nithum, and Will toxiccommentdetectionwithgraphneuralnetworks.
+Cukierski. 2017. Toxic comment classification Knowledge-BasedSystems,260:110145.
+9
+P.Malik,P.Bansal,andR.Singh.2021. Toxicspeech BertieVidgen,DongNguyen,HelenMaronite,Zeerak
+detectionusingbertandfasttextembeddings. InPro- Waseem,ScottHale,andHelenMargetts.2021. In-
+ceedingsofthe5thInternationalConferenceonCom- troducingcad: thecontextualabusedataset. InPro-
+puting Methodologies and Communication, pages ceedingsofthe2021ConferenceoftheNorthAmer-
+1254–1259. icanChapteroftheAssociationforComputational
+Linguistics: HumanLanguageTechnologies,pages
+V. Maslej-Krešnˇáková, M. Sarnovský, P. Butka, and 2289–2303.
+K. Machová. 2020. Comparison of deep learning
+modelsandpre-processingtechniquesfortoxiccom- K.Wang,Y.Liu,andZ.Zhang.2021. Asurveyoftoxic
+mentclassification. AppliedSciences,10(23):8631. comment classification methods. arXiv preprint.
+ArXiv:2112.06412.
+R. Patel, S. Sharma, and A. Gupta. 2024. Detecting
+toxiccommentsonsocialmedia: Anextensiveeval-
+J. Wei, K. Zou, and Y. Zhang. 2021. Offensive
+uation of machine learning techniques. Journal of
+language and hate speech detection with deep
+ComputationalSocialScience,8:20–39.
+learning and transfer learning. arXiv preprint.
+ArXiv:2108.03305.
+N.ReddyandA.Aggarwal.2024. Efficienttoxiccom-
+mentdetectionusingmltechniques. InAdvancesin
+ComputerandDataSciences,pages345–356. R.Wilson,K.Thompson,andM.Davis.2023. Adver-
+sarialtrainingforrobusttoxiccommentclassification.
+InFindingsoftheAssociationforComputationalLin-
+S.Roy,A.Kumar,andP.Singh.2023. Domain-specific
+guistics,pages1234–1245.
+toxicitydetectionusingbertvariants. InProceedings
+oftheInternationalConferenceonResponsibleAI,
+pages78–89. L. Zhang, H. Wang, and X. Li. 2024. Multilingual
+toxiccommentdetectionwithcross-lingualtransfer
+S. Santhiya, R. Priya, and S. Kumar. 2023. Transfer learning. IEEETransactionsonAffectiveComputing,
+learning-based youtube toxic comments identifica- 15(2):234–247.
+tion. In Proceedings of the Speech and Language
+Technologies for Low-Resource Languages, pages
+Y.Zhao,R.Liu,andH.Wang.2024. Enhancingllm-
+231–245.
+basedtoxicitydetectionwithmeta-toxicknowledge
+graph. arXivpreprint. ArXiv:2412.15268.
+MaartenSap,DallasCard,SaadiaGabriel,YejinChoi,
+and Noah A. Smith. 2019. The risk of racial bias
+inhatespeechdetection. InProceedingsofthe57th A Appendix
+AnnualMeetingoftheAssociationforComputational
+Linguistics,pages1668–1678. A.1 CoGate-LSTMTrainingwithClass
+Rebalancing
+D. K. Shah, M. A. Sanghvi, R. P. Mehta, P. S. Shah,
+andA.Singh.2021. Multilabeltoxiccommentclas- Algorithm 2 combines (i) embedding-level over-
+sification using supervised machine learning algo-
+sampling,(ii)cosine-gatedfeaturemodulation,and
+rithms. InLectureNotesinNetworksandSystems,
+(iii)weightedfocallosstoimproveminority-class
+volume23,pages23–32.
+learning on Jigsaw (cjadams et al., 2017). Focal
+A. Singh, S. Kumar, and P. Gupta. 2021. Toxic com- lossreweightscross-entropyby(1−p )γ,suppress-
+t
+ment classification using lstm and glove embed- ingeasymajorityexamplesandpreservinggradient
+dings. InternationalJournalofComputerApplica-
+onharderminoritycases(Dessìetal.,2021);class
+tions,182(24):1–5.
+weights α provide additional frequency-based
+k
+J.Smith,M.Johnson,andK.Brown.2024. Real-time reweighting(Eq.18).
+toxiccommentfilteringforlivestreamingplatforms.
+InProceedingsoftheACMWebConference,pages
+A.2 DatasetandFeatureSummary
+567–578.
+Table9summarizesthedatasetandTF-IDFfeature
+G. Tarun, S. Reddy, and A. Kumar. 2024. Exploring
+setup. We use 159,571 comments with a strong
+bertandbi-lstmfortoxiccommentclassification. In
+classimbalance: 16,225toxic(10.2%)and143,346
+Proceedingsofthe2ndInternationalConferenceon
+DataScienceandInformationSystems,pages1–6. non-toxic(89.8%). Thecorpusissplitinto127,656
+training samples (80%) and 31,915 test samples
+N.Tiwari,R.Singh,andP.Kumar.2025. Efficientdeep (20%). Afterpreprocessing,weconstructa15,000-
+learning models for toxic comments identification
+dimensionalsparserepresentationbyconcatenating
+usinglstm. InProceedingsoftheInternationalCon-
+10,000 word-level and 5,000 character-level TF-
+ference on Data Science and Information Systems,
+volume886,pages345–356. IDFfeatures.
+10
+Table 9: Dataset and feature configuration. Class fail to capture implicit or nuanced toxicity. Ran-
+distributionandTF-IDFfeaturematrixdimensionsafter
+domForestperformsworstoverall,dominatedbya
+preprocessing.
+severefalse-positiveburden(6,664)andthehighest
+totalmisclassificationrate(23.15%),likelydueto
+Property Value
+itsstruggleswithsparse,high-dimensionalTF-IDF
+Totalcomments 159,571
+representationsundersevereclassimbalance.
+Toxic(Class1) 16,225(10.2%)
+Non-toxic(Class0) 143,346(89.8%)
+Table 11: Confusion matrix error breakdown.
+Trainingsamples(80%) 127,656
+FN=toxicpredictedasnon-toxic;FP=non-toxicpre-
+Testingsamples(20%) 31,915
+dictedastoxic. Bluebold=fewesterrors;amberbold
+Word-levelTF-IDFfeatures 10,000
+=secondfewest;reditalic=mosterrorspercolumn.
+Character-levelTF-IDFfeatures 5,000
+CombinedTF-IDFdimensionality 15,000
+Model FN(Toxic→Non-Toxic) FP(Non-Toxic→Toxic)
+LogisticRegression 433 1,598
+LinearSVM(SGD) 418 1,765
+A.3 ClassicalandEnsembleModel RandomForest 724 6,664
+XGBoost 1,715 81
+Performance
+Table10reportsclassicalandensemblebaselines
+Analysis of the confusion matrices (Fig. 4) re-
+on the held-out 20% test set (31,915 comments).
+vealsthat,whileaccuracyremainshigh(> 93%),
+Overall, linear models are highly competitive:
+the models exhibit significant type-I and type-II
+Logistic Regression achieves the best Macro-F1
+errors for the toxic class. For logistic regression,
+(94.05%) while ranking second in accuracy, pre-
+themodelachievesahighnon-toxicF (0.963)but
+1
+cision, and recall. Linear SVM (SGD) follows
+alowertoxicF (0.720),resultinginatruemacro
+1
+closelywitha93.67%Macro-F1. XGBoostattains
+F of 0.841. This gap is even more pronounced
+1
+thehighestaccuracy(94.37%)andleadsinpreci-
+in the Random Forest model, where a high false
+sion/recall but trails logistic regression in macro-
+positivecount(6,664)degradesprecisionto0.29,
+F1 (93.50%), indicating a slightly less balanced
+yieldingthelowestmacroF (0.810)amongtheen-
+1
+class-wiseperformance. RandomForestperforms
+semblefamily. Thesefindingsjustifytheneedfor
+substantiallyworseacrossallmetrics,suggesting
+the gating mechanism in CoGate-LSTM, which
+limitedsuitabilityforsparsehigh-dimensionalTF-
+explicitlybalancesthetrade-offbetweenrecalland
+IDFfeaturesunderstrongclassimbalance.
+precisionfortheminorityclass.
+Table10: Classicalandensemblemodelevaluation
+Table12: Misclassificationsummaryacrossall31,915
+onthe20%held-outtestset(31,915comments). Blue
+testinstances. Bluebold=lowestrate;amberbold=
+bold = best; amber bold = second best; red italic =
+secondlowest;reditalic=highestrate.
+worstpercolumn.
+Model TotalMisclassified Rate(%)
+Model Accuracy Precision Recall MacroF1
+LogisticRegression 2,031 6.36
+LogisticRegression 93.64% 94.90% 93.64% 78.90%
+LinearSVM(SGD) 2,183 6.84
+LinearSVM(SGD) 93.16% 94.72% 93.16% 80.10%
+RandomForest 76.85% 89.76% 76.85% 81.04% RandomForest 7,388 23.15
+XGBoost 94.37% 94.40% 94.37% 83.50% XGBoost 1,796 5.63
+A.4 MisclassificationAnalysis A.5 NaiveBayesBaseline
+Tables11and12characterizeerrorpatternsbeyond Table 13 reports the Naive Bayes SVM baseline
+aggregate scores. Logistic regression and linear onthedevelopmentset. Whilethemodelachieves
+SVM exhibit relatively balanced behavior; SVM a relatively high Exact Match (87.57%), its Dev
+achievesthefewestfalsenegatives(418),whileLR F1scoreremainssubstantiallylower(68.33%),re-
+maintainsthesecond-fewestfalsepositives(1,598), flectingsensitivitytothedataset’sstrongclassim-
+indicatingstabletoxicdetection. Incontrast,XG- balance. Thisdiscrepancyindicatesthatthemodel
+Boost exhibits a highly asymmetric trade-off: it tends to favor the dominant non-toxic class, lim-
+minimizesfalsepositivestoabest-in-class81but iting its effectiveness in capturing minority toxic
+incursthelargestfalse-negativecount(1,715). This instancesandmotivatingtheuseofmoreexpressive
+suggestsaconservativedecisionboundarythatmay modelsandbalancedlearningstrategies.
+11
+Table13: NaiveBayesSVMbaseline. DevF1andEx- Table15: BERTmodelandweightedlossablation.
+actMatch(EM).ReditalicflagstheF1gapattributable Bluebold=best;amberbold=secondbest;reditalic
+toclassimbalance. =worstpercolumn. GreenmarkstheF1improvement
+fromapplyingweightedloss.
+Model DevF1 DevEM
+Configuration DevF1 DevEM
+NaiveBayesSVM 68.33% 87.57%
+SimpleBERT 77.37% 95.73%
+BERT+weightedloss(0.9, 0.1) 81.19%(+3.82pp) 95.54%
+A.6 LSTMModelResults
+A.8 EnsembleMethods
+Table14comparesLSTMvariantsonthedevelop- Table 16 compares ensembling strategies against
+mentsettoquantifytheimpactofimbalance-aware the strongest single-model baseline. The most
+trainingandtheproposedcontractionmapping. In- confident voting ensemble delivers the largest
+corporatingaweightedloss(w = 0.9,w = 0.1) gain, improving Dev F1 from 81.19% to 84.28%
+0 1
+yieldsthelargestgain,raisingDevF1from77.95% (+3.09pp), indicating that confidence-based se-
+to81.12%withnegligibleimpactonEM,confirm- lection effectively exploits complementary deci-
+ingthatreweightingprimarilyimprovesdetection sion boundaries among the members. Guided
+of minority toxic labels. The ablation of contrac- weight ensembling yields only a modest Dev F1
+tion mapping reveals its critical role; removing improvement (81.57%, +0.38pp) but preserves
+itdegradesDevF1to76.04%, signalingreduced strongexact-matchperformance,achievingthebest
+stability in the learned sequence representations. Dev EM (95.50%). Overall, the results suggest
+Conversely,enablingcontractionmappingrestores that aggressive, confidence-driven aggregation is
+performanceandyieldsa+1.91ppimprovementin preferableforoptimizingF1underclassimbalance,
+DevF1overthenon-mappedvariant,whilemain- whereasweightedaveragingoffersamoreconser-
+taininghighEM(95.37%). Thissuggeststhemap- vativetrade-offthatprioritizesEMstability.
+pingeffectivelyregularizeslatentdynamics,facili-
+Table16: Ensemblestrategycomparison. Bluebold
+tatingmorerobustclassificationwithoutsacrificing
+=best;amberbold=secondbest;reditalic=worstper
+overallexact-matchaccuracy.
+column;green=gainoverthesingle-modelbaseline.
+Table 14: LSTM variant comparison. Effect of Strategy DevF1 DevEM
+weightedlossandcontractionmapping. Greenbold= Bestsinglemodel(noensembling) 81.19% 95.54%
+gainoversimpleLSTMbaseline. Most-confidentvote 84.28%(+3.09pp) 95.14%
+Guidedweightensembling 81.57%(+0.38pp) 95.50%
+Configuration DevF1 DevEM
+SimpleLSTM 77.95% 95.37% A.9 CoGate-LSTM:Character-Level
+LSTM+weightedloss(0.9, 0.1) 81.12% 95.21%
+LSTMw/ocontractionmapping 76.04% 95.38% BiLSTMModel
+LSTMw/contractionmapping 77.95%(+1.91pp) 95.37%
+Table 17 contrasts two character-level BiLSTM
+variants, highlighting the impact of output for-
+mulation on generalization. The binary model
+A.7 BERTModelResults (Dense(1)) exhibits clear underperformance and
+poor validation behavior (max val. accuracy
+Table 15 presents the BERT baseline and a 61.50%,highfinalval.loss0.8444),yieldingweak
+weighted-loss ablation on the development set. macrorecall(0.40)andmacroF (0.51),consistent
+1
+Applying class-weighted cross-entropy (0.9,0.1) with overfitting and difficulty capturing minority
+yieldsaclearimprovementinDevF1,increasing toxicpatterns. Incontrast,themulti-classformula-
+from 77.37% to 81.19% (+3.82pp), while Dev tion(Dense(5))substantiallyimprovescapacityand
+EMdecreasesonlymarginally(95.73%to95.54%). optimization (423k embedding parameters; 761k
+This indicates that weighting primarily improves total),achievingnear-saturatedvalidationaccuracy
+recognitionofminoritytoxiccomments(higherF1) (99.30%),lowvalidationloss(0.0824),andstrong
+withoutmateriallydegradingoverallexact-match testaccuracy(96.00%). Theresultingmacromet-
+accuracy,reinforcingtheimportanceofimbalance- rics(precision0.91,recall0.87,F 0.88)indicate
+1
+awareoptimizationfortoxiccommentdetection. markedlymorebalancedclass-wisediscrimination,
+12
+suggestingthataricherlabelstructureprovidesa
+strongerlearningsignalforcharacter-leveltoxicity 0.975 0.970
+0.965
+cues. 0.960
+0.955
+0.950
+Table 17: CoGate-LSTM architecture comparison. 0.945
+0.940
+Binary(Model1)vs.multi-class(Model2). Reditalic 0.935
+10k 30k 50k 70k 90k 110k 130k
+=overfitting/weakgeneralization;bluebold=bestper Training Set Size
+row.
+Feature/Metric Model1(Binary) Model2(Multi-Class)
+Architecture BiLSTM→Dense(1) BiLSTM→Dense(5)
+Embeddingparams 20,000 423,000
+Totalparams 357,153 761,181
+Maxtrainaccuracy 88.51% 99.31%
+Maxval.accuracy 61.50% 99.30%
+Finalval.loss 0.8444 0.0824
+Testaccuracy 98.00% 96.00%
+Macroprecision 0.76 0.91
+Macrorecall 0.40 0.87
+MacroF1 0.51 0.88
+A.10 OverallModelComparison
+Table18consolidatesresultsacrossallmodelfam-
+ilies. The Naive Bayes SVM represents the low-
+estbaseline(87.57%accuracyand68.33%macro
+F1). Amongnon-deepmethods,XGBoostachieves
+the strongest macro F1 (83.5%) and high accu-
+racy(94.37%),outperforminglinearmethodslike
+logistic regression (78.9% F1). While deep ar-
+chitecturesusingweightedlossimproveF1, they
+exhibit minority-class fragility, as shown by low
+minimumF1scores(LSTM:0.0%,BERT:18.2%).
+Confidence-basedensemblingfurtherelevatesper-
+formanceto84.28%macro-F1. However,thepro-
+posedCoGate-LSTMachievesstate-of-the-artre-
+sults across all primary metrics: 96.00% accu-
+racy, 0.881 macro F1, and a significantly higher
+minimum-classF1of23.5%. Theseresultsdemon-
+strate superior robustness to class imbalance and
+more consistent discrimination across rare toxic
+labels.
+Table18: Overallmodelcomparisonacrossallfami-
+lies.Bluebold=bestpercolumn;amberbold=second
+best;reditalic=worst;greyitalic=notavailable.
+Family Model TestAcc. MacroF1 Min.F1
+Baseline NaiveBayesSVM 87.57% 68.33% —
+Classical LogisticRegression 93.64% 78.90% —
+Classical LinearSVM(SGD) 93.16% 80.10% —
+Ensemble RandomForest 76.85% 81.04% —
+Ensemble XGBoost 94.37% 83.50% —
+Deep LSTM+weightedloss 95.21% 81.12% 0.0%
+Deep BERT+weightedloss 95.54% 81.19% 18.2%
+Deep Ensemble(most-conf.) 95.14% 84.28% —
+Deep CoGate-LSTM 96.00% 88.10% 23.5%
+The binary character-level BiLSTM (Model 1,
+357K parameters) achieves 98% accuracy on the
+two-class task, but a macro-F1 of 0.94 masks a
+ycaruccA
+Logistic Regression
+T Vara lii dn ation 0.980
+0.970
+0.960 =0.023
+0.950
+0.940
+0.930
+10k 30k 50k 70k 90k 110k 130k
+Training Set Size
+ycaruccA
+Linear SVM (SGD)
+Train Validation
+=0.015
+0.830
+0.820
+0.810
+0.800
+0.790
+0.780
+0.770
+10k 30k 50k 70k 90k 110k 130k
+Training Set Size
+ycaruccA
+Random Forest
+Train 0.954 Validation 0.952
+0.950
+0.948
+0.946
+0.944
+0.942
+=0.010 0.940
+10k 30k 50k 70k 90k 110k 130k
+Training Set Size
+ycaruccA
+XGBoost
+Train Validation
+=0.004
+Figure 5: Training dynamics and model compari-
+son. Validation performance of baseline models and
+the proposed CoGate-LSTM across training epochs.
+Theplotillustratesconvergencebehavior,showingthat
+CoGate-LSTM achieves faster stabilization and con-
+sistentlyhighervalidationperformanceduetocosine-
+similarityfeaturegatingandmulti-sourceembedding
+fusion,whichimproverepresentationrobustnessunder
+classimbalance.
+non-trivialgapbetweenclasses: toxicrecalldrops
+to0.84. Incontrast,non-toxicrecallreaches0.99,
+reflecting residual class-imbalance sensitivity at
+inference.
+Table 19: Model 1 (Binary BiLSTM) classification
+report. Per-classprecision,recall,andF1ontheheld-
+outtestset(5,000samples). Bluebold=best;amber
+bold=secondbest;reditalic=weakestmetric.
+Class Precision Recall F1 Support
+Non-toxic 0.98 0.99 0.99 4,505
+Toxic 0.95 0.84 0.89 495
+Accuracy 0.98 5,000
+Macroavg 0.97 0.92 0.94 5,000
+Weightedavg 0.98 0.98 0.98 5,000
+Table20comparesthetwoCoGate-LSTMcon-
+figurations. Model 1 (binary, 357K params)
+severelyoverfits: trainingaccuracyreaches77.8%
+while validation stagnates at 54%, and macro-F1
+isonly0.51. Model2(multi-class,761Kparams)
+convergesstablyto99.4%validationaccuracywith
+val-loss 0.078, demonstrating that expanding the
+embeddingvocabularyandoutputheadeliminates
+overfitting and dramatically improves minority-
+classrecall.
+Table 21 shows per-label performance for
+Model 2. Frequent labels (toxic, obscene, insult)
+achieveanF1of0.64-0.74, whilerarecategories
+(threat, identity_hate) remain challenging at F1
+0.17and0.23,respectively,reflectingthelimitsof
+13
+0.96
+0.92
+0.88
+0.84
+0.80
+0.76
+0.72
+Logistic Linear SVM Random XGBoost
+Regression (SGD) Forest
+erocS
+Accuracy Precision Recall F1-Score
+Best
+0.930 0.931 0.9320.9300.9280.929
+0.921 0.9210.921 0.9210.921
+0.914
+0.90
+0.888
+0.804
+0.768 0.768
+Figure 6: Comprehensiveevaluationmetrics across models. Comparisonof accuracy, precision, recall, and
+F1-score for competing architectures. The proposed CoGate-LSTM consistently achieves stronger balanced
+performance,particularlyimprovingrecallandmacro-F1,demonstratingitseffectivenessindetectingminority
+toxicityclassesthroughembedding-spaceSMOTEandweightedfocalloss3.
+Table 20: CoGate-LSTM architecture compari- Table 21: Model 2 (Multi-class BiLSTM) per-
+son. Binary (Model 1) vs. multi-class (Model 2) labelclassificationreport. Bluebold=best; amber
+character-levelBiLSTM.Bluebold=bestperrow;red bold=secondbest;reditalic=lowestF1(rarelabels).
+italic=overfitting/weakgeneralization.
+Label Precision Recall F1 Support
+Metric Model1(Binary) Model2(Multi-class)
+Toxic 0.91 0.61 0.73 3,056
+Architecture BiLSTM→Dense(1) BiLSTM→Dense(5) Obscene 0.92 0.62 0.74 1,715
+Embeddingparams 20,000 423,000 Insult 0.84 0.52 0.64 1,614
+Totalparams 357,153 761,181
+Threat 0.38 0.11 0.17 74
+Maxtrainaccuracy 77.75% 99.21%
+Maxval.accuracy 54.00% 99.40% IdentityHate 0.71 0.14 0.23 294
+Finalval.loss 1.020 0.078
+Testaccuracy 98.00% 96.00% Microavg 0.89 0.57 0.69 6,753
+Macroprecision 0.75 0.90 Macroavg 0.75 0.40 0.50 6,753
+Macrorecall 0.40 0.86 Weightedavg 0.88 0.57 0.69 6,753
+MacroF1 0.50 0.88
+avanillaBiLSTMwithoutimbalance-awaregating.
+Overall,macro-F1is0.50,motivatingthecosine- guidedweightsearchyieldsonlyamarginalgain
+gatingdesignofCoGate-LSTM. (+0.38 pp), suggesting that confidence-based se-
+Weighted loss raises CoGate-LSTM macro-F1 lectionisthemoreeffectiveensemblingstrategyin
+from 0.00% to 81.12% Dev F1, confirming that thissetting.
+standard cross-entropy collapses under class im-
+NaiveBayesSVMachieves87.57%EMbutonly
+balance without explicit penalty on missed toxic
+68.33%DevF1,thelowestF1acrossalldeepmod-
+predictions. Contraction mapping yields a mod-
+els,confirmingitsinabilitytorecovertheminority-
+estbutconsistent+1.91ppgainovertheraw-text
+classsignalunderseverelabelimbalance.
+baselinebynormalizinglexicalvariation.
+Simple BERT achieves 95.73% EM but only The final CoGate-LSTM model trained for 3
+77.37% Dev F1, confirming that accuracy is epochs achieves 96% test accuracy, 0.88 macro-
+misleading in the presence of class imbalance. F1, and 0.78 F1 on the minority toxic class—a
+WeightedlossraisesDevF1by+3.82ppto81.19% substantialimprovementoverthevanillaBiLSTM
+withnegligibleEMcost(−0.19pp). baseline(macro-F10.50,Table21),validatingthe
+Most-confident voting raises Dev F1 by +3.09 combined effect of cosine gating, weighted loss,
+pp over the best single model to 84.28%, while andembedding-spaceSMOTE.
+14
+Table 22: CoGate-LSTM variant ablation. Effect Table 24: Ensemble strategy comparison.
+of contraction mapping and weighted loss on Dev Blue bold=best; amber bold=second best; red
+F1 and Exact Match (EM). Blue bold=best; amber italic=worst per column; green=gain over single-
+bold=secondbest;reditalic=worst;green=gainover modelbaseline.
+baseline.
+Strategy DevF1 DevEM
+Configuration DevF1 DevEM
+Bestsinglemodel 81.19% 95.54%
+SimpleLSTM(nopreprocessing) 0.00% 90.00% Most-confidentvote 84.28%(+3.09pp) 95.14%
+LSTM+weightedloss(0.9,0.1)(nopreprocessing) 0.00% 90.00% Guidedweightensembling 81.57%(+0.38pp) 95.50%
+SimpleLSTM(w/contractionmapping) 77.95% 95.37%
+LSTM+weightedloss(0.9,0.1) 81.12%(+3.17pp9)5.21%
+w/ocontractionmapping 76.04% 95.38% Table25: NaiveBayesSVMbaseline. Reditalicflags
+theweakF1drivenbyclassimbalance.
+Table 23: BERT weighted loss ablation. Blue
+bold=best; amber bold=second best; red Model DevF1 DevEM
+italic=worst per column; green=improvement
+NaiveBayesSVM 68.33% 87.57%
+oversimpleBERT.
+Configuration DevF1 DevEM versus≈556coresforBERTat520ms/comment—
+SimpleBERT 77.37% 95.73% a ∼ 99× reduction under identical assumptions.
+BERT+weightedloss(0.9,0.1) 81.19%(+3.82pp) 95.54%
+Single-corethroughputscaleslinearly:
+A.11 Embedding-LevelSMOTE 1000
+Throughput ≈ N ≈ 20.8N comments/s,
+N 48
+Synthetic minority embeddings are generated by
+(26)
+linearinterpolationwithintheminorityset(Malik
+yielding∼166comments/sonan8-coremachine.
+etal.,2021):
+A.14 HyperparameterSensitivity
+esynth = etoxic+λ(cid:0) etoxic−etoxic(cid:1) , λ ∼ U(0,1),
+i j i
+Table 27 shows that CoGate-LSTM is robust
+(23)
+where etoxic is a k-NN neighbor of etoxic (k=5). acrossreasonablehyperparameterranges: macro-
+j i
+F1variesbyatmost0.012acrossallsweeps,with
+Operatinginembeddingspace(ratherthanonraw
+no setting collapsing performance. Gate temper-
+text)exploitsthelocallysmoothmanifoldstructure
+ature β = 1.0 is optimal; very low β softens the
+ofpretrainedGloVe,FastText,andBERTrepresen-
+gatetowardidentity(g ≈ 0.5),whileveryhighβ
+tations(Maliketal.,2021;Giglouetal.,2021). t
+riskshardthresholdingbeforethereferencevector
+A.12 LearningRateScheduling viswell-trained. Ahiddensizeof256balancesca-
+Weoptionallyevaluatecosineannealingwithwarm pacityandefficiency;512unitsprovidenegligible
+restarts(Maslej-Krešnˇákováetal.,2020): gains(+0.001)atnearlytwicetherecurrentcost.
+1 B Multi-SourceEmbeddings
+η = η + (η −η )
+t min max min
+2
+(cid:18) (cid:16) t mod T (cid:17)(cid:19) (24) B.1 ComplementarityofEmbeddingSources
+i
+× 1+cos π· ,
+T Pairwise Pearson correlations between the three
+i
+embeddingsourcesaremoderate:
+withη =10−6,η =10−4,T =15. Gainsover
+min max i
+fixed η are marginal; we report fixed η results
+ρ = 0.42, ρ = 0.38, ρ = 0.35, (27)
+GF GB FB
+throughout.
+confirmingpartialnon-redundancy. Concatenation
+A.13 InferenceThroughput
+outperformsaveraging(macro-F1: 0.881vs.0.875)
+OnasingleIntelXeoncore,CoGate-LSTMaver-
+and attention-weighted fusion (macro-F1: 0.881
+ages48ms/comment(classifieronly,precomputed
+vs. 0.868), consistent with its ability to preserve
+BERT-CLSfeatures). Foraserviceprocessing107
+source-specificcapacity. GloVeencodesglobalco-
+comments/day:
+occurrence structure, FastText captures subword
+107×0.048s morphology via character n-grams, and BERT
+CPUcoresrequired = ≈ 5.6, suppliescontextualizedtokenrepresentations(Sap
+86400s
+(25) etal.,2019;Shahetal.,2021).
+15
+Table26: CoGate-LSTMfinaltest-setreport(31,915 Algorithm2CoGate-LSTMTrainingwithClass
+samples). Blue bold=best per column; amber Rebalancing
+bold=secondbest;reditalic=minorityclassgap.
+Require: Dataset D = {(x ,y )}N , batch size
+i i i=1
+Class Precision Recall F1 Support B,learningrateη,epochsE
+Ensure: Trainedparametersθ
+Non-toxic 0.97 0.98 0.98 28,859
+Toxic 0.84 0.73 0.78 3,056 1: Initializeθ (includingvviaEq.31)
+Accuracy 0.96 31,915 2: forepoch= 1toE do
+Macroavg 0.91 0.86 0.88 31,915 3: forminibatchB ⊂ D do
+Weightedavg 0.96 0.96 0.96 31,915
+4: B tox ← {(x,y) ∈ B : ∃k, y k=1}
+5: B bal ← B∪SMOTE(B tox) (Eq.23)
+Algorithm1Cosine-SimilarityGating 6: Computefusedembeddings (Eq.7)
+Require: Token embeddings e t ∈ Rd, t = 7: ApplyAlgorithm1 ⇒ m t
+1,...,T;learnablev ∈ Rd;temperatureβ > 8: Forwardpass ⇒ yˆ
+0 9: ComputeL focal (Eq.18)
+Ensure: Gatedembeddingsm t ∈ Rd 10: θ ← θ−η∇ θL focal (Adam,Eq.21)
+1: InitializevviaEq.31 11: endfor
+2: fort = 1toT do 12: ifvalmacro-F1notimprovedfor7epochs
+e ·v
+3: sim t ← t ∈ [−1,1] then
+∥e ∥ ∥v∥
+t 2 2 13: break
+4: g t ← σ(βsim t) ∈ (0,1) ▷scalargate 14: endif
+5: m t ← g t·e t ▷scalar–vector 15: endfor
+multiplication
+16: returnθ
+6: endfor
+7: return{m 1,...,m T}
+composes,as
+N N
+B.2 GeometricViewofCosineGating min maj
+∇ L(θ) = g¯ + g¯ ,
+θ min maj
+N N
+Undersevereimbalance,minorityembeddingsoc- 1 (cid:88) (28)
+g¯ = g .
+cupysparsesubspaces,andtraininggradientsare min i
+N
+min
+dominated by majority directions. Cosine gat- i∈Imin
+ing learns a reference vector v that upweights
+Even if minority gradients are large in mag-
+toxicity-alignedfeaturecoordinatesandsuppresses
+nitude, their contribution ∇ L is scaled by
+θ
+majority-aligned ones, increasing minority-class
+N /N → 0asanimbalancegrows,motivating
+min
+separation in the gated space. This is consistent
+mechanismsthatamplifytheminoritysignalatthe
+withthe+4.8%macro-F1gainobservedinablation
+featurelevel.
+(Table4).
+D.2 GatingasCoordinate-wiseGradient
+C NotationandProblemSetup Reweighting
+Proposition2(Coordinate-wiseGradientScal-
+Multilabeltoxicitydetectionmapsinputtextxtoa
+labelvectory ∈ {0,1}K (K=6). Predictedprob-
+ing). Let m
+t
+= g
+t
+·e
+t
+with g
+t
+= σ(βsim t) and
+sim = e⊤v/(∥e ∥ ∥v∥ ). For each coordinate
+abilities are yˆ ∈ [0,1]K. Token embeddings are t t t 2 2
+e ∈ Rd for t ∈ {1,...,T}. The cosine-gating j ∈ {1,...,d}:
+t
+referencevectorisv ∈ Rd;thescalargateisg ∈
+t ∂L ∂L ∂L ∂g
+t
+(0,1);thegatedembeddingism t = g t·e t ∈ Rd. ∂e = g t· ∂m +e t,j · ∂g · ∂e . (29)
+t,j t,j t t,j
+D TheoreticalAnalysis Proof. Thechainruleisappliedtom = g e ,
+t,j t t,j
+notingg dependsone throughsim .
+t t,j t
+D.1 GradientDilutionUnderImbalance
+ThefirstterminEq.29scaleseveryfeaturegradi-
+Lemma1(MinorityGradientMass). Letamini- entbyg : wheng ≈ 1fortoxicity-alignedtokens,
+t t
+batchofsizeN = N +N haveper-sample minority-class gradient flow is preserved; when
+maj min
+gradients g = ∇ ℓ (θ). The batch gradient de- g ≈ 0forbenigntokens,itisattenuated.
+i θ i t
+16
+Table27: Macro-F1acrosshyperparametersweeps. ValuesinparenthesesrepresenttheresultingMacroF1.
+Bold=optimalconfigurationchosenforCoGate-LSTM.
+Hyperparameter SweptValues(MacroF1) Observation
+Temperatureβ 0.1(0.875) 1.0(0.881) 10.0(0.879) 100.0(0.872) Extremesdegradegatingefficacy
+LSTMHiddenSize 64(0.867) 128(0.875) 256(0.881) 512(0.880) 256unitsbalancecapacity/efficiency
+Dropoutp 0.1(0.872) 0.2(0.878) 0.3(0.881) 0.5(0.873) Moderatedropoutregularizesbest
+drop
+LearningRate 10−5(0.869) 10−4(0.881) 10−3(0.852) Highratesdestabilizeoptimization
+BatchSize 32(0.878) 64(0.881) 128(0.879) Marginalsensitivityacrosssizes
+Assumption 1 (Gate Separability). There exist 300viazero-paddingortruncation. Characterse-
+0 < δ < 1 and margin c > 0 such that E[g | quences are similarly processed to T = 800.
+2 t char
+y=1] ≥ 1−δ andE[g | y=0] ≤ 1 +δ. Out-of-vocabulary (OOV) tokens are mapped to
+t 2
+<UNK>,andallnumericalstringsarecollapsedtoa
+Theorem 1 (Minority Gradient Amplification
+single<NUM>tokentomaintainvocabularysparsity.
+(Informal)). Under Assumption 1, the expected
+minoritycontributionto∥∂L/∂e ∥isamplifiedby
+t Hierarchical Embeddings. We employ a con-
+α ≳ E[g Et [| gy t]=1] , (30) eca F tt ae stn Tea xt ted ∥e em B tb Ee Rd Td ]in ∈g Rsc 1h 3e 6m 8 e w: he err ta ew w= ord[e vG t elo cV te or∥ s
+(d = 300) and contextual BERT-base representa-
+whichincreasesasδ → 0. Inthehard-gatinglimit tions(d = 768)arejoined. Topreventcatastrophic
+(β → ∞)withstrongseparability,α → N/N min, forgettingandisolatethegatingmechanism’sim-
+can partially counteract gradient dilution under pact, the BERT encoder remains frozen through-
+strongseparabilityassumptions. out training. The raw vector is projected to a la-
+Proof sketch. By Proposition 2, the dominant tent space R512 via a learnable linear transform
+gradienttermisscaledbyg t. UnderAssumption1, W p ∈ R512×1368.
+minority-aligned tokens concentrate near, g ≈ 1
+t
+Optimization and Training. Models are opti-
+whilebenigntokensconcentratenearg ≈ 1,somi-
+t 2 mized using Adam with a fixed learning rate
+noritytokenscarryadisproportionateshareoftotal
+η = 10−4 andmomentumcoefficients(β ,β ) =
+gradientmass,counteractingtheN /N scaling 1 2
+min
+(0.9,0.999). Weapplybias-correctedmomentesti-
+inLemma1.
+mates:
+Remark: Theorem1isaninterpretiveresult,not
+m v
+t t
+a convergence guarantee. Empirical validation is mˆ = , vˆ =
+t 1−βt t 1−βt
+inTable4. 1 2
+To prevent exploding gradients in the recurrent
+D.3 Initializationofv
+layers,weenforceglobalℓ -normclippingat1.0.
+2
+Weinitializev asthecentroidofmeantokenem-
+Trainingproceedsforupto60epochs,subjecttoan
+beddingsover1,000sampledtoxicexamples:
+earlystoppingcriterionwithapatienceof7epochs
+v(0) =
+1
+(cid:88)(cid:32)
+1
+(cid:88)T e(i)(cid:33)
+,
+basedonvalidationMacroF 1.
+|T| T t (31) EvaluationProtocol. CPUlatencyismeasured
+i∈T t=1
+in a single-threaded environment, averaged over
+|T| = 1000, T ⊂ {toxicexamples}.
+the full test set after a 10-batch warm-up. This
+A PCA alternative (v(0) ← PC of toxic means) excludesBERTencodingtimetofocusonthepro-
+1
+posedclassifier’sefficiency. Statisticalsignificance
+yieldssimilarcold-startbehaviorempirically.
+isassessedvia95%bootstrapconfidenceintervals
+E ImplementationDetails (1,000resamples)andpairedt-tests(p < 0.05).
+PreprocessingandTokenization. Inputtextun-
+F ComputationalComplexity
+dergoesstandardlowercasenormalizationandUni-
+codeNFKCscaling. Word-leveltokensaregener- Theintegrationofcosinegatingintroducesanegli-
+atedviaSentencePiece-BPEandfixedatT = gibleoverheadofO(Td)operationsandO(d)+1
+max
+17
+Hypergraph-Memory LSTM Oscillator-Augmented LSTM
+( HG-MemLSTM ) ( O-LSTM )
+Learnable Hypergraph m Phase-Amplitude Memory
+Dynamic Connectivity Rhythmic Modulation
+m m
+Message Passing Periodic Tasks
+ht 1
+Sparsity Penalty m
+h
+At At 1+MLPadj(xt,ht 1) aatt ((WWaaxxtt++UUaahhtt 11++bbaa))
+mti GRUnode(mt 1, jAtijmtj 1+at) tt tt 11++ ++ttaannhh((WWxxtt++UUhhtt 11))
+cctt aatt ccooss((tt))++((11 aatt)) cctt 11
+(|E|d) per step Phase-modulated memory cell
+Low-Rank + Sparse Memory LSTM Contrastive-Mem LSTM
+( LR-S LSTM ) ( CM-LSTM )
+Low-Rank + Sparse Memory Contrastive Loss
+Efficient Updates Ut Vt Memory Clustering
+High-Expressiveness Separable States train
+St
+Ut Ut 1+ Ut = task+ contrastive
+V Stt sV ot ft_1 t+ hreV sht
+(St 1+ St, )
+con= iloge kx ep xp(z (i zizi z+ k/ /)
+)
+(dr) memory, r d Clusters via InfoNCE loss
+Figure 7: Representative extensions of the LSTM memory cell. (a) HG-MemLSTM: dynamic hypergraph
+connectivityamonghiddenstates. (b)O-LSTM:phase-modulatedmemoryupdatesforperiodicsequencemodeling.
+(c)LR-SLSTM:low-rankplussparsememoryfactorizationforparameterefficiency. (d)CM-LSTM:contrastive
+memorylearningusingtheInfoNCEobjective.
+additional parameters per sequence. For a BiL- functionand◦denoteelementwisemultiplication.
+STM layer with h hidden units, the complexity Figure7illustratesfourrepresentativedirections
+remains dominated by the recurrent transitions forextendingthismemorymechanism.
+O(Th(d+h)). Multi-headself-attention(MHSA)
+scales quadratically as O(T2d), though this is HG-MemLSTM:HypergraphMemory
+Propagation
+boundedinourimplementationbythefixedT .
+max
+The proposed architecture thus maintains linear HG-MemLSTMreplacesthefixedrecurrenttopol-
+complexitywithrespecttosequencelength,ensur- ogywithalearnablehypergraphG = (V,E )over
+t t
+ingscalabilityforlong-formcommentmoderation. hiddennodes. LetA ∈ Rn×n denotethedynamic
+t
+adjacencymatrix.
+G Memory-EnhancedLSTMVariants
+Forreference,thestandardLSTMcellevolvesac-
+A = A +MLP (x ,h ) (38)
+cordingto t t−1 adj t t−1
+Nodememoriesmi areupdatedthroughhyper-
+i = σ(W x +U h +b ), (32) t
+t i t i t−1 i
+graphmessagepassing:
+f = σ(W x +U h +b ), (33)
+t f t f t−1 f
+o = σ(W x +U h +b ), (34)
+t o t o t−1 o
+n
+c˜ t = tanh(W cx t+U ch t−1+b c), (35) m˜i = (cid:88) Aijmj (39)
+t t t−1
+c t = f t◦c t−1+i t◦c˜ t, (36) j=1
+h = o ◦tanh(c ), (37) mi = GRU (mi ,m˜i +a ) (40)
+t t t t node t−1 t t
+where x
+t
+∈ Rdx the input is; h t,c
+t
+∈ Rd the hid- where a
+t
+denotes the LSTM activation vector.
+denandmemorystates,σ(·)denotesthesigmoid Thisformulationyieldscomputationalcomplexity
+18
+CM-LSTM:ContrastiveMemory
+O(|E |d) Regularization
+t
+CM-LSTMintroducesmetric-spacestructureinto
+per timestep, enabling sparse task-dependent
+thehiddenrepresentationsusingacontrastiveob-
+connectivitybetweenhiddenstates.
+jective. Letz denotetheprojectedhiddenstate.
+i
+Thetrainingobjectivebecomes
+O-LSTM:OscillatoryMemoryDynamics
+O-LSTMintroducesphase–amplitudedynamicsto
+thememorycell. Aperiodicgatingvariablea t and L = L task +λL con (48)
+phasevariableϕ evolveas
+t
+withInfoNCEloss
+a = σ(W x +U h +b ) (41)
+ϕt
+t
+= ϕ
+t−1a +t ω+ta ant h− (1
+W
+ϕxa
+t+U ϕh t−1) (42) L
+con
+=
+(cid:88)
+log
+(cid:80)ex ep x(z pi (z·z ·i+ z/τ /)
+τ). (49)
+i k i k
+Thememoryupdatebecomes
+Thisencourageshiddenstatescorrespondingto
+similarsemanticclassestoformcompactclusters
+inrepresentationspace.
+c = a ◦cos(ϕ )+(1−a )◦c . (43)
+t t t t t−1
+PositioningCoGate-LSTM
+Thisformulationintroducesalearnedperiodic
+Theabovevariantsprimarilymodifythestatedy-
+prior,enablingthemodeltocapturerhythmictem-
+namicsoftherecurrentunit. Incontrast,CoGate-
+poral patterns without explicit positional encod-
+LSTMoperatesattheembeddinglevelbeforere-
+ings.
+currentencoding.
+Let e denote the token embedding and p a
+LR-SLSTM:Low-RankSparseMemory t
+learnedtoxicityprototype. CoGate-LSTMapplies
+Factorization
+cosine-similaritygating:
+To reduce quadratic memory costs, LR-S LSTM
+decomposestherecurrentmemorymatrix:
+(cid:18) e⊤p (cid:19)
+g = σ α t (50)
+t
+∥e ∥∥p∥
+t
+M = U V⊤+S (44)
+t t t t e˜ t = g te t. (51)
+where Thegatedrepresentatione˜ isthenpassedtothe
+t
+recurrentencoder.
+U ,V ∈ Rd×r, r ≪ d Additionally,embedding-spaceSMOTEgener-
+t t
+atesminoritysamples
+andS isasparseresidual.
+t
+Updatesfollow
+e = e +λ(e −e ), λ ∼ U(0,1), (52)
+new i j i
+U = U +∆U (45) improvingrepresentationcoverageforraretoxic
+t t−1 t
+categories. Thus, CoGate-LSTM complements
+V = V +∆V (46)
+t t−1 t
+state-level memory augmentation by introducing
+S = soft_thresh(S +∆S ,λ) (47)
+t t−1 t
+direction-aware feature gating in representation
+space. ThearchitecturesshowninFigure7could
+yieldingtotalstoragecomplexity
+therefore serve as alternative recurrent encoders
+withintheCoGate-LSTMpipeline.
+O(dr+s),
+wheresisthesparsitybudget. Thisrepresenta-
+tion preserves expressive capacity while dramati-
+callyreducingparametercost.
+19

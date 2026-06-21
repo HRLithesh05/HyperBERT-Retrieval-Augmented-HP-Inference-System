@@ -1,0 +1,797 @@
+Patent Language Model Pretraining with ModernBERT
+AmirhosseinYousefiramandi CiaránCooney
+Clarivate
+Correspondence:amirhossein.yousefiramandi@clarivate.com
+Abstract such as legal or biomedical corpora (Beltagy
+etal.,2019;Limsopatham,2021). Manysuchdo-
+Transformer-based language models such as
+mains—including patents—exhibit idiosyncratic
+BERThavebecomefoundationalinNLP,yet
+theirperformancedegradesinspecializeddo- lexicalandsyntacticfeatures,warrantingdomain-
+mains like patents, which contain long, tech- specific adaptation. While fine-tuning on down-
+nical, and legally structured text. Prior ap- stream tasks remains a popular strategy, several
+proaches to patent NLP have primarily re- studieshavedemonstratedthatextendingpretrain-
+liedonfine-tuninggeneral-purposemodelsor
+ing on domain-relevant corpora, or pretraining
+domain-adapted variants pretrained with lim-
+fromscratch,canleadtosubstantialperformance
+iteddata. Inthiswork,wepretrain3domain-
+gains(Chalkidisetal.,2020;Rasmyetal.,2021).
+specificmaskedlanguagemodelsforpatents,
+usingtheModernBERTarchitectureandacu- Patent documents are a unique blend of legal
+ratedcorpusofover60millionpatentrecords. languageandtechnicalexposition,oftenstructured
+Our approach incorporates architectural opti-
+andwritteninwaysthatdiffersharplyfromgeneral
+mizations,includingFlashAttention,rotaryem-
+webornewstext. Tasksinthisdomain—including
+beddings, andGLUfeed-forwardlayers. We
+classification, retrieval, and paragraph highlight-
+evaluateourmodelsonfourdownstreampatent
+ing—have been addressed using both traditional
+classificationtasks. Ourmodel,ModernBERT-
+base-PT,consistentlyoutperformsthegeneral- ML(Kamaterietal.,2022;HaghighianRoudsari
+purpose ModernBERT baseline on three out et al., 2022) and transformer-based approaches
+offourdatasetsandachievescompetitiveper- (Lee and Hsiang, 2020; Bekamiri et al., 2024).
+formance with a baseline PatentBERT. Addi- However, the majority of BERT-based studies in
+tional experiments with ModernBERT-base- thisspacerelyongenericpretraining,whichmay
+VXandMosaic-BERT-largedemonstratethat
+limittheireffectivenessgiventhedomainshift.
+scalingthemodelsizeandcustomizingthetok-
+enizerfurtherenhanceperformanceonselected To date, only one notable effort has reported
+tasks. Notably, all ModernBERT variants re- on pretraining a BERT-style model specifically
+tainsubstantiallyfasterinference—over3×that for patent documents (Srebrovic and Yonamine,
+of PatentBERT—underscoring their suitabil-
+2020a). Thisindicatesasignificantgapintheliter-
+ity for time-sensitive applications. These re-
+ature,especiallygiventhedemonstratedbenefitsof
+sultsunderscorethebenefitsofdomain-specific
+domainadaptationincomparablefields(Chalkidis
+pretrainingandarchitecturalimprovementsfor
+et al., 2020; Qiu et al., 2021; Yan and Pei, 2022).
+patent-focusedNLPtasks.
+Ourworkaimstoaddressthisgapdirectly. Addi-
+1 Introduction
+tionally,severaltechnicalenhancementstoBERT
+haverecentlybeenproposedandvalidated,includ-
+Sinceitsreleasein2018,BERTandotherderiva-
+ingFlashAttention (Daoetal.,2022;Shahetal.,
+tive encoder-based transformer models have be-
+2024), unpadding (Zengetal., 2022), optimized
+come a mainstay of modern NLP research and
+MLM masking (Wettig et al., 2023), and rotary
+applications (Devlin et al., 2019). Even within
+positional embeddings (Su et al., 2024). These
+an ecosystem apparently dominated by genera-
+improvementsnotonlyacceleratetraining,butalso
+tiveLargeLanguageModels(LLMs),BERT-based
+improvemodelqualityandstability (Portesetal.,
+models continue to be used widely in both tradi-
+2023;Warneretal.,2024).
+tionalencoderapplicationsaswellaswithinsome
+LLM systems e.g., Retrieval Augmented Gener- Inthiswork,webuildonthesearchitecturaland
+ation systems (Lewis et al., 2020; Wang et al., traininginnovationsbyusingtheModernBERTde-
+2022). sign in conjunction with MosaicML’s Composer
+Optimized primarily for general-domain text, frameworktopretrainatransformermodelspecif-
+BERT tends to underperform in specialized do- icallyforpatent-domaintasks. Ourcontributions
+mains that feature distinct linguistic structures, areasfollows:
+1
+5202
+voN
+81
+]LC.sc[
+3v62941.9052:viXra
+• ArchitectureandEfficiency: Weadoptthe DerwentWorldPatentsIndex(DWPI)1.ThisDWPI
+ModernBERTarchitectureandincorporatere- datahasbeenconstructedbysubjectmatterexperts
+centtrainingoptimizations,suchasFlashAt- to provide more insightful descriptions of patent
+tention (Dao et al., 2022), dynamic mask- content.
+ing ratios (Wettig et al., 2023), and rotary Topreparethedata,weappliedseveralprepro-
+positional embeddings (Su et al., 2024), as cessingandqualityenhancementsteps. Fromthe
+facilitatedbyMosaicML’sComposerframe- broadercorpus,weextractedabstractsandthefirst
+work. These enhancements significantly re- independentclaimfromeachpatent,andappended
+ducepretrainingtimeandcomputecostcom- DWPItitles,abstracts,andclaimsbymatchingpub-
+paredtotraditionalBERT,makingthemodel lication numbers. Non-essential text (e.g., figure
+bothmoreaccessibleandscalable. references,non-Englishcharacters)wasremoved.
+Only the first independent claim per patent was
+• Training Data: We construct a diverse and retained.
+representativecorpusthatblendspublicpatent FollowingstrategiesusedinFineWeb (Penedo
+datawithproprietarypatenttext. Thepropri- etal.,2024b),weappliedalanguagefiltertoretain
+etarydataaresectionsoforiginalpatenttext onlyEnglishpatentsandimplementedtextquality
+that have been rewritten in less obscure lan- andrepetitionfilters (Raeetal.,2021),usingthe
+guagebysubject-matterexperts. Thishybrid DataTrove toolkit2 (Penedo et al., 2024b). Addi-
+dataset enhances the model’s ability to gen- tionaldeduplicationwascriticalgiventhatpatents
+eralize across patent categories and jurisdic- areoftenclusteredinfamiliesorlegalhierarchies:
+tions. we applied MinHash-based fuzzy deduplication
+(Penedoetal.,2024b),whichcomputesn-gramsig-
+naturesandfiltersoutduplicatesornear-duplicates.
+• Downstream Evaluation: We benchmark
+Thisprocedurereducedthedatasetfrom~100Mto
+ourpretrainedmodelonmultipledownstream
+~64Muniquepatents.
+patent classification tasks and compare it
+Ourfinaltrainingdatasetcontains~64Mpatents
+against both a generic ModernBERT base
+(~30.8Btokens), withaheld-outtestsetof3.4M
+modelandGoogle’sPatentBERT(Srebrovic
+patents(~1.6Btokens). Thistrainingcorpusisap-
+and Yonamine, 2020a). Our results demon-
+proximately half the size of Google PatentBERT
+strate that pretraining on domain-specific
+(SrebrovicandYonamine,2020a). Fullpreprocess-
+patent data improves task accuracy over
+ingdetailsarereportedinAppendix B.
+ModernBERT-base and leads to more effi-
+cient fine-tuning and inference in compari-
+2.2 TokenizationandVocabulary
+sonwithPatentBERT.Moreover,resultswith
+Construction
+ModernBERT-base-VX and Mosaic-BERT-
+To support MLM pre-training from scratch
+large indicate that both architectural scaling
+on English-language patent text, we devel-
+andtokenizercustomizationcanyieldfurther
+oped a domain-specific subword tokenizer for
+gains on selected datasets, suggesting com-
+MosaicBERT-large(2.2.2)usingthetokenizersli-
+plementary strategies for optimizing patent-
+brary(Wolfetal.,2020). Thetokenizerimplements
+domaintransformers.
+aByte-PairEncoding(BPE)model(Sennrichetal.,
+2016) initialized with an unknown token [UNK].
+2 Methods
+All input text is normalized by Unicode NFKC
+normalizationfollowedbylowercasing,reducing
+2.1 DataandPreprocessing
+case-inducedsparsityandconsolidatingvisuallyor
+Pretrainingadomain-specificlanguagemodelwith canonicallydistinctcodepoints. Pre-tokenization
+MLMlossrequiresasubstantialvolumeofdomain- useswhitespacesplitting;punctuationremainsat-
+specificdatainordertocompetewithorexceedthe tachedtoneighboringtokensbutcanbesegmented
+performance of more generic pretrained encoder
+1https://clarivate.com/
+models. We construct our dataset from ~100M intellectual-property/
+patentdocuments(meanlength~700words),com- patent-intelligence/
+derwent-world-patents-index/
+prisingoriginalpublishedapplicationsandcorre-
+2https://github.com/huggingface/
+sponding proprietary samples extracted from the datatrove
+2
+bythesubwordmodelasneeded. 2.2.1 ModelArchitecture
+TheBPEvocabularywastrainedfromastream- WeadopttheFlexBERT-basearchitecturefromthe
+ingiteratoroverthepretrainingcorpuswithatar- ModernBERT repository3,whichisamodernized
+get size of 49,152 subwords and a minimum fre- BERT-basedencodertailoredforefficienttraining
+quency threshold of 2. The following special to- (Warneretal.,2024). Thisarchitectureconsistsof
+kens were reserved for MLM training: [UNK], 22encoderblockswithahiddenstatesizeof768
+[PAD],[CLS],[SEP],and[MASK].Thefinal and12self-attentionheadsperlayer. GaussianEr-
+vocabulary and merge rules were serialized and rorLinearUnit(GELU)istheactivationfunction
+reusedforallpretrainingandevaluation. Atinfer- for all feed-forward layers and Layer Normaliza-
+encetime,documentsarenormalized,whitespace- tion is applied at the beginning of each sublayer
+tokenized, and mapped to subword indices; fre- toimprovetrainingstability. TheoriginalModern-
+quent technical terms and morphemes appear as BERT has a maximum sequence length of 8192
+single tokens, while rarer terms decompose into tokens but we have limited this to 1024 for our
+multiple subwords. Out-of-vocabulary character requirements.
+sequencesaremappedto[UNK]. FollowingMosaicBERT(Portesetal.,2023),our
+implementationintegratesseveralefficiencyopti-
+For comparison, we also experimented with
+mizations. First, the model uses FlashAttention
+WordPiece-styletokenization(SchusterandNaka-
+fortheself-attentionlayers,enablinglargerbatch
+jima,2012;Devlinetal.,2019),includingsection-
+sizesandlongersequences(Daoetal.,2022;Shah
+awarevariantswithspecialmarkersforabstracts,
+etal.,2024). Second,weadoptALiBi(Attention
+claims,andDWPItext(SrebrovicandYonamine,
+withLinearBiases)positionalencodinginsteadof
+2020b). Thesetokenizersweretrainedwithvary-
+learnedpositionalembeddings(Pressetal.,2021).
+inghyperparametersandevaluatedusingaverage
+ALiBi adds a relative position bias to attention
+token entropy (Zouhar et al., 2023; Dagan et al.,
+scoresratherthanusingabsolutepositionembed-
+2024) and unknown-token rates. However, pre-
+dings,whichnotonlyimprovesfinalmodelperfor-
+liminary end-to-end experiments showed weaker
+mancebutalsoenablesthemodeltogeneralizeto
+downstream performance relative to our BPE to-
+sequenceslongerthanthoseseenintraining. Third,
+kenizer. Since detailed results are out of scope,
+feed-forwardlayersareimplementedwithaGated
+andallmodelsreportedinthispaperuseeitherour
+LinearUnit(GLU)(Portesetal.,2023). Thisimple-
+BPE tokenizer or ModernBERT defaults, we do
+mentationseestheintermediatedenselayer’sout-
+notreportfurtherontheseWordPieceexperiments.
+putsplitintotwoparts. Onepartispassedthrough
+Theothertwopretrainedmodels,ModernBERT-
+a GELU activation and the other part is used as
+base-PTandModernBERT-base-VX,employtheir
+agatingsignal(afteralineartransformation)that
+originalpubliclyreleasedtokenizers(Warneretal.,
+multiplicatively modulates the activated part, en-
+2024)withoutmodification.
+ablingmoreflexibleandexpressiverepresentations.
+Fourth, wescaleresidualconnectionsbyafactor
+of0.5followingthePre-LayerNormsetup,which
+Model suffixes (corpus variants). We suffix
+stabilizestrainingindeeperarchitectures. Notably,
+modelnamestoindicatethepretrainingcorpusvari-
+dropoutisremovedentirelyfromthearchitecture
+ant(Table1). -PT(clean)denotespretrainingon
+withoutadverseeffectsongeneralizationortrain-
+thePhase2cleanedandnear-deduplicatedpatent
+ingstability. Thesemodelenhancementshavebeen
+corpus, which applies English language identifi-
+showntoimprovetrainingspeedandstabilitywith-
+cation, repetition/quality filters, a FineWeb-style
+out sacrificing model performance (Portes et al.,
+qualityfilter,andMinHash-basednear-duplicatere-
+2023).
+moval(AppendixB.2). -VX(raw)denotespretrain-
+In addition to this baseline, we pretrained two
+ing on the corpus prior to Phase 2 filtering—i.e.,
+furthermodelvariants. First,aModernBERT-base-
+afterPhase1extraction/normalizationandfamily-
+VXconfiguration,whichretains22layersand12
+leveldeduplicationonly(AppendixB.1). Theraw
+attentionheadsbutintroducesadjustedintermedi-
+variant is larger but noisier: Phase 2 reduces to-
+atedimensionsandGLUexpansionconsistentwith
+kensfrom∼ 47.7BtokensforModernBERT-base-
+VX to∼ 31.6BtokensforModernBERT-base-PT
+3https://github.com/AnswerDotAI/
+(−33.79%;AppendixB.3). SeeAppendixC. ModernBERT
+3
+Model Sfx Corpus Tokens Definition/Notes
+ModernBERT-base-PT -PT Clean(Phase2) ∼31.6B Phase 2 cleaned & near-
+deduplicated corpus: English
+LID; MassiveText/Gopher rep-
+etition/quality filters; FineWeb;
+MinHash (Appendix B.2).
+Phase-2total≈31.64B(Appendix
+B.3).
+ModernBERT-base-VX -VX Raw(pre–Phase2) ∼47.7B Pre-Phase2corpus(afterPhase1
+& family-level dedup only; Ap-
+pendixB.1).Moretokens,higher
+noise;alignswith≈47.79B(Ap-
+pendixB.3).
+MosaicBERT-large(BPE) — Raw(pre–Phase2)† ∼47.7B Custom BPE tokenizer (§2.2);
+longcontext;trainedon∼47.7B
+tokens(AppendixC).
+Table1: Modelsuffixlegendandcorpusvariants. -PTusesthePhase2cleancorpus;-VXusestherawcorpus
+priortoPhase2.
+the Composer framework. Specifically, this vari- Dataset Labels Train Val. Test
+ant uses a hidden size of 768, intermediate size
+WIPO 14 1731 424 533
+of1152,andGLUexpansionto2304,withRoPE
+WIPOEC 43 11349 2798 3524
+θ set to 160,000 and a local attention RoPE θ of
+HUPD 8 20772 5194 6000
+10,000. Whilethetotalparametercountremainsap-
+DatasetCLV 5 1481 371 400
+proximately149M,trainingdifferedslightlyfrom
+the baseline in terms of optimizer configuration
+Table 2: Dataset statistics for downstream evaluation
+andbatchscheduling(seeAppendix C).Thispro-
+tasks.
+videsacontrolledpointofcomparisonagainstour
+domain-pretrainedModernBERT-base-PT.
+Second, a Mosaic-BERT-large model was
+trained using our custom BPE tokenizer (sec-
+30% as recent findings indicate that the original
+tion 2.2.2). This model scales to 28 encoder lay-
+probability of 15% used in BERT is suboptimal
+ers with a hidden size of 1024 and 16 attention
+(Wettig et al., 2023). Training was optimized us-
+heads,yieldingatotalofapproximately395Mpa-
+ing StableAdamW (Wortsman et al., 2023), an
+rameters. The feed-forward intermediate dimen-
+enhancementofAdamW(LoshchilovandHutter,
+sionisexpandedto2624,withGLUexpansionto
+2018) that incorporates update clipping on a per-
+5248. Likethebasevariants,itintegratesFlashAt-
+parameterbasissimilartoAdafactor(Shazeerand
+tention, rotary embeddings, and Pre-LayerNorm
+Stern,2018). Hyperparameterdetailsareprovided
+residualscaling,butsupportsamaximumsequence
+inAppendix D.
+lengthof8192tokens,makingitparticularlysuited
+for patent texts with long contexts. Training fol- Toavoidinitialinstabilitythelearningratesched-
+lowed a trapezoidal learning rate schedule with ule employed used a linear warmup followed by
+StableAdamW,distributedacross8×H100GPUs, lineardecay. Specifically,thelearningratewaslin-
+withdropoutappliedonlytoattentionoutputs(0.1). earlyrampedupfrom0to3×10−4overthefirst6%
+This model allows us to assess both the effect of oftrainingstepsduringawarmupperiodandthen
+scalingandthecontributionoftokenizercustomiza- linearlydecayedfortheremaining94%oftraining
+tion. steps,reachingabout2%ofthepeaklearningrate
+bytheendoftraining. Weuseaglobalbatchsize
+2.2.2 TrainingProcedure
+of 4096 sequences per step during training. This
+PretrainingusedtheMLMobjective. Wedidnot required each GPU processing a micro-batch of
+include the Next Sentence Prediction task as it 128sequences,withgradientssynchronizedacross
+has been shown to provide minimal downstream GPUs prior to each optimizer update. The maxi-
+performanceimprovement(Liuetal.,2019;Izsak mum sequence length during training was set to
+et al., 2021). We used a masking probability of 1024tokensperexample.
+4
+Figure1: PretraininglossandMLMaccuracyforModernBERT-base-PT,ModernBERT-base-VXandMosaic-
+BERT-large.
+3 Results aproprietarydatasetconsistingof5categorylabels
+relatingtodatastorageandnetworkingtechnology.
+3.1 PretrainingEvaluation
+Each was split into train/validation/test sets with
+Figure1presentsthetraininglossandmaskedac- experimentsrunfourtimesusingdifferentseeding.
+curacy for ModernBERT-base-VX, ModerBERT- Reportedf1scoresinTable3areaveragesofthese
+base-PT and MosaicBERT-large tokenizer. The experiments. Detailsonthecategorylabelsofeach
+modeltrainedwiththecustomBPEtokenizerex- ofthethreeopendatasetscanbefoundinAppendix
+hibitedasteeperdeclineinMLMlossintheearly A.
+stagesofpretrainingandmaintainedaconsistently ModernBERT-base-PTimprovedupontheper-
+lower loss throughout training (Figure 1). Simi- formanceofModernBERT-baseonthreeofthefour
+larly,maskedtokenpredictionaccuracyrosemore datasets. ModernBERT-base-VXachievedbroadly
+sharplyandstabilizedatahigherlevelcompared similar results, with slightly higher performance
+totheWordPiece-basedcounterparts(Figure1). on the DatasetCLV dataset. Mosaic-BERT-large,
+Pretraining results suggest that the BPE tok- trainedwithourcustomBPEtokenizer,alsodemon-
+enizerprovidedamoreefficientandcompactrep- strated strong performance, though without con-
+resentationofthepatenttext. BPEisknownforits sistentlysurpassingthesmallerdomain-pretrained
+abilitytobalancevocabularysizeandtokengranu- models. PatentBERTremainedstrongestonHUPD,
+larity,particularlybyeffectivelyencodingfrequent reflectingitsuseofUSPTOdataduringpretraining.
+subword patterns and maintaining coherence for Takentogether,theseresultsindicatethatdomain-
+rareordomain-specificterms. Incontrast,thestan- specificpretraining,architecturalscaling,andtok-
+dardWordPiecetokenizer—optimizedforgeneral- enizercustomizationeachprovidecomplementary
+domain corpora—often splits complex technical advantagesforpatent-specificNLP,thoughnosin-
+termsintolessinformativeunits,makingmasked glestrategyyetestablishesadecisivestateofthe
+tokenpredictionmoredifficult. artacrossallbenchmarks.
+In figure 4, evaluation f1 scores across 20
+3.2 DownstreamEvaluation
+epochsoffinetuingareshown(evaluationlossplots
+Wevalidatedourpretrainedpatentlanguagemod- are in Appendix E). All four plots exhibit our
+elsondownstreamclassificationtasksusingfour ModernBERT-base-PT with higher evaluation f1
+different datasets (Table 2; Figure 3 with confi- scoresincomparisonwithModernBERT-baseatall
+denceintervals). Thefirsttwodatasetscomefrom datapoints. Thissuggeststhereisvalueindomain-
+theWorldInternationalPatentOffice(WIPO)4.An- specificpretraininigforpatent-specificdownstream
+otherdatasetistheHarvardUSPTOPatentDataset tasks. The plot depicting the HUPD f1 scores is
+(HUPD)(Suzgunetal.,2023)5. Thefinaldatasetis noteworthyasPatentBERToutperformstheother
+models by a degree not seen in the other plots.
+4https://www.wipo.int/portal/en/index.
+We hypothize the reason for this is that USPTO
+html
+datahasbeenusedduringthepretrainingofPatent-
+5https://huggingface.co/datasets/HUPD/
+hupd BERT.
+5
+Figure2: Validationf1-scoresforfinetuningtasksacross20epochs.
+Model WIPO WIPOEC HUPD DatasetCLV
+ModernBERT-base 0.806±0.011 0.786±0.005 0.773±0.004 0.822±0.019
+ModernBERT-base-PT 0.802±0.011 0.814±0.004 0.782±0.003 0.843±0.009
+ModernBERT-base-VX 0.796±0.003 0.801±0.008 0.776±0.005 0.852±0.005
+MosaicBERT-large 0.787±0.010 0.796±0.007 0.772±0.006 0.850±0.008
+PatentBERT 0.801±0.013 0.807±0.006 0.810±0.001 0.854±0.012
+Table3: F1-score(mean±stdacross4runs)fordownstreamclassificationtasksonfourpatentdatasets.
+3.3 FinetuningEfficiency speed. Macro-averaged across datasets, the
+FlashAttention-basedModernBERTfamilyattains
+Consistent with prior reports of ModernBERT’s
+2.32×highertrainingthroughputand3.55×higher
+efficiency (Warner et al., 2024), our measure-
+inference throughput than PatentBERT (+132%
+ments corroborate high throughput across four
+and+255%,respectively),and2.89×/2.93×over
+patentdatasets(WIPO,WIPOEC,HUPD,Dataset-
+MosaicBERT-largeintraining/inference(+189%
+CLV). Per-dataset mean ± std over four seeds
+/ +193%). Looking at individual variants,
+is reported for inference (Table 4) and train-
+ModernBERT-baseisthefastestintraining,run-
+ing (Table 5); confidence-interval plots appear
+ning 1.48× and 1.40× faster than ModernBERT-
+in Appendix E. Implementation details. In our
+base-PTandModernBERT-base-VX,respectively;
+setup,ModernBERT-base,ModernBERT-base-
+inference among the three ModernBERT mod-
+PT, and ModernBERT-base-VX use FlashAt-
+els is essentially tied (PT and VX are ≈1.02×
+tention; MosaicBERT-large uses ALiBi posi-
+ModernBERT-base). Relative to non-Flash base-
+tional bias with non-FlashAttention kernels; and
+lines, ModernBERT-base is 3.63×fasterin train-
+PatentBERT uses a pre-FlashAttention (vanilla
+ing and 2.90× in inference than MosaicBERT-
+scaled dot-product) attention stack. Aggregate
+6
+Figure3: Testmicro-averagedF1-scoresacrossmodelsanddatasets,reportedasmean±95%confidenceinterval
+computed over 4 random seeds per (dataset, model). Confidence intervals are estimated using the Student’s t
+distributionandclippedto[0,1]torespecttheboundedrangeofF1.
+large, and 2.91× / 3.51× faster than Patent- patents,therearepotentialperformanceincreases
+BERT(training/inference). Theseresultssupport availablefromfurtherscalingofthetrainingdata.
+FlashAttention-basedModernBERTasacompeti- LimitedDownstreamTasksOurdownstream
+tivealternativetootherBERTvariants,particularly evaluation focuses on patent classification tasks.
+fortime-sensitiveinference. Note: Throughputdif- While results are strong, they do not yet demon-
+ferencesreflectbothattentionkernelsandparame- strate generalization to other patent-related tasks
+tercounts(149MforModernBERTvs.340–346M such as similarity ranking, summarization, claim
+forMosaicBERT/PatentBERT),sopartofthegain matching,ornoveltydetection.
+isarchitecturalwhilepartismodelsize.
+5 Conclusion
+4 Limitations
+In this work, we presented ModernBERT-PT, a
+Language Our pretraining corpus is limited to domain-specificmaskedlanguagemodelpretrained
+English-language patents. Given the global na- from scratch on a curated corpus of over 60 mil-
+ture of patent filings, expanding to multilingual lion patent documents. Leveraging architectural
+corporacouldsignificantlyimprovemodelutility innovations such as FlashAttention, ALiBi posi-
+ininternationalcontexts. tionalembeddings,andGLU-basedfeed-forward
+MLM-onlyobjectiveFollowingWarneretal., layers,wedemonstratedthatpretrainingonpatent-
+werelysolelyontheMLMobjectiveforpretrain- specific data yields tangible benefits in both clas-
+ing. WhileMLMhasproveneffective,itdoesnot sification accuracy and computational efficiency.
+capturesentence-levelsemanticsorinter-document ModernBERT-base-PT outperformed a general-
+relationships. Futureworkcouldexplorecomple- purpose ModernBERT baseline on three out of
+mentarypretrainingtaskssuchascontrastiveobjec- fourdownstreamclassificationtasksandachieved
+tives, span prediction, or retrieval-based learning competitiveperformancewithPatentBERT,while
+tailoredforpatentdata. offeringsubstantiallyfasterinferencespeeds. Ad-
+Scaling Our model was trained on a compute ditionalcomparisonswithModernBERT-base-VX
+budget significantly smaller than that of large- andMosaic-BERT-largesuggestthatscalingmodel
+scalecommercialoracademicmodels. Whilethis capacityandintroducingcustomizedtokenization
+demonstrates efficiency, it may limit representa- provide further gains on certain datasets, partic-
+tional capacity compared to larger-scale alterna- ularly those with longer or more technical con-
+tives. Additionally, despite pretraining on 60M texts. These findings highlight the value of com-
+7
+Model Parameters WIPO WIPOEC HUPD DatasetCLV
+ModernBERT-base-PT 149M 83.68±0.09 85.54±0.15 368.42±0.33 90.99±0.83
+PatentBERT 346M 36.09±0.06 35.50±0.12 68.84±0.38 35.51±0.05
+ModernBERT-base 149M 84.48±0.04 62.66±0.52 377.41±1.73 93.45±0.42
+ModernBERT-base-VX 149M 84.06±1.04 84.51±0.38 368.09±0.75 91.87±0.23
+MosaicBERT-large 340M 27.44±0.09 26.75±0.56 127.39±0.60 31.74±0.30
+Table4: Inferencethroughput(samples/sec;mean±stdoverruns)forfourpatentdatasets.
+Model Parameters WIPO WIPOEC HUPD DatasetCLV
+ModernBERT-base-PT 149M 21.11±0.43 21.48±1.01 24.98±1.58 23.33±0.16
+PatentBERT 346M 8.65±0.14 9.29±0.06 19.29±0.56 8.87±0.07
+ModernBERT-base 149M 21.51±0.54 23.17±0.93 65.04±2.13 24.55±0.20
+ModernBERT-base-VX 149M 20.85±0.38 21.15±0.80 30.38±2.67 23.50±0.13
+MosaicBERT-large 340M 6.19±0.12 6.53±0.16 17.33±0.71 6.92±0.07
+Table5: Trainingthroughput(samples/sec;mean±stdoverruns)forfourpatentdatasets.
+bining domain-specific pretraining with targeted References
+architecturalandtokenizationstrategiesforadvanc-
+HamidBekamiri,DanielSHain,andRomanJurowet-
+ingpatent-domainNLP. zki. 2024. Patentsberta: A deep nlp based hybrid
+These findings highlight the importance of model for patent distance and classification using
+augmentedsbert. TechnologicalForecastingandSo-
+domain-specific pretraining and architecture op-
+cialChange,206:123536.
+timizationforspecializedtextcorporalikepatents.
+WhileourresultsvalidateModernBERT-base-PT IzBeltagy,KyleLo,andArmanCohan.2019. Scibert:
+Apretrainedlanguagemodelforscientifictext. arXiv
+asastrongfoundationforpatentNLPtasks,several
+preprintarXiv:1903.10676.
+avenuesremainforfutureimprovement. Thesein-
+cludescalingupthetrainingcorpus,incorporating IliasChalkidis,ManosFergadiotis,ProdromosMalaka-
+multilingualpatents,andexpandingevaluationsto siotis, Nikolaos Aletras, and Ion Androutsopoulos.
+2020. Legal-bert: Themuppetsstraightoutoflaw
+abroadersetofdownstreamtaskssuchasretrieval,
+school. InFindingsoftheAssociationforComputa-
+summarization,andnoveltydetection. tionalLinguistics: EMNLP2020,pages2898–2904.
+With repsect to tokenization, results support
+GautierDagan,GabrielSynnaeve,andBaptisteRoziere.
+growingevidencethattokenizercustomization,par-
+2024. Getting the most out of your tokenizer for
+ticularlywithBPE,cansignificantlyenhancepre- pre-traininganddomainadaptation. arXivpreprint
+trainingefficiencyanddownstreamperformancein arXiv:2402.01035.
+domain-specificNLP.Futureworkcouldexplore
+Tri Dao, Dan Fu, Stefano Ermon, Atri Rudra, and
+comparisonsbetweenBPE,SentencePieceunigram
+Christopher Ré. 2022. Flashattention: Fast and
+models,orbyte-leveltokenizationschemestofur- memory-efficientexactattentionwithio-awareness.
+therisolatetheeffectsofsubwordmodelingstrate- Advancesinneuralinformationprocessingsystems,
+35:16344–16359.
+gies in specialized corpora like patents. Overall,
+ourworkunderscoresthevalueoftailoredmodel Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+development for unlocking the full potential of KristinaToutanova.2019. Bert: Pre-trainingofdeep
+bidirectionaltransformersforlanguageunderstand-
+NLPintechnicalandlegallystructureddomains.
+ing. In Proceedings of the 2019 conference of the
+NorthAmericanchapteroftheassociationforcom-
+6 Acknowledgements
+putationallinguistics: humanlanguagetechnologies,
+volume1(longandshortpapers),pages4171–4186.
+We would like to thank Clarivate for supporting
+thisprojectandfacilitatingthecomputeresources. AroushaHaghighianRoudsari, JafarAfshar,Wookey
+Lee, and Suan Lee. 2022. Patentnet: multi-label
+We would also like to thank Saurabh Mishra and
+classificationofpatentdocumentsusingdeeplearn-
+Peter Keyngnaert for their support and feedback
+ingbasedlanguageunderstanding. Scientometrics,
+throughouttheproject. 127(1):207–231.
+8
+PeterIzsak,MosheBerchansky,andOmerLevy.2021. Zhaopeng Qiu, Xian Wu, Jingyue Gao, and Wei Fan.
+How to train bert with an academic budget. arXiv 2021. U-bert: Pre-training user representations
+preprintarXiv:2104.07705. for improved recommendation. In Proceedings of
+theAAAIConferenceonArtificialIntelligence,vol-
+ArmandJoulin,EdouardGrave,PiotrBojanowski,and ume35,pages4320–4327.
+TomasMikolov.2016. Bagoftricksforefficienttext
+classification. arXivpreprintarXiv:1607.01759. Jack W Rae, Sebastian Borgeaud, Trevor Cai, Katie
+Millican, Jordan Hoffmann, Francis Song, John
+Aslanides, Sarah Henderson, Roman Ring, Susan-
+EleniKamateri,VasileiosStamatis,KonstantinosDia-
+nah Young, et al. 2021. Scaling language models:
+mantaras,andMichailSalampasis.2022. Automated
+Methods,analysis&insightsfromtraininggopher.
+single-labelpatentclassificationusingensembleclas-
+arXivpreprintarXiv:2112.11446.
+sifiers. InProceedingsofthe202214thInternational
+Conference on Machine Learning and Computing,
+Laila Rasmy, Yang Xiang, Ziqian Xie, Cui Tao, and
+pages324–330.
+DeguiZhi.2021. Med-bert: pretrainedcontextual-
+izedembeddingsonlarge-scalestructuredelectronic
+Jieh-ShengLeeandJiehHsiang.2020. Patentclassi-
+health records for disease prediction. NPJ digital
+ficationbyfine-tuningbertlanguagemodel. World
+medicine,4(1):86.
+PatentInformation,61:101965.
+MikeSchusterandKaisukeNakajima.2012. Japanese
+PatrickLewis,EthanPerez,AleksandraPiktus,Fabio andkoreanvoicesearch. InProceedingsoftheIEEE
+Petroni,VladimirKarpukhin,NamanGoyal,Hein- InternationalConferenceonAcoustics,Speechand
+richKüttler, MikeLewis, Wen-tauYih, TimRock- SignalProcessing(ICASSP),pages5149–5152.
+täschel,etal.2020. Retrieval-augmentedgeneration
+forknowledge-intensivenlptasks. Advancesinneu- Rico Sennrich, Barry Haddow, and Alexandra Birch.
+ralinformationprocessingsystems,33:9459–9474. 2016. Neuralmachinetranslationofrarewordswith
+subword units. In Proceedings of the 54th Annual
+NutLimsopatham.2021. Effectivelyleveragingbertfor Meeting of the Association for Computational Lin-
+legaldocumentclassification. InProceedingsofthe guistics(Volume1: LongPapers),pages1715–1725.
+NaturalLegalLanguageProcessingWorkshop2021,
+Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay
+pages210–216.
+Thakkar, Pradeep Ramani, and Tri Dao. 2024.
+Flashattention-3: Fast and accurate attention with
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+asynchronyandlow-precision. AdvancesinNeural
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+InformationProcessingSystems,37:68658–68685.
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized bert pretraining ap-
+Noam Shazeer and Mitchell Stern. 2018. Adafactor:
+proach. arXivpreprintarXiv:1907.11692.
+Adaptivelearningrateswithsublinearmemorycost.
+InInternationalConferenceonMachineLearning,
+Ilya Loshchilov and Frank Hutter. 2018. Decoupled pages4596–4604.PMLR.
+weightdecayregularization. InInternationalConfer-
+enceonLearningRepresentations. RobSrebrovicandJayYonamine.2020a. Leveraging
+the bert algorithm for patents with tensorflow and
+GuilhermePenedo,HynekKydlícˇek,AlessandroCap- bigquery. Whitepaper.
+pelli,MarioSasko,andThomasWolf.2024a. Data-
+trove: largescaledataprocessing. RobSrebrovicandJayYonamine.2020b. Leveraging
+the bert algorithm for patents with tensorflow and
+GuilhermePenedo,HynekKydlícˇek,AntonLozhkov, bigquery. Technicalreport,GooglePatents.
+Margaret Mitchell, Colin A Raffel, Leandro
+JianlinSu, MurtadhaAhmed, YuLu, ShengfengPan,
+VonWerra,ThomasWolf,etal.2024b. Thefineweb
+Wen Bo, and Yunfeng Liu. 2024. Roformer: En-
+datasets: Decantingthewebforthefinesttextdata
+hancedtransformerwithrotarypositionembedding.
+atscale. AdvancesinNeuralInformationProcessing
+Neurocomputing,568:127063.
+Systems,37:30811–30849.
+MiracSuzgun,LukeMelas-Kyriazi,SuproteemSarkar,
+Jacob Portes, Alexander Trott, Sam Havens, Daniel Scott D Kominers, and Stuart Shieber. 2023. The
+King,AbhinavVenigalla,MoinNadeem,NikhilSar- harvard uspto patent dataset: A large-scale, well-
+dana,DayaKhudia,andJonathanFrankle.2023. Mo- structured,andmulti-purposecorpusofpatentappli-
+saicbert: Abidirectionalencoderoptimizedforfast cations. Advancesinneuralinformationprocessing
+pretraining. Advances in Neural Information Pro- systems,36:57908–57946.
+cessingSystems,36:3106–3130.
+Liang Wang, Nan Yang, Xiaolong Huang, Binxing
+Ofir Press, Noah A Smith, and Mike Lewis. 2021. Jiao,LinjunYang,DaxinJiang,RanganMajumder,
+Train short, test long: Attention with linear biases and Furu Wei. 2022. Text embeddings by weakly-
+enables input length extrapolation. arXiv preprint supervisedcontrastivepre-training. arXivpreprint
+arXiv:2108.12409. arXiv:2212.03533.
+9
+BenjaminWarner,AntoineChaffin,BenjaminClavié,
+Orion Weller, Oskar Hallström, Said Taghadouini,
+AlexisGallagher,RajaBiswas,FaisalLadhak,Tom
+Aarsen, et al. 2024. Smarter, better, faster, longer:
+A modern bidirectional encoder for fast, memory
+efficient,andlongcontextfinetuningandinference.
+arXivpreprintarXiv:2412.13663.
+Alexander Wettig, Tianyu Gao, Zexuan Zhong, and
+DanqiChen.2023. Shouldyoumask15%inmasked
+languagemodeling? InProceedingsofthe17thCon-
+ferenceoftheEuropeanChapteroftheAssociation
+forComputationalLinguistics,pages2985–3000.
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Chaumond,ClementDelangue,AnthonyMoi,Pier-
+ricCistac,TimRault,RémiLouf,MorganFuntowicz,
+JoeDavison,SamShleifer,PatrickvonPlaten,Clara
+Ma, YacineJernite, JulienPlu, CanwenXu, Teven
+LeScao,SylvainGugger,MariamaDrame,Quentin
+Lhoest,andAlexanderM.Rush.2020. Transform-
+ers: State-of-the-artnaturallanguageprocessing. In
+Proceedings of the 2020 Conference on Empirical
+Methods in Natural Language Processing: System
+Demonstrations,pages38–45.
+MitchellWortsman,TimDettmers,LukeZettlemoyer,
+AriMorcos,AliFarhadi,andLudwigSchmidt.2023.
+Stable and low-precision training for large-scale
+vision-languagemodels. AdvancesinNeuralInfor-
+mationProcessingSystems,36:10271–10298.
+BinYanandMingtaoPei.2022. Clinical-bert: Vision-
+languagepre-trainingforradiographdiagnosisand
+reportsgeneration. InProceedingsoftheAAAICon-
+ferenceonArtificialIntelligence,volume36,pages
+2982–2990.
+JinleZeng,MinLi,ZhihuaWu,JiaqiLiu,YuangLiu,
+Dianhai Yu, and Yanjun Ma. 2022. Boosting dis-
+tributedtrainingperformanceoftheunpaddedbert
+model. arXivpreprintarXiv:2208.08124.
+VilémZouhar,ClaraMeister,JuanLuisGastaldi,LiDu,
+MrinmayaSachan,andRyanCotterell.2023. Tok-
+enizationandthenoiselesschannel. arXivpreprint
+arXiv:2306.16842.
+10
+A DatasetInformation
+WIPOVisionDataset(WIPO)
+Categories:
+• AdaptiveFocus
+• ArtificialIris
+• ArtificialSiliconRetina(ASR)/RetinalProstheses
+• AugmentedRealityDevices
+• BionicEye(System)
+• CorticalImplants
+• DrugDelivery(Vision-related)
+• HandWearables
+• IntraocularLenses(IOL)withSensors
+• IntracornealLenses
+• Multifocal
+• SmartEyewear
+• TelescopicLenses
+• VirtualRealityDevices
+WIPOECDataset
+Categories:
+• Accessoriesforchangingbodypositionorliftingpersons–mountedincombinationwithabathtub
+• Accessoriesforchangingbodypositionorliftingpersons–mountedincombinationwithatoilet
+• AssistiveProductsforAnimalCare
+• AssistiveProductsforCamping
+• AssistiveProductsforCreatingArtsandCrafts
+• AssistiveProductsforHuntingandFishing
+• AssistiveProductsforPlay
+• AssistiveProductsforPlayingandComposingMusic
+• AssistiveProductsforVerticalAccessibility
+• BathroomAccessories
+• Bathroom/ToiletUnit
+• BathtubandAccessories
+• BedsandTheirAccessories
+• BuildingStructuralComponents
+• Entry/ExitandOpenings
+• EnvironmentAlarms
+• FallDetectors
+• FoodPreparation
+• Golf
+• HandrailsandGrabBars
+• Laundry
+• LightFixtures
+• Mountaineering
+• OtherFurnitureAccessories
+• PersonalEmergencyAlarmSystemsandMedicalAlertID
+• PortableTravelAids
+• ShowerUnitandAccessories
+• Shower/BathroomandToiletChairs
+• SittingArrangementsandTheirAccessories
+• SportsWheelchairs
+• Storage
+11
+• Swimming
+• TablesandTheirAccessories
+• TennisorTableTennis
+• ToiletSeatandAccessories
+• Urinals
+• WanderingandLocatingofPersons/Items
+• WashBasinandAccessories
+• WinterSports
+• WorkplaceandDomesticSafety
+• Workplace/DomesticMachinery
+• Workplace/DomesticObjectConveyance,HoistingorRepositioning,Crane
+• Workplace/DomesticObjectSecuring,Gripping,Holding,CarryingandHandling
+HUPDDataset
+Categories:
+• C:Chemistry;Metallurgy
+• A:HumanNecessities
+• H:Electricity
+• G:Physics
+• B:PerformingOperations;Transporting
+• E:FixedConstructions
+• F:MechanicalEngineering;Lighting;Heating;Weapons;Blasting
+• D:Textiles;Paper
+DatasetCLV
+Categories: Fivecategoriesrelatedtodatastorageandnetworking.
+B DataPreprocessing
+This appendix documents our two-phase preprocessing pipeline for large-scale patent texts used to
+pretrainmaskedlanguagemodels. Phase1focusesonextraction,basicnormalization,andfamily-level
+deduplication;Phase2performsFineWeb-inspiredfilteringandMinHash-basednear-duplicateremoval
+implementedwithHuggingFaceDataTroveonDatabricks.
+Datafields. Foreachrecordweretain: publicationnumber,theabstract,thefirstindependentclaim
+(selectedfromthefullclaimset),andtheDWPI.Phase2isappliedperfield(abstract,firstclaim,DWPI)
+andresultsarere-assembledattherecordlevel.
+B.1 Phase1: Extraction,Normalization,andFamily-LevelDeduplication
+Scope. Weextractfields,removemarkup(HTML/XML),normalizeordropcorruptedcharacters,strip
+repetitive boilerplate phrases in abstracts/claims, and remove references to figures/images. We then
+deduplicatebypatentfamily: foreachfamilywekeepthemostrecentpublication.
+Scaleimpact(documents). From≈150MEnglish-languagepatentsto≈70Muniquefamilyrepresenta-
+tives.
+12
+Algorithm1Phase1: Extract,Clean,andFamily-Deduplicate(pseudocode)
+1: Input: PatentDBwithfields{pub_no,abstract,claims,DWPI,family_id,pub_date}
+2: Output: Clean,family-deduplicatedrecords{pub_no,abstract∗,first_ind_claim∗,DWPI∗}
+3: foreachrecordr do
+4: Extractpub_no,DWPI,abstract,andselectfirst_ind_claimfromclaims
+5: Cleantextfields: removeHTML/XMLtags;normalize/dropcorruptedcharacters
+6: Removerepetitiveboilerplateprefixes;dropimage/figurereferences
+7: endfor
+8: Grouprecordsbyfamily_id;withineachgroup,keeptherecordwiththemostrecentpub_date
+9:
+returnunifiedtablewithcleanedabstract∗,first_ind_claim∗,DWPI∗
+B.2 Phase2: FineWeb-InspiredFilteringandMinHashNear-Deduplication(PerField)
+Filtering(Phase2a). Foreachfieldindependently,weapply:
+• LanguagefilteringviaafastText-basedLIDmodel(retainEnglishonly)(Joulinetal.,2016).
+• QualityandrepetitionfiltersinspiredbyMassiveText/Gopherheuristics(Raeetal.,2021).
+• FineWeb-stylequalityfiltertoremovesubtlelow-qualityartifacts(Penedoetal.,2024b).
+Near-duplicateremoval(Phase2b). WeuseMinHashLSHover5-gramshingleswith64-bithashesand
+a14×8bandingscheme(14buckets,8hashesperbucket)toclusterandremovenear-duplicates,keeping
+onerepresentativepercluster,followingDataTrovecomponentsforsignatures,bucketing,clustering,and
+filtering(Penedoetal.,2024a).
+Executionenvironment. ThepipelinerunsonDatabrickswithparalleltasksandParquetI/Otoobject
+storageforintermediateartifactsandlogs.
+Algorithm2Phase2: FilterandNear-DeduplicatePerField(pseudocode)
+1: Input: Phase1output(cleanedabstract,first_ind_claim,DWPI)
+2: Output: High-quality,near-deduplicatedfields
+3: foreachfieldf ∈ {abstract,first_ind_claim,DWPI}do
+4: foreachdocumentdinf do
+5: ifLanguageID(d) ̸= Englishthen
+6: discard
+7: endif
+8: ifRepetitionHeuristics(d) = failthen
+9: discard
+10: endif
+11: ifQualityHeuristics(d) = failthen
+12: discard
+13: endif
+14: ifFineWebStyleHeuristics(d) = failthen
+15: discard
+16: endif
+17: endfor
+18: ComputeMinHashsignatureson5-gramshingles(64-bit);LSH-bucketinto14×8bands
+19: Clustercollidingdocuments;keeponerepresentativepercluster;markothersasnear-duplicates
+20: endfor
+21: Re-assemblefieldsattherecordlevel;counttokensbefore/afterdeduplication
+13
+B.3 SummaryofReductions
+Table6: Datasetsizereductionsacrossphases.
+Phase Before After Reduction
+Phase1(patents) ≈150,000,000 ≈70,000,000 ≈80,000,000
+Phase2(tokens) 47,791,818,029 31,644,981,330 16,146,836,699 (–33.79%)
+B.4 ReferencesforFilteringandDeduplication
+Wefollowthelarge-scaletextcleaninganddeduplicationpracticesdocumentedinFineWeb(Penedoetal.,
+2024b), MassiveText/Gopher(Raeetal.,2021), andusefastTextlanguageidentification(Joulinetal.,
+2016). OurimplementationisbuiltontheDataTrovelibrary(Penedoetal.,2024a).
+C TrainingRecipe
+Model Ntokens Epochs TrainTime TrainingHardware TrainingStrategy
+ModernBERT-base-PT 31.6B 16 2.352day 8xH100 DistributedDataParallel
+ModernBERT-base-VX 47.7B 16 3.264day 8xH100 DistributedDataParallel
+MosaicBERT-large 47.7B 12 8.707day 8xH100 DistributedDataParallel
+Table7: TrainingStatistics.
+D Hyperparameters
+PretrainingHyperparameters
+Sliding ALiBi
+Model Optimizer LR β ε Warmup MLM
+Window(FA) startsize
+ModernBERT-base-PT StableAdamW 3e-4 (0.90,0.98) 1e-06 6% 30% 256 n/a
+ModernBERT-base-VX StableAdamW 3e-4 (0.90,0.98) 1e-06 6% 30% 256 n/a
+MosaicBERT-large StableAdamW 2e-4 (0.90,0.98) 1e-06 6% 30% n/a 1024
+Table8: PretrainingHyperparameters.
+FinetuningHyperparameters
+Model Optimizer LR beta weightdecay epochs seeds
+ModernBERT-base-PT adamw_torch_fused 3e-5 (0.9,0.999) 3e-6 20 4
+ModernBERT-base-VX adamw_torch_fused 3e-5 (0.9,0.999) 3e-6 20 4
+MosaicBERT-large adamw_torch_fused 3e-5 (0.9,0.999) 3e-6 20 4
+PatentBERT adamw_torch 2e-5 (0.9,0.999) 1e-2 20 4
+ModernBERT-base adamw_torch 5e-5 (0.9,0.999) 5e-6 20 4
+Table9: FinetuningHyperparameters.
+E Results
+14
+Figure4: Validationlosscurvesover20epochsforfourindependentfine-tuningruns.
+Figure5: Testthroughput(samplespersecond)acrossmodelsanddatasets,reportedasmean±95%confidence
+intervalcomputedover4randomseedsper(dataset,model). ConfidenceintervalsareestimatedusingtheStudent’s
+tdistribution. Highervaluesindicategreaterinferenceefficiency.
+15
+Figure6: Trainthroughput(samplespersecond)acrossmodelsanddatasets,reportedasmean±95%confidence
+intervalcomputedover4randomseedsper(dataset,model). ConfidenceintervalsareestimatedusingtheStudent’s
+tdistribution. Highervaluesindicategreaterinferenceefficiency.
+16

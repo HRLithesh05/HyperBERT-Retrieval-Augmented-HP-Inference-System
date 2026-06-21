@@ -1,0 +1,730 @@
+Systematic Evaluation of Large Language Models
+for Post-Discharge Clinical Action Extraction
+Shivali Dalmia∗ Ananya Mantravadi∗ Prasanna Desikan
+Centific AI Research Centific AI Research Centific AI Research
+Centific Global Solutions, Inc. Centific Global Solutions, Inc. Centific Global Solutions, Inc.
+shivali.dalmia@centific.com ananya.mantravadi@centific.com prasanna.desikan@centific.com
+Abstract—Theworkinthispaperevaluateszero-shotandfew- of information between them a critical vulnerability. Among
+shot large language models (LLMs) for safety-critical clinical these transitions, the shift from hospital to home has been
+action extraction using the CLIP discharge-note dataset, with
+consistently identified as a period of elevated risk, where the
+particularemphasisontransitionsofcareandpost-dischargepa-
+safety and effectiveness of care depend heavily on the clarity
+tientsafety.Tomanagethecomplexityofclinicaldocumentation,
+weintroduceatwo-stageextractionframeworkthatdecomposes of discharge documentation.
+discharge notes, that are written in narrative form, into fine- Discharge summaries are intended to bridge this gap by
+grained, explicitly actionable clinical tasks through a staged summarizing the hospital course and outlining the next steps
+prompting strategy. Our contributions include a systematic
+for post-discharge care. However, effective care transitions
+assessment of generative LLMs for clinical action extraction, a
+face a dual challenge. First, from the patient perspective,
+detailed comparison between general-purpose LLMs and task-
+specific supervised BERT-based models, and an analysis of Colemanetal.[1]foundthatmanyolderpatientsreturnhome
+annotation inconsistencies across different action categories. with limited understanding of their discharge instructions,
+WeshowthatcontemporaryLLMsachieveperformancecom- often unable to recall their discharge diagnoses, treatment
+parabletoorexceedingsupervisedmodelsonbinaryactionability
+plans, or medication regimens. Their work identified health
+detection, while supervised baselines retain a meaningful advan-
+literacy, cognition, and self-efficacy as main predictors of
+tageonfine-grainedmulti-labelcategoryclassification,despitethe
+absenceoftask-specificfine-tuningandunderstrictdata-privacy instruction comprehension, underscoring that the challenge
+constraints. Qualitative error analysis reveals that many failures extends beyond simply identifying actionable items to en-
+stem from misalignment between model reasoning and dataset suring they are communicated effectively. Second, from the
+annotation conventions, particularly in cases involving implicit
+clinician perspective, prior studies [2], [3] have shown that
+clinical actions and rigid structural labeling rules. These results
+discharge notes are often lengthy, complex, and inconsistently
+indicate that reported performance reflects model limitations
+due to lack of clinical reasoning, that is not captured by plain structured, containing substantial copied or historical con-
+annotations. Labels without rationales make it impossible to tent that obscures information most relevant for future care.
+distinguish clinical reasoning failures from annotation conven- This lack of structure imposes significant cognitive burden
+tion mismatches. Advancing clinical NLP requires reasoning-
+on downstream Primary Care Providers (PCPs), who must
+annotated datasets that document why specific spans are ac-
+manually sift through narrative text to identify actionable
+tionable, not merely which spans were labeled, enabling proper
+evaluation of model clinical understanding. Integrating LLM- items such as pending test results, medication adjustments,
+based extraction with specialized classifiers and human-in-the- andconditionalfollow-upplans.Thesepatientcomprehension
+loop validation enable more reliable, deployment-ready medical failures and clinician extraction challenges lead to adverse
+agent workflows.
+drug events, delayed care, and preventable readmissions, with
+Index Terms—Large language models, Clinical information
+annual Medicare costs estimated at $17 billion [1].
+extraction, Discharge summaries, Care transitions, Natural lan-
+guage processing, Medical informatics
+A. Motivation
+I. INTRODUCTION Recent advances in Artificial Intelligence (AI) have moti-
+vated increasing interest in automated analysis of discharge
+The patient journey can be defined as the sequence of a
+documentation to address these extraction challenges. Early
+patient’s interactions with the healthcare system over time,
+approaches focused on supervised, task-specific extraction
+reflectinghowcareprogressesacrossmultipleclinicalsettings
+usingencoder-onlymodelstrainedoncuratedclinicaldatasets,
+as health needs change. Rather than a single episode, this
+such as the CLIP dataset [2] for follow-up action identifi-
+journey unfolds longitudinally, moving from primary care
+cation across seven clinical action categories: Appointment,
+and ambulatory clinics to acute care environments, such as
+Medication, Lab, Imaging, Procedure, Patient Instructions,
+the Emergency Room (ER), during periods of urgent clini-
+and Other (see table I). Subsequent efforts expanded task
+cal deterioration. Each setting operates under distinct goals,
+coverage to include clinical decision rationale extraction [4].
+workflows, and documentation practices, making the transfer
+More recently, Large Language Models (LLMs) have been
+∗Theseauthorscontributedequallytothiswork. explored for discharge summarization and hospital course
+6202
+yaM
+7
+]IA.sc[
+1v19160.5062:viXra
+documentation[5].Whilethesemodelsofferpromiseinreduc- TABLEI
+ing documentation burden without the need for task-specific CLINICALACTIONCATEGORIESANDDEFINITIONS
+training,theyintroducenewsafetyrisks,likehallucinationand
+ActionCategory Definition
+unreliable extraction of follow-up actions. Appointment-related follow- Instructionstoscheduleorattendaclinical
+This reinforces the need for rigorous evaluation of both up visit,consultation,orreferral.
+Lab-relatedfollow-up Instructions to order, repeat, or review
+specialized and general-purpose models on the safety-critical
+laboratorytests.
+task of extracting post-discharge follow-up actions from real- Medication-relatedfollow-up Instructionstostart,stop,change,hold,or
+world clinical documentation. No prior work has system- adjustmedications.
+Imaging-relatedfollow-up Instructionstoscheduleorobtaindiagnos-
+atically compared modern LLMs against established super-
+ticimagingstudies.
+vised baselines specifically for this task, to the best of our
+Procedure-relatedfollow-up Instructionsrelatedtomedicalorsurgical
+knowledge. This paper addresses that gap by benchmark- proceduresandtheircare.
+ing five general-purpose generative models—including GPT- Case-specific instructions for Direct care instructions given to the pa-
+patient tient.
+5.2, Gemini-3-Flash, Claude Sonnet 3.5, DeepSeek-V3.2, and
+Other helpful contextual in- Clinicallyusefulinformationthatsupports
+medical-specialized MedGemma-27B-it—against supervised formation follow-uporcarecoordination.
+BERT baselines on the CLIP dataset. We aim to determine
+whether modern LLMs can extract post-discharge interven-
+tions effectively and safely, offering a flexible alternative to proaches relied heavily on encoder-only architectures such as
+traditional supervised pipelines while strictly adhering to pri- BioBERT [6], ClinicalBERT [7], and domain-adapted BERT
+vacystandardsrequiredforresponsibleprocessingofsensitive variants trained on PubMed [8] abstracts or MIMIC clinical
+healthcare data. notes [9]. These models achieved strong performance on
+clinical NLP tasks but required task-specific fine-tuning for
+B. Contributions
+eachnewapplication.Asdocumentedinrecentsurveys[5],the
+• We propose a two-stage extraction framework that de- emergenceoflarge-scaledecoder-onlymodelssuchasGPT-4,
+composes clinical documentation into fine-grained, di- Med-PaLM 2, and their successors has enabled a paradigm
+rectly actionable tasks. shift from fine-tuning to prompting-based approaches. While
+• We conduct a systematic evaluation of zero-shot and BERT-based models excel at high-volume, well-defined tasks
+few-shot generative language models on clinical action with abundant training data, modern LLMs demonstrate su-
+extraction. perior performance on unstructured and ambiguous clinical
+• Wecomparegeneral-purposepretrainedlanguagemodels narratives where contextual reasoning is required.
+against specialized supervised BERT architectures on Clinical information extraction has traditionally focused on
+safety-critical extraction tasks. identifying structured entities (medications, diagnoses, proce-
+• We provide category-level performance analysis and dures) and their relationships within clinical text. Early work
+identify systematic annotation inconsistencies across used rule-based systems and conditional random fields, and
+discharge-related task types. large-scale annotated corpora have been developed to support
+II. PROBLEMFORMULATION these efforts [10], [11].
+Recent efforts have expanded beyond entity recognition
+We formulate post-discharge clinical action extraction as
+to higher-level semantic tasks. Frameworks such as COM-
+a benchmarking problem over unstructured discharge notes.
+CARE[12]havedemonstratedthatensembleapproachescom-
+Given a discharge document, the task is to identify spans
+bining context-aware named entity recognition with relation
+corresponding to fine-grained, patient-specific action items
+extraction can achieve high accuracy on structured EHR data.
+that are directly executable after discharge, such as follow-
+MedDecXtract [13] introduced a clinician-facing system for
+up appointments, laboratory tests, medication-related actions,
+extracting and visualizing medical decision statements from
+and conditional monitoring instructions. Action items are dis-
+discharge summaries according to DICTUM (Decision Iden-
+tinguishedfromcontextualorhistoricalstatementsbywhether
+tification and Classification Taxonomy for Use in Medicine),
+they require action to be taken after discharge.
+coveringtendecisioncategoriesincludingdiagnoses,treatment
+We use the CLIP dataset, which provides expert-annotated
+goals, and test orders. It focuses on understanding clinical
+discharge notes with labeled action spans across predefined
+decision-making patterns across the entire hospital course.
+task categories [2]. Within this framework, we evaluate and
+Discharge summaries represent a particularly challenging
+compare task-specific encoder-based models and generative
+document type due to their length, narrative structure, and
+transformer-basedlanguagemodelsoperatinginzero-shotand
+mixing of historical context with future-oriented instructions.
+few-shot settings. Evaluation focuses on extraction accuracy,
+The CLIP dataset [2] pioneered the task of extracting follow-
+category-level performance, and failure modes relevant to
+up action items from discharge notes, providing expert anno-
+safety-critical clinical workflows.
+tations across seven clinical action categories: Appointment,
+III. RELATEDWORK Medication,Lab,Imaging,Procedure,PatientInstructions,and
+The landscape of clinical natural language processing has Other. The original work established supervised BERT-based
+undergone a fundamental shift in recent years. Early ap- baselines achieving Macro F1 scores of 0.661–0.668 through
+domain adaptation and contextual encoding. These models clinical action, with defined start and end boundaries, serving
+require substantial annotated training data and task-specific as the most precise ground-truth signal in datasets like CLIP.
+fine-tuning, limiting their adaptability to evolving clinical For example, in the discharge note sentence “The patient was
+workflows or new healthcare settings. advised to avoid peanuts and use the albuterol inhaler every
+DespitetheproliferationofmedicalLLMbenchmarkseval- 4hoursasneededforwheezing”,thetwoannotatedspansare
+uating question-answering [14], diagnostic reasoning [15], avoid peanuts and use the albuterol inhaler every 4 hours as
+and multi-step clinical workflows [16], [17], a critical gap needed for wheezing, which are selected because they contain
+remains: no prior work has rigorously benchmarked general- explicit,executableinstructions.Thesespansarethenassigned
+purpose LLMs against supervised baselines specifically for labelsreflectingthetypeofaction,suchascase-specificpatient
+post-discharge actionable follow-up items extraction. instructionandmedication-relatedfollow-up,whiletherestof
+Our work addresses this gap through: (1) systematic com- the sentence remains unannotated.
+parison of five modern LLMs, including general-purpose and 3) Label aggregation: Label aggregation explains how
+medical-specialized variants, against established BERT base- detailed span annotations are converted into sentence-level
+lines on the CLIP dataset, (2) decomposition of the task ground truth labels. For each sentence in a discharge note,
+into explicit actionability filtering and category classification all annotated spans whose character boundaries intersect with
+stages to isolate performance patterns, (3) strict adherence to that sentence are identified. Using the allergy and asthma
+Zero Data Retention protocols for privacy-compliant evalua- example, the sentence “The patient was advised to avoid
+tion, and (4) detailed error analysis revealing that apparent peanutsandusethealbuterolinhalerevery4hoursasneeded
+model failures often reflect annotation inconsistencies rather for wheezing” contains two annotated spans within the same
+than understanding deficits. This evaluation provides the first sentence. Because both spans appear in this sentence, their
+comprehensive assessment of whether prompt-driven LLM labels are collected into a single list of true labels for that
+approaches can serve as flexible, deployment-efficient alter- sentence.Sincethetwospansrepresentdifferentcategoriesof
+natives to traditional supervised pipelines for safety-critical actions, one being a case specific instruction for the patient
+clinical extraction tasks. and the other a medication-related follow up, the sentence
+is treated as a multi label instance. By contrast, a sentence
+IV. APPROACH
+that contains no annotated spans is assigned an empty label
+We propose an end-to-end LLM-driven annotation frame- list, indicating that it does not contain any annotated clinical
+work for identifying and categorizing actionable clinical follow up actions. Actionable content is sparse in discharge
+follow-up tasks for primary care physicians from discharge summaries: only 1,771 of 15,591 test sentences (11.36%)
+summary notes. As described in Figure 1, our approach contain labeled action items.
+reformulates the problem as a sentence-level classification 4) Output format: The processed data are exported into a
+task and combines structured data preprocessing, context-
+sentence-level CSV file, where each row contains:
+aware prompting, and prompt chaining to improve robustness
+and clinical relevance. To reduce spurious predictions from • doc id: an identifier linking the sentence to its source
+note (e.g., 45901).
+descriptiveclinicalnarratives,weadoptatwo-stageprompting
+strategy that explicitly separates actionability detection from • sent index:theindexofthesentencewithinthedocument
+(e.g., 143).
+task type classification. The framework is further refined
+through iterative prompt optimization guided by quantitative • sentence: the tokenized sentence text (e.g., [’Dis-
+charge’,’Disposition’,’Home’,’With’,’Service’]).
+evaluation and systematic error analysis.
+• true labels: a list of ground-truth labels associated with
+A. Dataset and pre-processing the sentence (e.g.,[’Appointment-related followup’]).
+1) Dataset: We use the CLIP dataset [2], which provides ThistransformationpreservestheoriginalCLIPannotations
+expert-annotated discharge summaries from the MIMIC-III while standardizing the unit of analysis from character spans
+critical care database [9], [18], a large, de-identified dataset to sentences. The resulting sentence-level dataset enables
+hosted on PhysioNet. The CLIP annotations are provided at simplified evaluation, and directly support sentence-based ac-
+the character-span and sentence-span levels, where each span tionability filtering and category classification.
+is associated with one or more clinical task labels.
+2) Sentence-level construction: Since actionable clini-
+B. Context Batch Construction
+cal follow-up tasks are naturally expressed at the sentence
+level, we convert the original character-level annotations into Discharge summaries often express actionable follow-up
+a sentence-level representation following the official pre- instructions using contextual dependencies that span multiple
+processing pipeline provided in the CLIP repository. Each consecutivesentences,suchassectionheaders(e.g.,Discharge
+dischargesummaryisfirstsegmentedintosentences.Foreach Instructions, Follow-up Instructions) and references to previ-
+sentence,allcharacter-levelannotationspansthatoverlapwith ously mentioned medications, tests, or timelines. Interpreting
+its character offsets are identified. An annotated span is the sentences in isolation can therefore lead to missed or misclas-
+exactpieceoftextthatahumanmarksasexpressingaspecific sified clinical actions.
+Fig. 1. High-level workflow of the proposed LLM-driven annotation framework. Discharge notes are converted to sentence-level instances, processed in
+context-batchedpromptsofsizek,andlabeledusingtwo-stagepromptchaining.Performanceisquantifiedusingprecision,recall,F1andJSONcompliance,
+andusedtooptimizek andrefinepromptsiteratively
+1) Context Batched Prompting: We adopt a context- all seven clinical action categories, treating each category
+batched prompting strategy in which a fixed number of con- equally), (ii) Per-category F1 scores (the individual F1 score
+tiguoussentencesaregroupedandjointlyprovidedasinputto for each clinical action category), and (iii) Strict JSON
+the LLM. Let compliance(thepercentageofoutputsthatfollowtherequired
+S ={s ,s ,...,s } structured format).
+1 2 n
+JSONcomplianceistreatedasahardvalidityconstraint:any
+denote the ordered sequence of sentences extracted from a
+configuration that fails to produce valid structured outputs is
+dischargesummarynote.Thesentencesequenceispartitioned
+discarded.Macro-F1andper-categoryF1scoresareevaluated
+into batches of size k, where each batch is defined as
+using the category-aware acceptance criteria defined in the
+following section.
+W ={s ,s ,...,s }
+j (j−1)k+1 (j−1)k+2 jk
+• Stage 1 – Preliminary Screening: All values of k are
+for j = 1,2,...,⌊n/k⌋, with the final batch containing the
+evaluated on a small subset of the training data (e.g.,
+remaining sentences if n is not divisible by k. We do not
+50 discharge summary documents). For each value of k,
+overlap sentences between batches.
+macro-F1,per-categoryF1scores,andJSONcompliance
+Here, k denotes the prompt batch size, i.e., the number of
+are computed. A value of k is discarded if it fails JSON
+sentences included in a single prompt. In our experiments,
+compliance or if its macro-F1 or per-category F1 scores
+violatetheacceptancethresholdsdefinedbythecategory-
+k ∈{10,15,30}.
+aware criteria.
+For each batch W j, the model is conditioned on all k • Stage 2 – Refined Evaluation: The remaining values
+sentences and generates predictions independently for every of k are evaluated on a larger subset of the training
+sentence within the batch. This design allows the model to data(e.g.,100dischargesummarydocuments).Thesame
+use information from nearby sentences as context while still three criteria — macro-F1, per-category F1, and JSON
+making predictions separately for each sentence. compliance are re-evaluated, and configurations that no
+2) Prompt Batch Size Selection: The prompt batch size longer satisfy the acceptance criteria are further elimi-
+k is treated as a tunable hyperparameter and optimized using nated.
+a successive halving strategy. Candidate values are selected • Stage 3 – Final Selection: The retained value(s) of k
+from the discrete set k ∈{10,15,30}. are evaluated on the full training set (e.g., 518 discharge
+Ateverystage,decisionstoretainordiscardavalueofkare summary documents). The final prompt batch size is
+based on three parameter selection criteria evaluated for each selected to maximize macro-F1 while satisfying all per-
+model: (i) Macro-F1 (the average F1 score computed across categoryF1constraintsandmaintainingconsistentJSON
+formatting compliance. 1) Stage 1: Actionability Filtering: In the first stage,
+Thissuccessivehalvingprocedureensuresthatpromptbatch each sentence is evaluated to determine whether it expresses
+size selection is driven by balanced performance across cat- a concrete clinical follow-up action. A sentence is labeled
+egories and stable, machine-consumable outputs, rather than Actionable if it contains an explicit or implicit instruction
+aggregate accuracy alone. requiring an action such as a medication change, laboratory
+test, referral, or procedural step. For example, instructions to
+3) Category-Aware Acceptance Criterion: A category-
+holdmedications(e.g.,“holdASAandrefrainfromNSAIDs”),
+aware acceptance criterion is used to balance overall perfor-
+request laboratory follow-ups (e.g., “repeat these tests in 2
+mancewithstabilityacrossthesevenclinicalactioncategories.
+weeks”), or specify procedural actions (e.g., “arrive at 11 am
+Overall performance is measured using the Macro-F1 score,
+for X-rays”) are treated as actionable, as shown in Table II.
+together with a “must-not-degrade” constraint that limits per-
+A sentence is labeled Non-Actionable if it is descriptive,
+formance drops at the individual category level. These criteria
+maintains the status quo, or lacks a concrete instruction.
+are applied at every stage of the successive halving procedure
+This includes medication continuation without change (e.g.,
+described above.
+“DischargedonAtorvastatin40mgdailyandAspirin81mg”)
+• Macro-F1 tolerance: A parameter setting is considered and non-specific guidance (e.g., “follow up as needed”).
+acceptable only if its macro-F1 score is within a fixed
+This filtering step removes descriptive and status-quo con-
+tolerance of the best-performing setting at the current
+tentbeforecategoryclassification,reducingfalsepositivesand
+stage. In our experiments, this tolerance is set to 5–10%
+improving the reliability of downstream action item catego-
+relative difference:
+rization.
+2) Stage 2: Clinical Action Category Classification: In
+Macro-F1(k)≥Macro-F1 −δ.
+best
+Stage2,onlysentencesthatarelabeledasActionableinStage
+where δ ∈[0.05−0.10] 1 are passed for classification into one or more predefined
+• Per-category degradation tolerance: For each of the clinical action categories as described in Table I. This stage
+seven clinical action categories c, the F1 score must not focuses on identifying the specific type of follow-up action
+decrease by more than a small margin δ relative to the expressed in the sentence. The prompt is designed to include:
+best-performing configuration for that category: • clear and precise definitions of the seven clinical action
+categories,
+F1 c(k)≥F1 c,best−δ, • representative positive and negative examples,
+• explicit inclusion and exclusion criteria, and
+where δ ∈[0.05−0.10].
+• strict instructions for producing structured JSON-
+Formally, a prompt batch size k is accepted only if: formatted outputs.
+For example, medication-related instructions such as “The
+Macro-F1(k)≥Macro-F1 −δ
+best
+patient was instructed to hold ASA and refrain from NSAIDs
+and for every category c, for 2 weeks” are classified as Medication-related follow-up,
+while sentences involving multiple actions, such as “Please
+F1 c(k)≥F1 c,best−δ. arrive at 11 am for X-rays before your visit”, are assigned
+multiple categories (e.g., Appointment-related and Imaging-
+This criterion prevents a configuration from being selected
+relatedfollow-up).Representativeexamplesofthesemappings
+based solely on strong performance in frequent or less critical
+areshowninTableII.SentenceslabeledasNon-Actionablein
+categories (e.g., routine appointments) while degrading per-
+Stage 1 are excluded from Stage 2 and receive no category
+formance in clinically sensitive categories such as medication
+labels.Forinstance,“DischargedonAtorvastatin40mgdaily
+changes, laboratory tests, imaging follow-ups, or referrals.
+andAspirin81mg”describesmedicationcontinuationwithout
+It ensures that improvements in overall performance reflect
+any required follow-up action and is therefore filtered out, as
+consistent and reliable behavior across all clinical action
+illustrated in Table II.
+categories.
+This design ensures that Stage 2 operates only on clin-
+ically meaningful instructions and naturally supports multi-
+C. Two-Stage Prompt Chaining
+label classification when a sentence contains multiple distinct
+We formulate actionable task extraction as a two-step follow-up actions.
+reasoning problem and implement it using prompt chaining. 3) Iterative Prompt Refinement: We refine the prompts
+Instead of directly classifying every sentence into one of the iterativelyusingbothquantitativeevaluationandqualitativeer-
+clinical action categories, we decompose the task into (i) ror analysis. After each prompt version, we analyze false pos-
+identifying whether a sentence is actionable and (ii) assigning itives, false negatives, and category-level confusion patterns
+anappropriateactioncategoryonlytothosesentencesthatare across both stages, and use these findings to update category
+deemed actionable. This separation improves robustness by definitions, add clarifying examples, and strengthen inclusion
+reducing false positives from descriptive or narrative clinical andexclusionrules.Thisprocessisrepeateduntilperformance
+text. stabilizes and further improvements become marginal. As
+TABLEII
+EXAMPLESFORSTAGE1(ACTIONABILITYFILTERING)ANDSTAGE2(ACTIONCATEGORYCLASSIFICATION)
+Sentence Stage1 Stage2 Reason
+ThepatientwasinstructedtoholdASAandrefrain Actionable Medication-relatedfollow-up Explicit medication change/hold
+fromNSAIDsfor2weeks. instruction
+DischargedonAtorvastatin40mgdailyandAspirin Non-Actionable – Standard continuation of existing
+81mg. medications
+ThepatientrequiresaneurologyconsultatXYZfor Actionable Appointment-relatedfollow-up Explicitspecialistreferral
+evaluation.
+Followupwithyourprimarycareproviderasneeded Non-Actionable – Non-specific, conditional guidance
+foranynewconcerns. withoutaconcreteaction
+We ask that the patient’s family physician repeat Actionable Lab-relatedfollow-up Explicitlaboratorytestfollow-up
+thesetestsin2weekstoensureresolution.
+Pleasearriveat11amforX-raysbeforeyourvisit. Actionable Appointment-related and imaging- Multiple explicit procedural ac-
+relatedfollow-up tions
+Promptv1(Baseline) Promptv2 Promptv3 Promptv4(Final)
+• Single-stepcategory • ExplicitCategorydefinitions • Two-stagereasoning • Inclusionofimplicitactions
+classification • Few-shotexamplesper • ActionablevsNon-Actionable • Excludeambiguousactions
+• Explicitcategorylistonly category examples(input&output) • Multi-labelassignment
+• JSONoutputformat • StricterJSONrules • Inclusion/exclusionrules • StableJSONoutputs
+v1→v2:Few-shotsupervision v2→v3:Two-stage+status-quo v3→v4:Multi-labelreasoning
+Example: rules Example:
+“neurologyconsultatXYZ” Example: “arriveforX-raysbeforevisit”
+→Appointment-relatedfollow-up “holdASA”→Actionable →Appointment,Imaging
+“DischargedonAtorvastatin”→No
+Action
+Fig.2. Iterativepromptrefinement:Eachiterationintroducestargetedchangesbyerrordrivenanalysis.Onerepresentativeexampleisshownperrefinement
+step,illustratinghowaddedsupervision,taskdecomposition,andrule-basedconstraintsimproveactiondetectionandcategoryclassification.
+described in Figure 2, the final prompts therefore reflect • per-category F1 for category-level stability,
+multiple refinement cycles guided by empirical evaluation. • JSON compliance for output validity.
+D. Evaluation Protocol Ateachsuccessivehalvingstage,configurationsthatviolate
+the category-aware acceptance criteria or fail JSON compli-
+The proposed approach is evaluated to quantify its effec-
+ance are discarded. Retained configurations are re-evaluated
+tiveness in extracting actionable clinical follow-up tasks and
+on progressively larger subsets of data, yielding a refined
+assigning accurate action categories at the sentence level.
+comparisonofpromptbatchsizesunderidenticalexperimental
+The protocol defines how results are generated, reported, and
+conditions.
+compared across models, prompt batch sizes, and prompt
+versions. 3) Evaluation of Prompt Versions: Each prompt version
+1) Stage-wise Performance Reporting: Performance is re- is evaluated as an independent configuration. For a fixed
+ported separately for each stage of the pipeline. model and batch size, the pipeline is re-run and Stage-wise
+For Stage 1 (Actionability Filtering), precision, recall, F1, Macro-F1, per-category F1, and JSON compliance are
+and F1 are reported for the Actionable and Non-Actionable recomputed. Prompt versions are compared by examining
+classes, together with Macro-F1, measuring how well models changes in these metrics. A new prompt is retained only if it
+distinguish clinical actions from descriptive content. improves or preserves overall and category-level performance
+For Stage 2 (Clinical Action Category Classification), within the acceptance thresholds.
+precision, recall, and F1 are reported for each of the seven 4) Qualitative Error Analysis: For each experiment, mis-
+actioncategories,alongwithMacro-F1tosummarizebalanced classified sentences are analyzed qualitatively. Errors are
+category-level performance. All metrics are computed at the grouped into false positives and false negatives for Stage 1
+sentence level. and category confusions for Stage 2. These analyses identify
+2) Evaluation of Prompt Batch Size: For each model, the systematic failure modes and support interpretation of quanti-
+full two-stage pipeline is executed independently for every tative results.
+prompt batch size k ∈ {10,15,30}. For each configuration, Overall,theevaluationprotocolcombinesstage-wisemetric
+Stage-wise F1 scores, Macro-F1, per-category F1, and JSON reporting, controlled comparison of prompt batch sizes, sys-
+compliance rates are recorded. tematic assessment of prompt versions, and structured error
+Configurations are compared by analyzing: analysis. This framework enables reproducible benchmarking
+• Macro-F1 for overall performance, of LLMs for clinical action extraction in terms of accuracy,
+stability, and clinical reliability. 0.754, matching TTP-BERT’s 0.745, while Claude Sonnet
+3.5 demonstrates the best LLM performance for Medication-
+V. RESULTSANDEXPERIMENTS
+related follow-up with F1 of 0.559. MedGemma-27B-it con-
+We benchmark our proposed two-stage LLM framework tinues to underperform. DeepSeek-V3.2 shows strengths in:
+against two strong BERT-based supervised baselines from
+• Imaging-related follow-up: F1 of 0.536, approaching
+the original CLIP work [2]: MIMIC-DNote-BERT+Context
+TTP-BERT’s 0.566
+andTTP-BERT+Context(250k).Thesemodelsrepresentthe
+• Procedure-related follow-up: F1 of 0.5, competitive with
+state-of-the-art for supervised clinical action extraction on the
+MIMIC-DNote-BERT’s 0.597
+CLIPdatasetandserveasourprimaryperformancereference.
+For LLM evaluation, we evaluate five models: GPT-5.2 [19], VI. GROUND-TRUTHANNOTATIONSERRORANALYSIS
+Gemini-3-Flash [20], Claude Sonnet 3.5 [21], DeepSeek- Qualitative error analysis reveals that many LLM misclas-
+V3.2 [22], and the medical-specialized MedGemma-27B- sificationsreflectsemanticcorrectnessconflictingwithdataset
+it [23], [24]. For our experiments, we used k = 15 as annotation conventions rather than true clinical reasoning
+the prompt batch size configuration. The CLIP benchmark errors. Three patterns emerged:
+test set comprises 100 discharge summaries; our evaluation
+A. Semantic vs. Structural Annotation
+uses the complete available test set in its entirety, not a
+subsample. The 518-document figure referenced in Section A notable source of false positives arises from the dataset’s
+IV refers to the training split used during prompt batch size reliance on document structure over semantic content. In
+selection. Tables III and IV report precision, recall, and F1 the original CLIP dataset documentation, the “Case-specific
+scores for all models across both stages. We highlight the patient instructions” label was standardized by automatically
+best-performing model in green and second-best in orange applying it to all sentences within “Followup instructions”
+within each category (BERT and LLMs). The dataset access and “Discharge instructions” sections. This strict structural
+was conducted in compliance with the applicable data use constraint frequently conflicts with the semantic reasoning of
+agreement and Zero Data Retention (ZDR) requirements, in LLMs.
+accordancewithPhysioNet’sguidelinesfortheresponsibleuse Forexample,modelscorrectlyidentifyimperativesentences
+of MIMIC-III data. suchas“***STOPPED:Lasix,pleasestoptakingthismedica-
+tion”asmultilabelcategoryactions:theyarebothMedication-
+A. Stage 1: Actionability Filtering
+related follow-ups (stopping a drug) and Case-specific patient
+Table III presents actionability filtering results. The instructions (a direct command). However, when such sen-
+BERT baselines achieve strong performance, with TTP- tences appear within a ”Discharge Instructions” block, the
+BERT+Context (250k) obtaining a Binary F1 of 0.866 and ground truth often assigns only the “Case-specific patient
+Macro F1 of 0.668, while MIMIC-DNote-BERT+Context instructions”label,adheringstrictlytothesectionheaderrule
+achieves Binary F1 of 0.856 and Macro F1 of 0.661. Among while omitting the semantic medication label. Consequently,
+LLMs, GPT-5.2 achieves the strongest performance with a themodel’sinclusionofthesemanticallyaccurateMedication-
+Macro F1 of 0.895, representing a 23% relative improvement related label is penalized as a false positive. This illustrates
+over TTP-BERT+Context (0.668). Gemini-3-Flash achieves a key limitation where the dataset’s structure-over-semantics
+the second-best LLM performance with Macro F1 of 0.888. approach biases evaluation against models for identifying the
+Notably, the medical-specialized MedGemma-27B-it substan- multi-dimensional nature of clinical actions.
+tially underperforms with F1 of only 0.459.
+B. Inconsistency in Medication Follow-up Annotation
+B. Stage 2: Action Category Classification
+For instance, doc id 1799 reveals annotation inconsisten-
+Table IV presents fine-grained classification results across cies that confound model learning. In the discharge medica-
+seven clinical action categories. Here, the supervised tion list (sentences 106-114), only antibiotics are labeled as
+BERT baselines demonstrate clear advantages, with TTP- Medication-related followups:
+BERT+Context (250k) achieving a Macro F1 of 0.668 - • Annotated: Levofloxacin (line 110), Flagyl (sentence
+the highest overall performance across all models. MIMIC- 114)
+DNote-BERT+Context achieves Macro F1 of 0.631. Among • Not annotated: Aspirin, Enalapril, Prostigmin, Oxy-
+LLMs, GPT-5.2 achieves the best Macro F1 of 0.570, falling codone, Combivent, Tylenol
+15% short of TTP-BERT+Context. GPT-5.2 shows category-
+This pattern initially suggests a rule: acute treatments re-
+specific strengths:
+quiring completion monitoring are actionable, while chronic
+• Appointment-relatedfollow-up:F1 of0.812,approaching maintenance medications are not. However, sentence 76 -
+but not exceeding TTP-BERT’s 0.887 “Eventually, ampicillin was discontinued, and the patient was
+• Case-specific instructions: F1 of 0.771, competitive with continuedonlevoandFlagyl”-contradictsthisinterpretation.
+TTP-BERT’s 0.841 This sentence appears in the “Hospital Course” section, de-
+Gemini-3-Flash achieves the second-best LLM Macro F1 scribespastinpatientantibioticchangesusingpast-tenseverbs,
+of 0.548 and excels in Lab-related follow-up with F1 of and contains no post-discharge instruction, yet is annotated as
+TABLEIII
+STAGE1(ACTIONABILITYFILTERING):F1PERFORMANCECOMPARISON
+Metric BERTModels LLMModels
+DNote+Cxt TTP+Cxt MedGemma-27B-it GPT-5.2 Gemini-3-Flash DeepSeek-V3.2 Claude3.5Sonnet
+F1 F1 P R F1 P R F1 P R F1 P R F1 P R F1
+BinaryF1 0.856 0.866 0.379 0.582 0.459 0.844 0.785 0.813 0.803 0.798 0.801 0.658 0.665 0.661 0.731 0.739 0.735
+MacroF1 0.661 0.668 0.642 0.748 0.684 0.909 0.883 0.895 0.889 0.887 0.888 0.807 0.811 0.809 0.849 0.853 0.851
+TABLEIV
+STAGE2(ACTIONCATEGORYCLASSIFICATION):F1PERFORMANCECOMPARISON
+ActionCategory BERTModels LLMModels
+DNote+Cxt TTP+Cxt MedGemma-27B-it GPT-5.2 Gemini-3-Flash DeepSeek-V3.2 Claude3.5Sonnet
+F1 F1 P R F1 P R F1 P R F1 P R F1 P R F1
+Appointment-relatedfollow-up 0.882 0.887 0.50 0.54 0.52 0.90 0.74 0.812 0.82 0.72 0.765 0.45 0.50 0.474 0.73 0.76 0.747
+Case-specificinstructionsforpatient 0.830 0.841 0.37 0.36 0.363 0.78 0.77 0.771 0.75 0.75 0.750 0.58 0.58 0.581 0.67 0.69 0.677
+Imaging-relatedfollow-up 0.567 0.566 0.204 0.568 0.300 0.54 0.51 0.525 0.49 0.48 0.485 0.556 0.517 0.536 0.51 0.48 0.492
+Lab-relatedfollow-up 0.744 0.745 0.52 0.53 0.527 0.73 0.74 0.733 0.885 0.662 0.754 0.60 0.60 0.601 0.695 0.699 0.697
+Medication-relatedfollow-up 0.659 0.668 0.377 0.326 0.350 0.42 0.39 0.405 0.43 0.424 0.427 0.31 0.316 0.313 0.48 0.669 0.559
+Procedure-relatedfollow-up 0.597 0.548 0.46 0.464 0.462 0.50 0.48 0.491 0.48 0.472 0.476 0.506 0.494 0.500 0.49 0.477 0.483
+Otherhelpfulcontextualinformation 0.349 0.365 0.18 0.165 0.172 0.405 0.180 0.250 0.21 0.16 0.182 0.12 0.116 0.118 0.14 0.13 0.135
+MacroAverage 0.631 0.668 0.373 0.422 0.385 0.611 0.544 0.570 0.581 0.524 0.548 0.446 0.446 0.446 0.531 0.558 0.541
+Medication-related followups. Sentence 85 - “He was contin- of clinical correctness would provide a more faithful measure
+ued on an aspirin and an ACE” - uses identical grammatical of model utility for real-world deployment.
+structure but remains unlabeled.
+Sentence 76 represents completed inpatient care, not future
+VII. DISCUSSION
+follow-up. This suggests either: (1) the annotation guidelines A. LLMs vs. Supervised Baselines: A Stage-Dependent Story
+were applied inconsistently, combining medication-type cues
+Our results show clear stage-dependent performance pat-
+with temporal relevance, or (2) the ground truth may contain
+terns. At Stage 1 (actionability filtering), modern LLMs out-
+labeling inaccuracies, causing non-actionable historical infor-
+perform supervised baselines: GPT-5.2 achieves the strongest
+mation that is correctly identified by LLMs to be evaluated as
+Stage 1 performance with a Macro F1 of 0.895, a 0.227 point
+false negatives.
+absolute gain over TTP-BERT+Context (0.668). However,
+at Stage 2 (fine-grained category classification), supervised
+C. Context Fragmentation and “Implicit” Actions
+BERT baselines remain stronger (TTP-BERT+Context Macro
+Our framework processes documents in fixed batches (k F1: 0.668 vs. GPT-5.2: 0.570), suggesting that LLMs are
+= 15) to manage context window limitations, which can effective at binary filtering but less consistent on multi-label
+occasionally separate section headers from their associated classification that may improve from task-specific training.
+content. This results in false negatives when LLMs fail to Notably,LLMsarecompetitiveforsomecategories—Gemini-
+recognize a list of medications as Medication-related follow- 3-Flash matches TTP-BERT on lab-related follow-up (F1
+up because the corresponding header (e.g., “Discharge Medi- 0.754 vs. 0.745), indicating certain action types are more
+cations”) appears in a previous batch. amenable to zero-shot prompting. Overall, multi-label clas-
+Furthermore, LLMs struggle with the classification of im- sification pose the primary challenge across all the models
+plicit future actions that are expressed using past-tense lan- andhighlightstheneedforfurtherinvestigationintomodeling
+guage. For example, the sentence “Warfarin anticoagulation strategies and evaluation design to improve F1 scores.
+was initiated with a goal INR between 1.5–2.5” is frequently
+B. The Medical-Specialized Model Paradox
+missed by the model. Syntactically, “was initiated” describes
+a completed inpatient action. Clinically, however, it implies MedGemma-27B’s consistent underperformance (Stage 1
+a mandatory future follow-up task, namely continued “INR F1: 0.459, Stage 2 Macro F1: 0.385) relative to general-
+monitoring”.Themodelsoftenfiltersuchsentencesoutduring purpose LLMs reveals a nuanced insight. Although we use
+Stage 1 (Actionability Detection) because they lack explicit MedGemma-27B-it, the instruction-tuned variant, its fine-
+future-oriented directives (e.g., “Patient must monitor INR”), tuning corpus likely emphasized clinical QA and diagnos-
+highlightingthechallengeofidentifyingactionsthatareclini- tic reasoning rather than structured extraction with con-
+cally implied but grammatically framed as historical events in strained JSON output schemas. General-purpose models ben-
+the discharge summary. efit from broader RLHF coverage including tool use and
+These patterns suggest that the reported F1 scores may structured output generation, which translates directly to
+underestimatethetruesemanticandclinicalreasoningcapabil- stronger instruction-following in multi-step prompt chaining.
+itiesofthemodels.Ahybridevaluationstrategythatcombines MedGemma’s low precision with moderate recall (e.g., P
+strict alignment with annotation conventions and assessments = 0.204, R = 0.568 for Imaging-related follow-up) reflects
+this difficulty in distinguishing clinically informative state- model errors from annotation ambiguities. 2) explore fine-
+ments from executable instructions. Whether fine-tuning on tuning strategies and assess whether smaller language models
+extraction-specific data would close this gap remains an open (SLMs), with or without fine-tuning, can achieve comparable
+question for future work. performance to large language models for clinical action ex-
+traction.3)Expandingevaluationtoadditionaldatasetsbeyond
+C. Clinical Implications CLIP would further support testing robustness across diverse
+healthcare settings. 4) Finally, evaluating alignment between
+Theprecision–recallprofileshighlightclinicallymeaningful
+model reasoning and clinician decision-making processes by
+trade-offs. Claude Sonnet’s higher medication-related recall
+comparing model-generated rationales with expert clinical
+(0.669 vs. GPT-5.2’s 0.39) reflects a bias toward capturing
+reasoning, rather than relying solely on label-level agreement
+more true cases at the cost of increased false positives.
+as it may provide deeper insight into the reliability of model
+In real-world deployment, this reduces the risk of missing
+predictions in patient safety–critical applications.
+medication-relatedfollow-upactionsthatcouldimpactpatient
+safety. In contrast, Gemini-3-Flash’s high precision (0.885)
+IX. CONCLUSION
+for lab-related follow-up minimizes spurious orders and helps
+reduce unnecessary clinical workload. These results suggest Our work demonstrates that modern LLMs exhibit strong
+thatcategory-specificmodelselectionorthresholdtuningmay semantic and clinical reasoning capabilities for actionability
+better align model behavior with high risk categories. detection,achievingperformancecomparabletoandexceeding
+However, in comparison to LLMs the higher performance supervised baselines at Stage 1, while fine-grained category
+of supervised models in Stage 2 indicates that hybrid archi- classification at Stage 2 remains an area where task-specific
+tectures—where LLMs handle actionability filtering followed supervised models retain a meaningful advantage, even under
+by fine-tuned classifiers for category assignment—may best strict privacy constraints and without task-specific fine tuning.
+combine the strengths of both approaches. Qualitative analysis indicates that a substantial portion of ob-
+servederrorsarisesfrommismatchesbetweenmodelreasoning
+VIII. LIMITATIONSANDFUTUREWORK and dataset annotation conventions, particularly in handling
+implicit actions and structurally driven labeling rules. These
+Limitations: This study evaluates large language models
+findings suggest that measured performance reflects not only
+using only zero-shot and few-shot prompting. As a result, it
+model limitations but also the quality and clarity of the un-
+does not assess the impact of fine-tuning approaches, such
+derlyingannotationprocess.Thepathforwardrequiresparallel
+as parameter-efficient fine-tuning, which may improve perfor-
+advancesonthreefronts.First,futureannotationeffortsshould
+mance on task-specific classification. In addition, our error
+capture not only labeled spans but also the clinical rationale
+analysis indicates that some observed performance limitations
+justifying each decision, enabling precise diagnosis of model
+may be driven by inconsistencies in the ground-truth anno-
+errors. Second, evaluation protocols must distinguish between
+tations, particularly for cases involving implicit medication
+clinicallyconsequentialerrors(missedcriticalfollow-ups)and
+logic and structural labeling rules. Consequently, the reported
+benigninterpretationdifferences(debatableedgecases).Third,
+metrics may reflect annotation noise in addition to true model
+deployment architectures should leverage LLM flexibility for
+limitations.
+initial extraction while routing uncertain cases to specialized
+Our evaluation is conducted on the CLIP dataset, which
+classifiers or human reviewers, creating a reliability gradient
+draws exclusively from MIMIC-III critical care notes. These
+appropriate for safety-critical applications.
+results may not generalize to other institutions with different
+These directions extend beyond discharge note extraction.
+documentation styles or clinical workflows. In addition, the
+Many clinical NLP tasks like diagnosis extraction, treatment
+consistently low performance on the Other helpful contextual
+recommendation identification, and adverse event detection
+information category suggests that this label is too broadly
+face similar evaluation challenges as models develop sophis-
+defined for reliable extraction, reducing its usefulness for
+ticated reasoning capabilities that may not align with surface-
+quantitative evaluation and indicating a need for taxonomy
+level annotation patterns. By acknowledging this measure-
+refinement. We also note that results are reported from single
+mentproblemanddevelopingreasoning-transparentevaluation
+experimental runs. As all LLM inference was conducted
+frameworks,wecanbuildclinicalAIsystemsthatarenotonly
+at temperature = 0, outputs are deterministic and repeated
+accurate by benchmark standards but trustworthy in practice.
+runs would yield identical results; variance across runs is
+therefore zero by construction. For non-deterministic settings,
+X. ACKNOWLEDGEMENT
+future work should report mean and standard deviation across
+multiple runs to ensure statistical robustness. TheauthorsthankBethIsraelDeaconessMedicalCenterfor
+Future work: 1) improve annotation consistency to better theircontinuedsupportoftheMIMICproject.Theauthorsalso
+isolate model behavior from labeling artifacts. Incorporating thank the MIT Laboratory for Computational Physiology and
+human-in-the-loop (HITL) validation, including agreement PhysioNet for providing access to the MIMIC databases. This
+measures such as Cohen’s Kappa between model predic- work used data from the MIMIC-III Clinical Database [9],
+tions and clinician judgments, would help distinguish genuine [18].
+REFERENCES [17] A. Mantravadi, S. Dalmia, and A. Mukherji, “Art: Action-based rea-
+soning task benchmarking for medical ai agents,” arXiv preprint
+arXiv:2601.08988,2026.
+[1] E.A.Coleman,A.Chugh,M.V.Williams,J.Grigsby,J.J.Glasheen,
+[18] A. Johnson, T. Pollard, and L. e. a. Shen, “MIMIC-III, a freely
+M.McKenzie,andS.-J.Min,“Understandingandexecutionofdischarge
+instructions,”AmericanJournalofMedicalQuality,vol.28,no.5,pp. accessible critical care database.” Sci Data 3, May 2016. [Online].
+Available:https://doi.org/10.1038/sdata.2016.35
+383–391,2013.
+[19] OpenAI, “Openai. (2025). gpt-5.2 (dec 11 version) [large language
+[2] J. Mullenbach, Y. Pruksachatkun, S. Adler, J. Seale, J. Swartz,
+model].”2025.[Online].Available:https://chatgpt.com/
+G. McKelvey, H. Dai, Y. Yang, and D. Sontag, “CLIP: A dataset for
+[20] Google, “Google, “gemini 3 flash: A high-performance multimodal
+extracting action items for physicians from hospital discharge notes,”
+model for fast, accurate reasoning,.” 2024. [Online]. Available: https:
+in Proceedings of the 59th Annual Meeting of the Association for
+//blog.google/products-and-platforms/products/gemini/gemini-3-flash/
+ComputationalLinguisticsandthe11thInternationalJointConference
+[21] Anthropic, ““claude 3.5 sonnet: A new milestone in general-purpose
+on Natural Language Processing (Volume 1: Long Papers), C. Zong,
+reasoning models,” anthropic news,” 2024. [Online]. Available:
+F. Xia, W. Li, and R. Navigli, Eds. Online: Association for
+https://www.anthropic.com/news/claude-3-5-sonnet
+Computational Linguistics, Aug. 2021, pp. 1365–1378. [Online].
+[22] A.Liu,A.Mei,B.Lin,B.Xue,B.Wang,andB.X.etal.,““deepseek-
+Available:https://aclanthology.org/2021.acl-long.109/
+v3.2: Pushing the frontier of open large language models” anthropic
+[3] C.DeSai,K.Janowiak,B.Secheli,E.Phelps,S.McDonald,G.Reed,
+news,”2024.
+andA.Blomkalns,“Empoweringpatients:simplifyingdischargeinstruc-
+[23] A. S. et al, “““medgemma: Medical instruction-tuned large language
+tions,”BMJOpenQuality,vol.10,no.3,2021.
+models,”googleresearch”,”2024.
+[4] M.Elgaar,J.Cheng,N.Vakil,H.Amiri,andL.A.Celi,“MedDec:A
+[24] A. Sellergren, S. Kazemzadeh, T. Jaroensri, A. Kiraly, M. Traverse,
+datasetforextractingmedicaldecisionsfromdischargesummaries,”in
+T.Kohlberger,S.Xu,F.Jamil,C.Hughes,C.Lau,J.Chen,F.Mahvar,
+Findings of the Association for Computational Linguistics: ACL 2024,
+L. Yatziv, T. Chen, B. Sterling, S. A. Baby, S. M. Baby, J. Lai,
+L.-W. Ku, A. Martins, and V. Srikumar, Eds. Bangkok, Thailand:
+S. Schmidgall, L. Yang, K. Chen, P. Bjornsson, S. Reddy, R. Brush,
+Association for Computational Linguistics, Aug. 2024, pp. 16442–
+K. Philbrick, M. Asiedu, I. Mezerreg, H. Hu, H. Yang, R. Tiwari,
+16455. [Online]. Available: https://aclanthology.org/2024.findings-acl.
+S. Jansen, P. Singh, Y. Liu, S. Azizi, A. Kamath, J. Ferret, S. Pathak,
+975/
+N. Vieillard, R. Merhej, S. Perrin, T. Matejovicova, A. Rame´,
+[5] H. Zhou, F. Liu, B. Gu, X. Zou, J. Huang, J. Wu, Y. Li, S. S. Chen,
+M. Riviere, L. Rouillard, T. Mesnard, G. Cideron, J. bastien Grill,
+P.Zhou,J.Liu,Y.Hua,C.Mao,C.You,X.Wu,Y.Zheng,L.Clifton,
+S. Ramos, E. Yvinec, M. Casbon, E. Buchatskaya, J.-B. Alayrac,
+Z. Li, J. Luo, and D. A. Clifton, “A survey of large language models
+D. Lepikhin, V. Feinberg, S. Borgeaud, A. Andreev, C. Hardin,
+in medicine: Progress, application, and challenge,” 2024. [Online].
+R. Dadashi, L. Hussenot, A. Joulin, O. Bachem, Y. Matias, K. Chou,
+Available:https://arxiv.org/abs/2311.05112
+A. Hassidim, K. Goel, C. Farabet, J. Barral, T. Warkentin, J. Shlens,
+[6] J. Lee, W. Yoon, S. Kim, D. Kim, S. Kim, C. H. So, and J. Kang, D. Fleet, V. Cotruta, O. Sanseviero, G. Martins, P. Kirk, A. Rao,
+“Biobert: a pre-trained biomedical language representation model for S. Shetty, D. F. Steiner, C. Kirmizibayrak, R. Pilgrim, D. Golden,
+biomedicaltextmining,”Bioinformatics,vol.36,no.4,pp.1234–1240,
+andL.Yang,“Medgemmatechnicalreport,”2025.[Online].Available:
+2020. https://arxiv.org/abs/2507.05201
+[7] K. Huang, J. Altosaar, and R. Ranganath, “Clinicalbert: Modeling
+clinical notes and predicting hospital readmission,” arXiv preprint
+arXiv:1904.05342,2019.
+[8] K.CaneseandS.Weis,“Pubmed:thebibliographicdatabase,”TheNCBI
+handbook,vol.2,no.1,p.2013,2013.
+[9] A. Johnson, T. Pollard, and R. Mark, “MIMIC-III Clinical Database,”
+PhysioNet, Sep. 2016, version 1.4. [Online]. Available: https:
+//doi.org/10.13026/C2XW26
+[10] P. Patel, D. Davey, V. Panchal, and P. Pathak, “Annotation of a large
+clinical entity corpus,” in Proceedings of the 2018 Conference on
+Empirical Methods in Natural Language Processing, 2018, pp. 2033–
+2042.
+[11] B. Nye, J. J. Li, R. Patel, Y. Yang, I. Marshall, A. Nenkova, and
+B. C. Wallace, “A corpus with multi-level annotations of patients,
+interventionsandoutcomestosupportlanguageprocessingformedical
+literature,”inProceedingsofthe56thannualmeetingoftheassociation
+forcomputationallinguistics(Volume1:LongPapers),2018,pp.197–
+207.
+[12] M.Jin,S.-M.Choi,andG.-W.Kim,“Comcare:acollaborativeensemble
+framework for context-aware medical named entity recognition and
+relationextraction,”Electronics,vol.14,no.2,p.328,2025.
+[13] M. Elgaar, H. Amiri, M. Mohtarami, and L. A. Celi, “MedDecXtract:
+A clinician-support system for extracting, visualizing, and annotating
+medical decisions in clinical narratives,” in Proceedings of the 63rd
+Annual Meeting of the Association for Computational Linguistics
+(Volume 3: System Demonstrations), P. Mishra, S. Muresan, and
+T. Yu, Eds. Vienna, Austria: Association for Computational
+Linguistics, Jul. 2025, pp. 481–489. [Online]. Available: https:
+//aclanthology.org/2025.acl-demo.46/
+[14] Y.Zuo,S.Qu,Y.Li,Z.Chen,X.Zhu,E.Hua,K.Zhang,N.Ding,and
+B. Zhou, “Medxpertqa: Benchmarking expert-level medical reasoning
+andunderstanding,”arXivpreprintarXiv:2501.18362,2025.
+[15] Z. Wang, J. Wu, L. Cai, C. H. Low, X. Yang, Q. Li, and Y. Jin,
+“Medagent-pro:Towardsevidence-basedmulti-modalmedicaldiagnosis
+via reasoning agentic workflow,” arXiv preprint arXiv:2503.18968,
+2025.
+[16] Y. Jiang, K. C. Black, G. Geng, D. Park, J. Zou, A. Y. Ng, and J. H.
+Chen,“Medagentbench:avirtualehrenvironmenttobenchmarkmedical
+llmagents,”NejmAi,vol.2,no.9,p.AIdbp2500144,2025.

@@ -1,0 +1,660 @@
+PRECTR-V2: Unified Relevance–CTR Framework with Cross-User
+Preference Mining, Exposure Bias Correction, and LLM-Distilled
+Encoder Optimization
+ShuzhiCao∗ RongChen∗ AilongHe∗
+AlibabaGroup AlibabaGroup AlibabaGroup
+Hangzhou,China Hangzhou,China Hangzhou,China
+caoshuzhi.csz@taobao.com xingshu.cr@taobao.com along.hal@taobao.com
+ShuguangHan† JufengChen
+AlibabaGroup AlibabaGroup
+Hangzhou,China Hangzhou,China
+shuguang.sh@taobao.com jufeng.cjf@taobao.com
+Abstract beyondthetraditionalEmb+MLPparadigm.Extensiveexperimen-
+Insearchsystems,effectivelycoordinatingthetwocoreobjectives tal results demonstrate the effectiveness and superiority of our
+ofsearchrelevancematchingandclick-throughrate(CTR)pre- proposedPRECTR-V2method.
+dictioniscrucialfordiscoveringusers’interestsandenhancing
+CCSConcepts
+platformrevenue.InourpriorworkPRECTR[4],weproposeda
+unifiedframeworktointegratethesetwosubtasks,therebyelimi- •Informationsystems→Datamining.
+natingtheirinconsistencyandleadingtomutualbenefit.However,
+ourpreviousworkstillfacesthreemainchallenges.First,low-active Keywords
+usersandnewusershavelimitedsearchbehavioraldata,making SearchSystem,Click-throughRatePrediction,ExposureDebias,
+itdifficulttoachieveeffectivepersonalizedrelevancepreference KnowledgeDistillation
+modeling.Second,trainingdataforrankingmodelspredominantly
+ACMReferenceFormat:
+comefromhigh-relevanceexposures,creatingadistributionmis-
+ShuzhiCao,RongChen,AilongHe,ShuguangHan,andJufengChen.2026.
+matchwiththebroadercandidatespaceincoarse-ranking,leading
+PRECTR-V2:UnifiedRelevance–CTRFrameworkwithCross-UserPrefer-
+to generalization bias. Third, due to the latency constraint, the enceMining,ExposureBiasCorrection,andLLM-DistilledEncoderOpti-
+originalmodelemploysanEmb+MLParchitecturewithafrozen mization.In.ACM,NewYork,NY,USA,9pages.https://doi.org/10.1145/
+BERTencoder,whichpreventsjointoptimizationandcreatesmis- nnnnnnn.nnnnnnn
+alignmentbetweenrepresentationlearningandCTRfine-tuning.
+Tosolvetheseissues,wefurtherreinforceourmethodandpropose 1 Introduction
+PRECTR-V2.Specifically,wemitigatethelow-activityusers’sparse Modernsearchsystemsaretaskedwithsimultaneouslyensuring
+behaviorproblembyminingglobalrelevancepreferencesunder searchrelevanceandmaximizingproductconversionefficiency.
+thespecificquery,whichfacilitateseffectivepersonalizedrelevance Whilesearchrelevancematchingensuresthattheitemsretrieved
+modelingforcold-startscenarios.Subsequently,weconstructhard alignwithuserqueries,click-throughrate(CTR)predictioncap-
+negativesamplesthroughembeddingnoiseinjectionandrelevance turesuserinterestandthusimprovestheitem’sconversioneffi-
+labelreconstruction,andoptimizetheirrelativerankingagainst ciency,drivingplatformrevenue.Traditionally,thesetwoobjectives
+positivesamplesviapairwiseloss,therebycorrectingexposurebias. havebeenaddressedthroughseparateorlooselycoupledmodels,re-
+Finally,wepretrainalightweighttransformer-basedencodervia sultingininconsistenciesinoptimization,suboptimalperformance,
+knowledgedistillationfromLLMandSFTonthetextrelevance andlimitedabilitytobalanceusersatisfactionwithbusinessgoals.
+classificationtask.ThisencoderreplacesthefrozenBERTmod- Inresponse,wepreviouslyintroducedPRECTR[4],aunifiedand
+ule,enablingbetteradaptationtoCTRfine-tuningandadvancing synergisticframeworkdesignedtojointlymodelsearchrelevance
+andCTRpredictionwithinasinglearchitecture.Byaligningthe
+∗Alltheseauthorscontributedequallytothisresearch.
+†CorrespondingAuthor learningsignalsofbothtasks,PRECTRreducedinconsistenciesand
+enabledmutualreinforcementbetweensearchrelevancematching
+Permissiontomakedigitalorhardcopiesofallorpartofthisworkforpersonalor
+andCTRprediction.
+classroomuseisgrantedwithoutfeeprovidedthatcopiesarenotmadeordistributed
+forprofitorcommercialadvantageandthatcopiesbearthisnoticeandthefullcitation Despitetheseimprovements,threefundamentalchallengesre-
+onthefirstpage.Copyrightsforcomponentsofthisworkownedbyothersthanthe mainedunresolved.(1)First,thesparseandfragmentednatureof
+author(s)mustbehonored.Abstractingwithcreditispermitted.Tocopyotherwise,or
+searchbehavioraldatafromlow-activityandnewusersseverely
+republish,topostonserversortoredistributetolists,requirespriorspecificpermission
+and/orafee.Requestpermissionsfrompermissions@acm.org. hinderedthelearningofpersonalizedrelevancepreferences,result-
+Conference’17,Washington,DC,USA inginineffectiveuserprofilingundercold-startscenarios[26,32].
+©2026Copyrightheldbytheowner/author(s).PublicationrightslicensedtoACM.
+(2)Second,thetrainingdataissubjecttosignificantexposurebias,
+ACMISBN978-x-xxxx-xxxx-x/YYYY/MM
+https://doi.org/10.1145/nnnnnnn.nnnnnnn asmodelsareprimarilyoptimizedonhistoricallyexposeditems
+6202
+beF
+42
+]RI.sc[
+1v67602.2062:viXra
+Conference’17,July2017,Washington,DC,USA ShuzhiCao,RongChen,AilongHe,ShuguangHan,&JufengChen
+withhighrelevancelabels.Thiscreatedadistributionalmismatch throughapairwiserankinglossregularizedbyacriticaldis-
+betweenthetrainingenvironmentandthefullcandidatespaceen- tancepenaltyanddynamictruncationweightingtopreserve
+counteredduringcoarse-ranking,ultimatelyimpairingthemodel’s CTR calibration. (3) A lightweight transformer-based en-
+generalizationcapability.(3)Third,duetostringentlatencycon- coderpretrainedviaLLMdistillationandrelevance-aware
+straintsinproductionenvironments,theoriginalframeworkad- fine-tuning,replacingthefrozenBERTmoduletosupport
+heredtoanEmb+MLParchitecturewithafrozenpre-trainedBERT jointrepresentationlearningandCTRoptimizationwithin
+[16]textencoder.Thisdesignpreventsend-to-endjointoptimiza- anefficientinferencepipeline.
+tion,leadingtoapersistentmisalignmentbetweenthestaticse- • Anextensiveamountofexperimentalanalysisonbothin-
+manticrepresentationsandthedynamicfine-tuningsignalsderived dustrialdatasetsandonlineA/Btestingdemonstratesthe
+fromclick-throughbehavior. effectivenessandsuperiorityoftheproposedPRECTR-V2
+Toaddresstheselimitations,weproposePRECTR-V2,anen- methodoverexistingmethods.
+hancedframeworkbuiltuponourpriorworkwiththreekeytech- The remainder of this paper is organized as follows: Section
+nical contributions. First, to overcome the sparse search behav- 2reviewsrelatedwork.Section3describesthepreliminarycon-
+ioraldataoflow-activityusers,wedevelopacross-userrelevance cepts.Section4detailstheproposedmethod.Section5presentsthe
+preferenceminingframeworkthatextractsandtransfersquery- experimentalresults.Finally,Section6concludesthispaper.
+conditioned relevance preference patterns from the global user
+population,enablingeffectivepersonalizationincold-startscenar- 2 RelatedWork
+ios.Second,tocorrecttheexposurebiasarisingfromtrainingon
+ThissectionprovidesaconciseoverviewofCTRprediction,search
+predominantlyhigh-relevanceitems,weconstructfakehardnega-
+relevancematching,andlimitationsofpriorwork.
+tivesamplesthroughembeddingnoiseinjectionandrelevancelabel
+reconstruction.Thesesamplesarethenoptimizedagainstpositive
+2.1 CTRPredictionandSearchRelevance
+instancesviaapairwiserankingloss,explicitlycalibratingtheir
+Matching
+relativeorderandtherebyreducingthedistributionmismatchbe-
+tweenexposuredataandthebroadercandidatespaceencountered CTRpredictionestimatesthelikelihoodofuserclicksonpresented
+duringinference.Meanwhile,toensurethatthepairwiseranking items,servingasacorecomponentinadvertising,recommendation,
+optimizationdoesnotcompromisethemodel’sabsolutepredic- andsearchsystems.Itdirectlyenhancesuserengagement,drives
+tionaccuracy—measuredbyPCOC(PredictClickOverClick)—we revenuegrowth,andoptimizesserviceefficiency.Themethodol-
+further introduce two regularization mechanisms: a relative or- ogyofCTRpredictionhasprogressivelytransitionedfromshallow
+dercriticaldistancepenaltyandadynamictruncationweighting machinelearning-basedmodelstodeeplearning-basedapproaches
+strategy.Thesecomponentsworksynergisticallytobalancerank- overtime.Earlymachine-learningapproaches—includinglogistic
+ingqualitywithcalibratedCTRestimation.Third,weintroducea regression(LR)[17],gradientboostingdecisiontrees(GBDT)[8],
+lightweighttransformer-basedencoderthatispretrainedthrough andfactorizationmachines(FM)[22]—primarilymodeleduser–item
+knowledgedistillation[9,14,24]fromalargelanguagemodel(LLM) co-occurrencepatternsanddependedheavilyonhand-craftedfea-
+[11,19,27]andfurtherfine-tunedonaquery-itemtextrelevance tureengineering.Subsequentdeeplearning-basedmethods,includ-
+classificationtask.ThistrainableencoderreplacesthefrozenBERT ingDeepFM[10],DIN[35],DIEN[34],SIM[21],andTWIN[2],
+componentintheconventionalEmb+MLPpipeline,enablingjoint learncontinuous,denseembeddingrepresentationsandmodelCTR
+optimizationoftextrepresentationlearningandCTRprediction, predictionsinanend-to-endmanner.Recently,fueledbythewide-
+andultimatelybridgingthegapbetweensemanticunderstanding spreadsuccessandscalingcapabilitiesoflargelanguagemodels
+andCTRprediction. (LLMs), both industryand academia havebegun toexplorethe
+Themaincontributionsofthispaperaresummarizedasfollows: autoregressivegenerationparadigmofLLMsandadaptittosearch
+andrecommendationscenarios.Thisapproachreformulatesthe
+traditionaldiscriminativeCTRpredictiontaskasalong-sequence
+• WepresentPRECTR-V2,animprovediterationofourprevi- generationproblem,wherecandidateproductrepresentationsare
+ousPRECTRframework,whichaddressesthreefundamental directlygeneratedinanautoregressivemanner[30,31].Among
+shortcomingsinjointrelevance-CTRmodeling:(1)ineffec- them,representativeworksincludeOneSearch[3],OneRec[33],
+tiverelevancepersonalizationundersparseuserinteraction, GenRank[15],andLUM[28].Nevertheless,existingmethodspri-
+(2)training-inferencediscrepancyduetoexposurebias,and marilyaddressclick-throughratepredictioninisolation,neglecting
+(3)architecturalmisalignmentbetweensemanticrepresenta- itsinherentcouplingwithsearchrelevancematchingandthereby
+tionandCTRpredictionunderlow-latencyconstraints. introducingamisalignmentbetweenthetwofundamentaltasks.
+• Weintroducethreecoretechnicalinnovationstosolvethe Asearchsystemmustbalancetwocoreobjectives:maximizing
+aboveissues:(1)Across-userrelevancepreferencemining click-throughrateswhilepreservingstrongrelevancetouserin-
+mechanismthattransfersquery-conditionedrelevancepref- tent—bothofwhichultimatelydriveconversion.Inconventional
+erencepatternsfromtheglobaluserbasetocold-startusers, searchpipelines,CTRpredictionandrelevancescoringarehandled
+enablingpersonalizedmodelingdespitesparseindividual byseparate,independentlytrainedmodels.Theiroutputsarethen
+searchbehavior.(2)Anexposurebiascorrectionstrategy combinedusingafixed,human-designedstrategytocomputethe
+basedonsynthetichardnegativesamplingviaembedding finalrankingscore.Whilethisdecoupleddesignisstraightforward
+noiseinjectionandrelevancelabelreconstruction,optimized toimplement,itlimitsfeatureinteractionbetweenthetwotasks
+PRECTR-V2 Conference’17,July2017,Washington,DC,USA
+andintroducesinconsistencyacrosstheirpredictions,ultimately Similarly,thesearchrelevancematchingtaskcanbeformulatedas
+leadingtosuboptimalsystemperformance.Toaddressthischal- below:giventheoriginalquerytext𝑄 𝑡𝑒𝑥𝑡 anditemdescriptiontext
+lenge,weproposePRECTR[4]—thefirstunifiedframeworkthat 𝐼 𝑡𝑒𝑥𝑡,ourgoalistodeterminewhetherthetwotextsarerelevant
+simultaneouslyhandlespersonalizedsearchrelevancematching toeachother.InXianyu,foreachuserquery,allofthecandidate
+andCTRprediction.Byintegratingbothtasksintoasinglemodel, itemsaredividedintofourdifferentrelevancescorelevelsbasedon
+weeffectivelymitigatetheinconsistencybetweenthem.Through theirrelevance,i.e.,thedegreeoftextualmatchnessbetweenthe
+jointoptimization,theframeworkautomaticallylearnstheoptimal queryandtheitem.
+fusionstrategy,eliminatingtheneedforlaboriousmanualparame-
+tertuning.Thisapproachnotonlyenhancesadaptabilitytoshifting 3.2 TheReviewofPRECTR
+datadistributionsbutalsoimprovesoverallrecommendationro- InPRECTR,wedecomposetheprobabilityofclicking𝑃(𝑐𝑙𝑖𝑐𝑘 =
+bustnessandefficiency. 1|𝒙)onanitem𝒙intotwoparts:therelevancetotheuserquery
+andtheintrinsicitemcharacteristic.Tobespecific,weindivdually
+2.2 PRECTR’sLimitations model𝑃(𝑟𝑠𝑙 =𝑖|𝒙)(theprobabilityofthedistributionofrelevance
+Despiteitsunifiedarchitecturethatjointlymodelssearchrelevance scorelevel(RSL)underthegiveninstance𝒙)and𝑃(𝑐𝑙𝑖𝑐𝑘 =1|𝑟𝑠𝑙 =
+matchingandCTRprediction,PRECTRexhibitsseveralcriticallim- 𝑖,𝒙)(theconditionalprobabilityoftheitem𝒙beingclickedinthe
+itationsthatconstrainitspracticaleffectiveness.Theseshortcom- 𝑖-threlevancescorelevel)andcombinethemtoestimatetheclick
+ingsprimarilyemergefromthreekeyaspects:(1)personalization rate𝑃(𝑐𝑙𝑖𝑐𝑘 =1|𝒙).Finally,byanalyzingusers’personalizedrele-
+challenithforlow-activeusers(2)exposurebiasintrainingand(3) vancepreferencesderivedfromtheirsequentialsearchbehavior,we
+architecturalconstraintsduetolatencyrequirements. computetherelevanceincentivescore𝜏(𝒙)torefinetheoriginally
+First,PRECTR’spersonalizedrelevancemodelingstruggleswith estimatedclick-throughrates𝑃(𝑐𝑙𝑖𝑐𝑘 =1|𝒙)andobtainthefinal
+low-activityandnewuserswhosesearchinteractionsaresparse rankingscoreasfollows:
+ornon-existent.Thisdatascarcitypreventstheframeworkfrom
+constructingmeaningfuluserrelevancepreferencerepresentations, 𝑘
+∑︁
+leadingtoineffectivepersonalizationincold-startscenarios.Sec- 𝑃(𝑐𝑙𝑖𝑐𝑘 =1|𝒙)= 𝑃(𝑐𝑙𝑖𝑐𝑘 =1|𝑟𝑠𝑙 =𝑖,𝒙)𝑃(𝑟𝑠𝑙 =𝑖|𝒙), (1)
+ond,PRECTRsuffersfromsignificantexposurebiasasitispredom- 𝑖=1
+inantlytrainedonhistoricallyexposeditemswithhighrelevance
+degree.Thiscreatesadistributionalmismatchbetweenthetraining 𝑟𝑎𝑛𝑘_𝑠𝑐𝑜𝑟𝑒 =𝜏(𝒙)∗𝑃(𝑐𝑙𝑖𝑐𝑘 =1|𝒙), (2)
+environmentandtheactualinferencescenario,wherethemodel Here,thevariable𝑟𝑠𝑙 standsfortherelevancescorelevel,which
+mustevaluateabroadercandidatepool.Theresultingoverfittingto canbeanyofthe𝑘discretevalues.
+high-relevanceexposurescompromisesthemodel’sgeneralization
+capability,reducingrankingdiversityandlimitingthesystem’sabil- 4 Methodology
+itytodiscovernovelrelevantmatches.Third,tomeetproduction
+Thissectionoutlinestheoveralldesignofourproposedmethod,in-
+latencyrequirements,PRECTRadoptsanEmb+MLParchitecture
+cludingthearchitectureoverviewandthedetailedstructure.Briefly,
+withafrozenpre-trainedBERTencoder.Thisdesignpreventsjoint
+PRECTR-V2includesthreeinnovativeparts:(1)Cold-StartPerson-
+optimizationoftextrepresentationlearningandCTRprediction,
+alizedRelevancePreferencesMining,(2)RelevanceExposureDe-
+creatingapersistentmisalignmentbetweenstaticsemanticfeatures
+bias,and(3)LLM-DistilledCRT-AlignedLightweightEncoder.The
+anddynamicengagementsignals.Thefrozenencodercannotadapt
+model’swholestructureisshowninFig.1
+to domain-specific nuances or evolving user behavior patterns,
+whiletheshallowMLPlimitsthemodel’scapacitytocapturecom- 4.1 Cold-StartPersonalizedRelevance
+plexfeatureinteractionsessentialforbothrelevanceunderstanding
+PreferencesMining
+andclickprediction.
+Foruserswithrichinteractionhistories,weextracttheusers’per-
+3 Preliminaries sonalrelevancepreferencesfromtheirhistoricalinteractionrecords
+S={(𝑄 1,𝐼 1),...,(𝑄 𝑚,𝐼 𝑚)},where𝑚denotesthelengthofthehis-
+3.1 ProblemFormulation toricalclicksequence,𝑄 𝑖 and𝐼 𝑖 representtherawtextofthequery
+Giventhetrainingdataset D = {𝒙,𝑦}𝑛 collectingfromouron- andclickeditem,respectively.However,forlow-activityandnew
+linee-commerceplatformXianyu,where𝒙 representsthehigh users, their sparse search behaviors pose significant challenges
+dimensionalfeaturevectorconsistingofmulti-fieldsfeatures,the for modeling relevance preferences. To mitigate this limitation,
+binaryclicklabel𝑦 ∈{0,1}indicateswhetherasampleisclicked, weenhancetherepresentationoflow-activityusersbyleveraging
+and𝑛denotesthenumberoftrainingsamples.Thefeature𝒙usu- globalinformationfromcross-userbehaviorpatterns,supplement-
+ally consists of multi-fields information and can be denoted as ingtheirsparseindividualsearchdata.Dataanalysisrevealsaclose
+𝒙 =[𝑡 1⊤,𝑡 2⊤,...,𝑡 𝑀⊤]⊤where𝑡 𝑖 ∈R𝐾𝑖 standsforthehigh-dimensional associationbetweenusers’sensitivitytosearchrelevanceandthe
+sparsebinaryfeaturesfor𝑖-thfield,𝐾 𝑖representsthedimensionality categoryoftheirqueries.Theaveragerelevancelevelofclicked
+ofvector𝑡 𝑖,and𝑀standsforthenumberoffields.𝑡 𝑖 canbeeither samplesvariessignificantlyacrossdifferentsearchquerycategories,
+aone-hotvectororamulti-hotvectordependingonthenumber suggestingthatquerytypeisakeydeterminantofperceivedrele-
+ofvaluesofthe𝑖-thfield.CTRpredictiontaskaimstoestimatethe vance.Inspiredbythisphenomenon,weleveragetheretrievalof
+probabilityofasample𝑥 beingclicked,i.e.,𝑝 𝑐𝑡𝑟(𝑥) =𝑝(𝑦 =1|𝑥). globaluserbehaviorswithinthesamequerycategorytoextract
+Conference’17,July2017,Washington,DC,USA ShuzhiCao,RongChen,AilongHe,ShuguangHan,&JufengChen
+CTR
+Multiply
+Dot
+BaseModule RSLModule Personalized Relevance Preference Incentive Module
+Incentive Score 𝜏
+𝑃(𝑐𝑙𝑖𝑐𝑘|𝑟𝑠𝑙,𝑥) 𝑃(𝑟𝑠𝑙|𝑥)
+Reweighting Layer
+Incentive Function 𝑓! Incentive Function 𝑓*
+softmax softmax
+Gate Network Expert1 Expert2
+MLP MLP
+𝑟"#$% 𝑟&’(# 𝑟(’%)#(
+Target-Attention Layer
+K2 V2 K1 V1 Q
+𝑄$%&’ 𝑟$%&’ …… 𝑄&%&’ 𝑟&%&’ 𝑄$%&’ 𝑟$%&’ …… 𝑄(%&’ 𝑟(%&’ 𝑄!%"&#’ 𝑟!%"&#’
+Lightweight Encoder Lightweight Encoder
+……
+Basic Features 𝑄∗ 𝐼∗ Rsl Features
+User Id 𝑄$" 𝐼$" …… 𝑄&" 𝐼&" Query Category Top-NFrequent Transaction Users 𝑄!"# 𝐼!"#
+Target <Query,Item>
+User's personal search sequence 𝑄$* 𝐼$* …… 𝑄(* 𝐼(* Target <Query,Item>
+Global cross-user search behavior sampling
+Figure1:TheoverviewoftheproposedPRECTR-V2method.
+commonpreferencepatterns.Specifically,basedontheuser’squery searchrelevancepreferencerepresentationsattheuser’sleveland
+category,wegloballysample50userswhohaveexhibitedsimilar querycategory’slevel,representingas𝑟 𝑢𝑒𝑚𝑏 and𝑟 𝑞𝑒𝑚𝑏 throughthe
+categoricalsearchbehaviorandextracttheircorrespondinghistori- Multi-HeadTarget-Attention(MHTA)operation.Theirdefinitions
+calsearchrecords.Subsequently,weretrievedthehistoricalsearch areshownasfollows:
+clickbehaviorswithinthesamecategoryfromthesesampledusers, 𝑄𝐾⊤
+filtered the top-k behaviors based on query text similarity, and 𝑟𝑢𝑠𝑒𝑟 =TargetAttention(𝑄,𝐾 𝑢,𝑉 𝑢)=𝑠𝑜𝑓𝑡𝑚𝑎𝑥( √𝑢 )𝑉 𝑢, (6)
+𝑑
+usedthemassupplementarybehaviorsequencesforlow-activity
+users.Ultimately,weaugmentedthesparsesearchclickbehaviors 𝑄𝐾⊤
+oflow-activityusersbyintegratingcross-usersampledbehaviors, 𝑟𝑐𝑎𝑡𝑒 =TargetAttention(𝑄,𝐾 𝑞,𝑉 𝑞)=𝑠𝑜𝑓𝑡𝑚𝑎𝑥( √𝑞 )𝑉 𝑞, (7)
+𝑑
+therebyexpandingtheireffectivesearchinteractioninformation.
+WeusetheS = (cid:8) S𝑢,S𝑞(cid:9) todenotethemergedsearchsequence where𝑄isderivedfrom𝑄 cur;𝐾 𝑢 and𝐾 𝑞originatefrom𝑄 𝑢 and𝑄 𝑞,
+of the cold-start users, where S𝑢 = (cid:8) (𝑄𝑢 1,𝐼 1𝑢),...,(𝑄 𝑚𝑢,𝐼 𝑚𝑢)(cid:9) and respectively;and𝑉 𝑢and √𝑉 𝑞areobtainedfrom𝑟 𝑢and𝑟 𝑞,respectively.
+S𝑞 = (cid:8) (𝑄𝑞 1,𝐼 1𝑞 ),...,(𝑄 𝑘𝑞,𝐼 𝑘𝑞 )(cid:9) representthelow-activeusers’own Thetemperaturefactor 𝑑isappliedtoproduceasmootheratten-
+andcross-users’searchbehaviors,where𝑚and𝑘 standsforthe tiondistribution,therebypreventingexcessivelysmallgradients
+lengthofthesetwosequences.Wefirsttaketheconstructedtext duringtraining.Afterestimatingthesearchrelevancepreference
+sequenceasinputandleveragealanguageencodertoderiveits representationsatboththeuserlevelandthequerycategorylevel,
+textualrepresentations,whichcomprisethefollowingquery,item, wefurtherintroduceaMixtureofExperts(MoE)networktocom-
+andrelevanceembeddings.Theirdefinitionsareshownasfollows: putethefinalpersonalizedrelevanceincentivescore𝜏.Specifically,
+𝑄 𝑖𝑒𝑚𝑏 =Encoder(𝑄 𝑖) (3) w soe ftfe lae bd e𝑟 l𝑢 d𝑠𝑒 is𝑟 trin ibto uta iog nat 𝑤in =gn [𝑤etw ,𝑤ork ],t wo hge icn her ra et fle ea ctt sw to h- edi um see rn ’s sio ren la el
+-
+1 2
+𝐼 𝑖𝑒𝑚𝑏 =Encoder(𝐼 𝑖) (4) vancepreferenceandsensitivityandisusedtoweighttheexpert
+𝑟 𝑖𝑒𝑚𝑏 =Encoder([CLS]𝑄 𝑖[SEP]𝐼 𝑖[SEP]) (5) networks.Correspondingly,wedesigntwodistinctexpertnetworks,
+Let𝑄 𝑐𝑢𝑟 denotetherawtextoftheuser’scurrentqueryand eachemployingadifferentactivationfunction,toprocessusers
+W𝑄 𝑐𝑒 e𝑢𝑚 𝑟 u𝑏 sr eep 𝑄r 𝑢𝑒e 𝑚se 𝑏n =tit [s 𝑄e 𝑒 1m 𝑚𝑏b ,e .d ..d ,𝑄in 𝑚𝑒g 𝑚a 𝑏f ]t ,e 𝑟r 𝑞𝑒𝑚th 𝑏e =lan [g 𝑟 1𝑒u 𝑚a 𝑏g ,e ..m .,𝑟o 𝑚𝑒d 𝑚e 𝑏l ]e ,n 𝑄c 𝑞𝑒o 𝑚d 𝑏in =g. w c twluit odh e av s ca t𝑟 ir v𝑢y 𝑠 ai 𝑒 tn 𝑟 i, og 𝑟 nr 𝑐e 𝑎 fu𝑡le 𝑒 nv , ca a tn n ioc d ne t shp ar e re etf ae frr oge rn e mtc ue r ls e a. l teT ev dh ae n ascin e fop e lu m lot wbto e sd :e da ic nh ge 𝑟x 𝑐𝑢p 𝑟e .r Tti hn e-
+b[𝑄 ed𝑒 1𝑚 di𝑏 n, g.. s.,𝑄 of𝑘𝑒𝑚 th𝑏 e] s, ean twd o𝑟 𝑢𝑒 s𝑚 e𝑏 qu= en[ c𝑟 e1𝑒𝑚 s.𝑏 S, u.. b., s𝑟 e𝑘𝑒 q𝑚 u𝑏 e] nt to lyr ,e wpr ee ese stn it mt ah te ee thm e-
+𝑓 +(𝒙)=log(1+𝑒𝐸+(𝒙)) (8)
+PRECTR-V2 Conference’17,July2017,Washington,DC,USA
+𝑓 −(𝒙)=−log(1+𝑒𝐸−(𝒙)) (9)
+where𝐸 +and𝐸 − standsfortwodifferentexpertnetworksrespec-
+tively.Finally,theincentivescorecanbecalculatedbycombining
+weightedoutputsasfollows:
+𝜏 =𝑤1∗𝑓 +(𝒙)+𝑤2∗𝑓 −(𝒙) (10)
+4.2 RelevanceExposureDebias
+TheCTRmodelistrainedonrealexposuredata.Duetothestringent 𝑥!
+relevanceconstraintsappliedduringexposure,thetrainingsam-
+plespredominantlyexhibithighlycorrelatedfeatures—ouranalysis 𝑥"
+indicatesthatover80%ofexposedsamplesfallintothiscategory. 𝑥#
+However, the actual inference environment of the fine-grained
+modelinvolvesscoringcoarselyfilteredcandidateitems,which
+consistlargelyofproductswithlowsearchrelevance.Thissignif- 𝑥$
+icantdistributionshiftbetweenthetrainingandinferencedata
+severelycompromisesthemodel’sgeneralizationability.Thismis-
+matchmotivatesourworkinaddressingtheresultingbias.
+Intuitively,wecansupplementthetrainingdatabysampling
+irrelevantinstancesfromtheunexposedcandidatepooltoguide
+themodellearningprocess.However,thisstraightforwardmethod
+severelyinfluencetheratioofpositiveandnegativetrainingsam-
+ples.Meanwhile,unexposedunrelatedsamplesareoftenoflow
+quality—forinstance,theymaybeentirelyirrelevantorpossess
+extremelypoorfeaturesontheitemside.Thismakesitdifficultfor
+themodeltodiscernscoringvariationsattributabletorelevance-
+induceddifferences.Therefore,weproposetomitigatethelearning
+biasbyconstructingsyntheticlow-relevancesampleswhilekeeping
+otheritem-sidefeaturesalignedthroughembeddingnoiseinjec-
+tionandrelevancelabelreconstruction.Suppose𝑟𝑠𝑙 denotesthe
+relevancescorelevelofanitem,whichtakesfourdiscretevalues:
+1,2,3and4,representingirrelevant,weakrelevant,relevant,and
+stronglyrelevant,respectively.Weconstructnegativesamples𝒙−
+ina1:1ratioforthosepositivesamples𝒙+thatarebothclickedand
+highlyrelevant(i.e.,𝑐𝑙𝑖𝑐𝑘 =1,𝑟𝑠𝑙 =4).Specifically,foreachsuch
+positivesample,weresetitscorresponding𝑟𝑠𝑙labelto𝑓𝑎𝑘𝑒_𝑟𝑠𝑙by
+randomlyassigningittoalowerrelevancelevelaccordingtothe
+followingscheme,where𝑝1and𝑝2arepresettinghyperparameters.
+𝑓𝑎𝑘𝑒_𝑟𝑠𝑙
+=1
+2
+i if f𝑟 𝑝𝑎 1𝑛 ≤𝑑𝑜 𝑟𝑚 𝑎𝑛( 𝑑) 𝑜< 𝑚𝑝 (1
+) <𝑝2 (11)
+3 if𝑝2≤𝑟𝑎𝑛𝑑𝑜𝑚() <1
+
+Subsequently,wesimulateslightvariationsinsearchrelevance
+matchingdegreebyaddingnoisetothetextualrepresentationof
+itemdescriptions.ThenoiseinjectionprocessisshowninEq.(12).
+Let𝑄
+𝑒𝑚𝑏
+∈R𝑑betheoriginald-dimensionaltextembeddingvector.
+We generate a noise vector𝜖 ∈ R𝑑 by independently sampling
+eachcomponent𝜖
+𝑖
+fromastandardnormaldistributionN(0,1).
+Theperturbedembedding𝑄fake isthenobtainedbyperforming
+emb
+element-wiseadditionbetweentheoriginalembeddingandthe
+noisevector.
+𝑄fake=𝑄 +𝜖 (12)
+emb emb
+𝜖 =(cid:0)𝜖 1,𝜖 2,...,𝜖 𝑑(cid:1)⊤,𝜖 𝑖 i. ∼i.d. N(0,1) (13)
+……
+𝑥%!
+𝑐𝑙𝑖𝑐𝑘=1 𝑎𝑛𝑑 𝑟𝑠𝑙=4?
+Batch
+……
+𝑥’!
+Rsl Feature Reconstructure
+𝑥%&
+……
+ℛ()*+,-
+𝑓(𝑥%) 𝑓(𝑥’)
+Parameter
+Sharing
+Model 🔥 Model (Stop Gradient)❄
+𝑥% 𝑥’
+Feature Layer
+𝑥’&
+Figure2:Theoverviewofthedebiasprocess.
+Underthepremisethatotherfeaturesarealigned,𝒙+ andits
+correspondingconstructednegativesample𝒙− differonlyinthe
+relevancefeatures.Subsequently,weconductrelevanceexposure
+debiasbyexplicitlyimposinga constraintontherelativeorder
+between𝒙+and𝒙− throughapairwiselossfunctionasfollows:
+𝑁
+𝑙𝑜𝑠𝑠 =∑︁ log(1+𝑒−(𝑓(𝑥 𝑖+)−𝑓(𝑥 𝑖−))) (14)
+𝑖=1
+where𝑁 standsforthenumberofthepositivesamples,𝑓 denotes
+thewholerankmodel.ByoptimizingtheEq(14),weforcethemodel
+toassignhigherscorestopositivesamples,whichinturnenhances
+itsabilitytodiscernrelevancedifferences.Inpractice,however,we
+haveobservedthattheaforementionedlossfunctionssufferfrom
+thefollowinglimitations.
+0.30
+0.25
+0.20
+0.15
+0.10
+0 1 2 3 4 5 6
+day
+erocs
+0.18 Positive Sample
+Negative Sample
+0.16
+0.14
+0.12
+0.10
+0.08
+0 1 2 3 4 5 6
+day
+(a)
+erocs
+Strongly relevant
+relevant
+Weakly relevant
+(b)
+Figure3:(a)exhibitsthepredictedaveragescorebetween
+theclickandunclicksamples,and(b)exhibitsthepredicted
+averagescoredifferencebetweenthesampleswithdifferent
+relevancescorelevels.
+TheFig.3illustratesthatsamplescoresexhibitgrowingdiver-
+gencewithincreasedtrainingtime.Specifically,theaveragescore
+ofclickedsamplesmonotonicallyincreases,whiletheperformance
+gapobservedbetweenclickedandunclickedsamplescontinuesto
+widen.Meanwhile,thepredictedscoresofhigh-relevancesamples
+havebeencontinuouslyrising,evenreachingmorethantwicethat
+oflow-relevancesamples.Allthesefactorsseverelydegradethe
+Conference’17,July2017,Washington,DC,USA ShuzhiCao,RongChen,AilongHe,ShuguangHan,&JufengChen
+absolutescoringaccuracyofthemodel,causingthedeviationof Lightweight Encoder Training
+PCOC(PredictClickOverClick).Moreover,itisalsounreason- ℛ$%&’%(( ℛ!"#
+abletoinfinitelymagnifytherelativeorderbetween𝒙+and𝒙−.To
+solvetheseproblems,wefurtherproposearelativeordercriticaldis- MLP
+𝐿𝐿𝑀 𝐸𝑚𝑏 𝐶𝐿𝑆 𝑂𝑢𝑡𝑝𝑢𝑡 𝐸𝑚𝑏
+tancepenaltyandadynamictruncationweightingstrategy.These
+componentsworksynergisticallytobalancerankingqualitywith LightweightEncoder
+calibratedCTRestimation.Therefinedlossisshownasfollows: [𝐶𝐿𝑆]{𝑇𝑜𝑘𝑒𝑛1,𝑇𝑜𝑘𝑒𝑛2,…,𝑇𝑜𝑘𝑒𝑛𝐾} [𝑆𝐸𝑃]{𝑇𝑜𝑘𝑒𝑛1,𝑇𝑜𝑘𝑒𝑛2,…,𝑇𝑜𝑘𝑒𝑛𝑀}[𝑆𝐸𝑃]
+R𝑑𝑒𝑏𝑖𝑎𝑠
+=𝑤(𝑥)∗∑︁𝑁
+log(1+𝑒max(0,𝑚𝑎𝑟𝑔𝑖𝑛−(𝑓(𝑥 𝑖+)−𝑓(𝑥 𝑖−))) (15)
+…
+…
+…
+…
+𝑖=1 LLM Tokenizer
+where margin is the penalty threshold for the relative order. It raw query text raw item text RAG raw query text raw item text
+denotesthemaximumpermissibledifferenceinscoresbetween
+𝒙+ and 𝒙−.𝑤(𝑥) is a dynamic truncation weight coefficient, it
+Figure4:Theoverviewofthelightweightencodertraining.
+dynamicallyadjuststhelossweightbasedontheaveragescoreof
+abatchofsamples.Ifthebatchaveragescoreexceedsapredefined
+criticalthreshold,thecontrolweightisreducedtozero,effectively
+applyingdynamictruncation.Itsdefinitionisshownbelow: generatetheirtextrepresentations.Inthisprocess,wefurtherin-
+troducetheRetrieval-AugmentedGeneration(RAG)[12,20,23]
+(cid:40)
+𝑤(𝑥)= 𝑤
+0
+ii ff mm ee aa nn (( 𝑓𝑓 (( 𝑥𝑥 + +) )) )≥< 𝑡𝑡 ℎℎ 𝑟𝑟 𝑒𝑒 𝑠𝑠 ℎℎ 𝑜𝑜 𝑙𝑙 𝑑𝑑 (16) wte ech rn etiq riu ee veto hg ige hn le yra rt ee lab te et dte sr ar mel pe lv ea sn ac ne dem reb lee vd ad nin cegs b. aT do cab se es sp ue nci dfi ec r,
+thesamequeryastemplateinformationtoguidetheLLM’sinfer-
+4.3 LLM-DistilledCTR-AlignedLightweight ence.Let𝑔(𝒙) ∈R𝑑 betherepresentationcomputedbyLLM.We
+minimizedtheEuclideandistancebetween𝑔(𝒙)and𝑇(𝒙;𝜃)and
+Encoder.
+obtainedthefollowingMSErisk.Thewholelightweightencoder
+InPRECTR[4],weemployafrozenBERTmodelasthebaseencoder trainingprocessisshowninFig.4.
+fortextembeddinggeneration,followedbyanEmb+MLParchi-
+tecturefordownstreamprocessing.Thisdesign,however,comes R𝐷𝑖𝑠𝑡𝑖𝑙𝑙(𝜃)=MSE(𝑔(𝒙),𝑇(𝒙;𝜃)) (18)
+withatrade-off:thebaseencoderisexcludedfromCTR-specific
+fine-tuning.Theprimaryreasonisitsprohibitiveparameterscale,
+Finally,wetrainthelightweightencoderbyoptimizingR𝐷𝑖𝑠𝑡𝑖𝑙𝑙(𝜃)
+whichposessignificantchallengesforefficientonlinedeployment
+andR𝑆𝐹𝑇(𝜃)simultaneously.Theoveralloptimizationobjectiveis
+concludedasfollows:
+andinference.Toovercomethisdrawback,weproposeanLLM-
+distilledandCTR-alignedlightweightencodertoreplacetheprevi-
+ousfrozenBERT.Weconstructalightweightencoderconsistingof R𝑜𝑣𝑒𝑟𝑎𝑙𝑙 =R𝐷𝑖𝑠𝑡𝑖𝑙𝑙(𝜃)+R𝑆𝐹𝑇(𝜃) (19)
+threestackedTransformerlayers.Withonlyabout2Mparameters,
+End-to-EndTuning.Followingpretraining,weembedthelight-
+itisextremelycompactcomparedtotheBERT-basemodel(110M).
+weightencoderintoourCTRmodel.Subsequently,theintegrated
+Thislightweightencoderisinitializedviasupervisedfine-tuning
+model undergoes end-to-end fine-tuning on user behavior data
+(SFT)[6]forrelevanceclassificationandembeddingdistillation
+forfinalalignment,withareducedlearningrateappliedtothe
+fromalargemodel,andthenjointlyfine-tuneitend-to-endwith
+encoderparameters.Theserefinementshavecollectivelyenhanced
+theCTRpredictiontask.Thefollowingwillintroduceitsdetails.
+themodel’sfoundationalencodingcapabilities.
+TextualRelevanceClassificationSFT.Inthisstage,wesam-
+ple<query,item>textpairswithdifferentrelevancescorelevels
+5 Experiments
+(𝑟𝑠𝑙)intheexposurespaceandusetheirrelevancelabelassuper-
+visorysignalstoconductthetextclassificationtask.Specifically, Inthissection,weconductcomprehensiveexperimentsonboththe
+suppose𝑇(𝒙;𝜃)representsthesemanticembeddingofthetextpair offlinedatasetandonlineA/Btestingtoevaluatetheeffectiveness
+generatebytheencoder𝑇 parameterizedby𝜃.Weuseanadditional andsuperiorityoftheproposedmethod.
+projectionnetwork𝑀toconvertitstotherelevancelabelspace,i.e,
+𝑀(𝑇(𝒙,𝜃))=[𝑃(𝑟𝑠𝑙 =1|𝒙),...,𝑃(𝑟𝑠𝑙 =4|𝒙)]⊤.Thenweuse𝑟𝑠𝑙 as 5.1 ExperimentsSetup
+thesupervisedlabel,andtheSFTriskisincross-entropy[7]form: Dataset:WecollectclicktrafficlogsfromAlibaba’ssecond-hand
+𝑛 onlinetradingplatformXianyutoconstructthetrainingdataset.
+1∑︁
+R𝑆𝐹𝑇(𝜃)=− 𝑛 𝑟𝑠𝑙∗log(𝑠𝑜𝑓𝑡𝑚𝑎𝑥(𝑀(𝑇(𝒙;𝜃)))), (17) Specifically,wetreatclickeditemsaspositivesamplesandunclicked
+𝑖=1 itemsasnegativesamples.Thedailytrainingdatavolumeisabout
+LLMEmbeddingDistillation.Weadoptknowledgedistillation 1.6billionandeachrecordcontains651features(e.g.,user,query,
+formodelcompression,whereQwen-7Bactsastheteachertotrans- anditemfeatures).Wetake9daysofdatafortheexperimentevalu-
+ferknowledgetoourlightweightstudentencoder.Thisprocess ation,inwhichdatafromthefirst7daysisusedformodeltraining,
+enablesourmodeltoacquiretheopen-worldknowledgeinherent andtheremainingdataof2daysareusedformodeltesting.
+inLLMsandproducehigher-qualitytextrepresentations.Forthe ComparedMethods:Todemonstratethesuperiorityofthe
+trainingquery-itemtextpairs,wefirstutilizeQwen-7B[1,29]to proposedmethod,weadoptthefollowingbaselineapproaches:
+PRECTR-V2 Conference’17,July2017,Washington,DC,USA
+• LR[13]:LogisticRegression(shortforLR)isawidelyused ImplementationDetails:Inalloftheexperiments,thebatch
+shallowmodelbeforethedeepmodelthatestimatestheCTR sizeissetto4096,thelearningrateissetto1e-4,andtheSGD
+bycombiningfeaturesinalinearcombinationform. optimizerisemployedformodelupdate.Thehistoryclicksequence
+• DNN:DNNisproposedbyYouTubeandhasbeenwidely iscollectedwiththelast30days,andthemaximumlengthis25.
+usedinindustryscenarios.ItfollowsclassicEmbedding& The𝑝1and𝑝2inEq(11)issetas0.2and0.6respectivelythrough
+MLParchitectureandutilizestheSumPoolingoperationto hyperparametertuning.The𝑡ℎ𝑟𝑒𝑠ℎ𝑜𝑙𝑑inEq(16)issetas0.08tobe
+integratehistoricalbehaviorembeddings. consistentwiththeaverageonlineclick-throughrateofthesearch
+• Wide&Deep[5]:consistsofbothwidelinearmodelsand samples.The𝑚𝑎𝑟𝑔𝑖𝑛inR𝑑𝑒𝑏𝑖𝑎𝑠 issetas0.075,whichisequaltothe
+deep neural networks to benefit from memorization and averagescoringdeviationbetweenpositiveandnegativesamples.
+generalizationmutually.Itisselectedasourbasemodel.
+• DeepFM[10]:Itcombinesfactorizationmachine(FM)and
+5.2 ExperimentalResults
+deep neural network to improve Wide&Deep, effectively
+capturingbothlowandhigh-orderfeatureinteractions. Inthissubsection,Weconcludetheexperimentalresultsfromthe
+• XDeepFM[18]:whichproposesanovelCompressedIn- followingfiveaspects:
+teraction Network (CIN) to generate feature interactions (1)Howistheofflineexperimentalresults?Theofflineex-
+explicitlyandcombineitwithDNNtopredictCTR. perimentalresults,summarizedinTable1,demonstratethatourpro-
+• DIN[35]:whichproposesanoveldeepinterestnetwork posedPRECTR-V2attainsthebestperformanceonbothAUCand
+andfirstutilizesthetargetattentionoperationtoassessthe GAUCmetrics,achievingscoresof0.7674and0.6933,respectively.
+relevanceofthecandidateitemtopreviouslyclickeditems ComparedwithourpreviousworkPRECTR,PRECTR-V2delivers
+fordiscoveringtheitemsthatusersareinterestedin. absoluteimprovementsof0.0093and0.0041inAUCandGAUC,sig-
+• SuKD[25]:whichutilizesthepre-trainedBERTmodelto nificantlyoutperformingallotherbaselinemethods.Theseresults
+encodetherawtextofqueryanditemandtakeitasasup- confirmtheeffectivenessandsuperiorityofourapproach.
+plementaryfeaturetoboostCTRprediction. (2)Howistheablationstudyresultsofeachcomponent?
+• PRECTR[4]whichfirstproposeaunifiedframeworkto PRECTR-V2conotainsthreecorecomponents:(1)Cold-StartPer-
+integrate the personlized search relevance matching and sonalizedRelevancePreferencesMiningModule,(2)RelevanceEx-
+CTRprediction. posureDebiasModule,and(3)LLM-DistilledCTR-AlignedLight-
+EvaluationMetric:Thedefinitionofthemainevaluationmetric weightEncoder.Anablationstudywasconductedbyindividually
+usedintheexperimentsispresentedasfollows: removingeachkeycomponenttoevaluateitscontributiontothe
+overallframework.Theresults,summarizedinTable2,showthat
+• AUC:Asthemostcommonlyusedevaluationmetricinthesearch
+theremovalofanycomponentinPRECTR-V2leadstoacleardegra-
+recommendationsystem,AreaUndertheCurve(AUC)reflects
+dationinoverallperformance.Specifically,Cold-StartRelevance
+thesortingabilityoftheCTRmodel.Specifically,givenapositive
+PreferenceMiningprovidesthemostsubstantialperformancegain;
+andanegativeitemchosenrandomly,AUCshowsthelikelihood
+withoutit,therelativeimprovements(RI)inAUCandGAUCdrop
+that the model would rate the positive item higher than the
+toonly1.08%and0.85%,respectively.Theothertwocomponents
+negativeone.Therefore,theAUCcanbeformulatedasfollows:
+alsocontributepositively,astheirremovalsimilarlyreducesmodel
+1 ∑︁∑︁
+AUC= 1(Θ(𝑝) >Θ(𝑛)), (20) performance.Thesefindingsvalidatetheeffectivenessofeachpro-
+|𝑃||𝑁|
+𝑝∈𝑃𝑛∈𝑁 posedenhancement.
+where 𝑃 and 𝑁 represent the positive and negative item set, (3) How is the online performance of PRECTR-V2? We
+respectively,ΘistherankingfunctiongivenbytheCTRmodel, deployedPRECTR-V2onlineinXianyu’ssearchsystemtoevaluate
+and1istheindicatorfunction. itsreal-worldeffectiveness.UsinganA/Btestingframework,users
+• GAUC:DifferentfromtheAUCthatmeasurestheglobalranking wererandomlyassignedtocontrolandexperimentalgroupsvia
+MD5hashingofdeviceIDstoensureunbiasedtrafficallocation.The
+abilityofthemodel,theGroupAreaUndertheCurve(GAUC)is
+experimentalgroup,receivingover20%oftotaltraffic,consistently
+designedtomeasurethegoodnessoforderbyrankingtowards
+outperformedthebaseline.Specifically,itachieveda1.39%liftin
+variousgroupsorusers.Inspecific,wefirstcalculateAUCfor
+per capita orders and a 3.18% increase in GMV, demonstrating
+differentusersandsubsequentlyaveragethemtogetthefinal
+clearbusinessimpact.Asaresult,PRECTR-V2hasnowbeenfully
+GAUC.ThedefinitionofGAUCisformulatedasfollows,where
+AUC𝑖 standsfortheAUCforthe𝑖-thuser,#impression𝑖 isits deployedacrossXianyu’ssearchsystem.
+correspondingweight,and𝑛denotesthetotalnumberofusers. (4)HowisthePCOC(PredictClickOverClick)metricof
+PRECTR-V2?Inperformingrelevanceexposuredebiasing,we
+GAUC= (cid:205)𝑛 𝑖=1 (cid:205)(# 𝑛 𝑖=im 1(p #r ie ms psi ro en s𝑖 si× onA 𝑖)UC𝑖) . (21) e am ndp 𝒙lo −y .a Hp oa wir ew veis re ,tl ho ess into troo dp uti cm tii oz net oh fe sure cl hat loiv se ser san ink ei vn ig tab be lt yw imee pn a𝒙 ct+
+s
+• RelaImpr:RelaImprisadoptedtomeasuretherelativeimprove- themodel’sabsolutepredictionaccuracy,specificallyitsPCOC(Pre-
+mentoverothermodels.RelaImpr>0meansthecurrentmodel dictClickOverClick).Tosolvethisproblem,wefurtherintroduce
+issuperioroverthebasemodel,andviceversa.Itcanbeformu- arelativeordercriticaldistancepenaltyandadynamictruncation
+latedasfollows: weightingstrategytostrikeabalance.Toevaluateitseffective-
+AUC(measuredmodel)−0.5 ness,wecomputetheaveragePCOCdeviation—i.e.,thedifference
+RelaImpr=( −1)∗100% (22)
+AUC(basemodel)−0.5 fromtheidealpredictionvalueof1.0—forbothPRECTR-V2and
+Conference’17,July2017,Washington,DC,USA ShuzhiCao,RongChen,AilongHe,ShuguangHan,&JufengChen
+Table1:Theofflinecomparisonresults,where"RI"isshortfor"RelaImpr".
+Method AUC RI GAUC RI
+LR[13] 0.6795 -29.10% 0.6347 -26.6%
+DNN 0.7541 0.35% 0.6863 1.47%
+Wide&Deep[5] 0.7532 0.00% 0.6836 0.00%
+DeepFM[10] 0.7519 -0.51% 0.6839 0.16%
+XDeepFM[18] 0.7521 -0.43% 0.6843 -0.29%
+DIN[35] 0.7561 1.15% 0.6875 2.21%
+SuKD[25] 0.7524 -0.31% 0.6851 0.81%
+PRECTR[4] 0.7581 1.93% 0.6892 3.05%
+PRECTR-V2 0.7674 5.61% 0.6933 5.28%
+Table2:TheablationstudyofdifferentPRECTR-V2variantsonproductiondatasets,where"w/o"isshortfor"without".
+Method AUC RI GAUC RI
+PRECTR 0.7581 0.00% 0.6892 0.00%
+w/oCold-StartRelevancePreferenceMining 0.7609 1.08% 0.6908 0.85%
+w/oRelevanceExposureDebias 0.7658 2.98% 0.6928 1.91%
+w/oLLM-DistilledandCTR-AlignedEncoder 0.7662 3.13% 0.6927 1.85%
+PRECTR-V2 0.7674 3.60% 0.6933 2.16%
+thebaselinemodel.Theresultsshowaveragedeviationsof1.7%
+forPRECTR-V2and2.3%forthebaseline.Althoughtheabsolute 0.9
+predictionaccuracyofPRECTR-V2showsaslightdecrease,the 0.8
+differencefromthebaselineremainsmarginal,indicatingthatac- 0.7
+ceptablepredictionaccuracyhasbeenlargelymaintained.
+0.6
+(5)HowdoesPRECTR-V2influencethesearchrelevance?
+0.5
+ComparedtoPRECTR,PRECTR-V2introducesrefinedsearchrele-
+vancemodeling.Toassessitsimpact,wemeasuredtherateofir- 0.4
+relevantproductsamongthetop-10resultsacrosssampledqueries 0.3
+throughmanualsearchrelevanceevaluation.Resultsshowthat
+0.2
+PRECTR-V2exhibitsa1.09%relativeincrease(0.15%absolute)in
+0.1
+irrelevant-itembadcaserate.Thisminorshiftstemsfromtheper-
+sonalizationaspectsofrelevanceestimationandhasanegligible
+0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9
+p1
+impactonoverallsearchrelevanceperformance.
+5.3 HyperparameterTuning
+Inthissubsection,weidentifytheoptimalvalueofhyperparameters
+𝑝1and𝑝2(𝑝1<𝑝2)inEq(11)throughtwo-dimensionalgridsearch.
+Tobespecific,weconductthesearchatintervalsof0.1,andtraverse
+thevaluesof𝑝1.Basedonthecombinationsofthevaluesof𝑝1
+and𝑝2,wecalculateitscorrespondingAUCvalues.Theresults
+areshowninFig.5.Whenthe𝑝1and𝑝2aresetas0.2and0.6,the
+overallmodelachievesthebestperformance.Therefore,weset
+𝑝1=0.2and𝑝2=0.6inalltheexperiments.
+6 Conclusion
+ThisworkpresentsPRECTR-V2,anenhancedunifiedframeworkfor
+jointlyoptimizingsearchrelevancematchingandCTRprediction.
+Theproposedapproachaddressesthreecriticallimitationsofitspre-
+decessor:ineffectivepersonalizationforlow-activityusersthrough
+2p
+0.7674
+0.7670
+0.7666
+0.7663
+0.7659
+0.7655
+Figure5:Theselectionofhyperparameters.
+cross-userrelevancepreferencemining,exposurebiascorrection
+viasynthetichardnegativesamplingandcalibratedpairwiserank-
+ing,andarchitecturalmisalignmentviaalightweight,trainable
+encoderdistilledfromLLMs.Extensiveexperimentsvalidatethe
+effectivenessandsuperiorityofPRECTR-V2,demonstratingsig-
+nificantimprovementsinbothrelevanceunderstandingandclick
+prediction,ultimatelyadvancingtherobustnessandpracticalityof
+unifiedsearchrankinginreal-worldapplications.
+References
+[1] JinzeBai,ShuaiBai,YunfeiChu,ZeyuCui,KaiDang,XiaodongDeng,YangFan,
+WenbinGe,YuHan,FeiHuang,etal.2023.Qwentechnicalreport.arXivpreprint
+arXiv:2309.16609(2023).
+PRECTR-V2 Conference’17,July2017,Washington,DC,USA
+[2] JianxinChang,ChenbinZhang,ZhiyiFu,XiaoxueZang,LinGuan,JingLu,Yiqun [20] AgadaJosephOche,AdemolaGloryFolashade,TirthankarGhosal,andArpan
+Hui,DeweiLeng,YananNiu,YangSong,etal.2023.TWIN:TWo-stageinterest Biswas.2025.Asystematicreviewofkeyretrieval-augmentedgeneration(rag)
+networkforlifelonguserbehaviormodelinginCTRpredictionatkuaishou.In systems:Progress,gaps,andfuturedirections.arXivpreprintarXiv:2507.18910
+Proceedingsofthe29thACMSIGKDDConferenceonKnowledgeDiscoveryand (2025).
+DataMining.3785–3794. [21] QiPi,GuoruiZhou,YujingZhang,ZheWang,LejianRen,YingFan,Xiaoqiang
+[3] BenChen,XianGuo,SiyuanWang,ZihanLiang,YueLv,YufeiMa,XinlongXiao, Zhu,andKunGai.2020. Search-baseduserinterestmodelingwithlifelong
+BowenXue,XuxinZhang,YingYang,etal.2025. Onesearch:Apreliminary sequentialbehaviordataforclick-throughrateprediction.InProceedingsofthe
+explorationoftheunifiedend-to-endgenerativeframeworkfore-commerce 29thACMInternationalConferenceonInformation&KnowledgeManagement.
+search.arXivpreprintarXiv:2509.03236(2025). 2685–2692.
+[4] RongChen,ShuzhiCao,AilongHe,ShuguangHan,andJufengChen.2025. [22] SteffenRendle.2010.Factorizationmachines.In2010IEEEInternationalconference
+PRECTR:ASynergisticFrameworkforIntegratingPersonalizedSearchRelevance ondatamining.IEEE,995–1000.
+MatchingandCTRPrediction.InCompanionProceedingsoftheACMonWeb [23] Shamane Siriwardhana, Rivindu Weerasekera, Elliott Wen, Tharindu Kalu-
+Conference2025.152–161. arachchi,RajibRana,andSurangaNanayakkara.2023.Improvingthedomain
+[5] Heng-TzeCheng,LeventKoc,JeremiahHarmsen,TalShaked,TusharChandra, adaptationofretrievalaugmentedgeneration(RAG)modelsforopendomain
+HrishiAradhye,GlenAnderson,GregCorrado,WeiChai,MustafaIspir,etal. questionanswering.TransactionsoftheAssociationforComputationalLinguistics
+2016.Wide&deeplearningforrecommendersystems.InProceedingsofthe1st 11(2023),1–17.
+workshopondeeplearningforrecommendersystems.7–10. [24] YijunTian,ShichaoPei,XiangliangZhang,ChuxuZhang,andNiteshVChawla.
+[6] TianzheChu,YuexiangZhai,JihanYang,ShengbangTong,SainingXie,Dale 2025.Knowledgedistillationongraphs:Asurvey.Comput.Surveys57,8(2025),
+Schuurmans,QuocVLe,SergeyLevine,andYiMa.2025. Sftmemorizes,rl 1–16.
+generalizes:Acomparativestudyoffoundationmodelpost-training. arXiv [25] DongWang,ShaoguangYan,YunqingXia,KavéSalamatian,WeiweiDeng,and
+preprintarXiv:2501.17161(2025). QiZhang.2022. LearningSupplementaryNLPFeaturesforCTRPrediction
+[7] RichardConnor,AlanDearle,BenClaydon,andLuciaVadicamo.2024.Correla- inSponsoredSearch.InProceedingsofthe28thACMSIGKDDConferenceon
+tionsofcross-entropylossinmachinelearning.Entropy26,6(2024),491. KnowledgeDiscoveryandDataMining.4010–4020.
+[8] JeromeHFriedman.2001.Greedyfunctionapproximation:agradientboosting [26] YinweiWei,XiangWang,QiLi,LiqiangNie,YanLi,XuanpingLi,andTat-Seng
+machine.Annalsofstatistics(2001),1189–1232. Chua.2021.Contrastivelearningforcold-startrecommendation.InProceedings
+[9] JianpingGou,BaoshengYu,StephenJMaybank,andDachengTao.2021.Knowl- ofthe29thACMinternationalconferenceonmultimedia.5382–5390.
+edgedistillation:Asurvey.Internationaljournalofcomputervision129,6(2021), [27] ZhihengXi,WenxiangChen,XinGuo,WeiHe,YiwenDing,BoyangHong,Ming
+1789–1819. Zhang,JunzheWang,SenjieJin,EnyuZhou,etal.2025.Theriseandpotentialof
+[10] HuifengGuo,RuimingTang,YunmingYe,ZhenguoLi,andXiuqiangHe.2017. largelanguagemodelbasedagents:Asurvey.ScienceChinaInformationSciences
+DeepFM:afactorization-machinebasedneuralnetworkforCTRprediction.arXiv 68,2(2025),121101.
+preprintarXiv:1703.04247(2017). [28] BenchengYan,ShileiLiu,ZhiyuanZeng,ZihaoWang,YizhenZhang,YujinYuan,
+[11] TaichengGuo,XiuyingChen,YaqiWang,RuidiChang,ShichaoPei,NiteshV LangmingLiu,JiaqiLiu,DiWang,WenboSu,etal.2025.UnlockingScalingLaw
+Chawla,OlafWiest,andXiangliangZhang.2024.Largelanguagemodelbased inIndustrialRecommendationSystemswithaThree-stepParadigmbasedLarge
+multi-agents:Asurveyofprogressandchallenges.arXivpreprintarXiv:2402.01680 UserModel.arXivpreprintarXiv:2502.08309(2025).
+(2024). [29] AnYang,BowenYu,ChengyuanLi,DayihengLiu,FeiHuang,HaoyanHuang,
+[12] ShailjaGupta,RajeshRanjan,andSuryaNarayanSingh.2024.Acomprehensive JiandongJiang,JianhongTu,JianweiZhang,JingrenZhou,etal.2025.Qwen2.
+surveyofretrieval-augmentedgeneration(rag):Evolution,currentlandscape 5-1mtechnicalreport.arXivpreprintarXiv:2501.15383(2025).
+andfuturedirections.arXivpreprintarXiv:2410.12837(2024). [30] TingYao,YehaoLi,YingweiPan,ZhaofanQiu,andTaoMei.2025.Denoising
+[13] DavidWHosmerJr,StanleyLemeshow,andRodneyXSturdivant.2013.Applied tokenpredictioninmaskedautoregressivemodels.InProceedingsoftheIEEE/CVF
+logisticregression.JohnWiley&Sons. internationalconferenceoncomputervision.18024–18033.
+[14] ShengxiangHu,GuobingZou,SongYang,ShiyiLin,YanglanGan,BofengZhang, [31] QihangYu,JuHe,XueqingDeng,XiaohuiShen,andLiang-ChiehChen.2025.
+andYixinChen.2025. Largelanguagemodelmeetsgraphneuralnetworkin Randomizedautoregressivevisualgeneration.InProceedingsoftheIEEE/CVF
+knowledgedistillation.InProceedingsoftheAAAIConferenceonArtificialIntelli- InternationalConferenceonComputerVision.18431–18441.
+gence,Vol.39.17295–17304. [32] WeizhiZhang,YuanchenBei,LiangweiYang,HenryPengZou,PeilinZhou,Aiwei
+[15] YanhuaHuang,YuqiChen,XiongCao,RuiYang,MingliangQi,YinghaoZhu, Liu,YinghuiLi,HaoChen,JianlingWang,YuWang,etal.2025.Cold-startrec-
+QingchangHan,YaoweiLiu,ZhaoyuLiu,XuefengYao,etal.2025. Towards ommendationtowardstheeraoflargelanguagemodels(llms):Acomprehensive
+Large-scaleGenerativeRanking.arXivpreprintarXiv:2505.04180(2025). surveyandroadmap.arXivpreprintarXiv:2501.01945(2025).
+[16] MikhailVKoroteev.2021.BERT:areviewofapplicationsinnaturallanguage [33] GuoruiZhou,JiaxinDeng,JinghaoZhang,KuoCai,LejianRen,QiangLuo,Qian-
+processingandunderstanding.arXivpreprintarXiv:2103.11943(2021). qianWang,QigenHu,RuiHuang,ShiyaoWang,etal.2025.OneRecTechnical
+[17] MichaelPLaValley.2008.Logisticregression.Circulation117,18(2008),2395– Report.arXivpreprintarXiv:2506.13695(2025).
+2399. [34] GuoruiZhou,NaMou,YingFan,QiPi,WeijieBian,ChangZhou,Xiaoqiang
+[18] JianxunLian,XiaohuanZhou,FuzhengZhang,ZhongxiaChen,XingXie,and Zhu,andKunGai.2019.Deepinterestevolutionnetworkforclick-throughrate
+GuangzhongSun.2018. xdeepfm:Combiningexplicitandimplicitfeaturein- prediction.InProceedingsoftheAAAIconferenceonartificialintelligence,Vol.33.
+teractionsforrecommendersystems.InProceedingsofthe24thACMSIGKDD 5941–5948.
+internationalconferenceonknowledgediscovery&datamining.1754–1763. [35] GuoruiZhou,XiaoqiangZhu,ChenruSong,YingFan,HanZhu,XiaoMa,Yanghui
+[19] HumzaNaveed,AsadUllahKhan,ShiQiu,MuhammadSaqib,SaeedAnwar, Yan,JunqiJin,HanLi,andKunGai.2018.Deepinterestnetworkforclick-through
+MuhammadUsman,NaveedAkhtar,NickBarnes,andAjmalMian.2025.Acom- rateprediction.InProceedingsofthe24thACMSIGKDDinternationalconference
+prehensiveoverviewoflargelanguagemodels.ACMTransactionsonIntelligent onknowledgediscovery&datamining.1059–1068.
+SystemsandTechnology16,5(2025),1–72.

@@ -1,0 +1,353 @@
+Pre-Training BERT on Domain Resources for Short Answer Grading
+ChulSung∗ TejasIndulalDhamecha SwarnadeepSaha†
+IBMWatsonEducation,USA IBMResearch,India UNCChapelHill,USA
+daniel.c.sung@gmail.com tidhamecha@in.ibm.com swarna@cs.unc.edu
+TengfeiMa VinayReddy RishiArora
+IBMResearchAI,USA IBMWatsonEducation,USA IBMGBS,India
+tengfei.ma1@ibm.com vinay.kasireddy@ibm.com arishi@in.ibm.com
+Abstract
+Pre-training BERT Updating the BERT Fine-tuning the BERT
+Domain-Textbooks Labeled Task Data
+or Question-Answers
+Pre-trained BERT contextualized representa- Textbooks or QAs
+tions have achieved state-of-the-art results on
+multipledownstreamNLPtasksbyfine-tuning
+withtask-specificdata. Whiletherehasbeena
+Figure 1: In this work, we propose to update the pre-
+lotoffocusontask-specificfine-tuning, there
+trainedBERTlanguagemodelbyutilizingthetextbook
+has been limited work on improving the pre-
+orquestion-answerdatatoimproveshortanswergrad-
+trained representations. In this paper, we ex-
+ing.
+plore ways of improving the pre-trained con-
+textual representations for the task of auto-
+For a variety of natural language processing
+matic short answer grading, a critical compo-
+(NLP) tasks, state-of-the-art results have been re-
+nentofintelligenttutoringsystems. Weshow
+ported with pre-trained deep language models,
+that the pre-trained BERT model can be im-
+proved by augmenting data from the domain- suchasBERT(Devlinetal.,2018),GPT(Radford
+specific resources like textbooks. We also et al., 2018), and ULMFit (Howard and Ruder,
+present a new approach to use labeled short 2018). In these approaches, pre-trained language
+answering grading data for further enhance- modelsareutilizedfordown-streamNLPtasksby
+ment of the language model. Empirical eval-
+meansoftask-specificfine-tuning.
+uation on multi-domain datasets shows that
+A typical DBT, and therefore a short answer
+task-specificfine-tuningontheenhancedpre-
+grading system, is often used across various sub-
+trainedlanguagemodelachievessuperiorper-
+formanceforshortanswergrading. jects or domains (e.g., Science, Sociology, and
+Psychology). Apre-trainedlanguagemodel, such
+1 Introduction
+as that of BERT, is typically trained on generic
+English language corpus. Thus, there may be a
+Intelligent tutoring system (ITS) is one of the
+scope for updating and improving the pre-trained
+tools to facilitate personalized learning. Auto-
+language model on available textual resources for
+matic short answer grading (ASAG) is an impor-
+the domains of short answer grading. Textbooks
+tant component of a dialog-based tutoring (DBT)
+usedtocreatequestionsandreferenceanswersare
+system; especially, to enable Socratic tutoring.
+mostly available in digital form. Moreover, the
+Automatic grading is the task of evaluating the
+labeled data for short answer grading have ques-
+correctnessofastudentanswerforaspecificques-
+tionandreferenceanswerpairsavailablebutcon-
+tionbycomparingittoareferenceanswer. Inshort
+textual information between the pairs and even
+answer grading, the reference answers are typi-
+just questions are easily ignored. Thus, in this
+cally one or two sentences long and close ended.
+research, we aim to explore and evaluate vari-
+A broad range of approaches from simple bag-
+ous methods of updating the pre-trained BERT
+of-wordstotransferlearninganddeepneuralnet-
+language model (LM)∗ on such domain-specific
+workshavebeenexploredtoaddresstheshortan-
+swer grading problem (Mueller and Thyagarajan, ∗We prefer the phrase to update LM to imply further
+2016;Sahaetal.,2018;Marvaniyaetal.,2018). trainingormodifyingthepre-trainedLM.Insomeliterature,
+thetermLMfine-tuningisalsousedtorefertotheupdateof
+∗Correspondingauthor. pre-trained language model. However, we reserve the term
+†Theworkwasdonewhentheauthorwasanemployee fine-tuning for task-specific classifier training in sync with
+atIBMResearch,India. BERTterminology.
+availableresourcesinthecontextofASAGtoan- 2018) improves on all previous pre-training tech-
+swerthefollowingresearchquestions. niques by training a deep language model that
+jointlyconditionsonboththeleftandrightcontext
+RQ1 Is updating pre-trained BERT LM helpful simultaneouslythroughallthelayers. BERT’sef-
+in improving short answer grading perfor- fectiveness has been widespread and Sung et al.
+mance? (Sung et al., 2019) have shown that fine-tuning
+BERT for ASAG also outperforms all existing
+RQ2 What is the effect of unsupervised domain
+techniques.
+corpora (i.e. domain textbooks) in updating
+While BERT has been fine-tuned to achieve
+LMforshortanswergrading?
+state-of-the-artresultsonalargenumberoftasks,
+RQ3 Howgeneralizablearethepre-trainedandthe the idea of further pre-training of the language
+updatedBERTmodelstounseendomains,in modeltoincorporatemoredomainknowledgehas
+case,wheretextbooksarenotavailable? been explored less. BioBERT (Lee et al., 2019)
+forbiomedicaltasksandSciBERT(Beltagyetal.,
+RQ4 How can labeled Question-Answer data be
+2019) for science domains have shown the effec-
+exploited to update LM for short answer
+tiveness of language model pre-training for tasks
+grading,inadditiontofine-tuning?
+in specific domains. Motivated by these prior
+works,weproposetwopre-trainingtechniquesfor
+Our evaluations are performed on four subjects
+BERT in the context of short answer grading that
+(Physiology, American Government, and two on
+improveoverthegenericBERT.
+Psychology). Inadditiontotheempiricalanalysis,
+we also propose a novel approach to effectively
+3 Method
+utilizethequestion-answerdataaspartofthepre-
+trainedmodelupdate. Bidirectional Encoder Representations from
+Transformers (BERT) (Devlin et al., 2018) is a
+2 RelatedWork deep bidirectional pre-trained language model
+that is fine-tuned for downstream NLP tasks. As
+Theproblemofshortanswergradinghasattracted
+illustrated in Figure 1, we describe the usage of
+significant attention of the researchers over the
+BERT in two parts: firstly the proposed enhance-
+years. Various approaches, starting from tradi-
+ments in the pre-training step and secondly, the
+tional hand-crafted features (Mohler et al., 2011;
+fine-tuningstepforshortanswergrading.
+Sultan et al., 2016) to more recent deep learning
+models (Riordan et al., 2017; Kumar et al., 2017) 3.1 Pre-TrainingBERT
+and their combination (Saha et al., 2018) have
+We start with the pre-trained BERT language
+been explored. However, similar to most down-
+model, trained using the English Wikipedia and
+stream NLP tasks, ASAG also suffers from the
+BooksCorpusandproposetwomethodstofurther
+overhead of task-specific architectures and thus
+improveit.
+scalability across different subjects has proven to
+behard. 3.1.1 UsageofTextbooks
+In a step towards alleviating this overhead, the Ourfirstapproachreliesontheusageoftextbooks
+NLP community has recently proposed multiple from specific domains of short answer grading.
+generic pre-trained language models which can Specifically, we collect textbooks corresponding
+be transferred seamlessly and fine-tuned for any to the domains and chunk them into paragraphs
+endtask. UniversalLanguageModelFine-Tuning and feed each paragraph as a document for pre-
+(ULMFiT) (Howard and Ruder, 2018) method is training. Since our task at hand is short answer
+one of the first such initiatives to illustrate the ef- grading, we assume that the answers to questions
+fectiveness of language model fine-tuning. Em- do not overlap between paragraphs and thus we
+beddings from Language Models, commonly re- treateachparagraphasanindependentdocument.
+ferredtoasELMo(Petersetal.,2018)alsolearns To validate our assumption, we randomly sam-
+deep contextualized word representations using pled 60 question-answer pairs from Physiology
+theinternalstatesofadeepbidirectionallanguage domain,andmanuallyexaminedthesewhetherthe
+model. Finally, Bidirectional Encoder Represen- answer is contained in the same paragraph of the
+tations from Transformers (BERT) (Devlin et al., question. We observe that for about 90% of these
+samples, that is indeed the case. Further details Train Test
+Textbook
+Correct Incorrect Partial Correct Incorrect Partial
+onthetextbooksandtheirpre-processingstepsfor
+Phy 9,676 1,197 2,524 4,784 593 1,321
+data preparation is provided in the experiments Gov 9,405 3,483 2,433 4,784 1,699 1,177
+Psy-I 8,151 736 1,700 4,144 354 795
+section. Psy-II 8,324 755 2,588 4,146 370 1,317
+Table1:Class-wisestudentanswerdistributionintrain
+3.1.2 UsageofQuestion-AnswerPairs
+andtestsetsforthefourdomainsusedinexperiments.
+Our second approach leverages the labeled (ques-
+tion,referenceanswer,studentanswer)datatriples
+Corpus #ofwords Domain
+asunsuperviseddataforpre-trainingthelanguage
+EnglishWiki 2.5B General
+model. We consider the triples with correct la-
+BooksCorpus 0.8B General
+bels only and create pairs of the following form
+Textbooks 1.1M Phy+Gov
+foreachofthecorrectstudentanswers.
+0.6M Phy+Gov
+QAs
+1.3M Phy+Gov+Psy-I,II
+Question-ReferenceAnswerpair
+Whatdoesthetelencephaloncontain? Table2: Sizeanddomainofpre-trainingtextcorpora.
+Thetelencephaloncontainsmostofthecerebralcortex.
+4.1 Dataset
+Question-CorrectAnswerpair
+Whatdoesthetelencephaloncontain? We show results on a proprietary large-scale
+Itcontainsthecerebralcortex,limbicsystem,andbasal industry dataset consisting of three domains -
+ganglia.
+(1) Physiology of Behavior (Phy), (2) American
+Each of these pairs is fed as documents to the Government (Gov), and (3) Psychology – Hu-
+BERT architecture. Since one of the training ob- manDevelopment(Psy-I)andAbnormalPsychol-
+jectives for BERT is next sentence prediction, the ogy (Psy-II). Given a question, reference answer
+answer in a (question, answer) pair provides an and student answer, we address a 3-way classi-
+immediate context to the question. Incorrect and fication task into correct, incorrect and
+partially correct student answers, apart from be- partially correct classes. Table 1 shows
+ing factually incomplete, are often grammatically thetrain-testsplitsforeachofthedomains.
+incorrect and thus may harm the language model WeobtainthreetextbooksforeachofthePhysi-
+learning. Hence, we ignore those triples for pre- ologyandAmericanGovernmentdomains. These
+training. include our own textbooks and additional ones
+downloaded from Lumen Learning† and Guten-
+3.2 Fine-tuningforASAG berg‡ websites. We do not use any textbooks
+TheBERTfine-tuningstepusinglabeledshortan- for the Psychology domain, to show the effect of
+swer grading data proceeds similar to any sen- BERT pre-training on out-of-domain data. We
+tence pair classification task. The (reference an- combine the data from all the textbooks for fur-
+swer, student answer) pair is converted to a sin- therpre-trainingofBERT.Table2summarizesthe
+gle sequence of tokensby using a separator token sizes of the textbook corpora (1.1M words) and
+[SEP]betweenthepairandaclassificationtoken question-answercorpora(1.3Mwords)usedinour
+[CLS] at the beginning. The input pair’s repre- experiments. Note that, the original BERT model
+sentation, as obtained from the embedding of the islearnedwithabout3.3Bwordscorpora.
+[CLS]token,isthenfedintoadenselayer,which
+4.2 ImplementationDetails
+along with the language model is updated during
+fine-tuning. We leverage the TensorFlow implementation of
+BERT-Base§ for all our experiments. It is further
+4 Experiments
+pre-trainedfor240K,150K,and240Kepochsfor
+The experiments section is organized as follows. BERT+Textbook Phy+Gov, BERT+QA Phy+Gov, and
+We start by providing a brief description of the BERT+QA Phy+Gov+Psy-I,II respectively using the
+dataset,followedbyadiscussionabouttheimple- same hyperparameters until the accuracy of the
+mentation details. In the concluding two subsec- two pre-training objectives converges to 100%.
+tions, we analyze the effect of the two proposed
+†https://lumenlearning.com/
+pre-trainingmethodologiesforshortanswergrad- ‡https://www.gutenberg.org/
+ing. §https://github.com/google-research/bert
+BERT (+Textbook) (+QA) (+Textbook+QA) to update the LM. As explained earlier, for each
+Phy 81.35 82.28 83.95 83.64 reference answer and correct answer, question-
+Gov 74.55 76.25 75.43 77.28 answer pairs are created and utilized as docu-
+Psy-I 78.69 78.05 77.71 77.89 ments.
+Psy-II 80.06 79.10 79.46 80.74
+In Table 3, a combined QA dataset from Psy
+Table 3: Effect of domain data. Textbook and and Gov subjects is used for running additional
+Question-AnswerdatafromonlyPhyandGovdomains
+steps of LM pre-training. This again simulates
+areusedinthepre-trainedmodelupdate;makingPsy-I
+the unseen domain scenario for Psy-I and Psy-II
+andPsy-IIunseendomains.
+in pre-training update. It can be observed that the
+Note that the corpus size for Phy+Gov is smaller, proposedapproachutilizingQAdata(BERT+QA)
+leading to faster convergence. Once the pre- improvestheperformanceconsistentlyinboththe
+training is done, we fine-tune the model with the seen subjects of Phy and Gov. Akin to textbook
+shortanswergradinglabeleddatafor3epochsus- data experiments, the performance is degrading
+ingalearningrateof3e-5. Allresultsarereported for unseen domains as the model becomes more
+intermsofmacro-averagedF1. specialized. Interestinglyenough,theupdatedLM
+on both strategies (BERT+Textbook+QA) also
+4.3 EffectofDomainsTextbookData positivelyimpactsonin-domainperformance.
+In this set of experiments, we aim to understand Additionally, another set of results is obtained
+the effect of updating the pre-trained BERT LM by utilizing the QA dataset of all four domains;
+ontextbookdata. Wetakethetextbooksfromonly simulating an all seen-domain scenario. Table 4
+two domains (Physiology and American Govern- reportsthecorrespondingresultsshowingthatthe
+ment), for designing a scenario where textbooks QA data helps improve the model for all the do-
+are not available. Such a scenario helps us un- mains,consistently.
+derstand the generalizability of BERT (for which
+BERT BERT+QA
+allthedomainsareunseen),andBERT+Textbook
+Phy 81.35 83.36
+data (for which Psy-I and Psy-II are unseen do-
+Gov 74.55 76.25
+mains). We combine the data from both the do- Psy-I 78.69 78.73
+mains and pre-train a single BERT model as pre- Psy-II 80.06 81.41
+trainingper-domainmodelsiscomputationallyex- Table 4: Effect of Question-Answer data in seen-
+pensiveandalmostimpossibletoscale. domainsscenario. Allfourdomainsareincludedinthe
+Table 3 shows the results. The pre-trained Question-Answerdata.
+BERT model, as is, performs fairly well (74-
+These observations suggest that the proposed
+81% M-F1). The LM updated with textbook data
+approach re-purposes the Next Sentence
+(BERT+Textbook), improves performance on the
+Prediction task to effectively encode the la-
+domains included in additional pre-training (Phy
+tent features of ASAG. Further, RQ1 can be an-
+and Gov). However, we suspect that the updated
+swered affirmatively; and RQ4 can be answered
+modelbecomesmorespecializedtowardsseendo-
+as it is advisable to use the QA corpora for LM
+mains,whichleadstoperformancedegradationon
+modelupdateinadditiontofine-tuning.
+theunseendomainofPsychology.
+5 Conclusion
+• RQ1 and RQ2 can be answered as LM update
+using domain textbook data positively affects
+Inthispaper,weproposedtwowaystoupdatethe
+the short answer grading performance on the
+pre-trainedBERTlanguagemodelfortheshortan-
+correspondingdomains.
+swer grading task. We illustrate utilization of un-
+structured textbook data and labeled question an-
+• RQ3canbeansweredastheupdatedBERTLM
+swer data for the model update. We show that
+modeldoesnotappeartogeneralizewellonun-
+by adding a step of updating BERT using these
+seendomains,astheevidencesuggeststhatLM
+domain-related resources, we can achieve better
+becomesmoredomain-specific.
+resultsthandirectlyfine-tuningpre-trainedBERT
+4.4 EffectofQuestion-AnswerData
+ontheendtask. Wealsoobservedthattheupdated
+In this set of experiments, we aim to understand modelbecomesmorespecializedtowardsthecor-
+effectiveness of the Question-Answer (QA) data responding domains, adversely affecting the per-
+formanceonunseendomains. Zettlemoyer. 2018. Deep contextualized word rep-
+We limited the scope of this paper to the task resentations. InProc.ofNAACL.
+ofautomaticshortanswergradingonly. However,
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+our findings of the sensitivity of domain-specific Ilya Sutskever. 2018. Improving language under-
+BERT models appear generic. We believe that standingbygenerativepre-training.
+any multi-domain text classification task should
+BrianRiordan,AndreaHorbach,AoifeCahill,Torsten
+exhibit similar behavior. We also note that our
+Zesch, and Chong Min Lee. 2017. Investigating
+strategies for improving the BERT model should neural architectures for short answer scoring. In
+be directly applicable to other QA tasks as well. Proceedings of the 12th Workshop on Innovative
+Use of NLP for Building Educational Applications,
+Futuredirectionsincludetryingourmethodondif-
+pages159–168.
+ferenttasksanddifferentrelevantdata.
+SwarnadeepSaha,TejasIDhamecha,SmitMarvaniya,
+Renuka Sindhgatta, and Bikram Sengupta. 2018.
+References Sentencelevelortokenlevelfeaturesforautomatic
+short answer grading?: Use both. In International
+IzBeltagy,ArmanCohan,andKyleLo.2019. Scibert: Conference on Artificial Intelligence in Education,
+Pretrained contextualized embeddings for scientific pages503–517.Springer.
+text. arXivpreprintarXiv:1903.10676.
+MdArafatSultan,CristobalSalazar,andTamaraSum-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and ner.2016. Fastandeasyshortanswergradingwith
+KristinaToutanova.2018. Bert:Pre-trainingofdeep high accuracy. In Proceedings of the 2016 Confer-
+bidirectional transformers for language understand- ence of the North American Chapter of the Associ-
+ing. arXivpreprintarXiv:1810.04805. ation for Computational Linguistics: Human Lan-
+guageTechnologies,pages1070–1075.
+JeremyHowardandSebastianRuder.2018. Universal
+language model fine-tuning for text classification. Chul Sung, Tejas Indulal Dhamecha, and Nirmal
+arXivpreprintarXiv:1801.06146. Mukhi. 2019. Improving short answer grading us-
+ing transformer-based pre-training. In Artificial In-
+SachinKumar,SoumenChakrabarti,andShouryaRoy.
+telligence in Education, volume 2, pages 469–481.
+2017. Earth moverâA˘Z´s distance pooling over SpringerInternationalPublishing.
+siamese lstms for automatic short answer grading.
+InProceedingsoftheInternationalJointConference
+onArtificialIntelligence,pages2046–2052.
+Jinhyuk Lee, Wonjin Yoon, Sungdong Kim,
+Donghyeon Kim, Sunkyu Kim, Chan Ho So, and
+Jaewoo Kang. 2019. Biobert: pre-trained biomed-
+ical language representation model for biomedical
+textmining. arXivpreprintarXiv:1901.08746.
+SmitMarvaniya,SwarnadeepSaha,TejasIDhamecha,
+Peter Foltz, Renuka Sindhgatta, and Bikram Sen-
+gupta. 2018. Creating scoring rubric from repre-
+sentativestudentanswersforimprovedshortanswer
+grading. In Proceedings of the 27th ACM Interna-
+tional Conference on Information and Knowledge
+Management,pages993–1002.ACM.
+Michael Mohler, Razvan Bunescu, and Rada Mihal-
+cea.2011. Learningtogradeshortanswerquestions
+usingsemanticsimilaritymeasuresanddependency
+graph alignments. In Proceedings of the 49th An-
+nual Meeting of the Association for Computational
+Linguistics:HumanLanguageTechnologies-Volume
+1, pages 752–762. Association for Computational
+Linguistics.
+JonasMuellerandAdityaThyagarajan.2016. Siamese
+recurrentarchitecturesforlearningsentencesimilar-
+ity. InAAAI,volume16,pages2786–2792.
+MatthewE.Peters,MarkNeumann,MohitIyyer,Matt
+Gardner, Christopher Clark, Kenton Lee, and Luke

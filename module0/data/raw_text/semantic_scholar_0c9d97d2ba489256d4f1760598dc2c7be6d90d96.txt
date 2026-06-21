@@ -1,0 +1,917 @@
+EarlyBERT: Efficient BERT Training via Early-bird Lottery Tickets
+XiaohanChen1∗ YuCheng2 ShuohangWang2 ZheGan2
+ZhangyangWang1 JingjingLiu2
+1UniversityofTexasatAustin,2MicrosoftCorporation
+{xiaohan.chen, atlaswang}@utexas.edu
+{yu.cheng, shuowa, zhe.gan, jingjl}@microsoft.com
+Abstract withlargerself-attentionblocks,modelcomplexity
+increasesrapidly. Forexample,comparedtoBERT-
+Heavily overparameterized language mod-
+Largemodelwith340millionparameters,T5has
+els such as BERT, XLNet and T5 have
+more than 10 billion to learn. Such high model
+achieved impressive success in many NLP
+complexity calls for expensive computational re-
+tasks. However, their high model complex-
+sourcesandextremelylongtrainingtime.
+ity requires enormous computation resources
+andextremelylongtrainingtimeforbothpre- Model compression is one approach to allevi-
+training and fine-tuning. Many works have ating this issue. Recently, many methods have
+studiedmodelcompressiononlargeNLPmod- beenproposedtoencodelargeNLPmodelscom-
+els, but only focusing on reducing inference pactly (Sanh et al., 2019; Jiao et al., 2019; Sun
+time while still requiring an expensive train-
+etal.,2019,2020b). However,thefocusissolely
+ingprocess. Otherworksuseextremelylarge
+onreducinginferencetimeorresourcecosts,leav-
+batchsizestoshortenthepre-trainingtime,at
+ing the process of searching for the right com-
+the expense of higher computational resource
+demands. Inthispaper,inspiredbytheEarly- pact model ever more costly. Furthermore, most
+Bird Lottery Tickets recently studied for com- modelcompressionmethodsstartwithalargepre-
+puter vision tasks, we propose EarlyBERT, a trainedmodel,whichmaynotbeavailableinprac-
+general computationally-efficient training al- tice. Recent work (You et al., 2020b) proposes
+gorithm applicable to both pre-training and
+to use large training batches, which significantly
+fine-tuning of large-scale language models.
+shortens pre-training time of BERT-Large model
+By slimming the self-attention and fully-
+butdemandsdauntingcomputingresources(1,024
+connectedsub-layersinsideatransformer,we
+TPUv3chips).
+arethefirsttoidentifystructuredwinningtick-
+etsintheearlystageofBERTtraining. Weap- Incontrast,ourquestistofindageneralresource-
+plythoseticketstowardsefficientBERTtrain- efficienttrainingalgorithmforlargeNLPmodels,
+ing, and conduct comprehensive pre-training whichcanbeappliedtobothpre-trainingandfine-
+and fine-tuning experiments on GLUE and
+tuning stages. Our goal is to trim down the train-
+SQuAD downstream tasks. Our results show
+ingtimeandavoidmorecostsofthetotaltraining
+that EarlyBERT achieves comparable perfor-
+resources (e.g., taking large-batch or distributed
+mance to standard BERT, with 35∼45% less
+training). Tomeetthischallengedemand,wedraw
+training time. Code is available at https:
+//github.com/VITA-Group/EarlyBERT. inspirations from recent work (You et al., 2020a)
+that explores the use of Lottery Ticket Hypothe-
+1 Introduction sis(LTH)forefficienttrainingofcomputervision
+models. LTH was first proposed in Frankle and
+Large-scale pre-trained language models (e.g.,
+Carbin(2019)asanexplorationtounderstandthe
+BERT (Devlin et al., 2018), XLNet (Yang et al.,
+training process of deep networks. The original
+2019),T5(Raffeletal.,2019))havesignificantly
+LTHsubstantiatesatrainablesparsesub-network
+advancedthestateoftheartintheNLPfield. De-
+atinitialization,butitcannotbedirectlyutilizedfor
+spiteimpressiveempiricalsuccess,theircomputa-
+efficient training, since the subnetwork itself has
+tionalinefficiencyhasbecomeanacutedrawback
+tobesearchedthroughatediousiterativeprocess.
+inpractice. Asmoretransformerlayersarestacked
+In addition, most LTH works discussed only un-
+∗WorkwasdonewhentheauthorinternedatMicrosoft. structuredsparsity. ThestudyofYouetal.(2020a)
+presentsdiscoveriesthatstructuredlotterytickets self-attention heads and slices of MLP layers by
+can emerge in early stage of training (i.e., Early- applying(cid:96) regularizationtothecoefficientcorre-
+0
+BirdTicket),andthereforeastructurallysparsesub- spondingtoeachhead/MLPlayer. Othersaimto
+networkcanbeidentifiedwithmuchlowercosts, reducethetrainingtimeoftransformer-basedmod-
+leadingtopracticalefficienttrainingalgorithms. els via large-batch training and GPU model par-
+InspiredbythesuccessofLTHandEarly-Bird allelism (You et al., 2020b; Shoeybi et al., 2019).
+Ticket,weproposeEarlyBERT,ageneralefficient Ourworkisorthogonaltotheseworks,andcanbe
+trainingalgorithmbasedonstructuredEarly-Bird readilycombinedforfurtherefficiencyboost.
+Tickets. Duetothevastdifferencesbetweenthear-
+Lottery Ticket Hypothesis in Computer Vision
+chitecturesandbuildingblocksofcomputervision
+Lottery Ticket Hypothesis (LTH) was firstly pro-
+modelsandBERT,directlyextendingthemethod
+posed in Frankle and Carbin (2019), which shed
+ofYouetal.(2020a)doesnotapplytoourwork. By
+lightontheexistenceofsparsesub-networks(i.e.,
+insteadusingnetworkslimming(Liuetal.,2017)
+winning tickets) at initialization with non-trivial
+ontheself-attentionandfully-connectedsub-layers
+sparsity ratio that can achieve almost the same
+inside a transformer, we are the first to introduce
+performance (compared to the full model) when
+aneffectiveapproachthatcanidentifystructured
+trained alone. The winning tickets are identified
+winningticketsintheearlystageofBERTtraining,
+by pruning fully trained networks using the so-
+thataresuccessfullyappliedforefficientlanguage
+called Iterative Magnitude-based Pruning (IMP).
+modelingpre-trainingandfine-tuning. Extensive
+However,IMPisexpensiveduetoitsiterativena-
+experimentsonBERTdemonstratethatEarlyBERT
+ture. Moreover,IMPleadstounstructuredsparsity,
+cansave35∼45%trainingtimewithminimalper-
+whichisknowntobeinsufficientinreducingtrain-
+formancedegradation,whenevaluatedonGLUE
+ingcostoracceleratingtrainingspeedpractically.
+andSQuADbenchmarks.
+ThesebarrierspreventLTHfrombecomingimme-
+diatelyhelpfultowardsefficienttraining.
+2 RelatedWork
+Morcos et al. (2019) studies the transferabil-
+ity of winning tickets between datasets and opti-
+Efficient NLP Models It is well believed that
+mizers. Zhou et al. (2019) investigates different
+BERT and other large NLP models are consid-
+componentsinLTHandobservestheexistenceof
+erably overparameterized (McCarley, 2019; Sun
+super-masksinwinningtickets. Lately,Youetal.
+etal.,2019). Thisexplainstheemergenceofmany
+(2020a) pioneers to identify Early-Bird Tickets,
+modelcompressionworks,whichcanberoughly
+whichemergeattheearlystageofthetrainingpro-
+categorized into quantization (Shen et al., 2020;
+cess,andcontainstructuredsparsitywhenpruned
+Zafrir et al., 2019), knowledge distillation (Sun
+with Network Slimming (Liu et al., 2017) which
+et al., 2019; Jiao et al., 2019; Sanh et al., 2019;
+adopts channel pruning. Early-bird tickets miti-
+Sun et al., 2020a,b), dynamic routing (Fan et al.,
+gate the two limitations of IMP aforementioned,
+2019;Xinetal.,2020),andpruning(Lietal.,2020;
+andrendersitpossibletotrainingdeepmodelseffi-
+Wangetal.,2019;McCarley,2019;Micheletal.,
+ciently,bydrawingticketsearlyinthetrainingand
+2019). Almost all model compression methods
+thenfocusingontrainingthiscompactsubnetwork
+focusonreducinginferencetime,whiletheircom-
+only. Chenetal.(2021)revealsthebenefitofLTH
+mondrawbackistherelianceonfully-trainedand
+indata-efficienttraining,buttheirfocusisnoton
+heavily-engineereddensemodels,beforeproceed-
+savingtrainingresources.
+ing to their compact, sparse versions - which es-
+sentiallytransplantstheresourceburdenfromthe Lottery Ticket Hypothesis in NLP All above
+inferencetothetrainingstage. worksevaluatetheirmethodsoncomputervision
+Pruning is the mainstream approach for com- models. ForNLPmodels,previousworkhasalso
+pressing BERT so far (Gordon et al., 2020). Mc- found that matching subnetworks exist in trans-
+Carley(2019)proposedtogreedilyanditeratively formersandLSTMs(Yuetal.,2019;Rendaetal.,
+prune away attention heads contributing less to 2020). Evcietal.(2020)derivedanalgorithmfor
+the model. Wang et al. (2019) proposed to struc- trainingsparseneuralnetworksaccordingtoLTH
+turallypruneBERTmodelsusinglow-rankfactor- and applied it to character-level language model-
+ization and augmented Lagrangian (cid:96) norm regu- ing on WikiText-103. For BERT models, a lat-
+0
+larization. McCarley(2019)prunedlessimportant est work (Chen et al., 2020b) found that the pre-
+trainedBERTmodelscontainsparsesubnetworks, masanall-onemask;(2)fullytrainf(x;θ (cid:12)m)
+0
+foundbyunstructuredIMPat40%to90%sparsity, toobtainawell-trainedθ;(3)removeasmallpor-
+that are independently trainable and transferable tionofweightswiththesmallestmagnitudesfrom
+to a range of downstream tasks with no perfor- θ (cid:12) m and update m; (4) repeat (2)-(3) until a
+mance degradation. Their follow-up work (Chen certainsparsityratioisachieved.
+etal.,2020a;Ganetal.,2021)pointedoutsimilar TwoobstaclespreventLTHfrombeingdirectly
+phenomenonsinpre-trainedcomputervisionand appliedtoefficienttraining. First,theiterativepro-
+vision-languagemodels. Anotherwork(Prasanna cessinIMPisessentialtopreservetheperformance
+etal.,2020)aimstofindstructurallysparselottery of LTH; however, this is computationally expen-
+ticketsforBERT,bypruningentireattentionheads sive, especially when the number of iterations is
+andMLPlayers. Theirexperimentsturnoutthatall high. Second, the original LTH does not pursue
+subnetworks(“good”and“bad”)have“compara- any structured sparsity in the winning tickets. In
+bleperformance”whenfined-tunedondownstream practice,unstructuredsparsityisdifficulttobeuti-
+tasks,leadingtotheir“allticketsarewinning”con- lizedforcomputationaccelerationevenwhenthe
+clusion. sparsityratioishigh(Wenetal.,2016).
+Nevertheless, bothrelevantworks(Chenetal., To mitigate these gaps, Early-Bird Tickets are
+2020b; Prasanna et al., 2020) examine only the proposedbyYouetal.(2020a),whodiscoversthat
+pre-trainedBERTmodel,i.e.,findingticketswith whenusingstructuredmaskmandaproperlyse-
+regardtothefine-tuningstageondownstreamtasks. lectedlearningrate,themaskmquicklyconverges
+Toourbestknowledge,noexistingstudyanalyzes and the corresponding mask emerges as the win-
+theLTHatthepre-trainingstageofBERT;norhas ningticketintheearlystageoftraining. Theearly
+anyworkdiscussedefficientBERTtrainingusing emergence of winning tickets and the structured
+LTH, for either pre-training or fine-tuning. Our sparsityarebothhelpfulinreducingcomputational
+workmakesthefirstattemptofintroducingLTHto costinthetrainingthatfollows. Youetal.(2020a)
+bothefficientpre-trainingandefficientfine-tuning focuses on computer vision tasks with convolu-
+ofBERT.Ourresultsalsoprovidepositiveevidence tionalnetworkssuchasVGG(SimonyanandZis-
+that LTH and Early-Bird Tickets in NLP models serman, 2014) and ResNet (He et al., 2016). In-
+areamendabletostructuredpruning. spiredbythis,wesetouttoexplorewhetherthere
+are structured winning tickets in the early stage
+3 TheEarlyBERTFramework ofBERTtrainingthatcansignificantlyaccelerate
+languagemodelpre-trainingandfine-tuning.
+In this section, we first revisit the original Lot-
+teryTicketHypothesis(LTH)(FrankleandCarbin, 3.2 DiscoveringEarlyBERT
+2019)anditsvariantEarly-BirdTicket(Youetal.,
+TheproposedEarlyBERT1trainingframeworkcon-
+2020a),thendescribeourproposedEarlyBERT.
+sists of three steps: (i) Searching Stage: jointly
+trainBERTandthesparsity-inducingcoefficients
+3.1 RevisitingLotteryTicketHypothesis
+tobeusedtodrawthewinningticket;(ii)Ticket-
+Denote f(x;θ) as a deep network parameterized
+drawingStage: drawthewinningticketusingthe
+byθ andxasitsinput. Asub-networkoff canbe
+learned coefficients; and (iii) Efficient-training
+characterized by a binary mask m, which has ex-
+Stage: trainEarlyBERTforpre-trainingordown-
+actlythesamedimensionasθ. Whenapplyingthe
+streamfine-tuning.
+maskmtothenetwork,weobtainthesub-network
+Searching Stage To search for the key sub-
+f(x;θ (cid:12) m), where (cid:12) is the Hadamard product
+structure in BERT, we follow the main idea of
+operator. LTHstatesthat,foranetworkinitialized
+NetworkSlimming(NS)(Liuetal.,2017). How-
+with θ , an algorithm called Iterative Magnitude
+0
+ever,pruninginNSisbasedonthescalingfactorγ
+Pruning (IMP) can identify a mask m such that
+inbatchnormalization,whichisnotusedinmost
+the sub-network f(x;θ (cid:12) m) can be trained to
+0
+NLP models such as BERT. Therefore, we make
+havenoworseperformancethanthefullmodelf
+followingthesametrainingprotocol. Suchasub- 1EarlyBERT refers to the winning ticket discovered by
+networkf(x;θ (cid:12)m),includingboththemaskm theproposed3-stageframework,whichisequivalenttothe
+0
+resultingprunedBERTmodelafterdrawingthewinningticket.
+andinitialparametersθ ,iscalledawinningticket.
+0 WealsointerchangeablyuseEarlyBERTasthenameofthe
+TheIMPalgorithmworksasfollows: (1)initialize proposedframework.
+necessarymodificationstotheoriginalNSsothat ticketemerges,whichismuchshorterthanthefull
+itcanbeadaptedtopruningBERT.Specifically,we trainingprocessofpre-trainingorfine-tuning. In
+proposetoassociate attentionheadsandinterme- otherwords,wecanidentifythewinningticketsat
+diatelayersofthefully-connectedsub-layersina averylowcostcomparedtothefulltraining. Then,
+transformerwithlearnablecoefficients,whichwill wedrawtheticket(i.e.,theEarlyBERT),resetthe
+bejointlytrainedwithBERTbutwithanadditional parametersandtrainEarlyBERTthatiscomputa-
+(cid:96) regularizationtopromotesparsity. tionally efficient thanks to its structured sparsity.
+1
+Some studies (Michel et al., 2019; Voita et al., Next,weintroducehowwedrawEarlyBERTfrom
+2019)findthatthemulti-headself-attentionmodule thelearnedcoefficients.
+of transformer can be redundant, presenting the
+Ticket-drawingStage AftertrainingBERTand
+possibilityofpruningsomeheadsfromeachlayer
+coefficients c jointly, we draw EarlyBERT using
+ofBERTwithouthurtingmodelcapacity. Amulti-
+the learned coefficients with a magnitude-based
+head attention module (Vaswani et al., 2017) is
+metric. Note that we prune attention heads and
+formulatedas:
+intermediate neurons separately, as they play dif-
+ferentroles.
+MultiHead(Q,K,V) = Concat(h ,...,h )WO
+1 n
+Weprunetheattentionheadswhosecoefficients
+h = Attention(QWQ,KWK,VWV), (1)
+i i i i have the smallest magnitudes, and remove these
+headsfromthecomputationgraph. Wealsoprune
+wherenisthenumberofheads,andtheprojections
+therowsinWO (seeEqn. (1))thatcorrespondto
+WO,WQ,WK,WV
+are used for output, query,
+i i i the removed heads. Note that this presents a de-
+keyandvalue. InspiredbyLiuetal.(2017),wein-
+sign choice: should we prune the heads globally
+troduceasetofscalarcoefficientsch (iistheindex
+i or layer-wisely? In this paper, we use layer-wise
+ofattentionheadsandhmeans“head”)insideh :
+i pruningforattentionheads,becausethenumberof
+h = ch·Attention(QWQ,KWK,VWV). (2) headsineachlayerisverysmall(12forBERT BASE
+i i i i i and16forBERT ). Weobserveempirically
+LARGE
+Aftertheself-attentionsub-layerineachtrans- thatifprunedglobally,theattentionheadsinsome
+formerlayer,theoutputMultiHead(Q,K,V)will layers may be completely removed, making the
+befedintoatwo-layerfully-connectednetwork,in networkun-trainable. Furthermore,Ramsaueretal.
+whichthefirstlayerincreasesthedimensionofthe (2020) observes that attention heads in different
+embeddingby4timesandthenreducesitbackto layersexhibitdifferentbehaviors. Thisalsomoti-
+thehiddensize(768forBERT and1,024for vates us to only compare importance of attention
+BASE
+BERT ). Wemultiplylearnablecoefficients headswithineachlayer.
+LARGE
+totheintermediateneurons: Similar to pruning attention heads, we prune
+intermediate neurons in the fully-connected sub-
+FFN(x) = cf ·max(0,xW 1+b 1)W 2+b 2. (3) layers. Pruningneuronsisequivalenttoreducing
+the size of intermediate layers, which leads to a
+ThesemodificationsallowustojointlytrainBERT
+reducedsizeoftheweightmatricesW andW in
+1 2
+withthecoefficients,usingthefollowingloss:
+Eqn. (3). Betweenglobalandlayer-wisepruning,
+empiricalanalysisshowsthatglobalpruningworks
+L(f(·;θ),c) = L (f(·;θ),c)+λ(cid:107)c(cid:107) , (4)
+0 1 better. We also observe that our algorithm natu-
+rallyprunesmoreneuronsforthelaterlayersthan
+whereL istheoriginallossfunctionusedinpre-
+0
+earlier ones, which coincides with many pruning
+trainingorfine-tuning,cistheconcatenationofall
+worksonvisiontasks. Weleavetheanalysisofthis
+the coefficients in the model including those for
+phenomenonasfuturework.
+attentionheadsandintermediateneurons,andλis
+the hyper-parameter that controls the strength of Efficient-training Stage We then train Early-
+regularization. BERTthatwehavedrawnforpre-trainingorfine-
+Notethatinthisstep,thejointtrainingofBERT tuning depending on the target task. If we apply
+andthecoefficientsarestillasexpensiveasnormal EarlyBERTtopre-training,theinitializationθ of
+0
+BERTtraining. However,thewinningstrategyof BERT will be a random initialization, the same
+EarlyBERT is that we only need to perform this setting as the original LTH (Frankle and Carbin,
+joint training for a few steps, before the winning 2019) and Early-Bird Tickets (You et al., 2020a).
+(a) Self-attentioninPre-training (b) FCinPre-training
+(c) Self-attentioninFine-tuning (d) FCinFine-tuning
+Figure 1: Illustration of mask difference in Hamming distance. Top: mask distance observed in pre-training.
+Bottom: mask distance observed in fine-tuning. The color represents the normalized mask distance between
+different training steps. The darker the color, the smaller the mask distance. In both cases, the mask converges
+quickly,whichindicatestheearlyemergenceofthetickets.
+IfweapplyEarlyBERTtofine-tuning,thenθ 0 can Methods MNLI QNLI QQP SST-2
+beanypre-trainedmodel. Wecanalsomoderately
+BERT 83.16 90.59 90.34 91.70
+BASE
+reducethetrainingstepsinthisstagewithoutsacri-
+EarlyBERT 83.58 90.33 90.41 92.09
+BASE
+ficingperformance,whichisempiricallysupported Random 82.26 88.87 0.12 91.17
+bythefindingsinFrankleandCarbin(2019);You
+Methods CoLA RTE MRPC
+etal.(2020a)thatthewinningticketscanbetrained
+BERT 0.535 65.70 80.96
+more effectively than the full model. In practice, BASE
+EarlyBERT 0.527 66.19 81.54
+BASE
+thelearningratecanalsobeincreasedtospeedup
+Random 0.514 63.86 78.57
+training,inadditiontoreducingtrainingsteps.
+DifferentfromunstructuredpruningusedinLTH Table 1: Comparison between randomly-pruned mod-
+elsandEarlyBERTonGLUEtasks. Differentfromex-
+andmanyothercompressionworks(Frankleand
+perimentsinSec.4,herewepruneonly4headsineach
+Carbin,2019;Chenetal.,2020b),structurallyprun-
+layerandnointermediateneurons.
+ing attention heads and intermediate neurons in
+fully-connectedlayerscandirectlyreducethenum-
+tuning,themaskconvergesinaveryearlystageof
+ber of computations required in the transformer
+thewholetrainingprocess. Althoughweobserve
+layer,andshrinkthematrixsizeofthecorrespond-
+anincreaseofmaskdistanceinfully-connectedlay-
+ingoperations,yieldingadirectreductionincom-
+ersduringpre-training(inFigure1(b)),thiscanbe
+putationandmemorycosts.
+easilyeliminatedbyearlystoppingandusingmask
+distanceastheexitcriterion. Anablationstudyon
+3.3 ValidationofEarlyBERT
+howearlystoppinginfluencestheperformanceof
+Early Emergence Following a similar manner
+EarlyBERTispresentedinSec.4.2.
+inYouetal.(2020a),wevisualizethenormalized
+maskdistancebetweendifferenttrainingsteps,to Non-trivial Sub-network Here, by non-trivial
+validate the early emergence of winning tickets. we mean that with the same sparsity ratio as in
+In Figure 1, the axes in the plots are the number EarlyBERT,randomlyprunedmodelsuffersfrom
+of training steps finished. We only use one fully- significant performance drop. The performance
+connectedsub-layertoplotFigure1(b),1(d)dueto drophappensevenifweonlypruneattentionheads.
+highdimensionality. Inbothpre-trainingandfine- Weverifythisbyrunningfine-tuningexperiments
+Methods MNLI QNLI QQP SST-2 SQuAD TimeSaved2
+BERT 83.16 90.59 90.34 91.70 87.50 -
+BASE
+EarlyBERT 81.81 89.18 90.06 90.71 86.13 40∼45%
+BASE
+Random 79.92 84.46 89.42 89.68 84.47 45∼50%
+BASE
+LayerDrop(Fanetal.,2019) 81.27 88.91 88.06 89.89 84.25 ∼33%
+BERT 86.59 92.29 91.59 92.21 90.76 -
+LARGE
+EarlyBERT 85.13 89.22 90.64 90.94 89.45 35∼40%
+LARGE
+Random 78.45 84.46 89.89 88.65 88.79 40∼45%
+LARGE
+LayerDrop(Fanetal.,2019) 85.12 91.12 88.88 89.97 89.44 ∼33%
+Table2: PerformanceofEarlyBERT(fine-tuning)comparedwithdifferentbaselines. Wefollowtheofficialimple-
+mentation of LayerDrop method (Fan et al., 2019). The protocol that we follow for measuring the training time
+savingsisdescribedinSec.4.1. Weonlyevaluatemodelsonlargedownstreamtaskssinceourgoalisimproving
+trainingefficiency.
+onBERT . Specifically,weprune4headsfrom 2016). Notethatasourgoalisefficientpre-training
+BASE
+each transformer layer in BERT and Early- andfine-tuning,wefocusonlargerdatasetsfrom
+BASE
+BERT.Wefine-tuneBERT for3epochswith GLUE (MNLI, QNLI, QQP and SST-2), as it is
+BASE
+aninitiallearningrate2×10−5. Werunthesearch- lessmeaningfultodiscussefficienttrainingonvery
+ingstagefor0.2epochswithλ = 1×10−4,draw smalldatasets. Weusethedefaulttrainingsettings
+EarlyBERTwithpruningratioρ = 1/3,andthen for pre-training and fine-tuning on both models.
+fine-tune EarlyBERT for 2 epochs with doubled Toevaluatemodelperformance,weuseMatthew’s
+initiallearningrate. Fortherandomlyprunedmod- correlationscoreforCoLA,matchedaccuracyfor
+els,werandomlyprune4headsineachlayerand MNLI,F1-scoreforSQuADv1.1,andaccuracyin
+followthesamefine-tuningprotocolasEarlyBERT. percentage for other tasks on GLUE. We omit %
+Thereportedresultsofrandomlyprunedmodelsare symbolsinallthetablesonaccuracyresults.
+theaverageof5trialswithdifferentseedsforprun-
+Implementation Details For the vanilla BERT,
+ing. TheresultsonfourtasksfromGLUEbench-
+wefine-tuneonGLUEdatasetsfor3epochswith
+mark(Wangetal.,2018)presentedinTable1show
+initiallearningrate2×10−5,andfor2epochson
+that randomly pruned model consistently under-
+SQuADwithinitiallearningrate3×10−5;weuse
+performs EarlyBERT with a significant gap, sup-
+AdamW(LoshchilovandHutter,2017)optimizer
+portingourclaimthatEarlyBERTindeedidentifies
+forbothcases. Forpre-training,weadoptLAMB
+non-trivialsub-structures.
+optimizationtechnique(Youetal.,2020b),which
+involvestwophasesoftraining: thefirst9/10ofthe
+4 Experiments
+totaltrainingstepsusesasequencelengthof128,
+4.1 ExperimentalSetting whilethelast1/10usesasequencelengthof512.
+Pre-trainingbydefaulthas8,601trainingstepsand
+BackboneModels FollowingtheofficialBERT
+uses 64k/32k batch sizes and 6×10−3/4×10−3
+implementation (Devlin et al., 2018; Wolf et al.,
+initial learning rates for the two phases, respec-
+2019),weusebothBERT (12transformerlay-
+BASE
+tively. All experiments are run on 16 NVIDIA
+ers, hiddensize 768, 3,072 intermediate neurons,
+V100GPUs.
+12self-attentionheadsperlayer,110Mparameters
+in total) and BERT (24 transformer layers,
+LARGE Training Time Measuring Protocol We strictly
+hiddensize1,024,4,096intermediateneurons,16
+measurethetrainingtimesavingofEarlyBERTon
+self-attentionheadsperlayer,340Mparametersin
+the QQP task in GLUE using CUDA benchmark
+total)forexperiments.
+mode. Togetridoftheinfluenceofthehardware
+Datasets We use English Wikipedia (2,500M environmentatourbest,weindividuallymeasure
+words) as the pre-training data. For fine-tuning thetimeelapsedduringeachstepandcalculatethe
+experiments and evaluation of models in the pre- averagetimeperstepoverthewholetrainingpro-
+training experiments, we use tasks from GLUE cess. ThetimefordataI/Oisexcluded. Thetrain-
+benchmark (Wang et al., 2018) and a question- ingtimeofEarlyBERTincludesboththesearching
+answeringdatasetSQuADv1.1(Rajpurkaretal., stageandtheefficienttrainingstage.
+    
+    
+    
+    
+  H     H     H     H  
+ / H D U Q L Q J  5 D W H
+     \ F D U X F F $
+   ( S R F K λ 10−4 10−3 10−2
+   ( S R F K
+88.55 88.43 88.42
+#PrunedHeads 4 5 6
+Layer-wisepruning 88.55 88.13 87.65
+#PrunedNeurons 30% 40% 50%
+Layer-wisepruning 88.18 88.22 87.90
+Globalpruning 88.31 88.23 87.91
+Figure 2: Effect of reducing training epochs and up-
+scalinglearningrateforEarlyBERTinfine-tuning.The Table 3: Ablation of regularization strength λ and
+combinationof2-epochfine-tuningand4×10−5turns
+pruningratiosonself-attentionheadsandintermediate
+outtobetheoptimalchoice. neurons. All numbers are the average of three runs
+with different random seeds on four tasks on GLUE
+4.2 ExperimentsonFine-tuning
+(MNLI/QNLI/QQP/SST-2).
+ThemainresultsofEarlyBERTinfine-tuningare
+stageinEarlyBERT ,butitinducesmuchmore
+BASE
+presented in Table 2. According to the observa-
+accuracy drop. EarlyBERT can also outper-
+BASE
+tionoftheearlyemergenceofticketsinSec.3.3,
+formanotherstrongbaselineLayerDrop(Fanetal.,
+werunthesearchingstagefor0.2epochs(which
+2019),whichdropsonethirdofthelayerssothat
+accounts for less than 7% of the cost of a stan-
+the number of remaining parameters are compa-
+dard3-epochfine-tuning)withλ = 1×10−4 for
+rable to ours. Note that LayerDrop models are
+alltasks. WhendrawingEarlyBERT,weprune4
+fine-tunedforthreefullepochs,yetEarlyBERTis
+heads in each layer from BERT and 6 heads
+BASE stillcompetitiveinmostcases. Second,weconsis-
+fromBERT , and globallyprune40%inter-
+LARGE tentlyobserveobviousperformanceadvantageof
+mediateneuronsinfully-connectedsub-layersin
+EarlyBERToverrandomlyprunedmodels,which
+both models, instead of pruning only heads as in
+providesanotherstrongevidencethatEarlyBERT
+Table 1. After this, we re-train the EarlyBERT
+doesdiscovernontrivialkeysparsestructures. Even
+models for reduced training epochs (from 3 to 2)
+though there still exists a margin between Early-
+onGLUEbenchmarkandthelearningratescaled
+BERT and the baseline (You et al. (2020a) also
+upby2timestobuffertheeffectofreducedepochs.
+observed similar phenomenon in their tasks), the
+ForSQuADdataset,wekeepthedefaultsetting,as
+existenceofstructuredwinningticketsanditspo-
+wefindSQuADismoresensitivetothenumberof
+tentialforefficienttrainingishighlypromising. We
+trainingsteps. Theselectionofthesehyperparam-
+leaveasfutureworktodiscoverwinningticketsof
+etersarebasedontheablationstudiesthatfollow
+highersparsitybutbetterquality.
+the main results in Table 2, in which we investi-
+Ablation Studies on Fine-tuning We perform
+gatetheeffectsofthenumberoftrainingepochs,
+extensive ablation studies to investigate impor-
+learning rate during downstream fine-tuning, the
+tanthyper-parametersettingsinEarlyBERT,using
+regularizationstrengthλ,andthepruningratioson
+EarlyBERT asourtestingbed. Forallexperi-
+BASE
+self-attentionheadsandintermediateneurons.
+ments, weusetheaverageaccuracyonthelarger
+Several observations can be drawn from Ta-
+datasets from GLUE benchmark (MNLI, QNLI,
+ble2. First,inmosttasks,EarlyBERTsavesover
+QQPandSST-2)astheevaluationmetric.
+40%ofthetotaltrainingtimewith4self-attention
+heads pruned in each layer and 40% FC neurons • Numberoftrainingepochsandlearningrate.
+pruned globally, without inducing much perfor- We first investigate whether we can properly
+mance degradation. Specifically, following the reduce the number of training epochs, and if
+training time measurement protocol in Sec. 4.1, scaling the learning rate can help compliment
+we observe that EarlyBERT saves 42.97% of the the negative effect caused by reducing training
+totaltrainingtimeofafullBERTmodelonQQP steps. Results in Figure 2 show that when we
+task. The time saving slightly differs over vari- fine-tuneEarlyBERTforfewerepochsonGLUE,
+oustasks,hencewereportarangeofsavingtime. up-scalinglearningratefirsthelpstorecoverper-
+Here, Random saves slightly more training formance, and then causes decrease again. We
+BASE
+timebecauserandompruningskipsthesearching willusetwoepochsand4×10−5aslearningrate
+Methods CoLA MNLI MRPC QNLI QQP RTE SST-2 SQuAD
+BERT 0.45 81.40 84.07 89.86 89.80 60.29 90.48 87.60
+BASE
+EarlyBERT 0.41 79.97 80.39 89.86 89.44 61.01 90.94 85.48
+BASE
+BERT 0.50 83.56 85.90 90.44 90.45 59.93 92.55 90.43
+LARGE
+EarlyBERT 0.47 82.54 85.54 90.46 90.38 61.73 91.51 89.36
+LARGE
+Table 4: Performance of EarlyBERT (pre-training) compared with BERT baselines. Different from fine-tuning
+experiments,weevaluatepre-trainedmodelsonalldownstreamtasksinGLUEandSQuADsincefine-tuningcost
+isnegligiblecomparedtothedominantpre-trainingcost.
+forEarlyBERTonGLUEexperiments.
+• Regularizationstrengthλ. Aproperselection
+  
+oftheregularizationstrengthλdecidesthequal-
+ity of the winning ticket, consequently the per-   
+formanceofEarlyBERTafterpre-training/fine-
+  
+tuning. Results in Table 3 show that λ has
+marginalinfluenceonEarlyBERTperformance.
+                      
+We use λ = 10−4 that achieves the best perfor-  6 H D U F K  6 W R S  7 L P H  L Q  W K H  ) L U V W  ( S R F K
+manceinfollowingexperiments.
+• Pruningratiosρ. Wefurtherinvestigatetheef-
+fectsofdifferentpruningratiosaswellaslayer-
+wise/globalpruningontheperformanceofEarly-
+BERT.AsdiscussedinSec.3.2,weonlyconsider
+layer-wisepruningforself-attentionheads. Ta-
+ble3showsthattheperformancemonotonically
+decreases when we prune more self-attention
+heads from BERT; however, we see a slight in-
+crease and then a sharp decrease in accuracy,
+whenthepruningratioisraisedforintermediate
+neuronsinfully-connectedsub-layers(40%prun-
+ing ratio seems to be the sweet spot). We also
+observeconsistentsuperiorityofglobalpruning
+overlayer-wisepruningforintermediateneurons.
+• Early-stopstrategyforsearching. InFigure1,
+weshowtheearlyemergenceofwinningtickets
+inBERTwhentrainedwith(cid:96) regularization,sug- 1
+gestingwestopthesearchingstageearlytosave
+computationwhilestillgeneratinghigh-quality
+tickets. Here,westudyhowtheearly-stopstrat-
+egyinfluencesthemodelperformance. Wefine-
+tune EarlyBERT on QNLI following the same
+settingdescribedearlierinthissection,butstop
+thesearchingstageatdifferenttimepointsduring
+thefirstepochforsearching. ResultsinFigure3
+show(i)anabruptincreaseinaccuracywhenwe
+stopat20%ofthefirstepoch;(ii)slightincrease
+when we delay the stop till the end of the first
+epoch. Consideringtrainingefficiency,wethink
+20∼40%makessuitablestoppingtime.
+     \ F D U X F F $
+Figure3:Howvarioustimepointsofearlystoppingfor
+searchinginfluencesEarlyBERTperformance.
+TimeSaving
+3Heads 4Heads 5Heads 6Heads
+PruneRatio
+-35.78% -38.66% -41.26% -45.34% FC-30%
+89.62% 89.55% 89.60% 89.50%
+-39.72% -42.97% -43.93% -44.49%
+FC-40%
+89.66% 89.61% 89.58% 89.38%
+-43.89% -45.54% -47.02% -48.53%
+FC-50%
+89.54% 89.35% 89.34% 89.31%
+Table5: Trainingtimesavingsvs. accuraciesofEarly-
+BERTontheQQPtaskinGLUEwithdifferentpruning
+ratiosforself-attentionheadsandFCneurons.
+Trade-offBetweenEfficiencyandPerformance
+We vary the pruning ratios for the FC layers and
+thenumberofself-attentionheadsprunedineach
+layerinEarlyBERT,fine-tunethemodelsonQQP
+inGLUE,andobtainthecorrespondingvalidation
+accuraciesandtrainingtimesavingsfollowingthe
+protocolabove. ResultsareshowninTable5. We
+canseeclearcorrelationsbetweenthetrainingtime
+savingandtheaccuracy—themoreFCneuronsor
+self-attentionheadspruned,themoretrainingtime
+savingyetthelargeraccuracydrop. Moreover,for
+mostcombinationsofthesetwohyper-parameters,
+theaccuracydropiswithin1%,whichalsosupports
+theefficiencyofEarlyBERT.
+4.3 ExperimentsonPre-training
+We also conduct pre-training experiments and
+present the main results in Table 4. We run the
+    
+    
+    
+    
+    
+    
+    
+                
+ 7 U D L Q  V W H S V
+     \ F D U X F F $
+Reducing Training Steps in Pre-training We
+investigate whether EarlyBERT, when non-
+ 0 1 / , essential heads and/or intermediate neurons are
+ 0 5 3 &
+pruned,cantrainmoreefficiently,andwhetherwe  4 1 / ,
+can reduce the number of training steps in pre-
+training. Thiscanfurtherhelpreducetrainingcost
+inadditiontotheefficiencygainfrompruning. We
+useEarlyBERT -Self(onlyself-attentionheads
+BASE
+areprunedwhendrawingthewinningticket)asthe
+Figure 4: Effect of reducing training steps in pre- testing bed. Figure 4 shows the performance de-
+trainingonEarlyBERT . creasesmorewhenwereducethenumberoftrain-
+BASE
+ingstepsto60%orless. Reducingitto80%seems
+tobeasweetpointwiththebestbalancebetween
+search stage for 400 steps of training in the first performanceandefficiency.
+trainingphasethatusesasequencelengthof128
+4.4 ComparisonwithPreviousLottery
+whichonlyaccountsforlessthan3%ofastandard
+pre-training, withλ = 1×10−4. Whenwedraw TicketsWorkinNLP
+EarlyBERT, similar to the settings in fine-tuning On one hand, two relevant works (Chen et al.,
+experiments,weprune4headsineachlayerfrom 2020b;Prasannaetal.,2020)onlyinvestigatelot-
+BERT and 6 heads from BERT ; how- tery tickets on pre-trained NLP models for fine-
+BASE LARGE
+ever,wepruneslightlyfewer(30%)intermediate tuningonthedownstreamtasks,whileEarlyBERT
+neuronsinfully-connectedsub-layersinbothmod- makesthefirstattemptofintroducinglotterytick-
+els,sinceweempiricallyobservethatpre-training etstobothfine-tuningandpre-trainingstages,and
+ismoresensitivetoaggressiveintermediateneuron providesempiricalevidencethatNLPmodelsare
+pruning. Inbothphasesofpre-training,wereduce amendabletostructuredpruning.
+thetrainingstepsto80%ofthedefaultsettingwhen On the other hand, EarlyBERT pursues struc-
+training EarlyBERT (based on the ablation study turedsparsitywhileChenetal.(2020b)promotes
+shown in Figure 4). Other hyper-parameters for unstructuredsparsity,whichishardwareunfriendly
+pre-trainingfollowthedefaultsettingdescribedin and provides almost no acceleration, besides the
+Sec.4.1. Allmodelsarefine-tunedandevaluated highcostofIMP.Asanimplicitcomparison,Chen
+onGLUEandSQuADv1.1withthedefaultsetting. et al. (2020b) induces 0.4% accuracy drop on
+SQuAD v1 dataset compared to the BERT base-
+Differentfromfine-tuningexperiments,thepre-
+line with 40% unstructured sparsity (comparable
+trainingstagedominatesthetrainingtimeoverthe
+withoursettingsinSection4.2),whileEarlyBERT
+downstreamfine-tuning,andthusweonlyconsider
+induces 1.37% accuracy drop. Note that Chen
+thetrainingtimesavingduringpre-training. Since
+etal.(2020b)uses6xtrainingtimes(becauseIMP
+therandomlyprunedmodelsdonothavecompet-
+reaches40%sparsitywith6iterations)and4.69x
+itive performance in fine-tuning experiments as
+FLOPs, but EarlyBERT uses only 0.76x training
+showninSec.4.2,wefocusoncomparingEarly-
+timesandFLOPsincontrast.
+BERTwiththefullBERTbaseline.
+5 Conclusion
+FromtheresultspresentedinTable4,wecansee
+thatondownstreamtaskswithlargerdatasetssuch Inthispaper,wepresentEarlyBERT,anefficient
+asQNLI,QQPandSST-2,wecanachieveaccura- framework for large-scale language model pre-
+ciesthatareclosetoBERTbaseline(within1%ac- trainingandfine-tuning. BasedonLotteryTicket
+curacygapsexceptforEarlyBERT onMNLI Hypothesis,EarlyBERTidentifiesstructuredwin-
+BASE
+andSQuAD).However,ondownstreamtaskswith ningticketsinanearlystage,thenusesthepruned
+smallerdatasets,thepatternsarenotconsistent: we networkforefficienttraining. Experimentalresults
+observe big drops on CoLA and MRPC but im- demonstrate that the proposed method is able to
+provementonRTE.Overall,EarlyBERTachieves achievecomparableperformancetostandardBERT
+comparable performance while saving 30∼35% withmuchlesstrainingtime. Futureworkincludes
+trainingtimethankstoitsstructuredsparsityand exploringmoredata-efficientstrategiestoenhance
+reductionintrainingsteps. thecurrenttrainingpipeline.
+References Ilya Loshchilov and Frank Hutter. 2017. Decou-
+pled weight decay regularization. arXiv preprint
+TianlongChen,YuCheng,ZheGan,JingjingLiu,and
+arXiv:1711.05101.
+Zhangyang Wang. 2021. Ultra-data-efficient gan
+training: Drawingalotteryticketfirst,thentraining J Scott McCarley. 2019. Pruning a bert-based
+ittoughly. arXivpreprintarXiv:2103.00397. question answering model. arXiv preprint
+arXiv:1910.06360.
+Tianlong Chen, Jonathan Frankle, Shiyu Chang,
+Sijia Liu, Yang Zhang, Michael Carbin, and Paul Michel, Omer Levy, and Graham Neubig. 2019.
+Zhangyang Wang. 2020a. The lottery tickets hy- Are sixteen heads really better than one? In
+pothesis for supervised and self-supervised pre- NeurIPS.
+training in computer vision models. arXiv preprint
+arXiv:2012.06908. AriMorcos, HaonanYu, MichelaPaganini, andYuan-
+dong Tian. 2019. One ticket to win them all: gen-
+Tianlong Chen, Jonathan Frankle, Shiyu Chang, Sijia eralizinglotteryticketinitializationsacrossdatasets
+Liu, Yang Zhang, Zhangyang Wang, and Michael andoptimizers. InNeurIPS.
+Carbin.2020b. Thelotterytickethypothesisforpre-
+trainedbertnetworks. InNeurIPS. Sai Prasanna, Anna Rogers, and Anna Rumshisky.
+2020. When bert plays the lottery, all tickets are
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and winning. arXivpreprintarXiv:2005.00561.
+KristinaToutanova.2018. Bert:Pre-trainingofdeep
+ColinRaffel,NoamShazeer,AdamRoberts,Katherine
+bidirectional transformers for language understand-
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou,
+ing. arXivpreprintarXiv:1810.04805.
+WeiLi, andPeterJLiu.2019. Exploringthelimits
+Utku Evci, Trevor Gale, Jacob Menick, Pablo Samuel of transfer learning with a unified text-to-text trans-
+Castro, and Erich Elsen. 2020. Rigging the lottery: former. arXivpreprintarXiv:1910.10683.
+Makingallticketswinners. InICML.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+Percy Liang. 2016. Squad: 100,000+ questions for
+AngelaFan,EdouardGrave,andArmandJoulin.2019.
+machinecomprehensionoftext. InEMNLP.
+Reducing transformer depth on demand with struc-
+tureddropout. arXivpreprintarXiv:1909.11556.
+Hubert Ramsauer, Bernhard Scha¨fl, Johannes Lehner,
+Philipp Seidl, Michael Widrich, Lukas Gruber,
+Jonathan Frankle and Michael Carbin. 2019. The lot-
+Markus Holzleitner, Milena Pavlovic´, Geir Kjetil
+terytickethypothesis: Findingsparse,trainableneu-
+Sandve, Victor Greiff, et al. 2020. Hop-
+ralnetworks. InICLR.
+field networks is all you need. arXiv preprint
+arXiv:2008.02217.
+Zhe Gan, Yen-Chun Chen, Linjie Li, Tianlong Chen,
+YuCheng,ShuohangWang,andJingjingLiu.2021.
+Alex Renda, Jonathan Frankle, and Michael Carbin.
+Playing lottery tickets with vision and language.
+2020. Comparing rewinding and fine-tuning
+arXivpreprintarXiv:2104.11832.
+in neural network pruning. arXiv preprint
+arXiv:2003.02389.
+MitchellAGordon,KevinDuh,andNicholasAndrews.
+2020. Compressing bert: Studying the effects of
+Victor Sanh, Lysandre Debut, Julien Chaumond, and
+weightpruningontransferlearning. arXivpreprint
+Thomas Wolf. 2019. Distilbert, a distilled version
+arXiv:2002.08307.
+of bert: smaller, faster, cheaper and lighter. arXiv
+preprintarXiv:1910.01108.
+KaimingHe,XiangyuZhang,ShaoqingRen,andJian
+Sun.2016. Deepresiduallearningforimagerecog-
+ShengShen,ZhenDong,JiayuYe,LinjianMa,Zhewei
+nition. InCVPR.
+Yao,AmirGholami,MichaelWMahoney,andKurt
+Keutzer.2020. Q-bert: Hessianbasedultralowpre-
+Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang,
+cisionquantizationofbert. InAAAI.
+Xiao Chen, Linlin Li, Fang Wang, and Qun Liu.
+2019. Tinybert: Distillingbertfornaturallanguage M. Shoeybi, M. Patwary, R. Puri, P. LeGresley,
+understanding. arXivpreprintarXiv:1909.10351. J. Casper, and Bryan Catanzaro. 2019. Megatron-
+lm: Training multi-billion parameter language
+Zhuohan Li, Eric Wallace, Sheng Shen, Kevin Lin, models using model parallelism. arXiv preprint
+Kurt Keutzer, Dan Klein, and Joseph E. Gonzalez. arXiv:1909.08053.
+2020. Trainlarge,thencompress:Rethinkingmodel
+sizeforefficienttrainingandinferenceoftransform- Karen Simonyan and Andrew Zisserman. 2014. Very
+ers. InICML. deep convolutional networks for large-scale image
+recognition. arXivpreprintarXiv:1409.1556.
+Zhuang Liu, Jianguo Li, Zhiqiang Shen, Gao Huang,
+ShoumengYan,andChangshuiZhang.2017. Learn- S. Sun, Yu Cheng, Zhe Gan, and Jingjing Liu. 2019.
+ing efficient convolutional networks through net- Patient knowledge distillation for bert model com-
+workslimming. InICCV. pression. InEMNLP.
+Siqi Sun, Zhe Gan, Yu Cheng, Yuwei Fang, Shuo- HaonanYu,SergeyEdunov,YuandongTian,andAriS
+hang Wang, and Jingjing Liu. 2020a. Con- Morcos.2019. Playingthelotterywithrewardsand
+trastive distillation on intermediate representations multiple languages: lottery tickets in rl and nlp. In
+for language model compression. arXiv preprint ICLR.
+arXiv:2009.14167.
+Ofir Zafrir, Guy Boudoukh, Peter Izsak, and Moshe
+ZhiqingSun,HongkunYu,XiaodanSong,RenjieLiu, Wasserblat. 2019. Q8bert: Quantized 8bit bert.
+Yiming Yang, and Denny Zhou. 2020b. Mobile-
+arXivpreprintarXiv:1910.06188.
+BERT:acompacttask-agnosticBERTforresource-
+HattieZhou,JaniceLan,RosanneLiu,andJasonYosin-
+limiteddevices. InACL.
+ski. 2019. Deconstructing lottery tickets: Zeros,
+signs,andthesupermask. InNeurIPS.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz
+Kaiser, and Illia Polosukhin. 2017. Attention is all
+youneed. InNeurIPS.
+Elena Voita, David Talbot, Fedor Moiseev, Rico Sen-
+nrich, and Ivan Titov. 2019. Analyzing multi-
+head self-attention: Specialized heads do the heavy
+lifting, the rest can be pruned. arXiv preprint
+arXiv:1905.09418.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Hill, Omer Levy, and Samuel R Bowman. 2018.
+Glue:Amulti-taskbenchmarkandanalysisplatform
+for natural language understanding. arXiv preprint
+arXiv:1804.07461.
+Ziheng Wang, Jeremy Wohlwend, and Tao Lei. 2019.
+Structuredpruningoflargelanguagemodels. arXiv
+preprintarXiv:1910.04732.
+Wei Wen, Chunpeng Wu, Yandan Wang, Yiran Chen,
+and Hai Li. 2016. Learning structured sparsity in
+deepneuralnetworks. InNeurIPS.
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Chaumond, ClementDelangue, AnthonyMoi, Pier-
+ric Cistac, Tim Rault, Re´mi Louf, Morgan Fun-
+towicz, et al. 2019. Huggingface’s transformers:
+State-of-the-art natural language processing. arXiv
+preprintarXiv:1910.03771.
+Ji Xin, Raphael Tang, Jaejun Lee, Yaoliang Yu, and
+JimmyLin.2020. DeeBERT:Dynamicearlyexiting
+foracceleratingBERTinference. InACL.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+bonell,RussRSalakhutdinov,andQuocVLe.2019.
+Xlnet: Generalized autoregressive pretraining for
+languageunderstanding. InNeurIPS.
+Haoran You, Chaojian Li, Pengfei Xu, Yonggan Fu,
+Yue Wang, Xiaohan Chen, Richard G. Baraniuk,
+Zhangyang Wang, and Yingyan Lin. 2020a. Draw-
+ingearly-birdtickets:Towardmoreefficienttraining
+ofdeepnetworks. InICLR.
+Yang You, Jing Li, Sashank Reddi, Jonathan Hseu,
+SanjivKumar,SrinadhBhojanapalli,XiaodanSong,
+James Demmel, Kurt Keutzer, and Cho-Jui Hsieh.
+2020b. Large batch optimization for deep learning:
+Trainingbertin76minutes. InICLR.
+A MoreComparisonwithBERT GLUETask MNLI QNLI QQP SST-2
+Baseline BERT 83.36% 90.53% 90.41% 91.61%
+EarlyBERT 81.97% 88.68% 89.26% 90.48%
+Formoreexplicitcomparison,weconductatwo- MLM-FCGlobal 78.36% 84.84% 88.86% 88.65%
+wayfine-tuningexperimentinadditiontothemain MLM-FCLayerwise 79.01% 86.55% 89.16% 88.53%
+results in Table 2. All results are averages of 3
+Table 8: Comparison of the accuracies of EarlyBERT
+runs.
+and EarlyBERT with winning tickets searched using
+WefirstincreasethetrainingcostofEarlyBERT
+MLMobjectiveondownstreamtasksinGLUE.
+to match BERT performance by extending the
+searchingstagetoafullepoch,which,according
+toourablationstudyinFigure3,helpstoimprove attention heads and FC neurons converged
+theperformanceofEarlyBERT.Inthiscase,Early- wellandquicklywithin100trainingsteps.
+BERTstillhas16%timeandFLOPssavings,with
+• We first apply the global pruning method to
+comparableperformanceshowninTable6.
+the FC neurons because we observed better
+Secondly,wereducethetrainingstepsofBERT
+performanceofEarlyBERTwiththatmethod.
+to match the FLOPs of EarlyBERT, inducing ob-
+However,whilewepreviouslyfoundinEarly-
+viousgapsbetweenBERTandEarlyBERTaspre-
+BERT that the latter layers will be pruned
+sentedinTable7.
+more,weobservedtheoppositephenomenon
+GLUETask MNLI QNLI QQP SST-2 whenusingMLMobjective—theformerlay-
+ersareprunedmoreinstead. Intermsofaccu-
+BERT 83.48% 90.43% 90.37% 91.86%
+racy,weobservedsignificantgapscompared
+EarlyBERT 83.36% 90.44% 90.33% 91.55%
+toEarlyBERT.
+Table 6: We increase the number of training steps of
+• Basedontheaboveobservations,wealsoap-
+EarlyBERTsothatitachievesverycloseperformances
+totheBERTbaselineonthelargerfourtasksinGLUE pliedlayerwisepruningforMLMexperiments
+benchmark. (showninthelastrowofTable8). Wedidsee
+improvedaccuracywithlayerwisepruningbut
+the gaps between EarlyBERT are still large
+GLUETask MNLI QNLI QQP SST-2 (exceptonQQP).
+BERT-
+82.85% 89.86% 89.45% 91.70%
+Reduced
+C TheEffectofReducedTrainingSteps
+EarlyBERT 83.26% 90.16% 90.22% 91.67%
+duringPre-training
+Table 7: Comparison between the performance of
+Weperformthesameastheanalysisoftheeffect
+BERTandEarlyBERTwiththesametrainingtimeon
+ofreducedtrainingstepsduringpre-traininginFig-
+thelargerfourtasksonGLUEbenchmarkbyreducing
+ure 4 for both the vanilla BERT and EarlyBERT.
+the number of training steps of BERT. Obvious gaps
+canbeobservedonallfourtasksbutSST-2. Wecalculatehowperformancewillbeinfluenced
+duetothereducedtrainingsteps. WeuseF1score
+forSQuAD,Matthew’scorrelationscoreforCoLA
+B SearchingEarlyBERTusingonthe and accuracy for all other tasks on GLUE as the
+MaskedLanguageModelingTask metric. We report the performance reduction (or
+ItisfoundinChenetal.(2020b)selectingawin-
+ning ticket for BERT fine-tuning on the masked TrainingSteps BERT EarlyBERT
+languagemodelingtask(MLM),i.e.,pre-training
+100% 0.00% 0.00%
+objective makes for better tickets performing on
+80% -1.94% +1.96%
+many of the downstream tasks. Here, we try the
+60% -2.48% -1.42%
+experimentsofusingtheMLMobjectiveduringthe
+40% -3.62% -3.43%
+searchingstage. ResultsaresummarizedinTable8.
+Ourmainobservationsinclude:
+Table9:EffectsofreducedtrainingstepsforBERTand
+• WhenusingtheMLMobjectiveforthesearch- EarlyBERTinaverageonGLUEbenchmarktasksand
+ing stage, the mask distance for both self- SQuAD.
+gain) in percentage average on all tasks, normal-
+ized by the performance of baseline, i.e., BERT
+orEarlyBERTtrainedwiththedefaultnumberof
+trainingsteps. SimilarmetricisusedinDistilBERT
+(Sanhetal.,2019). ResultsareshowninTable9.
+Wecanseethatusingonly80%trainingstepsac-
+tuallyimprovestheperformanceofEarlyBERTon
+average but in contrast hurts the performance of
+BERT. Similarly, using 60% training steps hurts
+BERTmorethanEarlyBERT.Andasexpected,sav-
+ing more training steps generally hurt more. We
+thinkthisisonepieceofevidencethatmotivated
+ustousereducedtrainingstepsforEarlyBERT.

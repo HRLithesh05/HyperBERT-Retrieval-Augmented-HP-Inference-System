@@ -1,0 +1,658 @@
+BEST: BERT Pre-Training for Sign Language Recognition
+with Coupling Tokenization
+WeichaoZhao1,HezhenHu1*,WengangZhou1,2†,JiaxinShi3,HouqiangLi1,2†
+1CASKeyLaboratoryofGIPAS,EEISDepartment,UniversityofScienceandTechnologyofChina(USTC)
+2InstituteofArtificialIntelligence,HefeiComprehensiveNationalScienceCenter3HuaweiInc.
+{saruka, alexhu}@mail.ustc.edu.cn, {zhwg, lihq}@ustc.edu.cn, shijiaxin3@huawei.com
+Abstract language in a model-aware paradigm with the hand mesh
+as the intermediate constraint. However, those methods di-
+Inthiswork,wearededicatedtoleveragingtheBERTpre-
+rectlyoptimizeonthetargetbenchmarkbutfailtoleverage
+trainingsuccessandmodelingthedomain-specificstatistics
+theuniversalstatisticsinthesignlanguagedomain. tofertilizethesignlanguagerecognition(SLR)model.Con-
+sidering the dominance of hand and body in sign language Notably, self-supervised pre-training techniques repre-
+expression, we organize them as pose triplet units and feed sented by BERT (Devlin et al. 2018) have achieved great
+them into the Transformer backbone in a frame-wise man- success in Natural Language Processing (NLP). BERT
+ner.Pre-trainingisperformedviareconstructingthemasked buildsonthestrongTransformer(Vaswanietal.2017)back-
+tripletunitfromthecorruptedinputsequence,whichlearns boneanddesignsaningeniouspretexttask,i.e.,maskedlan-
+thehierarchicalcorrelationcontextcuesamonginternaland guage modeling (MLM). It aims to reconstruct the masked
+external triplet units. Notably, different from the highly se-
+word tokens from the corrupted input sequence, whose ob-
+manticwordtokeninBERT,theposeunitisalow-levelsig-
+jective is implemented by cross entropy to maximize the
+naloriginallylocatedincontinuousspace,whichpreventsthe
+joint word probability distribution. However, the main ob-
+directadoptionoftheBERTcross-entropyobjective.Tothis
+stacle to leverage its success in video SLR is the different
+end,webridgethissemanticgapviacouplingtokenizationof
+thetripletunit.Itadaptivelyextractsthediscretepseudola- characteristicsoftheinputsignal.InNLP,theinputwordto-
+belfromtheposetripletunit,whichrepresentsthesemantic kenisdiscreteandpre-definedwithhighsemantics.Incon-
+gesture/body state. After pre-training, we fine-tune the pre- trast,thevideosignalofsignlanguageiscontinuouswiththe
+trained encoder on the downstream SLR task, jointly with spatial and temporal dimensions. This signal is quite low-
+the newly added task-specific layer. Extensive experiments level, making the original BERT objective not applicable.
+are conducted to validate the effectiveness of our proposed Besides,sincethesignlanguagevideoismainlycharacter-
+method, achieving new state-of-the-art performance on all
+ized by hand and body movements, the direct adoption of
+fourbenchmarkswithanotablegain.
+theBERTframeworkmaynotbeoptimal.
+To tackle the above issue, we propose a self-supervised
+1 Introduction pre-trainableframeworkwithaspecificdesignforsignlan-
+Signlanguageisaprimarycommunicationtoolforthedeaf guage, namely BEST. Focusing on the main properties of
+community. It is characterized by its unique grammar and sign language, we organize the hand and body as the pose
+lexicon, which are difficult to understand for non-sign lan- triplet unit. This triplet unit is embedded and fed into the
+guage users. To bridge this communication gap, automatic Transformer backbone. Basically, our framework contains
+sign language recognition (SLR) is widely studied with twostages,i.e.,self-supervisedpre-traininganddownstream
+broadsocialinfluence.Asonebasictask,isolatedSLRaims fine-tuning. During pre-training, we propose the masked
+torecognizeatthegloss-levelandisafine-grainedclassifi- unit modeling (MUM) pretext task to capture the context
+cationproblem.Inthiswork,wefocusonthistask. cues. The input hand or body unit embedding is randomly
+Due to high annotation cost, current labeled sign data masked, and then the framework reconstructs the masked
+sources are limited. Since common deep-learning-based unit from this corrupted input sequence. Similar to BERT,
+methods are data-hungry, they are prone to over-fitting on self-reconstructionisoptimizedviathecross-entropyobjec-
+SLR.Tothisend,severalattemptshavebeenmadeinSLR. tive.Tothisend,wejointlytokenizetheposetripletunitas
+For instance, considering the dominant role of hand, some the pseudo label, which represents the gesture/body state.
+methods (Hu, Zhou, and Li 2021; Albanie et al. 2020) uti- After pre-training, the pre-trained Transformer encoder is
+lizethecroppedhandsequenceastheauxiliaryinformation. fine-tunedwiththenewlyaddedpredictionheadtoperform
+HMA (Hu, Zhou, and Li 2021) proposes to recognize sign theSLRtask.
+Ourcontributionsaresummarizedasfollows,
+*Contributeequallywiththefirstauthor.
+†Correspondingauthors:WengangZhouandHouqiangLi. • We propose a self-supervised pre-trainable framework.
+Copyright©2023,AssociationfortheAdvancementofArtificial It leverages the BERT success, jointly with the specific
+Intelligence(www.aaai.org).Allrightsreserved. designforthesignlanguagedomain.
+3202
+raM
+82
+]VC.sc[
+3v57050.2032:viXra
+• We organize the main hand and body movement as the 2019;ConneauandLample2019).BERTisoneofthemost
+pose triplet unit and propose the masked unit model- popularmethods,whichdesignsacleverlymaskedlanguage
+ing (MUM) pretext task. To utilize the BERT objective, modeling (MLM) pretext task. MLM predicts the masked
+we generate the pseudo label for this task via coupling wordtokensfromthecorruptedinputsentence,whichaims
+tokenizationontheposetripletunit. tocapturethecontextcuesinthetextcorpus.
+• ExtensiveexperimentsondownstreamSLRvalidatethe Motivated by BERT, some works attempt to leverage its
+effectiveness of our proposed method, achieving new successintoCVtasks(Suetal.2019;Sunetal.2019;Zhu
+state-of-the-art performance on four benchmarks with a andYang2020;Bao,Dong,andWei2021;Heetal.2022).
+notablegain. There exist different characteristics of the input signal be-
+tween NLP and CV. Different from the semantic discrete
+2 RelatedWork wordtoken,thesignalinCVtasksisusuallylow-leveland
+continuous, which makes the original BERT objective not
+Inthissection,wewillbrieflyreviewseveralrelatedtopics,
+applicable. One way to tackle this problem is changing its
+includingsignlanguagerecognitionandself-supervisedpre-
+objectiveintoregression.Heetal.(Heetal.2022)propose
+training.
+maskedautoencoders(MAE)toreconstructthemissingpix-
+elsofmaskedimagepatchesusingregressionobjective.Hu
+2.1 SignLanguageRecognition
+etal.(Huetal.2021a)proposeapre-trainedmodelforsign
+Sign language recognition has received much attention in languagebasedonself-reconstructionofthehandposedata.
+recentyears(Kolleretal.2018;Momenietal.2022;Niuand Jiang et al. (Jiang, Camgoz, and Bowden 2021) attempt to
+Mak 2020; Jin and Zhao 2021; Hu, Zhou, and Li 2021; Li utilize BERT-style refined pose for sign language. Accord-
+etal.2020b).Typically,theresearchworkscanbegrouped ing to (Ramesh et al. 2021), the former method may fo-
+intotwo categoriesbased ontheinput modality,i.e., RGB- custoomanyshort-rangedependenciesandhurtthedown-
+basedmethodsandpose-basedmethods. stream performance. Therefore, some methods turn to tok-
+RGB-based Methods. Early works (Farhadi, Forsyth, enizingtheinputsignaltoprovidethediscretepseudolabel.
+andWhite2007;Fillbrandt,Akyol,andKraiss2003;Starner BEiT (Bao, Dong, and Wei 2021) propose masked image
+1995) on SLR focused on hand-crafted features computed modeling (MIM) with tokenized image patches as super-
+for hand shape variation and body motion. Along with the vision. It is originally designed for image-based tasks, and
+popularityofconvolutionalneuralnetworks(CNNs)incom- cannot be directly adopted into the video-based sign lan-
+putervision,manyworksinSLRadoptCNNsastheback- guagedomain,duetodifferenttaskcharacteristicsandinput
+bone(Selvarajetal.2022;SincanandKeles2020;Jozeand modalities.
+Koller2018;Kolleretal.2018;Hu,Zhou,andLi2021).For
+example, 3D CNNs are adopted due to their representation 3 Methods
+capacityforspatio-temporaldependency(Huangetal.2018;
+Our proposed method consists of two stages, i.e., self-
+JozeandKoller2018;Albanieetal.2020;Lietal.2020b).
+supervisedpre-traininganddownstreamtaskfine-tuning.As
+Pose-based Methods. Pose modality is a compact and
+showninFigure1,duringpre-training,wefirstutilizeadis-
+high-level representation of human action and contains
+cretevariationalautoencodertolearncodebooksfortheup-
+physical connection among skeleton joints (Li et al. 2018;
+perbody,leftandrighthand.Itperformscouplingtokeniza-
+Ng et al. 2021; Yan, Xiong, and Lin 2018). To extract the
+tion on the pose triplet unit as the pseudo label for the fol-
+semanticrepresentationofposedata,someworks(Lietal.
+lowingpretexttask.Thenwepre-traintheBESTmodelvia
+2018; Du, Wang, and Wang 2015) explore graph convolu-
+ourdesignedmaskedunitmodeling(MUM)pretexttaskto
+tionalnetworks(GCNs)asthebackbone.TheseGCN-based
+capturethecontextcues.Finally,weappendthetask-specific
+methods (Camgoz et al. 2018; Li et al. 2018; Yan, Xiong,
+layerandfine-tunethepre-trainedparametersonthedown-
+and Lin 2018; Min et al. 2020) show impressive perfor-
+streamSLRtask.
+mance in action recognition. Tunga et al. (Tunga, Nutha-
+lapati,andWachs2021)combineGCNandTransformerto
+3.1 TokenizationinPre-Training
+capturespatial-temporalinformationbasedonsignlanguage
+pose sequence for sign language recognition. In this work, The tokenization provides pseudo labels for our designed
+giventhecompactnessof posedata,weutilizethemas our pretexttaskduringpre-training.Weutilizeadiscretevaria-
+inputmodality. tionalautoencoder(d-VAE)tojointlyconverttheposetriplet
+unitintothetriplettokens(body,leftandrighthand),moti-
+2.2 Self-supervisedPre-Training vatedbyVQ-VAE(VanDenOord,Vinyalsetal.2017).Our
+utilized pose triplet unit J consists of two hand poses
+Self-supervisedpre-trainingmethodshaveachievedremark- sign
+J ,J ,andanupperbodyposeJ .Thed-VAEcon-
+able success in Natural Language Processing (NLP) and left right body
+tains three parts, i.e., encoder, quantizer, and decoder. The
+ComputerVision(CV)fields,whichmakefulluseoflarge-
+encodermapstheposetripletunittotheintermediatelatent
+scale unlabeled data to learn generic feature representation
+vector z = Enc(J ). The quantizer is in charge of tok-
+for a wide range of downstream tasks. In NLP, with the sign
+enizingeachvectortobecodewordscomingfromthehand
+strong modeling capability of Transformer (Vaswani et al.
+2017), many works propose to pre-train on this backbone codebookV hand = {h k}M k=1 1 andtheupperbodycodebook
+forgenericrepresentations(Devlinetal.2018;Lewisetal. V = {d }M2 .Thequantizedvectorz iscomputedas
+body k k=1 q
+Pseudo Triplet Unit Label
+…
+245 370 101 91 101 200
+122 212 101105 91 101105122
+…
+615 212 105 265 105 673 …
+122 413 260 … 300 122 737
+Decoder
+Pre-Trained Tokenizer …
+Transformer Encoder
+Body …
+…
+1 2 3 T-2 T-1 T
+L-Hand …
+[M] [M] [M][M] … [M] [M][M][M]
+… …
+R-Hand
+Input Pose Triplet Unit Pose Embedding Layer
+Figure 1: Illustration of our proposed BEST framework during pre-training. BEST mainly contains four components, i.e., a
+pre-trainedtokenizer,aposeembeddinglayer,aTransformerencoder,andadecoder.Theinputposetripletunitiscomposed
+bythebodypose,theleftandrighthandpose.Givenasequenceofposetripletunits,weutilizetheproposedMUMpretexttask
+to pre-train our framework. The [M] denotes the learnable masked token for the input sequence. Meanwhile, the pre-trained
+tokenizercouplingdiscretizesthetripletunitsintopseudotripletunitlabelstosupervisethepre-trainingprocedure.
+follows, functionofd-VAEisdefinedasfollows,
+z q =Concat(h kl,h kr,d kb),z =Concat(z l,z r,z b), L d−VAE =L hand+β 1L body+β 2||sg[z]−z q||2 2
+kl =Q hand(z l)= argmin ||z l−h k||, +β 3||sg[z q]−z||2 2,
+(3)
+k∈{1,2,···,M1} L =||Jˆ −J ||+||Jˆ −J ||,
+kr =Q hand(z )= argmin ||z −h ||, (1) hand left left right right
+r r k L =||Jˆ −J ||,
+k∈{1,2,···,M1} body body body
+kb =Q body(z )= argmin ||z −d ||, whereL andL denotethereconstructionlossesof
+b b k hand body
+k∈{1,2,···,M2} 2Dhandandupperbodypose,respectively.sg[·]represents
+thestop-gradientoperator,andβ ,β andβ aretheweight-
+wherel,randbindicatetheabbreviationofthe‘left’,‘right’ 1 2 3
+ingfactorstobalancetheimpactofthefourlosses.
+and‘upperbody’,respectively.Westilladopttheabbrevia-
+tionsl,randbinthefollowingintroduction.Thelatentvec-
+3.2 FrameworkArchitectureinPre-Training
+tor z is made up of three local representations of the pose
+During pre-training, the framework contains four compo-
+tripletunit,i.e.,z ,z ,andz .Q hand(·)isthehandquanti-
+l r b
+nents, i.e., a pose embedding layer, a pre-trained pose to-
+zationencoderthatmapsthevectortotheindexofthehand
+kenizer,aTransformerencoder,andadecoder.
+codebook, which satisfies the minimum semantic distance
+Pose Embedding Layer. This embedding layer aims to
+between the input vector and the corresponding codeword.
+extract the feature embedding from the input pose triplet
+Similar to the hand quantizer, Q body(·) denotes the body
+unit. Since pose has physical connection relationship, we
+quantizationencoderfortheupperbody.Thequantizedvec-
+utilize the graph convolutional network (GCN) proposed
+tor z consists of a cascade of three codewords from two
+q
+in (Cai et al. 2019) as the pose embedding layer. Specifi-
+codebooks.Basedonthequantizedvector,thedecoderaims
+cally, given a pose sequence V = {J }T with T
+to reconstruct the input pose triplet unit. The output of the sign sign,t t=1
+decoderiscomputedasfollows, frames, it extracts the pose triplet unit f sign,t ∈ RD from
+the body, left and right hand in a frame-wise manner and
+Jˆ =Dec(z ), (2) concatenatethemforthefollowingmodule.Eachpartofthe
+sign q tripletunithasthesamefeaturedimensionD = 1D.
+part 3
+whose output is the reconstructed hand and body Tokenizer. Aspresented inSection 3.1,givena posese-
+poses(Jˆ left,Jˆ
+right
+andJˆ body). quence {J sign,t}T t=1, we tokenize it as the pseudo labels
+This tokenizer is trained before self-supervised pre- {k }T forpre-training,ofwhichk denotestheconcatena-
+t t=1 t
+training. However, the tokenization process is non- tionofkl,kr andkb computedfollowingEquation(1).The
+t t t
+differentiable. To backpropagate the gradient from the de- tokenizerisonlyadoptedforpseudolabelinference,withall
+codertotheencoder,weutilizethestraight-throughestima- parametersfrozenduringpre-training.
+tor(Bengio,Le´onard,andCourville2013)tocopythegra- TransformerEncoder.Giventhefeaturesequencefrom
+dientfromthedecodertotheencoder.Thetrainingobjective the pose embeddinglayer F = {f }T , we further
+sign sign,t t=1
+addtemporalembeddingf ∈ RD implementedbythe weutilizetheMUMtopre-trainourmethodandconductan
+temp,t
+positionencoding(Vaswanietal.2017).Theinputsequence ablationexperimenttovalidateourthoughts.
+F iscomputedasfollows, Theoverallpre-trainingobjectiveistomaximizethelog-
+0
+likelihoodofthecorrectlabelsgiventhecorruptedsequence,
+whichiscomputedasfollows,
+F =[f ,··· ,f ],
+0 in,1 in,T
+f =f +f , t∈{1,··· ,T}, (4) (cid:34) (cid:35)
+in,t mask,t temp,t (cid:88) (cid:88)
+L =max E logp(k |V )
+F =Mask(F )=[f ,··· ,f ], pre−train M t sign
+m sign mask,1 mask,T
+Vsign∈D t∈M
+whereMask(·)denotesthemaskingoperatorfortheembed- (cid:88) (cid:88)
+logp(k |V )= logp (kl|fl )
+ding sequence and the masked frame positions are denoted t sign hand t out,t
+as M ∈ {1,··· ,T}α·T, in which α denotes the mask ra- t∈M t∈Ml
+tio. We will explain the masked modeling in Section 3.3. + (cid:88) logp (kr|fr )
+TheinputsequenceF isfedintotheTransformerencoder. hand t out,t
+0 t∈Mr
+TheTransformerencodercontainsN layersofTransformer
+(cid:88)
+blocksF
+l
+=Block(F l−1),wherel=1,··· ,N.Theoutput + logp body(k tb|f ob ut,t),
+sequenceofthelastlayerF N = [f out,1,··· ,f out,T]isuti- t∈Mb
+lized as the encoded representation of the pose triplet unit, (6)
+wheref correspondstothet-thframe.
+out,t where D is the training corpus, M represents the masked
+Decoder. Given the output sequence F , the masked
+N frame positions, f is the masked triplet unit. Ml and
+framepositionsMandthepseudolabels{k }T ,weutilize out,t
+t t=1 Mr and Mb represent the masked positions for left hand,
+the decoder to reconstruct the pose triplet unit. Since each
+output feature f contains three parts, i.e., fl , fr righthandandbody,respectively.
+out,t out,t out,t
+andfb ,werecordthemaskedpositionsofeachpartinto
+out,t 3.4 DownstreamFine-Tuning
+Ml,Mr andMb,respectively.M=Ml∪Mr∪Mb.For
+After pre-training, we directly fine-tune the parameters un-
+each feature f , we use the softmax classifier to predict
+out,t derthedownstreamSLRtask.Wereplacethedecoderwith
+thecorrespondinglabelofeachpart,
+asimpleMLPasthepredictionhead.Duringfine-tuning,we
+p (kl|f )=softmax (W fl +b ), t∈Ml, donotmaskanytripletposeunit,andsupervisetheoutputof
+hand t out,t kl 1 out,t 1
+t the prediction head with ground-truth labels. Besides, only
+p (kr|f )=softmax (W fr +b ), t∈Mr,
+hand t out,t k tr 1 out,t 1 theposeinformationisinsufficienttoconveythefullmean-
+p (kb|f )=softmax (W fb +b ), t∈Mb, ingofsignlanguage.Weutilizealatefusionstrategytosum
+body t out,t kb 2 out,t 2
+t thepredictionresultsofposedataandRGBdata.Inourex-
+(5)
+periment, we refer our method with only pose data, fusion
+where l, r and b denote the abbreviation of left, right and ofRGBdataasOursandOurs(+R),respectively.
+upper body, respectively. W
+1
+∈ R|Vhand|×Dpart and W
+2
+∈
+R|Vbody|×Dpart denote the projection matrix. b
+1
+∈ R|Vhand| 4 Experiments
+andb 2 ∈R|Vbody|denotethebiases. 4.1 DatasetsandMetrics
+3.3 PretextTaskinPre-Training&Objective Datasets. We conduct experiments on four public sign
+language datasets, i.e., NMFs-CSL (Hu et al. 2021b),
+Our designed pretext task is MUM, which aims to exploit
+SLR500(Huangetal.2018),WLASL(Lietal.2020a)and
+the hierarchical correlation context among internal and ex-
+MSASL (Joze and Koller 2018). The training sets of all
+ternaltripletposeunits.Givenaposesequencewithatriplet
+datasetsparticipateinthepre-trainingstage.Table1presents
+pose unit of length T, we first randomly choose the α·T
+anoverviewoftheabove-mentioneddatasets.
+frames to process the mask operation. For clarification, we
+NMFs-CSLisalarge-scaleChinesesignlanguage(CSL)
+definethreepartsoftheposetripletunitasfl ,fr and
+sign,t sign,t datasetwithavocabularysizeof1,067.Allsamplesaresplit
+f sb ign,t,respectively.Ifaunitismasked,alearnablemasked into 25,608 and 6,402 samples for training and testing, re-
+token e
+mask
+∈ RDpart is utilized to replace each part of spectively. SLR500 is another CSL dataset including 500
+thetripletunitwith50%probability.Therefore,themasked daily words performed by 50 signers. It contains a total of
+tripletunitincludesthreemaskingcases:onlyhandmasked, 125,000 samples, of which 90,000 and 35,000 samples are
+onlybodymaskedandhand-bodymasked.Thehandmasked utilizedfortrainingandtesting,respectively.Theabovetwo
+caseaimstoendowourmodelwiththecapacityofcapturing datasetscollectsamplesinthecontrolledlabscene.
+thelocalhandcontext.Comparedwiththehandcounterpart, WLASL is a large-scale American sign language (ASL)
+the body masked case aims to mine the context of global dataset, containing 2000 words performed by over 100
+body movements. The hand-body masked case means that signers. It totally consists of 21,083 samples. In par-
+body and hand features are masked simultaneously. Since ticular, it selects the top-K most frequent words with
+sign language conveys the full meaning with the coopera- K = {100,300}, and organize them as two subsets,
+tion of hand and body, we expect to exploit the correlation namely WLASL100 and WLASL300. MSASL is another
+contextcuesbetweenhandandbodyinthiscase.Therefore, popular ASL dataset with a total of 25,513 samples and
+Name Language Vocab. Videos Signers Source usingrandomandcentertemporalsamplingduringtraining
+WLASL(Lietal.2020a) ASL 2000 21.1k 119 Web,lexicons and testing, respectively. All experiments are implemented
+NMF-CSL(Huetal.2021b) CSL 1067 32.0k 10 lab byPyTorchandtrainedonNVIDIARTX3090.
+MSASL(JozeandKoller2018) ASL 1000 25.5k 222 Web,lexicons
+SLR500(Huangetal.2018) CSL 500 125k 50 lab
+4.3 ComparisonwithState-of-the-artMethods
+Table1:StatisticsofpublicisolatedSLRdatasets.ASLde-
+notes American Sign Language, and CSL denotes Chinese Inthissection,wecompareourmethodwithpreviousstate-
+SignLanguage. of-the-art methods on four public datasets. Following (Hu
+et al. 2021a), we group the previous methods by the input
+a vocabulary size of 1000. Similar to WLASL, it also modality,i.e.,pose-basedandRGB-basedmethods.
+provides two subsets, named MSASL100 and MSASL200, NMFs-CSLDataset.AsshowninTable5,wecomparewith
+respectively. Different from NMFs-CSL and SLR500, thepreviousmethods.SignBERT(Huetal.2021a)isaself-
+WLASL and MSASL collect data from the Web and bring supervisedpre-trainingmethodwithhandpriortomodelthe
+morechallengesduetotheunrestrictedreal-lifescenario. handsequence.ComparedwithSignBERT,ourmethodstill
+achieves the best performance in top-1 accuracy under dif-
+Metrics. For evaluation, we report the classification accu- ferentsettings.GLE-Net(Huetal.2021b)isthestate-of-the-
+racy, i.e., Top-1 (T-1) and Top-5 (T-5) for the downstream art method with discriminative clues from global and local
+SLRtask.Weadoptbothper-instance(P-I)andper-class(P- views.ComparedwithGLE-NET,Ours(+R)outperformsit,
+C) accuracy metrics following (Li et al. 2020a; Joze and achieving79.2%top-1accuracy.
+Koller2018).Per-instanceaccuracyiscomputedoverwhole MSASL Dataset. As shown in Table 2, ST-GCN (Yan,
+test data. Per-class accuracy is the average of the sign cat- Xiong,andLin2018)showsinferiorperformancecompared
+egories present in the test set. For WLASL and MSASL, with RGB-based methods, which may be attributed to the
+we report both per-instance and per-class accuracy due to failure of pose detection. Compared with ST-GCN (Yan,
+the unbalanced samples per class of the two datasets. For Xiong, and Lin 2018), self-supervised learning methods,
+NMFs-CSLandSLR500,weonlyreportper-instanceaccu- i.e., SignBERT (Hu et al. 2021a) and Ours, relieve this is-
+racywithanequalnumberofsamplesforeachclass. sue by leveraging the stored statistics during pre-training.
+OurmethodoutperformsSignBERT(Huetal.2021a)with
+4.2 ExperimentSettings 4.89%, 5.96% and 9.28% Top-1 per-instance accuracy im-
+provement on MSASL100, MSASL200 and MSASL1000,
+Data Preparation and Processing. Our proposed method
+respectively.Notably,ourmethodevenachievescomparable
+utilizestheposemodalitytorepresenthandandbodymove-
+performance with RGB-based methods. When fused with
+ments.Sincenoavailableposeannotationisprovidedinsign
+theRGBmethod,theperformanceisfurtherimproved.
+languagedatasets,weutilizetheoff-the-shelfposedetector
+WLASL Dataset. Similar to MSASL, WLASL is a chal-
+MMPose (Contributors 2020) to extract the 2D pose key-
+lengingdatasetwithunconstrainedrecordingconditionsand
+points. In each frame, the extracted 2D pose includes 49
+unbalancedsampledistribution.AsshowninTable3,Pose-
+joints, containing 7 upper body joints and 42 hand joints.
+TGCN (Li et al. 2020a) and PSLR (Tunga, Nuthalapati,
+Furthermore, considering the different scales among triplet
+and Wachs 2021) show inferior performance caused by the
+units,wecropthebody,leftandrighthandposeseparately
+erroneous estimation of poses. HMA (Hu, Zhou, and Li
+andrescalethemto256×256.
+2021) utilizes a hand statistic model to refine the pose and
+Model Hyper-Parameters. For the tokenizer, the vocabu-
+improve the performance. BSL (Albanie et al. 2020) and
+larysizeofhandcodebookM andbodycodebookM are
+1 2 TCK(Lietal.2020b)utilizeexternalRGBdatatoenhance
+1000 and 500, respectively. The dimension of each code-
+the model robustness and boost their performance. Com-
+word in two codebooks is 512. The weighting factors β ,
+1 paredwiththem,ourmethodachievesthebestperformance
+β and β in equation 3 are set to 0.1, 1.0 and 0.9, respec-
+2 3 onallsubsets.
+tively. During pre-training, the Transformer encoder con-
+SLR500 Dataset. As shown in Table 4, compared with
+tains 8 heads with the input size of the Transformer en-
+STIP (Laptev 2005) and GMM-HMM (Tang et al. 2015)
+coderDas1536andposition-wisefeed-forwarddimension
+based on hand-craft features, deep-learning-based meth-
+as2048.
+ods(Yan,Xiong,andLin2018;Qiu,Yao,andMei2017;Hu
+Training Setup. The Adam (Kingma and Ba 2014) opti-
+etal.2021a)achievenotableperformancegain.Ourmethod
+mizer is employed in our experiments. For tokenizer train-
+still achieves new state-of-the-art performance among both
+ing, we set the initial learning rate as 0.001 and decrease
+pose-basedandRGB-basedmethods.
+it with a factor of 0.1 per 10 epochs. For pre-training, the
+weight decay and momentum are set to 0.01 and 0.9, re-
+4.4 AblationStudy
+spectively.Thelearningrateissetto0.0001,withawarmup
+of 6 epochs, and linear learning rate decay. For the down- In this section, we conduct ablation studies to validate the
+stream SLR task, the learning rate is initialized to 0.0001 effectiveness of our proposed approach and select proper
+anddecreasesbyafactorof0.1per10epochs.wedisturbthe hyper-parameters for our framework. For fair comparison,
+coordinates of the input pose sequence with a random per- experiments are performed on the MSASL dataset and we
+turbation matrix to relieve overfitting during training. Fol- report the top-1 accuracy under the per-instance and per-
+lowing (Hu et al. 2021a), we temporally select 32 frames classmetricsastheindicator.
+MSASL100 MSASL200 MSASL1000
+P-I P-C P-I P-C P-I P-C
+Method T-1 T-5 T-1 T-5 T-1 T-5 T-1 T-5 T-1 T-5 T-1 T-5
+Pose-based
+ST-GCN(Yan,Xiong,andLin2018) 59.84 82.03 60.79 82.96 52.91 76.67 54.20 77.62 36.03 59.92 32.32 57.15
+SignBERT(Huetal.2021a) 76.09 92.87 76.65 93.06 70.64 89.55 70.92 90.00 49.54 74.11 46.39 72.65
+Ours 80.98 95.11 81.24 95.44 76.60 91.54 76.75 91.95 58.82 81.18 54.87 80.05
+RGB-based
+I3D(CarreiraandZisserman2017) - - 81.76 95.16 - - 81.97 93.79 - - 57.69 81.05
+TCK(Lietal.2020b) 83.04 93.46 83.91 93.52 80.31 91.82 81.14 92.24 - - - -
+BSL(Albanieetal.2020) - - - - - - - - 64.71 85.59 61.55 84.43
+HMA(Hu,Zhou,andLi2021) 73.45 89.70 74.59 89.70 66.30 84.03 67.47 84.03 49.16 69.75 46.27 68.60
+Ours(+R) 89.56 96.96 90.08 97.07 86.83 95.66 87.45 95.72 71.21 88.85 68.24 87.98
+Table2:Comparisonwithstate-of-the-artmethodsonMSASLdataset.OurproposedmethodfusedwithanotherRGB-based
+method,I3D(CarreiraandZisserman2017),isrepresentedbyOurs(+R).
+WLASL100 WLASL300 WLASL2000
+P-I P-C P-I P-C P-I P-C
+Method T-1 T-5 T-1 T-5 T-1 T-5 T-1 T-5 T-1 T-5 T-1 T-5
+Pose-based
+ST-GCN(Yan,Xiong,andLin2018) 50.78 79.07 51.62 79.47 44.46 73.05 45.29 73.16 34.40 66.57 32.53 65.45
+Pose-TGCN(Lietal.2020a) 55.43 78.68 - - 38.32 67.51 - - 23.65 51.75 - -
+PSLR(Tunga,Nuthalapati,andWachs2021) 60.15 83.98 - - 42.18 71.71 - - - - - -
+SignBERT(Huetal.2021a) 76.36 91.09 77.68 91.67 62.72 85.18 63.43 85.71 39.40 73.35 36.74 72.38
+Ours 77.91 91.47 77.83 92.50 67.66 89.22 68.31 89.57 46.25 79.33 43.52 77.65
+RGB-based
+I3D(CarreiraandZisserman2017) 65.89 84.11 67.01 84.58 56.14 79.94 56.24 78.38 32.48 57.31 - -
+TCK(Lietal.2020b) 77.52 91.08 77.55 91.42 68.56 89.52 68.75 89.41 - - - -
+BSL(Albanieetal.2020) - - - - - - - - 46.82 79.36 44.72 78.47
+HMA(Hu,Zhou,andLi2021) - - - - - - - - 37.91 71.26 35.90 70.00
+Ours(+R) 81.01 94.19 81.63 94.67 75.60 92.81 76.12 93.07 54.59 88.08 52.12 87.28
+Table3:Comparisonwithstate-of-the-artmethodsonWLASLdataset.OurproposedmethodfusedwithanotherRGB-based
+method,I3D(CarreiraandZisserman2017),isrepresentedbyOurs(+R).
+Method Accuracy
+Pose-based
+ST-GCN(Yan,Xiong,andLin2018) 90.0
+SignBERT(Huetal.2021a) 94.5
+Ours 95.4
+RGB-based
+STIP(Laptev2005) 61.8
+GMM-HMM(Tangetal.2015) 56.3
+3D-R50(Qiu,Yao,andMei2017) 95.1
+HMA(Hu,Zhou,andLi2021) 95.9
+GLE-Net(Huetal.2021b) 96.8
+Ours(+R) 97.7
+Figure 2: Qualitative results of our proposed coupling to-
+Table 4: Comparison with state-of-the-art methods on
+kenization. Each two adjacent columns are organized as a
+SLR500 dataset. 3D-R50 (Qiu, Yao, and Mei 2017) is uti-
+group.Inthesamerowofeachgroup,theposecorresponds
+lizedforfusionwithourmethod.
+to the RGB image. Each group belongs to the same triplet
+unitlabel.
+Different Tokenizers. In Table 6, we compare the impact
+of different tokenizers on the downstream SLR task. The
+K-Means method is a simple model-free clustering algo-
+boo1k20l,1e4a2r,n2i6ng.More1o9v1e,1r4,2w,0e4illust1ra08te,14th2e,28qualitativ00e8r,1e4s2u,1lt1s 008,008,42
+of our proposed coupling tokenizer in Figure 2. Our tok-
+rithm. Different from the learnable tokenizer, K-Means it-
+enizercansuccessfullyclustersimilarposetripletunitsun-
+erativelytransfersthe2Dposedatatoaseriesofclustering
+dertheunconstrainedsettings,i.e.,filteringthedisturbance
+centers for hand and body, respectively. Then we directly
+fromcameraviews,individualposevarianceandinaccurate
+utilize the index of clustering centers as the pseudo labels.
+posedetection.
+Forfaircomparison,thenumberofclusteringcentersisthe
+same as the vocabulary size of our utilized codebook. VQ MaskingStrategy.AsshowninTable7,wecomparethree
+and Ours stand for separate and coupled vector quantizers, different settings on our proposed MUM, i.e., only mask-
+respectively. VQ learns the hand and body codebooks sep- inghand,onlymaskingbodyandmaskingbothparts(hand
+arately, while our proposed tokenizer jointly optimizes the and body). The first row denotes the baseline without pre-
+handandbodycodebooks.Itcanbeobservedthatourpro- training.Itisobservedthatonlymaskedhandsettingshows
+posedtokenizershowsthebestperformancetovalidateour better performance than only masked body setting due to
+assumption.Sincethebodyandhandarestronglycorrelated, thedominanceofhandduringsignlanguageexpression.Our
+our coupling tokenization utilizes this cue for better code- MUMadoptsthethirdmaskingsetting,whichachievesthe
+Total Confusing Normal
+Method T-1 T-5 T-1 T-5 T-1 T-5
+Pose-based
+ST-GCN(Yan,Xiong,andLin2018) 59.9 86.8 42.2 79.4 83.4 96.7
+SignBERT(Huetal.2021a) 67.0 95.3 46.4 92.1 94.5 99.6
+Ours 68.5 94.4 49.0 90.3 94.6 99.7
+RGB-based
+3D-R50(Qiu,Yao,andMei2017) 62.1 82.9 43.1 72.4 87.4 97.0
+DNF(Cui,Liu,andZhang2019) 55.8 82.4 51.9 71.4 86.3 97.0
+I3D(CarreiraandZisserman2017) 64.4 88.0 47.3 81.8 87.1 97.3
+TSM(Lin,Gan,andHan2019) 64.5 88.7 42.9 81.0 93.3 99.0
+Slowfast(Feichtenhoferetal.2019) 66.3 86.6 47.0 77.4 92.0 98.9
+GLE-Net(Huetal.2021b) 69.0 88.1 50.6 79.6 93.6 99.3
+HMA(Hu,Zhou,andLi2021) 64.7 91.0 42.3 84.8 94.6 99.3
+Ours(+R) 79.2 97.1 65.5 95.0 97.5 99.9
+Table5:Comparisonwithstate-of-the-artmethodsonNMFs-CSLdataset.OurproposedmethodfusedwithanotherRGB-based
+method,3D-R50(Qiu,Yao,andMei2017),isrepresentedbyOurs(+R).
+MSASL100 MSASL200 MSASL1000 MSASL1000 WLASL2000 NMFs-CSL
+Quantizer Mask. Obj. SLR500
+P-I P-C P-I P-C P-I P-C P-I P-C P-I P-C Total
+K-Means 74.63 74.03 72.62 74.20 54.29 50.74 - - 51.96 48.50 27.13 24.63 63.53 91.12
+VQ 77.54 77.44 74.47 75.47 55.87 52.16 R-Mask Regress. 53.60 50.48 41.14 38.46 67.27 94.60
+Ours 80.98 81.24 76.60 76.75 58.82 54.87 R-Mask Token. 53.95 51.11 42.91 40.42 64.12 93.75
+MUM Regress. 56.90 53.42 44.20 41.42 66.76 92.60
+Table 6: Comparison with different pose tokenizers on MUM Token. 58.82 54.87 46.25 43.52 68.50 95.44
+MSASL dataset. K-Means denotes a model-free clustering
+Table 9: Comparison with different settings of self-
+algorithm.VQandOursstandforseparateandcoupledvec-
+supervisedper-training.Thefirstrowdenotesourframework
+tortokenizers,respectively.
+without pre-training. “Regress.” and “R-Mask” are the ob-
+Mask MSASL100 MSASL200 MSASL1000 jective function and masking strategy from SignBERT, re-
+Hand Body P-I P-C P-I P-C P-I P-C spectively.“Token.”and“MUM”denotethosefromours.
+73.44 73.75 70.79 71.46 51.96 48.50
+(cid:88) 76.75 77.22 71.37 72.07 54.60 51.63
+(cid:88) 68.82 68.82 67.11 67.84 47.72 43.87 row denotes the baseline method without pre-training. We
+(cid:88) (cid:88) 80.98 81.24 76.60 76.75 58.82 54.87 compare different settings of self-supervised pre-training.
+Table7:EffectofthemaskingstrategyonMSASLdataset. It is observed that our proposed mask strategy MUM
+The first row denotes the baseline method without pre- and objective function Token. achieves better performance
+training. “Hand” and “Body” denote the only masking on than other settings. Notably, compared with the baseline,
+thehandandbodypart,respectively. our method brings 19.12% accuracy improvement on the
+WLASL2000dataset.
+MSASL100 MSASL200 MSASL1000
+Percent
+P-I P-C P-I P-C P-I P-C
+5 Conclusion
+0% 73.44 73.75 70.79 71.46 51.96 48.50
+25% 74.50 75.20 71.89 72.69 53.67 50.81 In this paper, we propose a self-supervised pre-trainable
+50% 77.54 78.06 73.43 75.03 54.69 51.47
+framework namely BEST, which leverages the success of
+75% 78.47 78.77 74.54 75.32 56.06 53.16
+100% 80.98 81.24 76.60 76.75 58.82 54.87 BERT with the specific design to the sign language do-
+main.Focusingonthemainpropertiesduringsignlanguage
+Table 8: Effect of the data scale during pre-training on expression, we organize the hand and body movements as
+MSASL dataset. The “Percent” denotes the proportion of the pose triplet unit. During pre-training, we propose the
+pre-trainingdata. maskedunitmodeling(MUM)pretexttasktoexploitthehi-
+erarchical context cues among internal and external triplet
+bestperformance.Comparedwiththebaseline,ourproposed units. To make the original BERT objective applicable, we
+MUM achieves remarkable performance gain, i.e., 7.54%, attempttobridgethesemanticgapofpseudolabelviacou-
+5.81%and6.86%forper-instanceTop-1accuracyimprove- plingtokenizationonthetripletunit.Afterpre-training,we
+ment,respectively. directly fine-tune our model with a prediction head on the
+Pre-TrainingDataScale.InTable8,weinvestigatetheef- downstream SLR task. Extensive experiments validate the
+fectofthepre-trainingdatascale.Thefirstrowdenotesthat effectiveness of our method, achieving new state-of-the-art
+ourproposedframeworkisthemethodwithoutpre-training. performanceonallfourbenchmarks.
+It is clearly observed that the performance gradually in- Acknowledgements. This work was supported by the Na-
+creaseswiththeincrementintheproportionofpre-training tional Natural Science Foundation of China under Con-
+data. The result demonstrates that our proposed method is tract U20A20183 and 62021001. It was also supported by
+applicabletothepre-trainingforlarge-scaledata. GPUclusterbuiltbyMCCLabofInformationScienceand
+DifferentSelf-SupervisedPre-TrainingSettings.Thefirst TechnologyInstitution,USTC.
+References Huang, J.; Zhou, W.; Li, H.; and Li, W. 2018. Attention-
+based 3D-CNNs for large-vocabulary sign language recog-
+Albanie, S.; Varol, G.; Momeni, L.; Afouras, T.; Chung,
+nition. IEEETCSVT,29(9):2822–2832.
+J. S.; Fox, N.; and Zisserman, A. 2020. BSL-1K: Scaling
+upco-articulatedsignlanguagerecognitionusingmouthing Jiang, T.; Camgoz, N. C.; and Bowden, R. 2021. Skeletor:
+cues. InECCV,35–53. Skeletal transformers for robust body-pose estimation. In
+CVPR,3394–3402.
+Bao, H.; Dong, L.; and Wei, F. 2021. BEiT: BERT pre-
+trainingofimagetransformers. InICLR,1–18. Jin,T.;andZhao,Z.2021. ContrastiveDisentangledMeta-
+Learning for Signer-Independent Sign Language Transla-
+Bengio, Y.; Le´onard, N.; and Courville, A. 2013. Estimat-
+tion. InACMMM,5065–5073.
+ingorpropagatinggradientsthroughstochasticneuronsfor
+conditionalcomputation. arXiv,1–12. Joze,H.R.V.;andKoller,O.2018. MS-ASL:Alarge-scale
+datasetandbenchmarkforunderstandingamericansignlan-
+Cai, Y.; Ge, L.; Liu, J.; Cai, J.; Cham, T.-J.; Yuan, J.; and
+guage. InBMVC,1–16.
+Thalmann, N. M. 2019. Exploiting spatial-temporal rela-
+tionships for 3D pose estimation via graph convolutional Kingma, D. P.; and Ba, J. 2014. Adam: A method for
+networks. InICCV,2272–2281. stochasticoptimization. arXiv,1–15.
+Camgoz,N.C.;Hadfield,S.;Koller,O.;Ney,H.;andBow- Koller, O.; Zargaran, S.; Ney, H.; and Bowden, R. 2018.
+den, R. 2018. Neural sign language translation. In CVPR, Deep sign: Enabling robust statistical continuous sign lan-
+7784–7793. guagerecognitionviahybridCNN-HMMs. IJCV,126(12):
+1311–1325.
+Carreira, J.; and Zisserman, A. 2017. Quo vadis, action
+recognition?anewmodelandthekineticsdataset.InCVPR, Laptev,I.2005. Onspace-timeinterestpoints. IJCV,64(2):
+6299–6308. 107–123.
+Conneau,A.;andLample,G.2019. Cross-linguallanguage Lewis, M.; Liu, Y.; Goyal, N.; Ghazvininejad, M.; Mo-
+modelpretraining. InNeurIPS,1–11. hamed, A.; Levy, O.; Stoyanov, V.; and Zettlemoyer, L.
+2019. BART:Denoisingsequence-to-sequencepre-training
+Contributors, M. 2020. OpenMMLab Pose Estimation
+fornaturallanguagegeneration,translation,andcomprehen-
+Toolbox and Benchmark. https://github.com/open-mmlab/
+sion. InACL,7871–7880.
+mmpose.
+Li,C.;Zhong,Q.;Xie,D.;andPu,S.2018. Co-occurrence
+Cui,R.;Liu,H.;andZhang,C.2019. Adeepneuralframe-
+feature learning from skeleton data for action recognition
+work for continuous sign language recognition by iterative
+anddetectionwithhierarchicalaggregation. InIJCAI,786–
+training. IEEETMM,21(7):1880–1891.
+792.
+Devlin,J.;Chang,M.-W.;Lee,K.;andToutanova,K.2018.
+Li,D.;Rodriguez,C.;Yu,X.;andLi,H.2020a. Word-level
+BERT: Pre-training of deep bidirectional transformers for
+deep sign language recognition from video: A new large-
+languageunderstanding. InACL,4171–4186.
+scale dataset and methods comparison. In WACV, 1459–
+Du, Y.; Wang, W.; and Wang, L. 2015. Hierarchical recur- 1469.
+rentneuralnetworkforskeletonbasedactionrecognition.In
+Li, D.; Yu, X.; Xu, C.; Petersson, L.; and Li, H. 2020b.
+CVPR,1110–1118.
+Transferring cross-domain knowledge for video sign lan-
+Farhadi,A.;Forsyth,D.;andWhite,R.2007.Transferlearn- guagerecognition. InCVPR,6205–6214.
+inginsignlanguage. InCVPR,1–8.
+Lin, J.; Gan, C.; and Han, S. 2019. TSM: Temporal shift
+Feichtenhofer,C.;Fan,H.;Malik,J.;andHe,K.2019.Slow- module for efficient video understanding. In ICCV, 7083–
+fastnetworksforvideorecognition. InICCV,6202–6211. 7093.
+Fillbrandt,H.;Akyol,S.;andKraiss,K.-F.2003. Extraction Min, Y.; Zhang, Y.; Chai, X.; and Chen, X. 2020. An effi-
+of3Dhandshapeandposturefromimagesequencesforsign cient pointlstm for point clouds based gesture recognition.
+languagerecognition. InISO4,181–186. InCVPR,5761–5770.
+He,K.;Chen,X.;Xie,S.;Li,Y.;Dolla´r,P.;andGirshick,R. Momeni, L.; Bull, H.; Prajwal, K.; Albanie, S.; Varol, G.;
+2022. Maskedautoencodersarescalablevisionlearners. In and Zisserman, A. 2022. Automatic dense annotation of
+CVPR,16000–16009. large-vocabularysignlanguagevideos. InECCV,671–690.
+Hu, H.; Zhao, W.; Zhou, W.; Wang, Y.; and Li, H. 2021a. Ng, E.; Ginosar, S.; Darrell, T.; and Joo, H. 2021.
+SignBERT: Pre-Training of Hand-Model-Aware Represen- Body2hands: Learning to infer 3D hands from conversa-
+tation for Sign Language Recognition. In ICCV, 11087– tionalgesturebodydynamics. InCVPR,11865–11874.
+11096.
+Niu, Z.; and Mak, B. 2020. Stochastic fine-grained label-
+Hu,H.;Zhou,W.;andLi,H.2021. Hand-model-awaresign ingofmulti-statesignglossesforcontinuoussignlanguage
+languagerecognition. InAAAI,1558–1566. recognition. InECCV,172–186.
+Hu, H.; Zhou, W.; Pu, J.; and Li, H. 2021b. Global-local Qiu,Z.;Yao,T.;andMei,T.2017.Learningspatio-temporal
+enhancementnetworkforNMF-awaresignlanguagerecog- representationwithpseudo-3Dresidualnetworks. InICCV,
+nition. ACMTOMM,17(3):1–19. 5533–5541.
+Ramesh, A.; Pavlov, M.; Goh, G.; Gray, S.; Voss, C.; Rad-
+ford,A.;Chen,M.;andSutskever,I.2021. Zero-shottext-
+to-imagegeneration. InICML,8821–8831.
+Selvaraj,P.;Nc,G.;Kumar,P.;andKhapra,M.2022. Open-
+Hands:MakingSignLanguageRecognitionAccessiblewith
+Pose-based Pretrained Models across Languages. In ACL,
+2114–2133.
+Sincan, O. M.; and Keles, H. Y. 2020. Autsl: A large
+scale multi-modal turkish sign language dataset and base-
+linemethods. IEEEAccess,8:181340–181355.
+Starner, T. E. 1995. Visual Recognition of American Sign
+LanguageUsingHiddenMarkovModels. Technicalreport,
+MIT.
+Su, W.; Zhu, X.; Cao, Y.; Li, B.; Lu, L.; Wei, F.; and Dai,
+J.2019. VL-BERT:Pre-trainingofgenericvisual-linguistic
+representations. InICLR,1–16.
+Sun,C.;Myers,A.;Vondrick,C.;Murphy,K.;andSchmid,
+C.2019. VideoBERT:Ajointmodelforvideoandlanguage
+representationlearning. InICCV,7464–7473.
+Tang,A.;Lu,K.;Wang,Y.;Huang,J.;andLi,H.2015. A
+real-timehandposturerecognitionsystemusingdeepneural
+networks. ACMTIST,6(2):1–23.
+Tunga, A.; Nuthalapati, S. V.; and Wachs, J. 2021. Pose-
+Based Sign Language Recognition Using GCN and BERT.
+InWACV,31–40.
+VanDenOord,A.;Vinyals,O.;etal.2017. Neuraldiscrete
+representationlearning. InNeurIPS,1–11.
+Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones,
+L.;Gomez,A.N.;Kaiser,Ł.;andPolosukhin,I.2017. At-
+tentionisallyouneed. InNeurIPS,6000–6010.
+Yan,S.;Xiong,Y.;andLin,D.2018.Spatialtemporalgraph
+convolutional networks for skeleton-based action recogni-
+tion. InAAAI,1–10.
+Zhu, L.; and Yang, Y. 2020. ActBERT: Learning global-
+localvideo-textrepresentations. InCVPR,8746–8755.

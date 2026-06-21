@@ -1,0 +1,706 @@
+TheThirty-FourthAAAIConferenceonArtificialIntelligence(AAAI-20)
+Rare Words: A Major Problem for Contextualized
+Embeddings and How to Fix it by Attentive Mimicking
+TimoSchick HinrichSchu¨tze
+SulzerGmbH CenterforInformationandLanguageProcessing
+Munich,Germany LMUMunich,Germany
+timo.schick@sulzer.de inquiries@cislmu.org
+Abstract Q:Alimeisa . A:lime,lemon,fruit
+Q:Abicycleisa . A:bicycle,motorcycle,bike
+Pretrainingdeepneuralnetworkarchitectureswithalanguage
+modelingobjectivehasbroughtlargeimprovementsformany Q:Akumquatisa . A:noun,horse,dog
+natural language processing tasks. Exemplified by BERT, a
+Q:Aunicycleisa . A:structure,unit,chain
+recentlyproposedsucharchitecture,wedemonstratethatde-
+spitebeingtrainedonhugeamountsofdata,deeplanguage
+models still struggle to understand rare words. To fix this Table 1: Example queries and most probable outputs of
+problem,weadaptAttentiveMimicking,amethodthatwas BERTforfrequent(top)andrarewords(bottom)
+designed to explicitly learn embeddings for rare words, to
+deeplanguagemodels.Inordertomakethispossible,wein-
+troduceone-tokenapproximation,aprocedurethatenablesus
+should be able to correctly complete the sentence “Guilt is
+to use Attentive Mimicking even when the underlying lan-
+theoppositeof .”withtheword“innocence”.
+guage model uses subword-based tokenization, i.e., it does
+TheexamplesinTable1showthat,accordingtothismea-
+notassignembeddingstoallwords.Toevaluateourmethod,
+sure,BERTisindeedabletounderstandfrequentwordssuch
+we create a novel dataset that tests the ability of language
+modelstocapturesemanticpropertiesofwordswithoutany as “lime” and “bicycle”: it predicts, among others, that the
+task-specific fine-tuning. Using this dataset, we show that former is a fruit and the latter is the same as a bike. How-
+addingouradaptedversionofAttentiveMimickingtoBERT ever,itfailsterriblyforboth“kumquat”and“unicycle”,two
+doessubstantiallyimproveitsunderstandingofrarewords. lessfrequentwordsfromthesamedomains.Thispoorper-
+formanceraisesthequestionwhetherdeeplanguagemodels
+generallystruggletounderstandrarewordsand,ifso,how
+1 Introduction
+thisweaknesscanbeovercome.
+Distributed representations of words are a key component To answer this question, we create a novel dataset con-
+ofnaturallanguageprocessing(NLP)systems.Inparticular, tainingqueriesliketheonesshowninTable1.Thisdataset
+deep contextualized representations learned using an unsu- consistsof(i)naturallanguagepatternssuchas
+pervised language modeling objective (Peters et al. 2018)
+have led to large performance gains for a variety of NLP <W>isa .
+tasks. Recently, several authors have proposed to not only
+where <W> is a placeholder for a word to be investigated,
+use language modeling for feature extraction, but to fine-
+and(ii)correspondingpairsofkeywords(<W>)andtargets
+tune entire language models for specific tasks (Radford et
+(fillers for ) obtained using semantic relations extracted
+al.2018;HowardandRuder2018).Takingupthisidea,De-
+fromWordNet(Miller1995).
+vlinetal.(2019)introducedBERT,abidirectionallanguage
+Usingthisdataset,weshowthatBERTindeedfailstoun-
+model based on the Transformer (Vaswani et al. 2017) that
+derstandmany rarewords. Toovercome thislimitation, we
+hasachievedanewstate-of-the-artforseveralNLPtasks.
+proposetoapplyAttentiveMimicking(SchickandSchu¨tze
+As demonstrated by Radford et al. (2019), it is possible
+2019a), a method that allows us to explicitly learn high-
+forlanguagemodelstosolveadiversesetoftaskstosome
+quality representations for rare words. A prerequisite for
+extent without any form of task-specific fine-tuning. This
+using this method is to have high-quality embeddings for
+can be achieved by simply presenting the tasks in form of
+as many words as possible, because it is trained to repro-
+natural language sentences that are to be completed by the
+duce known word embeddings. However, many deep lan-
+model.Theverysameideacanalsobeusedtotesthowwell
+guagemodelsincludingBERTmakeuseofbyte-pairencod-
+alanguagemodelunderstandsagivenword:wecan“ask”it
+ing(Sennrich,Haddow,andBirch2015),WordPiece(Wuet
+forpropertiesofthatwordusingnaturallanguage.Forexam-
+al.2016)orsimilarsubwordtokenizationalgorithms.Thus,
+ple,alanguagemodelthatunderstandstheconceptof“guilt”
+many words are not represented by a single token but by a
+Copyright(cid:2)c 2020,AssociationfortheAdvancementofArtificial sequenceofsubwordtokensanddonothavetheirownem-
+Intelligence(www.aaai.org).Allrightsreserved. beddings.
+8766
+To solve this problem, we introduce one-token approxi- Presentingtasksintheformofnaturallanguagesentences
+mation(OTA),amethodthatapproximatelyinferswhatthe was recently proposed by McCann et al. (2018) as part of
+embedding of an arbitrary word would look like if it were their Natural Language Decathlon, for which they frame
+represented by a single token. While we apply this method ten different tasks as pairs of natural language questions
+only to BERT, it can easily be adapted for other language andanswers.Theytrainmodelsontriplesofquestions,con-
+modelingarchitectures. texts and answers in a supervised fashion. An alternative,
+Insummary,ourcontributionsareasfollows: completely unsupervised approach proposed by Radford et
+al. (2019) is to train a language model on a large corpus,
+• We introduce WordNet Language Model Probing (WN- presenttextspecializedforaparticulartaskandthenletthe
+LaMPro),anoveldatasetforevaluatingtheabilityoflan- model complete this text. They achieve good performance
+guagemodelstounderstandspecificwords. on tasks such as reading comprehension, machine transla-
+• Using this dataset, we show that the ability of BERT to tion and question answering – without any form of task-
+understandwordsdependshighlyontheirfrequency. specific fine-tuning. We use this paradigm for constructing
+WNLaMPro.
+• We present one-token approximation (OTA), a method Several existing datasets were designed to analyze the
+thatobtainsanembeddingforamulti-tokenwordthathas abilityofwordembeddingstocapturesemanticrelationsbe-
+behavior similar to the sequence of its subword embed- tween words. For example, Baroni and Lenci (2011) com-
+dings. pile the BLESS dataset that covers five different semantic
+• We apply OTA and Attentive Mimicking (Schick and relations(e.g.,hyponymy)frommultiplesources.Weedset
+al.(2014)alsocreateadatasetforsemanticrelationsbased
+Schu¨tze2019a)toBERTandshowthatthissubstantially
+onhypernymsandhyponymsusingWordNet(Miller1995).
+improvesBERT’sunderstandingofrarewords.
+However,thesedatasetsdifferfromWNLaMProintwoim-
+Our work is the first to successfully apply mimicking
+portant respects. (i) They focus on frequent words by fil-
+techniquestocontextualizedwordembeddings.
+tering out infrequent ones whereas we explicitly want to
+analyze rare words. (ii) They do not provide natural lan-
+2 RelatedWork
+guage patterns: they either directly evaluate (uncontextual-
+Using language modeling as a task to obtain contextual- ized) word embeddings using a similarity measure such as
+ized representations of words was first proposed by Peters cosinedistanceortheyframethetaskofidentifyingthere-
+et al. (2018), who train a bidirectional LSTM (Hochreiter lationshipbetweentwowordsasasupervisedtask.
+and Schmidhuber 1997) language model for this task and
+then feed the so-obtained embeddings into task-specific ar- 3 AttentiveMimicking
+chitectures. Several authors extend this idea by transfer- 3.1 OriginalModel
+ring not only word embeddings, but entire language mod-
+AttentiveMimicking(AM)(SchickandSchu¨tze2019a)isa
+eling architectures to specific tasks (Radford et al. 2018;
+method that, given a set of d-dimensional high-quality em-
+Howard and Ruder 2018; Devlin et al. 2019). Whereas the
+beddings for frequent words, can be used to infer embed-
+GPTmodelproposedbyRadfordetal.(2018)isstrictlyuni-
+dingsforinfrequentwordsthatareappropriateforthegiven
+directional(i.e.,itlooksonlyattheleftcontexttopredictthe
+embedding space. AM is an extension of the form-context
+nextword)andtheULMFiTmethodofHowardandRuder
+model(SchickandSchu¨tze2019b).
+(2018) uses a shallow concatenation of two unidirectional
+The key idea of the form-context model is to compute
+models,Devlinetal.(2019)designBERTasadeepbidirec-
+two distinct embeddings per word, where the first one ex-
+tionalmodelusingaTransformerarchitectureandamasked
+clusively uses the word’s surface-form and the other the
+languagemodelingtask.
+word’s contexts, i.e., sentences in which the word was ob-
+There are roughlytwo types of approaches for explicitly served.GivenawordwandasetofcontextsC,thesurface-
+learning high-quality embeddings of rare words: surface- formembeddingvform ∈ Rd isobtainedbyaveragingover
+form-based approaches and context-based approaches. The (w,C)
+learnedembeddingsofalln-gramsinw;thecontextembed-
+formerusesubwordinformationtoinferaword’smeaning;
+this includes n-grams (Wieting et al. 2016; Bojanowski et
+dingv (c won ,t Cex )t ∈Rdistheaverageovertheknownembeddings
+al.2017;SalleandVillavicencio2018),morphemes(Lazari- ofallcontextwords.
+dou et al. 2013; Luong, Socher, and Manning 2013) and The final representation v (w,C) of w is then a weighted
+characters (Pinter, Guthrie, and Eisenstein 2017). On the sum of form embeddings and transformed context embed-
+other hand, context-based approaches take a look at the dings:
+words surrounding a given rare word to obtain a repre- v =α·Avcontext+(1−α)·vform
+(w,C) (w,C) (w,C)
+sentation for it (e.g., Herbelot and Baroni 2017; Khodak
+et al. 2018). Recently, Schick and Schu¨tze (2019b) intro- where A is a d×d matrix and α is a function of both em-
+duced the form-context model, combining both approaches beddings,allowingthemodeltodecidewhentorelyonthe
+byjointlyusingsurface-formandcontextinformation.The word’s surface form and when on its contexts (see Schick
+form-context model and its Attentive Mimicking variant andSchu¨tze(2019b)forfurtherdetails).
+(Schick and Schu¨tze 2019a) achieve a new state-of-the-art Whiletheform-contextmodeltreatsallcontextsequally,
+forhigh-qualityrepresentationsofrarewords. AM extends it with a self-attention mechanism that is ap-
+8767
+plied to all contexts, allowing the model to distinguish in- ThisallowsustotrainAMintheusualwaybysimplymim-
+formativefromuninformativecontexts.Theattentionweight ickingtheOTA-basedembeddingsofmulti-tokenwords.
+ofeachcontextisdeterminedbasedontheideathatgivena Let Σ denote the set of all characters and T ⊂ Σ∗ the
+wordw,twoinformativecontextsC 1 andC 2 (i.e.,contexts set of all tokens used by the language model. Furthermore,
+fromwhichthemeaningofwcanbeinferred)resembleeach lett:Σ∗ →T∗bethetokenizationfunctionthatsplitseach
+other more than two randomly chosen contexts in which w word into a sequence of tokens and e : T → Rd the
+occurs. In other words, if many contexts for a word w are model’stokenembeddingfunction,whichweextendtose-
+similartoeachother,thenitisreasonabletoassumethatthey quences of tokens in the natural way as e([t 1,...,t n]) =
+aremoreinformativewithrespecttow thanothercontexts. [e(t 1),...,e(t n)].
+Schick and Schu¨tze (2019a) define the similarity between Weassumethatthelanguagemodelinternallyconsistsof
+twocontextsas l hidden layers and given a sequence of token embed-
+max
+s(C 1,C 2)=
+(Mv C1) √·(Mv C2)(cid:2) d izi en dgs ree pr= ese[e n1 ta, t. i. o. n, oe fn] t, hew ie -td he in no pt ue tb ey mh bl i e( de d) inth ge ec io an tt le ax yt eu ral l-
+.
+d
+Giventwoadditionalsequencesofleftandrightembeddings
+with M ∈ Rd×d a learnable parameter and v C denotes the
+(cid:2)andr,wedefine
+(cid:4)
+average of embeddings for all words in a context C. The hl((cid:2);e;r) ifi≤|(cid:2)|
+weightofacontextisthendefinedas h˜l i((cid:2),e,r)= hi l ((cid:2);e;r) ifi>|(cid:2)|
+(cid:2) i+|e|
+ρ(C)∝ s(C,C(cid:4)).
+where a;b denotes the concatenation of sequences a and b.
+(cid:3)
+C(cid:2)∈C Thatis,we“cutout”thesequenceeandh˜l i((cid:2),e,r)isthen
+with ρ(C) = 1.Thisresultsinthefinalcontextem- the embedding of the i-th input at layer l, either from (cid:2) (if
+C∈C
+bedding (cid:2) positioniisbeforee)orfromr(ifpositioniisaftere).
+v (c won ,t Cex )t = ρ(C)·v C Σ∗T ,o wo eb rt ea qin uira en aO sT eA toe fm leb fted and din rg igf ho tr ca on nta er xb ti str Cary ⊂w To ∗rd ×w T∗∈
+.
+C∈C
+where again, v C denotes the average of the embeddings of tG oiv see an rco hne fos ruc thh ec eo mnt be ex dt dc in= g( vt (cid:2) ∈,t Rr d), wth he ok seey ini flde ua eno cf eO oT nA thi es
+allwordsinacontextC.
+contextualized representations of t (cid:2) and t r is as similar as
+Similartoearliermodels(e.g.,Pinter,Guthrie,andEisen- possibletotheinfluenceofw’soriginal,multi-tokenrepre-
+stein2017),themodelistrainedthroughmimicking.Thatis,
+sentationonbothsequences.Thatis,whenweapplythelan-
+w C toe f mrr o ia mmnd icaom tl hal ery g oes ra ic gm o inp rp ale u ls ew mao n br dd e,s ddgw ii nv gea nn od fwc wo a ,r nr id .e es .Cp ,o , ton ad s mkin ing th imc eo im zn et oe tdx het es l a rg enu sda eg nse t2 am t= ioo n[d e se (l ot f(cid:2)t )o t; (cid:2)[t vh a]e n; des (e ttq rru ) ie n],n swc 1e es tows ba1 en= t at sh[e se( imct o(cid:2) i) n l; ate rex( at t s( uw pal o) i sz) s; e ie d b( lrt eer p t) o-]
+s aq nu da vre (wd ,CE )u .clideandistancebetweentheoriginalembedding tho Fs oe ri mn as l2 ly.
+,wedefinetheone-tokenapproximationofwas
+3.2 AM+CONTEXT OTA(w)=
+(cid:2)
+As we found in preliminary experiments that AM focuses arg min d(e(t(w)),[v]|e(t (cid:2)),e(t r))
+heavilyontheword’ssurfaceform–anobservationthatis v∈Rn
+inlinewithresultsreportedbySchickandSchu¨tze(2019b)
+(t (cid:2),tr)∈C
+–, in addition to the default AM configuration of Schick where
+and Schu¨tze (2019a), we investigate another configuration
+(cid:2)l |(cid:2)(cid:2)|+|r|
+AM+CONTEXT, which pushes the model to put more em-
+d(e,e˜ |(cid:2),r)=
+max
+dl(e,e˜ |(cid:2),r)
+phasisonaword’scontexts.Thisisachievedby(i)increas- i
+ingtheminimumnumberofsampledcontextsforeachtrain- l=1 i=1
+inginstancefrom1to8and(ii)introducingn-gramdropout: dl(e,e˜ |(cid:2),r)=(cid:8)h˜l((cid:2),e,r)−h˜l((cid:2),e˜,r))(cid:8)2.
+i i i
+during training, we randomly remove 10% of all surface-
+formn-gramsforeachtraininginstance. Thatis,givenaninputsequence[(cid:2);e;r],dl i(e,e˜ |(cid:2),r)mea-
+surestheinfluenceofreplacingewithe˜ onthecontextual-
+4 One-TokenApproximation
+izedrepresentationofthei-thwordinthel-thlayer.
+Asd(e,e˜ |(cid:2),r)isdifferentiablewithrespecttoe˜,wecan
+AsAMistrainedthroughmimicking,itmustbegivenhigh- use gradient-based optimization to estimate OTA(w). This
+quality embeddings of many words to learn how to make
+idea resembles the approach of Le and Mikolov (2014) to
+appropriate use of form and context information. Unfortu-
+inferparagraphvectorsforsequencesofarbitrarylength.
+nately,asmanydeeplanguagemodelsmakeuseofsubword- With regards to the choice of contexts C, we define two
+based tokenization, they assign embeddings to comparably
+variants, both of which do not require any additional in-
+few words. To overcome this limitation, we introduce one-
+formation: STATIC and RANDOM. For the STATIC variant,
+tokenapproximation(OTA).OTAfindsanembeddingfora C consistsofasinglecontext
+multi-token word or phrase w that is similar to the embed-
+dingthatwwouldhavereceivedifithadbeenasingletoken. (t (cid:2),t r)=([CLS], .[SEP])
+8768
+Key Rel. Targets ANTONYM HYPERNYM
+new ANT old <W>istheoppositeof . <W>isa .
+general ANT specific <W>isnot . a<W>isa .
+local ANT global someonewhois<W>isnot . “<W>”referstoa .
+somethingthatis<W>isnot . <W>isakindof .
+book HYP product,publication,... “<W>”istheoppositeof“ ”. a<W>isakindof .
+basketball HYP game,ball,sport,...
+lingonberry HYP fruit,bush,berry,... CORRUPTION COHYPONYM+
+samosa COH+ pizza,sandwich,salad,... “<W>”isamisspellingof“ ”. <W>and .
+harmonium COH+ brass,flute,sax,... “<W>”.didyoumean“ ”? “<W>”and“ ”.
+immorality COH+ crime,evil,sin,fraud,...
+Table3:PatternsforallrelationsofWNLaMPro.Theindef-
+simluation COR simulation
+chepmistry COR chemistry inite article “a” used in the HYP patterns is replaced with
+“an”asappropriate.
+pinacle COR pinnacle
+Table2:ExampleentriesfromWNLaMPro SubsetSize MeanTargets
+Rel. R M F R M F
+with [CLS] and [SEP] being BERT’s classification and ANT 41 59 266 1.0 1.0 1.0
+separationtoken,respectively.Weusethisparticularcontext HYP 1191 1785 4750 4.0 3.9 4.2
+because in pretraining, BERT is exposed exclusively to se- COH+ 1960 2740 6126 26.0 26.0 25.0
+quencesstartingwith[CLS]andendingwith[SEP]. COR 2880 – – 1.0 – –
+Asthemeaningofawordcanoftenbetterbeunderstood
+by looking at its interaction with other words, we surmise Table 4: The number of entries and mean number of target
+that OTA works better when we provide variable contexts words for the RARE (R), MEDIUM (M), and FREQUENT (F)
+in which different words occur. For this reason, we also subsetsofWNLaMPro
+investigate the RANDOM variant. In this variant, each pair
+(t (cid:2),t r)∈C isoftheform
+counts in WWC: WNLaMPro-RARE, containing all words
+(t (cid:2),t r)=([CLS]t (cid:2), t r.[SEP])
+that occur less than 10 times, WNLaMPro-MEDIUM, con-
+wheret (cid:2)andt rareuniformlysampledtokensfromT,under tainingallwordsthatoccur10ormoretimes,butlessthan
+100 times, and WNLaMPro-FREQUENT, containing all re-
+theconstraintthateachofthemrepresentanactualword.
+maining words. Statistics about the sizes of these subsets
+andthemeannumberoftargetwordsperrelationarelisted
+5 WordNetLanguageModelProbing
+inTable4.
+In order to assess the ability of language models to un- ForcreatingWNLaMPro,weuseWordNet(Miller1995)
+derstand words as a function of their frequency, we intro- toobtaintriples(k,r,T).Tothisend,wedenotebyVthevo-
+duce the WordNet Language Model Probing (WNLaMPro) cabularyofallwordsthatoccuratleastonceintheWestbury
+dataset.1Thisdatasetconsistsoftwoparts:
+WikipediaCorpus(WWC)(ShaoulandWestbury2010)and
+• asetoftriples(k,r,T)wherek isakeyword,risarela- match the regular expression [a–z.-]*. The set of all
+tionandT isasetoftargetwords; tokens in the BERT vocabulary is denoted by T. For all
+triplets, we restrict the set of target words to single-token
+• asetofpatternsP(r)foreachrelationr,whereeachpat-
+words from T. This allows us to measure BERT’s perfor-
+ternisasequenceoftokensthatcontainsexactlyonekey-
+manceforeachkeywordk withouttheconflatinginfluence
+wordplaceholder<W>andonetargetplaceholder .
+ofrareormulti-subwordwordsonthetargetside.
+The dataset contains four different kinds of relations:
+ANTONYM (ANT), HYPERNYM (HYP), COHYPONYM+ 5.1 Antonyms
+(COH+) and CORRUPTION (COR). Examples of dataset en- For each adjective w ∈ V, we collect all antonyms for its
+triesforallrelationsareshowninTable2;thesetofpatterns mostfrequentWordNetsenseinasetAand,ifA∩T =(cid:10) ∅,
+foreachrelationcanbeseeninTable3. add(w, ANTONYM,A∩T)tothedataset.
+Wesplitthedatasetintoadevelopmentandatestset.For
+each relation, we randomly select 10% of all entries to be 5.2 Hypernyms
+included in the development set; the remaining 90% form
+For each noun w ∈ V, let H be the set of all hypernyms
+the test set. We purposefully do not provide a training set
+for its two most frequent senses. As direct hypernyms are
+as WNLaMPro is meant to be used without task-specific
+sometimes highly specific (e.g., the hypernym of “dog” is
+fine-tuning.Wealsodefinethreesubsetsbasedonkeyword
+“canine”), we include all hypernyms whose path distance
+1TheWNLaMProdatasetispubliclyavailableathttps://github. to w is at most 3. To avoid the inclusion of very general
+com/timoschick/am-for-bert termssuchas“object”or“unit”,werestrictHtohypernyms
+8769
+1
+0.8
+0.6
+0.4
+0.2
+0
+0 1000 2000 3000 4000 5000
+Iterations
+ecnatsidenisocegarevA
+allofourexperimentsinvolvingAM,weusetheoriginalim-
+STATIC plementation of Schick and Schu¨tze (2019a). As WNLaM-
+RANDOM ProisbasedonWordNet,allofourexperimentsareconfined
+totheEnglishlanguage.
+6.1 One-TokenApproximation
+WefirstcomparetheSTATICandRANDOMcontextvariants
+ofOTAanddeterminetheoptimalnumberoftrainingitera-
+tions.Tothisend,weformadevelopmentsetbyrandomly
+selecting1000one-tokenwordsfromtheBERTvocabulary.
+For each word w in this set, we measure the quality of its
+approximation OTA(w) by comparing it to its BERT em-
+beddinge(w),usingcosinedistance.WeinitializetheOTA
+vector of each word as a zero vector and optimize it using
+Adam (Kingma and Ba 2015) with an initial learning rate
+of 10−3. For both context variants, we search for the ideal
+Figure 1: Performance of OTA on 1000 randomly selected
+numberofiterationsintherange{100·i|1≤i≤50}.
+one-tokenwords
+ResultscanbeseeninFigure1.Whileforbothvariants,
+the average cosine distance between BERT’s embeddings
+that have a minimum depth of 6 in the WordNet hierarchy. andtheirOTAequivalentsisrelativelyhighinthebeginning
+If |H ∩ T| ≥ 3, we add (w, HYPERNYM,H ∩ T) to the – which is simply due to the fact that all OTA embeddings
+dataset. However, if |H ∩ T| > 20, we keep only the 20 are initialized randomly – after only a few iterations RAN-
+mostfrequenttargetwords. DOM consistently outperforms STATIC.4 For the RANDOM
+variant,theaveragecosinedistancereachesitsminimumat
+5.3 Cohyponyms+ 4000 iterations. We therefore use RANDOM contexts with
+For each noun w ∈ V, we compute its set of hypernyms 4000iterationsinourfollowingexperiments.
+H as described above (but with a maximum path distance
+of 2), and denote by C the union of all hyponyms for each 6.2 EvaluationonWNLaMPro
+hypernym in H with a maximum path distance of 4.2 Let To measure the performance of a language model on WN-
+C(cid:4) =(C\{w})∩T.If|C(cid:4)|≥10,weaddthecorresponding LaMPro, we proceed as follows. Let x = (k,r,T) be a
+tuple (w, COHYPONYM+,C(cid:4)) to the dataset. If |C(cid:4)| > 50, datasetentry,w ∈ T atargetword,p ∈ P(r)apatternand
+wekeeponlythe50mostfrequenttargetwords. p[k]thesamepatternwherethekeywordplaceholder<W>is
+replacedbyk.Furthermore,let(a 1,...,a n)bethemodel’s
+5.4 Corruptions responses (sorted in descending order by their probability)
+We include this relation to investigate a model’s ability to whenitisaskedtopredictareplacementwordforthetarget
+deal with corruptions of the input that may, for example, placeholderinp[k].Thenthereissomej suchthata j = w.
+be the result of typing errors or errors in optical character Wedenotewith
+recognition. To obtain corrupted words, we take frequent rank(p[k],w)=j
+words from V ∩ T and randomly apply corruptions simi-
+|{a ,...,a }∩T|
+lartotheonesusedbyHill,Cho,andKorhonen(2016)and precision (p[k],T)= 1 i
+Lee,Mansimov,andCho(2018),butweapplythemonthe i i
+characterlevel.Specifically,givenawordw =c 1...c n,we therankofw andprecisionatiwhenthemodelisqueried
+createacorruptedversionw˜byeither(i)insertingarandom
+withp[k].5Wemaythendefine:
+charactercafterarandompositioni∈[0,n],(ii)removinga
+characteratarandompositioni∈[1,n]or(iii)switchingthe rank(x)= min minrank(p[k],w)
+charactersc
+i
+andc
+i+1
+forarandompositioni ∈ [1,n−1]. p∈P(r)w∈T
+Wethenadd(w˜, CORRUPTION,w)tothedataset. precision i(x)= max precision i(p[k],T)
+p∈P(r)
+6 Experiments That is, for each triplet x, we compute the best rank and
+For our evaluation of BERT on WNLaMPro, we use the precision that can be achieved using any pattern. We do so
+Transformers library of Wolf et al. (2019). Our implemen- because our interest is not in testing the model’s ability to
+tationofOTAisbasedonPyTorch(Paszkeetal.2017).3For understand a given pattern, but its ability to understand a
+givenword:bylettingthemodelchoosethebestpatternfor
+2Cohyponymsaredefinedtohaveacommonparent.Ourmore
+generaldefinition(havingacommonancestor)givesusatestthat 4Thedifferencebetweenthebestresultsachievedusing RAN-
+hasmorecoveragethanarestrictiontocohyponymsinastrictsense DOMandSTATICisstatisticallysignificantinatwo-sidedbinomial
+wouldhave.Wecallourgeneralization“cohyponym+”. test(p<0.05).
+3Our implementation of OTA is publicly available at https:// 5We only look at the first 100 system responses and set
+github.com/timoschick/one-token-approximation rank(p[k],w)=∞ifw∈/ {a 1,...,a 100}.
+8770
+0.4
+0.3
+0.2
+0.1
+0
+RARE MEDIUM FREQ.
+WNLaMProSubset
+RRM
+∞
+BERT BASE 512
+OTA 256
+FIRST 128
+LAST
+64
+AVG 32
+16
+8
+4
+2
+1
+∞
+20 22 24 26 28 210 212
+Wordcount
+Figure2:MeanreciprocalrankonWNLaMProdev+testfor
+BERT ,OTAandvariousbaselines
+BASE
+eachword,weminimizetheprobabilitythatitsresponseis
+ofpoorqualitysimplybecauseitdidnotunderstandagiven
+pattern.
+We evaluate the uncased version of BERT (Devlin
+BASE
+et al. 2019) on WNLaMPro to get an impression of (i) the
+model’sgeneralabilitytounderstandthepresentedphrases
+and(ii)thedifferenceinperformanceforrareandfrequent
+words. To investigate how well OTA does at obtaining sin-
+gleembeddingsformulti-tokenwords,wealsotryavariant
+ofBERTwhereallmulti-tokenkeywordsarereplacedwith
+their one-token approximations. Furthermore, we compare
+OTA against the following baseline strategies for obtaining
+singleembeddingsformulti-tokenwordsw =t 1,...,t n:
+• FIRST:Weusetheembeddingofthefirsttoken,e(t 1).
+• LAST:Weusetheembeddingofthelasttoken,e(t n).
+• AVG: W(cid:3)e use the average over the embeddings of all to-
+kens, n1 n i=1e(t i).
+Wechoosetheseparticularbaselinesbecausetheyarenatu-
+ralchoicesforobtainingawordembeddingfromasequence
+ofsubwordembeddingswithoutanyadvancedcomputation.
+The mean reciprocal rank (MRR) over WNLaMPro can
+be seen in Figure 2 for BERT , OTA and all baselines.
+BASE
+We can see that for all models, the score depends heavily
+on the word frequency. Notably, OTA performs much bet-
+ter than all of the above baselines, regardless of word fre-
+quency.Furthermore,thedifferenceinperformancebetween
+OTA’ssingleembeddingsandBERT’soriginal,multi-token
+embeddings is only marginal, allowing us to conclude that
+OTAisindeedabletoinfersingle-tokenembeddingsofde-
+centqualityformulti-tokenwords.
+Ofcourse,OTAbyitselfdoesnotimprovetheembedding
+qualitycomparedtousingBERTasis–andweneverapply
+OTAtowordsthathavesingle-tokenBERTrepresentations
+inthefollowingexperiments.ThepurposeofOTAistoal-
+low us to train our attentive mimicking model for BERT:
+OTAprovidesuswiththesingle-tokenembeddingsthatwe
+requiretotrainAM.
+knaR
+0.3
+0.2
+0.1
+Figure3:PerformanceofBERT fortheCOHYPONYM+
+BASE
+subset of WNLaMPro. Each cell (i,j) of the heat map
+is shaded based on the percentage of all dataset entries
+withkeywordcounts(“Wordcount”)intherange(2j−1,2j]
+whose rank (“Rank”) is in the range (2i−1,2i]. The values
+ineachcolumnadduptoone.
+MRR
+Model 5Epochs 10Epochs
+AM 0.258 0.253
+AM+CONTEXT 0.262 0.276
+AM−OTA 0.219 0.220
+AM−form 0.138 0.133
+AM−context 0.227 0.225
+Table5:ResultsonWNLaMProdevforvariousconfigura-
+tionsofAMtrainedonembeddingsfromandintegratedinto
+BERT BASE
+The general trend that the understanding of a word in-
+creaseswithitsfrequencybecomesevenmoreobviouswhen
+looking at Figure 3, where the distribution of ranks for the
+COHYPONYM+ subset of WNLaMPro is shown as a func-
+tionofWWCwordcounts.Thedistributionofranksiscom-
+puted independently for each interval of word counts con-
+sidered. That is, the values in each column are normalized
+sothattheyadduptoone.Thiswasdonetopreventthedi-
+agram from being distorted because certain word count in-
+tervalscontainmorewordsthanothers.Ascanbeseen,for
+wordsthatoccuratmost256(28)timesinWWC,themost
+probablerankintervalis[64,128).Withmoreobservations,
+BERT’sunderstandingofwordsdrasticallyimproves:more
+than50%ofallwordswithmorethan256(28)observations
+achievearankofatmost16.
+6.3 AttentiveMimicking
+We train two variants of Attentive Mimicking: the de-
+fault configuration of Schick and Schu¨tze (2019a) and the
+AM+CONTEXT configuration(§3.2)thatputsmoreempha-
+sis on contexts. To decide which method to apply and to
+8771
+RARE MEDIUM FREQUENT
+Set Model MRR P@3 P@10 MRR P@3 P@10 MRR P@3 P@10
+BERT 0.149 0.065 0.025 0.089 0.044 0.021 0.390 0.170 0.061
+BASE
+BERT +AM 0.449 0.167 0.075 0.511 0.176 0.064 0.482 0.195 0.074
+ANT BASE
+BERT 0.234 0.083 0.044 0.218 0.088 0.036 0.541 0.209 0.081
+LARGE
+BERT +AM 0.529 0.194 0.075 0.558 0.195 0.068 0.570 0.228 0.088
+LARGE
+BERT 0.276 0.122 0.066 0.327 0.151 0.077 0.416 0.204 0.109
+BASE
+BERT +AM 0.300 0.135 0.074 0.343 0.158 0.081 0.377 0.181 0.096
+HYP BASE
+BERT 0.284 0.128 0.065 0.350 0.169 0.086 0.462 0.226 0.117
+LARGE
+BERT +AM 0.299 0.137 0.074 0.323 0.149 0.079 0.401 0.193 0.101
+LARGE
+BERT 0.147 0.065 0.054 0.177 0.089 0.070 0.294 0.150 0.116
+BASE
+BERT +AM 0.213 0.106 0.082 0.213 0.110 0.090 0.262 0.136 0.108
+COH+ BASE
+BERT 0.174 0.085 0.067 0.210 0.109 0.091 0.337 0.183 0.143
+LARGE
+BERT +AM 0.227 0.110 0.087 0.216 0.106 0.089 0.292 0.153 0.121
+LARGE
+BERT 0.020 0.007 0.004 – – – – – –
+BASE
+BERT +AM 0.254 0.095 0.038 – – – – – –
+COR BASE
+BERT 0.062 0.022 0.012 – – – – – –
+LARGE
+BERT +AM 0.261 0.095 0.038 – – – – – –
+LARGE
+Table6:PerformanceofBERTwithandwithoutAMforWNLaMProtest,subdividedbyrelationandkeywordcount.Under-
+linednumbersindicateasignificantdifferencebetweenBERTandBERT+AMinatwo-sidedbinomialtest(p<0.05).
+determine the optimal number of training epochs, we use ter than 5 epochs. Based on these findings, we only apply
+WNLaMPro dev. As evaluating AM on WNLaMPro is a AM+CONTEXT trained for 10 epochs using OTA on WN-
+time-consumingoperation,theonlyvalueswetryare5and LaMProtest.
+10 epochs; furthermore, we perform hyperparameter opti-
+For both the base and large configurations of BERT, Ta-
+mizationonlyonBERT .Tounderstandtheinfluenceof
+BASE ble6comparesBERT’sperformancewithandwithoutAM
+one-tokenapproximationontheperformanceofAM,inad-
+on WNLaMPro; MRR as well as precision at 3 and 10 are
+dition to the two configurations described above – both of
+shownforeachrelationandfrequency.AMsubstantiallyim-
+whichmakeuseofOTA–wealsotryavariantwithoutOTA,
+provesthescoreforrarewords,bothforBERT andfor
+wherethetrainingsetcontainsonlyone-tokenwords.Tosee BASE
+BERT . The difference between BERT with and with-
+whether we actually need both form and context informa- LARGE
+outAMissignificantaccordingtoatwo-sidedbinomialtest
+tion, we additionally investigate the influence of dropping (p < 0.05). This demonstrates that AM helps BERT get a
+eitherthecontextorformpartsofAM.
+better understanding of rare words. The benefit of apply-
+AsproposedbySchickandSchu¨tze(2019b),wetrainAM ingAMformediumfrequencywordsdependslargelyonthe
+onallwordsthatoccuratleast100timesinWWC;foreach modelbeingused:forBERT ,usingAMonlybringsa
+LARGE
+wordthatisrepresentedbymultipletokensintheBERTvo- consistentimprovementfortheANTONYMrelation,whereas
+cabulary,weuseitsOTAasatargetvectortobemimicked. for BERT , using AM is always helpful. The fact that
+BASE
+Importantly, we train AM on contexts from WWC (con- BERT performs better than AM for frequent words is not
+tainingslightlyfewerthan109 words),whereastheoriginal surprising, considering that our model both has less capac-
+BERTmodelwastrainedontheconcatenationofBooksCor- ityandwastrainedonconsiderablylessdata.However,the
+pus(Zhuetal.2015)(containing0.8·109words)andalarger strong results for rare and – in some cases – medium fre-
+versionofWikipedia(containing2.5·109words).Eachoc- quencywordssuggestthattoobtainthebestofbothworlds,
+currenceofawordcancontributetoobtainingahigh-quality onecansimplyreplaceBERT’sembeddingsforrarewords
+representation, especially for rare words. Therefore, BERT using AM while keeping its original embeddings for fre-
+has a clear advantage over our proposed method due to its quent words. As AM is trained using mimicking as an ob-
+largertrainingcorpus. jective, embeddings induced by AM are well aligned with
+theembeddingspaceitwastrainedon.Thus,BERT’sorigi-
+Table5showsresultsforallmodelvariantsonWNLaM-
+nalembeddingsandAM-basedembeddingscanseamlessly
+Prodev.WecanseethatOTAisindeedhelpfulfortraining
+beemployedtogether.
+themodel,substantiallyimprovingitsscore.Resultsforthe
+model variants using only form or context are in line with To better understand for what kinds of words adding
+the findings of Schick and Schu¨tze (2019b): it is essential AM to BERT is especially helpful, we finally analyze the
+forgoodperformancetousebothformandcontext.Further- predictions of BERT with and without AM for a few se-
+more, AM+CONTEXT improves upon the default configu- lected words (Table 7). As exemplified by these examples,
+ration of AM and training it for 10 epochs performs bet- the inability of BERT to understand rare words is often
+8772
+Query: somethingthatisuna·cc·ess·ibleisnot . References
+BERT: possible,impossible,true,allowed Baroni, M., and Lenci, A. 2011. How we blessed distri-
+BERT+AM: accessible,allowed,possible,available butionalsemanticevaluation. InProceedingsoftheGEMS
+Query: un·ic·y·cleand . 2011 Workshop on GEometrical Models of Natural Lan-
+BERT: bridge,body,base,chain guageSemantics,1–10.AssociationforComputationalLin-
+BERT+AM: bicycle,pedestrian,walking,pedestrians guistics.
+Query: asal·si·fyisa . Bojanowski,P.;Grave,E.;Joulin,A.;andMikolov,T. 2017.
+Enriching word vectors with subword information. Trans-
+BERT: cocktail,toilet,noun,boat
+actions of the Association for Computational Linguistics
+BERT+AM: shrub,flower,plant,noun
+5:135–146.
+Query: “resign·tai·on”isamisspellingof“ ”.
+Devlin,J.;Chang,M.-W.;Lee,K.;andToutanova,K. 2019.
+BERT: king,john,son,death
+BERT: Pre-training of deep bidirectional transformers for
+BERT+AM: resignation,resign,resigned,resigning
+languageunderstanding.InProceedingsofthe2019Confer-
+ence of the North American Chapter of the Association for
+Table7:ExamplequeriesfromWNLaMProandmostprob-
+ComputationalLinguistics:HumanLanguageTechnologies,
+ableoutputsofBERT andBERT+AM.Thetokenization
+BASE Volume1(LongandShortPapers),4171–4186. Minneapo-
+ofkeywordsusedbyBERTisindicatedby·characters.
+lis,Minnesota:AssociationforComputationalLinguistics.
+Herbelot,A.,andBaroni,M. 2017. High-risklearning:ac-
+quiringnewwordvectorsfromtinydata. InProceedingsof
+due to the tokenization algorithm splitting words in a sub-
+optimal way (“una·cc·ess·ible” and “un·ic·y·cle” instead of the2017ConferenceonEmpiricalMethodsinNaturalLan-
+“un·access·ible”and“uni·cycle”).AsAMusesoverlapping guageProcessing,304–309. AssociationforComputational
+n-gramstorepresentaword’ssurfaceformandthusdoesnot Linguistics.
+needtochooseasingletokenization,itdoesnotsufferfrom Hill, F.; Cho, K.; and Korhonen, A. 2016. Learning dis-
+that problem. While BERT’s tokenization problem could tributed representations of sentences from unlabelled data.
+potentially also be addressed by replacing WordPiece with In Proceedings of the 2016 Conference of the North Amer-
+a morphology-aware tokenization algorithm, other words ican Chapter of the Association for Computational Lin-
+– such as “salsify” – simply cannot be decomposed into guistics: Human Language Technologies, 1367–1377. San
+smallermeaningfulunits.BERTalsostruggleswithspelling Diego, California: Association for Computational Linguis-
+errors (e.g., “resigntaion”) and rare spellings (e.g., “bul- tics.
+ghur”,“kidnaper”). Hochreiter,S.,andSchmidhuber,J. 1997. Longshort-term
+memory. NeuralComputation9(8):1735–1780.
+7 Conclusion
+Howard,J.,andRuder,S. 2018. Universallanguagemodel
+fine-tuningfortextclassification. InProceedingsofthe56th
+We have introduced WNLaMPro, a new dataset that al-
+Annual Meeting of the Association for Computational Lin-
+lowsustoexplicitlyinvestigatetheabilityoflanguagemod-
+guistics (Volume 1: Long Papers), 328–339. Melbourne,
+els to understand rare words. Using this dataset, we have
+Australia:AssociationforComputationalLinguistics.
+shownthatBERTstruggleswithwordsiftheyaretoorare.
+To address this problem, we proposed to apply Attentive Khodak,M.;Saunshi,N.;Liang,Y.;Ma,T.;Stewart,B.;and
+Mimicking (AM). For AM to work, we introduced one- Arora,S. 2018. Alacarteembedding:Cheapbuteffective
+token approximation (OTA), an effective method to obtain inductionofsemanticfeaturevectors. InProceedingsofthe
+“single-token” embeddings for multi-token words. Using 56th Annual Meeting of the Association for Computational
+thismethod,weshowedthatAMisabletosubstantiallyim- Linguistics (Volume 1: Long Papers), 12–22. Association
+proveBERT’sunderstandingofrarewords. forComputationalLinguistics.
+Futureworkmightinvestigatewhethermorecomplexar- Kingma,D.,andBa,J. 2015. Adam:Amethodforstochas-
+chitectures than AM can bring further benefit to deep lan- ticoptimization. TheInternationalConferenceonLearning
+guage models; it would also be interesting to see whether Representations(ICLR).
+training AM on a larger corpus – such as the one used for
+Lazaridou,A.;Marelli,M.;Zamparelli,R.;andBaroni,M.
+training BERT by Devlin et al. (2019) – is beneficial. Fur-
+2013. Compositional-lyderivedrepresentationsofmorpho-
+thermore, it would be interesting to see the impact of inte-
+logicallycomplexwordsindistributionalsemantics. InPro-
+gratingAMondownstreamtasks.
+ceedings of the 51st Annual Meeting of the Association for
+ComputationalLinguistics(Volume1:LongPapers),1517–
+1526. AssociationforComputationalLinguistics.
+Acknowledgments
+Le, Q., and Mikolov, T. 2014. Distributed representations
+This work was funded by the European Research Council ofsentencesanddocuments. InProceedingsofthe31stIn-
+(ERC#740516).Wewouldliketothanktheanonymousre- ternationalConferenceonInternationalConferenceonMa-
+viewersfortheirhelpfulcommentsandtheirwillingnessto chine Learning - Volume 32, ICML’14, II–1188–II–1196.
+engagewithourauthorresponse. JMLR.org.
+8773
+Lee,J.;Mansimov,E.;andCho,K.2018.Deterministicnon- Shaoul, C., and Westbury, C. 2010. The westbury lab
+autoregressiveneuralsequencemodelingbyiterativerefine- wikipediacorpus.
+ment. In Proceedings of the 2018 Conference on Empiri- Vaswani, A.; Shazeer, N.; Parmar, N.; Uszkoreit, J.; Jones,
+cal Methods in Natural Language Processing, 1173–1182. L.;Gomez,A.N.;Kaiser,L.;andPolosukhin,I. 2017. At-
+Brussels,Belgium:AssociationforComputationalLinguis- tentionisallyouneed. InAdvancesinNeuralInformation
+tics. ProcessingSystems30.CurranAssociates,Inc. 5998–6008.
+Luong,T.;Socher,R.;andManning,C. 2013. Betterword Weeds, J.; Clarke, D.; Reffin, J.; Weir, D.; and Keller, B.
+representationswithrecursiveneuralnetworksformorphol- 2014.Learningtodistinguishhypernymsandco-hyponyms.
+ogy. InProceedingsoftheSeventeenthConferenceonCom- In Proceedings of COLING 2014, the 25th International
+putationalNaturalLanguageLearning,104–113. Conference on Computational Linguistics: Technical Pa-
+McCann,B.;Keskar,N.S.;Xiong,C.;andSocher,R. 2018. pers, 2249–2259. Dublin City University and Association
+Thenaturallanguagedecathlon:Multitasklearningasques- forComputationalLinguistics.
+tionanswering. arXivabs/1806.08730. Wieting,J.;Bansal,M.;Gimpel,K.;andLivescu,K. 2016.
+Miller,G.A. 1995. Wordnet:alexicaldatabaseforenglish. Charagram: Embedding words and sentences via character
+CommunicationsoftheACM38(11):39–41. n-grams. CoRRabs/1607.02789.
+Paszke, A.; Gross, S.; Chintala, S.; Chanan, G.; Yang, E.; Wolf,T.;Debut,L.;Sanh,V.;Chaumond,J.;Delangue,C.;
+DeVito, Z.; Lin, Z.; Desmaison, A.; Antiga, L.; and Lerer, Moi,A.;Cistac,P.;Rault,T.;Louf,R.;Funtowicz,M.;and
+A. 2017. Automatic differentiation in PyTorch. In NIPS Brew,J. 2019. Huggingface’stransformers:State-of-the-art
+AutodiffWorkshop. naturallanguageprocessing. arXivabs/1910.03771.
+Peters, M.; Neumann, M.; Iyyer, M.; Gardner, M.; Clark, Wu, Y.; Schuster, M.; Chen, Z.; Le, Q. V.; Norouzi, M.;
+C.; Lee, K.; and Zettlemoyer, L. 2018. Deep contextual- Macherey,W.;Krikun,M.;Cao,Y.;Gao,Q.;Macherey,K.;
+izedwordrepresentations. InProceedingsofthe2018Con- Klingner,J.;Shah,A.;Johnson,M.;Liu,X.;ŁukaszKaiser;
+ference of the North American Chapter of the Association Gouws, S.; Kato, Y.; Kudo, T.; Kazawa, H.; Stevens, K.;
+forComputationalLinguistics:HumanLanguageTechnolo- Kurian,G.;Patil,N.;Wang,W.;Young,C.;Smith,J.;Riesa,
+gies, Volume 1 (Long Papers), 2227–2237. New Orleans, J.;Rudnick,A.;Vinyals,O.;Corrado,G.;Hughes,M.;and
+Louisiana:AssociationforComputationalLinguistics. Dean,J. 2016. Google’sneuralmachinetranslationsystem:
+Bridging the gap between human and machine translation.
+Pinter,Y.;Guthrie,R.;andEisenstein,J. 2017. Mimicking
+arXivabs/1609.08144.
+wordembeddingsusingsubwordRNNs. InProceedingsof
+the2017ConferenceonEmpiricalMethodsinNaturalLan- Zhu, Y.; Kiros, R.; Zemel, R.; Salakhutdinov, R.; Urtasun,
+guageProcessing,102–112. AssociationforComputational R.; Torralba, A.; and Fidler, S. 2015. Aligning books and
+Linguistics. movies:Towardsstory-likevisualexplanationsbywatching
+moviesandreadingbooks. InProceedingsoftheIEEEin-
+Radford, A.; Narasimhan, K.; Salimans, T.; and Sutskever,
+ternationalconferenceoncomputervision,19–27.
+I. 2018. Improving language understanding by generative
+pre-training.
+Radford, A.; Wu, J.; Child, R.; Luan, D.; Amodei, D.; and
+Sutskever,I. 2019. Languagemodelsareunsupervisedmul-
+titasklearners. Technicalreport.
+Salle, A., and Villavicencio, A. 2018. Incorporating sub-
+word information into matrix factorization word embed-
+dings. In Proceedings of the Second Workshop on Sub-
+word/Character LEvel Models, 66–71. Association for
+ComputationalLinguistics.
+Schick, T., and Schu¨tze, H. 2019a. Attentive mimick-
+ing: Better word embeddings by attending to informative
+contexts. In Proceedings of the 2019 Conference of the
+North American Chapter of the Association for Computa-
+tional Linguistics: Human Language Technologies, Volume
+1 (Long and Short Papers), 489–494. Minneapolis, Min-
+nesota:AssociationforComputationalLinguistics.
+Schick,T.,andSchu¨tze,H.2019b.Learningsemanticrepre-
+sentations fornovel words:Leveraging bothform and con-
+text. In Proceedings of the Thirty-Third AAAI Conference
+onArtificialIntelligence.
+Sennrich,R.;Haddow,B.;andBirch,A. 2015. Neuralma-
+chine translation of rare words with subword units. CoRR
+abs/1508.07909.
+8774

@@ -1,0 +1,876 @@
+R : Mining Defensive Patterns in Ethereum via
+AVEN
+Semantic Transaction Revert Invariants Categories
+Mojtaba Eshghie 1, Melissa Mazura2, Alexandre Bartel1,
+1Umea˚ University, Sweden
+2KTH Royal Institute of Technology, Stockholm, Sweden
+Abstract—We frame Ethereum transactions reverted by an invariant is a concrete instance where a contract’s defense
+an invariant–require(<invariant>)/ assert(<invariant>)/ was triggered—often reflecting a prevented exploit, misuse,
+(cid:44)→ if (<invariant>) revert statements in the contract
+bot behavior, or economically unprofitable trade [11]. Up to
+implementation–as a positive signal of active on-chain defenses.
+November 2nd, 2025, Ethereum contains 71379564 failed
+Despite their value, the defensive patterns in these transactions
+remain undiscovered and underutilized in security research. We transactions to smart contracts (out of the total more than
+presentRAVEN,aframeworkthatalignsrevertedtransactionsto 3 billion transactions recorded on-chain) [12]. However, it is
+the invariant causing the reversion in the smart contract source not clear which invariants or invariant categories caused these
+code, embeds these invariants using our BERT-based fine-tuned
+reverts. This creates a paradox where the literature studies
+model,andclustersthembysemanticintenttominedefensivein-
+successfulexploits[10],[13]andreplicatesthem[2],[3],[14],
+variantcategoriesonEthereum.Evaluatedonasampleof20000
+reverted transactions, RAVEN achieves cohesive and meaningful but the defenses that successfully prevented the attacks and
+clustersoftransaction-revertinginvariants.Manualexpertreview malicious interactions are understudied.
+of the mined 19 semantic clusters uncovers six new invariant Research on smart-contract invariants has advanced in dy-
+categories absent from existing invariant catalogs, including
+namic invariant mining from successful transactions [15]–
+feature toggles, replay prevention, proof/signature verification,
+[18],staticinvariantsynthesis[6],[19],[20],andvulnerability
+counters, caller-provided slippage thresholds, and allow/ban/bot
+lists.Todemonstratethepracticalutilityofthisinvariantcatalog detection using invariants [1], [4], [5]. These approaches rely
+mining pipeline, we conduct a case study using one of the on expert-curated invariant catalogs as templates or training
+newly discovered invariant categories as a fuzzing oracle to data[6],[15],[17],[18],[21],yetnonesystematicallyusereal-
+detect vulnerabilities in a real-world attack. RAVEN thus can
+world transaction-reverting invariants as actionable defenses.
+map Ethereum’s successful defenses. These invariant categories
+Existing reverted-transaction studies examine only surface-
+enable security researchers to develop analysis tools based on
+data-driven security oracles extracted from the smart contract’s levelpatternssuchasemittedevents[11],whileLiuetal.[22]
+working defenses. provideacode-levelanalysisof3866contracts,butdonotlink
+Index Terms—Smart Contracts, Invariants, Clustering theirstaticfindingstorealon-chainreversionreasons.Thus,no
+comprehensivecategorizationconnectsrevertedtransactionsto
+I. INTRODUCTION the source-level invariants that triggered them.
+Smart contract invariants are used as oracles in verification We present RAVEN1 , a tool to identify semantic clusters
+tools [1]–[4], runtime monitors [5], or deployable defenses of transaction revert invariants. RAVEN (1) collects revert
+within the contract’s implementation [6]. They are imple- invariants from the source code of Ethereum contracts with
+mented using require(<invariant>) / assert(<invariant>) / failed transactions (2) neurally embeds them, and (3) clusters
+if (<invariant>) revert/throw; statements in Solidity lan- the embedded invariants by intent (e.g., access control, value
+guage [7], [8], and can revert the atomic execution of a bounds, etc.). Organizing reversion invariants into coherent
+transactionontheblockchain.Theyenforcesecurityproperties categories, RAVEN provides an empirically grounded view of
+such as access control, value bounds for asset transfers, the Ethereum ecosystem’s working defenses.
+and temporal constraints. Literature identifies the existence This paper makes the following contributions:
+of millions of unique invariant implementations in Solidity • RAVENBERT: A BERT-based embedding model2 fine-
+contractsontheEthereum[9].Yetourunderstandingofwhich tuned on a set of revert-inducing transaction invariants on
+defensivepatternsintheseinvariantsactuallyworkinthewild Ethereum extracted from 100k failed transactions.
+remains limited. • A methodology to discover the best configuration for se-
+Despitebillionsofdollarslosttoincidentsandattacks[10], mantic clustering of invariants.
+research on decentralized application security mostly involves • A catalog of 19 categories of invariants found by RAVEN,
+post-mortem analyses of incidents (defense mechanism fail- and labeled by manual review, resulting in the discovery of
+ures). Meanwhile, the blockchain continuously emits a richer six previously unreported defensive invariant categories.
+signal:reverted transactions.Everyrevertedtransactiondueto
+1https://github.com/mojtaba-eshghie/Raven/
+Emails:{mojtabae,alexandre.bartel}@cs.umu.se;mazura@kth.se. 2https://huggingface.co/MojtabaEshghie/RavenBERT
+5202
+ceD
+72
+]RC.sc[
+1v61622.2152:viXra
+• A dataset of 20k failed Ethereum transactions attributes, Invariant Clustering
+such as the reversion invariants and their localization in- Representation Algorithm
+formation in the source code3, such as reversion invariant,
+Lexical
+function, and contract.
+TF-IDF K-Means
+• Acasestudydemonstratingthepracticalutilityof RAVEN’s Failure
+findings by using the newly discovered “proof verification” Invariants Transformer Semantic
+invariantcategorytoconstructafuzzingoraclethatsuccess- -based DBSCAN Invariant
+Failure CodeBERT Clusters
+fully detects the Nomad Bridge incident’s vulnerability. Messages
+Our study is guided by three research questions: SmartBERT
+HDBSCAN
+• RQ1 (Clustering Intrinsic Quality Evaluation). Does RAVENBERT
+RAVEN generate compact, well-separated groups of invari-
+ants based on well-known intrinsic clustering quality met- Fig. 1: RAVEN’s pipeline for semantic clustering of revert-inducing
+transaction invariants.
+rics? Answer: RAVEN’s best configurations produce com-
+pact, well-separated clusters of invariants with a Silhouette
+A. Invariant Representations
+score of 0.93 and S Dbw score of 0.043.
+To develop a comprehensive embedding space, we con-
+• RQ2 (Coverage–Quality Trade-off). What fraction of in-
+sider two feature representations: i) a lexical token-based
+variants is clustered (non-noise), and how does this trade
+offwiththesemanticqualityofclustering?Answer: RAVEN embedding, TF-IDF [23], which counts the occurrence of
+tokensintheinputsequence,andii)encoder-onlytransformer
+showsaclearcoverage–qualitytrade-offwiththehighestse-
+mantic clustering quality at 52–58% coverage of invariants. modelsbasedonBERT[24],whichtransforminputintoneural
+representations. When embedded in these spaces, semantic
+• RQ3(MeaningfulnessofMinedInvariantGroups).Does
+similarity between data points corresponds to geometric prox-
+RAVEN generate meaningful invariant groupings based on
+human reviews? Answer: Manual analysis reveals that the imity [25], and enables clustering based on similarity metrics.
+We use cosine similarity to capture semantic differences
+clustersaremeaningfulandnon-overlapping.Partialoverlap
+between invariants, as it has been successfully utilized in
+of generated cluster labels with previous invariant catalogs
+shows the clustering validity, and the newly discovered six prior works [26]. Using both token-based vectorization and
+transformer-based embeddings enables a rigorous comparison
+invariant categories show the semantic effectiveness of both
+of their impact on the quality of clustering.
+RAVEN’s design and parameter grid search methodology.
+• RQ4 (Effectiveness in Vulnerability Detection). Can the 1) Lexical Vectorization: We utilize the Term Frequency-
+invariant categories discovered by RAVEN be used to detect Inverse Document Frequency (TF-IDF) [23] vectorization to
+vulnerabilitiesinreal-worldcontracts?Answer:Acasestudy transform Solidity/Vyper invariants into sparse vector repre-
+on the Nomad Bridge incident demonstrates that invariant sentations. Due to its capability to detect Type 1 and Type
+categories discovered by RAVEN (specifically, proof verifi- 2 clones, which do not require deep code understanding,
+cation checks) can be effectively translated into actionable this embedding serves as a string-based baseline for other
+fuzzing oracles to detect complex upgrade vulnerabilities. representations to compare against [27].
+Our work presents the first study on the feasibility of using 2) Transformer-Based Embedding: To capture richer se-
+clustering on transaction revert invariants to understand the manticandsyntacticfeaturesofinvariants,weinvestigatethree
+defensive patterns behind Ethereum blockchain contracts. pretrained transformer models designed for code understand-
+The rest of the paper is organized as follows. Section II ing [28]. Out of the encoder, decoder, and encoder-decoder
+presents RAVEN’s design. Section III provides the datasets transformer model families, we only use the encoder family
+used in our experiments. Section IV details the evaluation for embedding models. All three of our tested encoder-only
+protocol for RAVEN. Section V presents the results while models belong to the BERT family [24].
+Section VI discusses the implication of the results, threats to CodeBERT: A general code model based on the BERT
+validity,andopenquestions.SectionVIIreviewsrelatedworks transformer used for a baseline of the embedding models.
+and Section VIII concludes the paper. SmartBERT-v2: This is a domain-specific model for smart
+contract sources [29]. SmartBERT-v2 is pre-trained on a
+II. SYSTEMARCHITECTURE
+corpus of 16k Solidity files.
+Grouping invariants causing the transactions to revert on
+RAVENBERT: Pretrained models have proven effective for
+Ethereum provides insights into underlying contract defenses.
+capturing semantic representations, but they lack invariant-
+To achieve this, we design the semantic clustering pipeline
+specific domain knowledge. Therefore, we use SmartBERT-
+of RAVEN in Figure 1 that uses both lexical and neural em-
+v2 as a smart contract-aware pre-trained model and further
+bedding models, including RAVENBERT for invariant feature
+fine-tune it on failure-inducing invariants. Other models, such
+representation (see Section II-A). After embedding the invari-
+as SolBERT [26] and SmartEMBED [30], are also tailored
+ants, we employ clustering algorithms to discover semantic
+to Solidity code through CFG/AST representations of the
+transaction-reverting invariant groups (Section II-B).
+program, which makes them unsuitable for ad hoc invariant
+3https://huggingface.co/datasets/MojtabaEshghie/raven-dataset fine-tuning (they are not trained directly on source code).
+Motivated by the fine-tuning approaches employed in related
+Test set:
+models, such as CodeBERT [31], which utilizes Masked Lan- Failed Revert stack to
+Transactions 100k source map Failure Invariants
+guage Modeling (MLM), and SolBERT [26], which leverages
+Dataset requ"sireen(md s ngo.st eonwdneer,r "); Failure Messages
+contrastive learning, we experimented with both methods to ~ 6.3 million Train set: Dynamic Analysis
+identify the most effective fine-tuning approach for RAVEN. 20k
+We first employed Masked Language Modeling (MLM) [24],
+Fig. 2: Failure invariant dataset collection pipeline.
+a pretraining technique where random tokens in the input
+sequence are masked, and the model learns to predict them rameters:theneighborhoodradiusεandtheminimumnumber
+using bidirectional context. MLM is the standard pretraining of points to form a cluster. Density-based clustering partitions
+objectiveforBERT-familymodelsandhasproveneffectivefor data based on regions of high density, using a threshold [25].
+general-purpose code understanding tasks. We hypothesized Moreover,hierarchicalDBSCAN(HDBSCAN[36])clustering
+that further MLM fine-tuning on invariant-specific code could algorithm forms a tree-like structure to capture data groups
+help the model capture domain-specific token distributions by iteratively splitting data based on similarity. K-Means [34]
+and syntactic patterns unique to guard predicates. However, is chosen for its effectiveness with spherical, well-separated
+despite training with reduced epochs (down from 3 to 1) to clusters, and DBSCAN [35] is utilized for its performance
+preventoverfitting,MLMfine-tuningresultedinslightlyworse for clustering with noise. HDBSCAN [37] is an improvement
+performancecomparedtothebaseSmartBERT-v2model.This over DBSCAN through hierarchical analysis, providing im-
+suggests that MLM’s token-level prediction objective, while provedperformanceinscenarioswithvaryingclusterdensities.
+effective for pretraining, does not directly optimize for the RAVEN therefore uses these three clustering algorithms: K-
+semantic similarity structure needed for clustering tasks on Means [34], DBSCAN [35], and HDBSCAN [37].
+invariants.Next,weemployedcontrastivelearning[32],aself-
+supervisedtechniquethatlearnsrepresentationsbycontrasting
+III. DATASETCOLLECTION
+similar(positive)anddissimilar(negative)pairsofdatapoints. TotrainandevaluateRAVEN,wecollectedtwodatasets.We
+The core principle is to pull semantically similar items closer use the first for fine-tuning our embedding model, RAVEN-
+together in the embedding space while pushing dissimilar BERT, and the second dataset is used for the end-to-end
+items apart, thereby creating a representation space where evaluation of RAVEN. Both of these are subsets of a total
+cosine similarity reflects semantic relatedness. To implement of 6313121 failed transactions on Ethereum in the time span
+contrastive learning for RAVEN, we generated pseudo-labeled ofJune15th,2024(block20100158),untilMarch28th,2025
+pairs by computing cosine similarity across our dataset of (block 22145000). To prevent data leakage from training to
+invariants. We used a similarity threshold (0.8) to automati- test, we ensured non-overlapping training and test sets.
+callycreatepositivepairs(semanticallysimilarinvariants)and Fine-tuning Dataset: To provide a high number of invariants
+negative pairs (semantically dissimilar invariants). We gener- for fine-tuning the model, this collection includes 100000
+ated16470contrastivepairsofinvariantsusingthisapproach. randomly selected failed transactions. Utilizing the invari-
+These artificially labeled pairs served as ground truths during ant extraction pipeline in Figure 2 to accumulate the data
+the fine-tuning process, guiding the model to learn invariant- yielded 1932 unique invariants (using string similarity).
+specific semantic distinctions beyond what SmartBERT-v2’s Evaluation Dataset: Given the computational demand of the
+contract-level pretraining provided. This approach proved to dynamic analysis necessary for retrieving transaction invari-
+besignificantlybetterintermsofembeddingqualityandisthe ants at scale, instead of fine-tuning/evaluating RAVEN on
+foundation of RAVEN’s success in representing smart contract millions of failed Ethereum transactions to date, we employ
+invariants. We perform L2 normalization after embedding the a sampling strategy to strike a balance between feasibility
+predicates to ensure all vectors lie on the unit sphere, making based on resources and statistical significance. To deter-
+cosine distance a proper metric for clustering. mine a statistically representative sample size, we employed
+Cochran’s formula [38], [39]. We defined our parameters for
+B. Clustering Algorithm
+a 95 % confidence level and a ± 1 % margin of error.
+To systematically group invariants and detect previously We remained conservative by assuming maximum population
+undiscovered groups of invariants, we employ a suite of variability (p = 0.5), which is the standard practice when
+clustering algorithms to determine the most effective one. the true distribution of the data is unknown. The calculation
+Semantic clustering is a technique for data analysis used yieldedarequiredminimumsampleof9604transactionsfrom
+in Natural Language Processing (NLP) [33], which groups the population of 6313121. The actual sample used in our
+phrasestogetherbasedontheirsemanticsimilarity.Clustering evaluationis20000transactions,whichsubstantiallysurpasses
+has evolved into distinct types. Partitioning clustering [25] the mentioned minimum requirement.
+divides data points into k clusters based on an objective func-
+A. Transaction Invariant Extraction
+tion.K-Means[34]isonesuchwidelyusedalgorithmthatdi-
+vides data by minimizing the within-cluster variance. Another Thedatasetcollectionbeginsbyretrievingbasictransaction
+widely used algorithm is Density-Based Spatial Clustering of informationforeachtransactionhash.Thisincludesthetrans-
+ApplicationswithNoise(DBSCAN)[35]whichrequires2pa- action’s sender address, receiver address, gas used, gas price,
+TABLE I: Schema of the collected dataset.
+revert 6,033
+DatasetAttribute Description
+require 5,660
+no source code found 4,660 hash Transactionhash
+out of gas 2,420 failure reason Shortdescriptionofwhythetransactionfailed
+block number Blocknumberofthetransaction
+failures 600 from address Sender’sEthereumaddress
+assert 529 to address Receiver’sEthereumaddress
+arith. under/overflow 84 tx input Inputdatasentwiththetransaction
+div/mod by zero14 gas Gasusedbythetransaction
+gas price Gaspricespecifiedforthetransaction
+0 1000 2000 3000 4000 5000 6000 gas limit Maximumgasallowed
+Count value Ethervaluetransferred
+tx index Transaction’spositionwithinitsblock
+Fig. 3: Summary of the failure categories in the test set. failure message Errormessagefromsimulation
+failure invariant Extractedconditionthatcausedthefailure
+gas limit, timestamp, block number, value, transaction index, failure file Filepathorsourcelocationofthefailure
+failure function Nameoffunctionwherefailureoccurred
+and transaction input. This stage also gives us a preliminary
+failure contract Contractaddressinvolvedinfailure
+transaction failure reason, which helps us filter the ones that timestamp Timestampofthetransaction
+will not constitute a transaction reverted with an invariant,
+“Out of gas” errors at 2420 items (12.1%).Authors manually
+ruling out cases that do not require further dynamic analysis.
+validated a randomly-selected subset of 1000 transactions to
+These preliminary errors fall into two categories: 1) “Out
+ensure the extraction results are valid.
+of gas” failures, where the transaction exceeded its allowed
+gas limit. These have the "Out of gas" string in their error
+C. Final Dataset Contents
+messages. 2) Arithmetic failures: These include overflow,
+underflow, and division by zero. Since Solidity 0.8.0, these TableIpresentsthefinaldatasetschemacontainingdetailed
+are automatically reverted upon detection [40]. information about failed Ethereum transactions, including
+Ifthetransactiondoesnotfallintooneoftheabove,werun metadata (e.g., timestamp and transaction index), participants
+a dynamic analysis tool to extract the exact stack frame that (sender and receiver), execution context (gas, input, value),
+reverts the transaction and retrieve the invariant in the source andfailureattributes(reason,message,invariant,sourceavail-
+code based on it, using bytecode-to-source mapping. We ability, and revert localization details in the source code).
+conductthedynamicanalysisstepusingTenderly’sAPIs[41].
+The mined information in this step includes the line number IV. EVALUATIONPROTOCOL
+and contract identifier where the error originated. For verified
+This section defines how we search for the best configura-
+contracts, we map line numbers to the source code file and
+validate the correctness of the determined line number and
+tion of RAVEN to generate meaningful and reliable clusters.
+invariant by Tenderly based on the fetched verified source
+After fine-tuning RAVENBERT, we use a grid search to
+code from Etherscan. Therefore, we skip and remove the
+find the optimal clustering parameters of RAVEN. We then
+generatethesemanticclustersforthetestdatasetandcompute
+failed transactions where the “to” address is not a verified
+the metrics defined in Section IV-B to answer RQ1–RQ2.
+contract.Weflagandreportthesetransactionswith“nosource
+Section IV-C presents the protocolfor manually analyzing the
+code”.Whentracingtherevertedtransaction’slaststackframe
+identified semantic clusters (RQ3), and Section IV-D outlines
+resolvestoavalidLoCintheverifiedsourcecode,weextract
+our case study protocol (RQ4).
+the predicate from one of the three statements in Solidi-
+ty/Vyper sources: assert, require, or if (...)revert/throw,
+with the addition of the optional error message in case of A. Experimental Setup
+require/assert. We use the non-overlapping sets from §III: (i) a fine-tuning
+After extracting the invariants, we de-duplicate their set to set of 100000 failed transactions yielding 1932 unique invari-
+have a unique dataset of failed transaction invariants. The de- ants (used only to train RAVENBERT), and (ii) an evaluation
+duplicationprocessreducedthesampleto727uniqueinvariant sample of 20000 failed transactions, from which we extract
+patterns(3.6%).Amongthese,396containederrormessages. and deduplicate predicates into 727 unique invariants. We
+Invariant strings with errormessages averaged 53.9 characters considertwoviewsforeachextractedinvariant:predicate-only
+in length, while those without averaged 37.4 characters. and predicate+message (when an error string exists). In the
+embedding layer, neural models use their native tokenizers,
+B. Failure Invariants Characteristics
+and embedding vectors are L2-normalized.
+As Figure 3 shows, out of 20k initial randomly selected After running the experiments, we compare the four
+failed transactions, we extracted 12222 invariants (61.1%) encoders defined in §III–§II-B: TF–IDF, CodeBERT,
+(revert, require, and assert bars in Figure 3). Extraction fail- SmartBERT-v2, and RAVENBERT (contrastively fine-tuned
+ures comprising 600 instances (3%). All other (non-invariant) on both invariant views). We use the cosine distance as
+transaction reversion reasons contained 7178 cases (35.89%). the metric for semantic similarity in clustering. During the
+Among non-invariant failures, “No source code found” is clustering, density-based clustering algorithms (DBSCAN
+the largest category with 4660 entries (23.3%), followed by and HDBSCAN) assign a label of −1 to noise points.
+TABLE II: Hyperparameter ranges for grid search.
+• C2 (Coverage floor): Coverage ≥50% over invariants,
+Algorithm Parameters • C3 (Stability): metrics unchanged to two decimals over two
+K-Means k∈[8,100] re-runs (same seed) to guard against nondeterminism.
+DBSCAN ϵ∈[0.1,5],min samples∈[10,15]
+Hyperparameter Search. For each configuration triple (in-
+HDBSCAN ϵ∈[0.1,1],min cluster size∈[10,15]
+variant embedding, clustering algorithm, invariant view), we
+B. Evaluation Metrics (RQ1 and RQ2 Protocols) grid-search to find admissible settings through the hyperpa-
+A ground-truth labeling of invariants does not exist (prior rameter ranges defined in Table II. The k ≥8 lower bound
+dynamic miners like Trace2Inv [15] and InvCon+ [18], [19] (Table II) follows the eight top-level invariant categories
+report invariant categories but do not provide comprehensive observedbyTrace2Inv[15];thek ≤100cappreserveshuman
+taxonomies of smart contract invariants). Hence, external inspectability. The cluster number k corresponds to the min-
+metrics like ARI [42], which tells how often the clustering imum and maximum number of clusters. Among admissible
+andthegroundtruthagree,requirelabelsthatareunavailable. runs (C1–C3) for a fixed configuration triple, we select one
+We therefore resolve to use four robust intrinsic metrics of configuration by priority: first minimize S Dbw; if tied to
+the generated clusters jointly to select the best-performing two decimals, maximize Silhouette; if still tied, maximize
+configuration of RAVEN without access to ground truths: Coverage;ifstilltied,preferfewerclusters.Thisyieldsasingle
+Silhouette, S Dbw, Coverage, and Admissibility. best-per-triple setting that balances cohesion/separation, as-
+1) Silhouette [43] (bounded [−1,1], higher is better): For signmentrate,andparsimonyofclustering.Revertstringsused
+point i, in require/assert statements (e.g., OpenZeppelin’s Own-
+b(i)−a(i) able contract [45]: require(msg.sender==owner,"caller is
+Sil(i)= (1)
+max{a(i),b(i)} (cid:44)→ not the owner")) recur across many contract libraries and
+can dominate clustering by surface form rather than predicate
+where a(i) is the mean intra-cluster distance and b(i) the
+semantics. We therefore evaluate both predicate-only and
+minimum mean distance to any other cluster.
+predicate+message views to detect and mitigate template-
+2) S Dbw[44],lowerisbetter): Asinglescorethatprefers
+driven clustering artifacts during our grid search for the best
+clusters in which (i) points inside a cluster sit close together
+hyperparameters.
+in embedding space (intra-cluster tightness) and (ii) clearly
+separated (few points lying between two clusters).
+C. Protocol for Manual Analysis (RQ3)
+To evaluate the semantic meaningfulness of the invariant
+S Dbw=
+1(cid:88)k scatter(C i)
++
+1 (cid:88) dens(mid(c i,c j)) groups generated by our best configuration found via RQ1
+k
+i=1
+scatter(D) k(k−1)
+i̸=j
+max{dens(c i),dens(c j)} and RQ2 protocol, we conduct a manual expert review of the
+(cid:124) (cid:123)(cid:122) (cid:125) (cid:124) (cid:123)(cid:122) (cid:125) generatedclusters.Weconductaqualitativeanalysisinvolving
+within-clustertightness between-clusteroverlap
+(2) twoauthors.Incaseofaconflictofopinionsbetweenthefirst
+where scatter(C i) is the average cosine distance of points twoauthors,thethirdauthor’svotedeterminestheverdict.The
+in cluster i to its centroid c i; dens(p) counts points within review process consists of three phases:
+a fixed radius r around p; we set r to the mean within- 1) Semantic Labeling: For every cluster generated by the
+cluster scatter across all clusters. mid(c i,c j) is the midpoint best configuration, the annotators independently inspect the
+on the unit sphere between centroids c i and c j. We compute invariants to identify the common intent of the invariants
+thisusingcosinedistancesonL2-normalizedembeddings.For in the cluster (e.g., checking token allowance vs. checking
+DBSCAN/HDBSCAN, we exclude noise points and count time constraints). A cluster is deemed meaningful if a clear,
+only non-empty clusters in k. Compared to the Silhouette unifying semantic logic applies to the majority (90%) of its
+score, which is intuitive but can be optimistic for roughly constituent invariants. The authors then assign a descriptive
+spherical partitions, S Dbw further penalizes loose clusters category label to the cluster.
+and overlap between neighboring clusters; therefore, using 2) Taxonomy Alignment and Novelty Detection: To deter-
+both provides a more balanced judgment. mine if RAVEN discovers defensive patterns overlooked by
+3) Coverage: Coverage captures the extent to which a prior work, we map our derived labels against the invariant
+clustering algorithm confidently structures the space. Density templates and taxonomies from three state-of-the-art invariant
+methods (e.g., DBSCAN/HDBSCAN) can trade coverage for mining and synthesis tools: Trace2Inv [15] (23 templates),
+cluster homogeneity by labeling uncertain points (e.g., border InvCon+[18](14templates),andtheformalizedbusinesslogic
+pointsbetweenclusters)asnoise,therebydecreasingcoverage. properties from DCR graphs [46]. A cluster is classified as a
+#(cid:8) invariantsassigned (cid:9) newcategoryifitssemanticintentdoesnotmaptoanyexisting
+Coverage= toanon-noisecluster ×100%. (3) template in these catalogs.
+#{unique invariants}
+3) ClusterDistinction: Finally,weverifythatthegenerated
+4) Admissibility and Best Model Selection: We define a clustersaredistinctfromoneanother.Weanalyzethesemantic
+configuration triple admissible if sufficies all the three fol- boundaries between clusters to ensure that separate clusters
+lowing criteria: represent non-overlapping logic (e.g., invariants with intents
+• C1 (Granularity): 8≤#clusters≤100 (motivated below), “Caller Not Owner” and “Contract Paused” are not merged).
+TABLE III: Clustering evaluation results with error messages. TABLE IV: Clustering results without error messages.
+Embedding Alg. Sil. S Dbw #C %C Search-MinedParams Embedding Alg. Sil. S Dbw #C %C Search-MinedParams
+TF-IDF K-Means 0.55 0.034 99 100.0 n clusters:99 TF-IDF K-Means 0.55 0.078 99 100.0 n clusters:99
+TF-IDF DBSCAN 0.88 0.063 17 56.67 eps:0.36,min samples:10 TF-IDF DBSCAN 0.90 0.095 14 51.72 eps:0.36,min samples:10
+TF-IDF HDBSCAN 0.76 0.067 11 81.71 min cluster size:13 TF-IDF HDBSCAN 0.80 0.136 10 61.35 min cluster size:17
+CodeBERT K-Means 0.52 0.061 99 100.0 n clusters:99 CodeBERT K-Means 0.49 0.049 99 100.0 n clusters:99
+CodeBERT DBSCAN 0.83 0.079 18 56.53 eps:0.36,min samples:10 CodeBERT DBSCAN 0.79 0.065 18 55.16 eps:0.36,min samples:11
+CodeBERT HDBSCAN 0.59 0.115 11 76.62 min cluster size:12 CodeBERT HDBSCAN 0.73 0.064 13 62.04 min cluster size:12
+SmartBERT K-Means 0.57 0.071 99 100.0 n clusters:99 SmartBERT K-Means 0.52 0.054 99 100.0 n clusters:99
+SmartBERT DBSCAN 0.84 0.090 16 54.8 eps:0.36,min samples:12 SmartBERT DBSCAN 0.86 0.069 20 54.61 eps:0.36,min samples:11
+SmartBERT HDBSCAN 0.65 0.141 16 72.08 min cluster size:10 SmartBERT HDBSCAN 0.85 0.062 12 77.99 min cluster size:10
+RAVENBERT K-Means 0.60 0.028 99 100.0 n clusters:99 RAVENBERT K-Means 0.68 0.030 99 100.0 n clusters:99
+RAVENBERT DBSCAN 0.89 0.042 18 58.32 eps:0.36,min samples:14 RAVENBERTDBSCAN 0.93 0.043 19 51.86 eps:0.36,min samples:15
+RAVENBERT HDBSCAN 0.73 0.058 21 83.77 min cluster size:10 RAVENBERT HDBSCAN 0.76 0.056 23 85.97 min cluster size:10
+D. Protocol for Real-World Incident Analysis (RQ4) 4) Optimal Clustering Strategies: Performance analysis
+yielded three superior configurations based on combined
+To demonstrate that a newly discovered invariant category
+S dbw score, silhouette score, and coverage (bold rows in
+by RAVEN can act as a practical oracle in detecting a real-
+TableIIIandTableIV). RAVENBERT withouterrormessages
+world vulnerability, we conduct a case study. This case study
+usingDBSCANachievesaSilhouettescoreof0.93,acoverage
+is conducted based on the RQ3 results categories. We begin
+of 51.86%, and an S dbw score of 0.043. RAVEN with
+byscanningincidentreportsinDeFiHackLabs[47]toidentify
+messagesusingDBSCANachievesaSilhouettescoreof0.89,
+one incident with characteristics suggesting that it could have
+a coverage of 58.32%, and an S dbw score of 0.042. Smart-
+been prevented if one of our newly discovered invariant cate-
+BERT without messages with DBSCAN achieves a Sil. score
+gories (as presented in RQ3 results) had been used to analyze
+of0.86,acoverageof54.6%,andaS dbwscoreof0.069and
+the contract. We use the matching category to construct a
+yields the next-best performance after RAVENBERT.
+fuzzing oracle for this specific incident. Based on this oracle,
+we create a Foundry-based fuzz test that randomly creates RQ1 Answer: Intrinsic Quality Evaluation
+transaction sequences targeting the upgrade procedure of the
+RAVEN’s best configuration found via our grid search,
+identified incident. Our success in detecting the incident’s
+is RAVENBERT without error messages using DBSCAN
+vulnerability using this fuzz test demonstrates the real-world
+algorithmwithSilhouettescore0.93andS Dbwscore0.42.
+effectiveness of the discovered category in preventing the
+incident.
+B. Analysis of RAVEN’s three Best Clustering Configurations
+V. RESULTS
+Hereweanalyzetheproducedclustersofthethreesuperior
+We report clustering results on 20k failed transactions
+model configurations of RAVEN.
+1) PCA Analysis: Principal Component Analysis (PCA) is
+(June2024–March2025),comparingtwoinvariantviews,four
+a linear projection that rotates the embedding space to align
+embeddings, three algorithms. Sections V-A and V-B present
+withaxes(principalcomponents),capturingthemaximalvari-
+quantitative and manual analysis of RAVEN. Section V-C
+ance.Plottingthefirsttwocomponentsprovidesa2Dsketchof
+presents the results of our case study.
+the geometry in high dimensions, revealing how tight clusters
+are, how far apart they are, and where ambiguous border
+A. Clustering Performance
+points and noise reside. In our unsupervised setting with no
+Running the hyperparameter grid search detailed in Sec- ground truth, PCA serves as a sanity check and interpretation
+tion IV results in the best admissible results for the 24 aid that complements intrinsic metrics (Silhouette, S Dbw).
+configurations of RAVEN presented in Tables III and IV. Compact and well-separated islands for each cluster in the
+1) Silhouette Score Analysis: DBSCAN achieved the high- PCA plot correspond to high Silhouette (high cohesion, high
+est silhouette scores (0.79–0.93), with RAVEN reaching 0.93 separation), which in turn makes the clustering semantically
+(no messages) and 0.89 (with messages). HDBSCAN ranged valid. As Figure 4a shows, RAVEN’s embedding+DBSCAN
+0.59–0.85 (SmartBERT best at 0.85), while K-Means scored with predicate-only view clusters form small, dense islands
+0.49–0.68 (CodeBERT worst at 0.49). with clear gaps between them, while a sizeable set is left
+2) S dbw Score Analysis: RAVENBERT with DBSCAN as noise. This matches the strong intrinsic quality metric re-
+clustering algorithm achieved best S dbw scores (0.042 with sults(Silhouette0.93,S Dbw0.043)atconservativecoverage
+messages, 0.043 without), outperforming HDBSCAN (0.056– (≈ 52%, Table IV). This is useful for reliable taxonomy-
+0.141) and K-Means (0.028–0.078). Manual inspection re- building tasks (tight, unambiguous semantic groups). Clusters
+vealedK-Meansover-dividessemanticgroupsinto99clusters of RAVENBERT+DBSCAN with error messages in Figure 4b
+(maxallowed).Therefore,weexcludeitfromfurtheranalysis. visibly stretch more along PC1. Here, coverage rises, but Sil-
+3) CoverageAnalysis: DBSCANcovered51.7–58.3%(14– houetteislowercomparedtoitscounterpartwithouterrormes-
+20 clusters), with RAVEN achieving highest at 58.3%. HDB- sages. This suggests error messages inject additional variance
+SCAN reached 61.3–85.9% (10–23 clusters). (often stylistic/template-like), creating more border cases. If
+8
+4
+0
+0 4 8
+PCA 1
+2
+ACP
+Noise
+5.0
+2.5
+0.0
+0 4 8 12
+PCA 1
+(a)RAVEN
+2
+ACP
+9.0
+Noise
+7.5
+6.0
+4.5
+0.0 1.5 3.0
+PCA 1
+(b)RAVEN+msgs.
+2
+ACP
+Noise
+(c)SmartBERT
+Fig. 4: PCA Analysis for the clusters generated by the best-performing configurations of RAVEN.
+messages added crisp semantic distinctions, we would expect graphs [15], [18], [46]. Below we list these categories:
+higher Silhouette. Lastly, in SmartBERT+HDBSCAN with ✓Caller-providedslippagethresholds(relational)(Cluster2):
+predicate-only view in Figure 4c, more points are absorbed guardslikeamountOut >= amountOutMinthatrelatetworun-
+into clusters leading to higher coverage (≈78%) but the PCA time variables as slippage guard. Trace2Inv’s [15] “oracle
+view shows elongated clusters, softer boundaries, and more slippage” uses constant bounds; InvCon+ and DCR graphs
+possibleoverlapscomparedtotheprevioustwoconfigurations, formalizationsdonotcontainarelatablecategory[18],[48].
+consistent with its intrinsic metric results (Silhouette 0.85). ✓Feature toggles (Clusters 6): contract-wide enable/disable
+Thesesuggestthatcompact,well-separatedclustersallowusto toggles such as tradeEnabled. These are not covered by
+make strong, defensible claims about what each cluster repre- Trace2Inv’s[15]AccessControl(EOA/owner/manager)nor
+sents and align with RAVEN’s goal of discovering meaningful byInvCon+’s[18],anddonotmatchthe“pausable”pattern
+semantic categories, rather than covering all possible cases formalizations [46].
+(i.e., the cluster’s semantic confidence over higher coverage). ✓Replay prevention (Cluster 7): one-time/consume-once
+Furthermore,theaddedvarianceintroducedbythemessagesin checks (e.g., !usedClaims[leaf]) that forbid re-use of
+RAVENBERT embedding and DBSCAN configuration means claims/mints; no counterpart in prior catalogs [15], [17],
+they boost coverage but slightly degrade cluster cohesion [18], [48].
+by incorporating lexical information. This allows us to con- ✓Proof/signature verification (Cluster 9): Merkle and signa-
+clude that the triple (RAVENBERT embedding, DBSCAN, ture validation(MerkleProof.verify) absentin prior works.
+predicate-only view) is the best configuration. Next, we con- ✓Counters/nonces (Cluster 14): explicit sequence enforce-
+duct a manual expert analysis of all of the generated clusters ment which is not present in prior works.
+of this configuration (Section V-B2). ✓Allow/ban/bot/whitelist gates (Cluster 12): list-membership
+gating (e.g., !isBlacklisted[msg.sender]), conceptually
+RQ2 Answer: Coverage–Quality Trade-off distinct from owner/manager checks in the prior works.
+Combined, these newly discovered clusters account for 3708
+We observe a clear trade-off between coverage and quality.
+transactions reversions in our test set, representing 30.33%
+RAVEN yields the highest quality at 52–58% coverage
+of the test set transactions that were reverted by an invariant
+while some configurations raise the coverage to 72–86%
+(3708/12222).
+with lower cluster quality (grouping semantically unrelated
+invariants). Based on the trade-off, the configuration triple
+RQ3 Answer: Meaningfulness of Mined Patterns
+(RAVEN’s own model, DBSCAN clustering algorithm, and
+predicate-only invariant views) is selected as the best way Expert analysis of the generated invariants by RAVEN’s
+to semantically cluster invariants. Our results show that best configuration reveals: 1) consistency and overlap of
+including the failure message increases coverage (52% → a portion of the resulting clusters with previous invariant
+58%) at the expense of less reliable semantic clustering. taxonomies and catalogs [18], [48], [49] and 2) identifying
+six meaningful invariant categories (≈ 30% of invariant-
+2) ManualReviewoftheGeneratedClusters: Wemanually based reverted transactions in test set) previously ignored.
+Furthermore, expert analyses conclude that all generated
+inspected all clusters produced by the best configuration
+clusters are meaningful and distinct from one another.
+(RAVENBERT,DBSCAN,predicate-onlyview),andassigned
+semantic labels (see Table V). Our review confirms that most
+C. Analysis of a Real-World Incident
+clusters fall into well-known families (e.g., Access Control,
+Data/Data-Flow, Temporal/Time). It also reveals six invari- To demonstrate that a newly discovered invariant category
+ant categories that are absent from prior invariant mining in RAVEN can act as a practical oracle to prevent a real-
+tools’ templates—specifically, from Trace2Inv’s enumerated world exploit, we use Nomad Bridge incident (August 2022),
+23-template catalog, InvCon+’s 14 invariant templates, and a high-profile incident where a faulty upgrade broke a proof-
+the 15 formalized business logic properties modeled by DCR verification check and enabled unauthorized message process-
+TABLE V: Cluster labels (RAVENBERT embedding, DBSCAN, predicate-only) with one representative invariant per cluster. Rows 2, 6, 7,
+9, 12, and 14 are newly discovered categories that are absent from the literature.
+# Assignedcategory Example(s)fromthecluster Description #ofTXs
+1 Walletbudgetguards balanceof(from)>= amount Ensuresufficientbalance,allowance,andreservesbeforeops. (7.40%)515
+2 Slip-safethresholds amountout >= amountoutmin Slippageguardsensurereceivedamountsmeetminthresholds. (44.78%)3116
+3 Tax/feebypassprivileges isexcludedfromfees[from]||isexcludedfromfees[to] OR-basedexemptionsfromtransactionfeesandtaxes. (7.86%)547
+4 Timeconstraints block.timestamp > deadline Deadlineandexpirationvalidationsusingblocktimestamps. (6.47%)450
+5 Non-zerosanity reservein > 0 && reserveout > 0 - (4.51%)314
+6 Featuretoggles tradeenabled,!launched,!data.tradingenabled Positivebooleanflagsrequiringenabled/activefeatures. (4.28%)298
+7 Replayprevention !usedclaims[claimleaf] Ensuringactionsarenotrepeated(claims,mints,submissions). (0.62%)43
+8 Not-paused/not-stopped !paused Invertedbooleanchecksforpaused/disabled/inactivestates. (2.27%)158
+9 Proof/signatureverification !merkleproof.verify(proof, merkleroot, leaf) Merkleproof,signature,andhashverificationoperations. (0.75%)52
+10 Senderbudgetguards balances[msg.sender] >= _amount Messagesender’sbalanceandspendingapprovalchecks. (0.80%)56
+11 Paymentsanitychecks _amount * price == msg.value - (0.92%)64
+12 (Allow/ban/bot/white)-list !isblacklisted[msg.sender] Include/excludelistscontrollingwhocaninteract. (1.24%)86
+13 Cooldowns/RateLimits cooldown[to] < block.timestamp Block-/time-basedthrottlingbetweenoperations. (0.83%)58
+14 Counters/nonces allowed.nonce != nonce Noncetrackingandstatesequencenumberenforcement. (1.62%)113
+15 Mint/supplycaps totalsupply()+ mint_amount <= max_supply Maximumsupplyceilingenforcementfortokencreation. (0.60%)42
+16 Accesscontrol owner()== _msgsender() Themostbasicformsofaccesscontrol. (1.18%)82
+17 Addresssanity recipient != address(0) Non-zeroaddresses,notthiscontract,validpairendpoints. (1.06%)74
+18 Low-levelinputvalidations success&&(data.length==0||abi.decode(data,(bool))) Multi-clauselow-levelinputvalidationlogic. (3.48%)242
+19 Budgetfloors balance >= amount Straightforwardbudgetfloors. (9.31%)648
+Totalclusteredtransactions 6958
+ing leading to asset theft (reported at ≈ $190M at the time steps.Inourconfiguration,wedonotaddanyNomad-specific
+of attack). The characteristics of this incident match with guidance. Instead, UPGRADE takes its parameters directly
+proof/signatureverification(category9)fromRQ3results.We as fuzz inputs (a bytes32 root and a uint64 timestamp-
+usethisinvariantcategorytodetectthevulnerabilityofNomad like value), while PROCESS takes an arbitrary fuzzed byte-
+incident [50], [51]. Cluster 9 in RQ3 includes both (i) direct string as the message. To make this baseline practical, we
+cryptographiccheckssuchasMerkleProof.verify(...)and rely only on Foundry’s standard dictionary bias for fuzzing,
+(ii) derived proof-state checks where successful verification is which biases generated inputs toward interesting boundary
+recorded into contract state (e.g., proven[leaf] or a stored values such as 0x0 and small integers. The fuzzer repeatedly
+root), and later enforced by a guard at the privileged entry- generates random call sequences to these actions; for each
+point. Nomad follows the second form: process(m) checks a call it also generates random arguments and a random sender.
+stored proof marker (a mapping value) , and the upgrade bug After each step (or at the end of the sequence, depending on
+made the default mapping value (0x0) appear acceptable. We configuration), Foundry evaluates the invariants and shrinks
+distill a security invariant from this: failing sequences. Cluster 9 translates to a fuzzing oracle
+where a message must not be processed unless it has been
+∀m. PROCESS(m) ⇒ PROVED(m)
+proven under a trusted root/signature. We enforce this ora-
+i.e., across upgrades/initialization, a message must not be
+cle by instrumenting the handler’s PROCESS action. Before
+processed unless it has been proved under a trusted root.
+calling process(message), we compute the message hash and
+query the contract’s proof state. If the message is “unproved”
+Nomad’s cross-chain message acceptance follows the pat-
+(mapping default 0x0), but process nevertheless succeeds, we
+tern of (i) a message is proved by verifying inclusion under
+setaghostflagunprovenProcessSucceeded = true.Theinvari-
+a trusted Merkle root, then (ii) the message is processed to
+ant invariant_unprovenMessagesNeverProcess_noHints() as-
+release/mint assets. The exploit root cause was an upgrade-
+timemisconfigurationthatmadethe“unproved”stateindistin-
+sertsthatthisflagneverbecomestrue.Thisconverts RAVEN’s
+proof-verification category into a concrete fuzzing oracle.
+guishable from the “proved” state. This resulted in a routine
+upgrade marked a bytes32(0) root as trusted/committed, and Running the fuzzer. After running our fuzzer, it identifies
+because Solidity mappings default to zero values, messages a violation of invariants, reports the failing call sequence, and
+that were never proved could appear as if they were proved applies its shrinking procedure to minimize it, obtaining the
+under the zero root. This enabled the attacker to call the smallest call sequence corresponding to this counterexample.
+privileged function process(message) without a valid proof In our experiment, shrinking consistently yields a two-step
+stepandstillsucceed,allowingforthemassdrainingofassets. counterexample that mirrors the real incident’s causal struc-
+Building a Foundry fuzzer. We implement an upgrade- ture:
+aware fuzzer using Foundry’s stateful invariant testing. We
+wrap the Nomad’s message-processing contract in a Foundry UPGRADE(root=0x0, confirmAt=1) ; PROCESS(m)
+handler that exposes three actions: UPGRADE, PROVE,
+and PROCESS. During an invariant-based fuzzing campaign, where m is a fuzz-generated message that was never proved.
+Foundry repeatedly generates randomized sequences of calls Foundry’s trace output provides evidence for the oracle vio-
+to these actions, and checks the invariant after the sequence lation: immediately before process, the contract reports the
+message’s proof state as 0x0 (unproved), yet process returns reveals these four invariants are misplaced into another clus-
+successfully instead of reverting. ter4 , and for the other high-performing RAVEN configu-
+ration, which uses predicate+messages view, one of these
+RQ4 Answer: Effectiveness in Vulnerability Detection
+invariants is mis-clustered and the others are not clustered.
+Our case study demonstrates RAVEN’s newly discovered Only K-Means configurations successfully generate micro-
+proof/signature verification category can be leveraged as a clusters. However, K-Means generates too many clusters
+concrete, reusable security oracle for a fuzzer to detect the and breaks down semantically relevant clusters into multiple
+logical vulnerability of the Nomad Bridge incident. groups making it unsuitable. Furthermore, some invariants
+that conduct very specialized checks, such as uniswapv2pair
+VI. DISCUSSION (cid:44)→ != from && uniswapv2pair != to,areunder-representedin
+This section discusses the results, their implications, and the dataset, and are semantically different from any other
+addresses limitations and threats to validity. cluster; thus, they remain unclustered. The same holds for
+protocol-specific business logic invariants such as key ==
+A. Impact of Fine-Tuned Embeddings on Clustering (cid:44)→ uint256(uint160(msg.sender))* (epoch()**2)+ 1.
+RAVENBERT outperforms both general-purpose Code- Multi-clause invariants. We investigated whether the logical
+BERTanddomain-specificSmartBERT-v2viainvariant-based complexity of invariants affects clusterability by examining
+fine-tuning beyond contract-level understanding. This is con- multi-clause invariants—those with multiple sub-predicates
+sistentwiththeliterature’sfocusondomain-specificfine-tuned combined via Boolean operators (&&, ||) or multiple com-
+BERT models for security [52]. Furthermore, this shows task- parison operators (>=, <, !=). Such invariants encode multi-
+specific fine-tuning is effective even with small but high- ple independent intents, potentially producing less coherent
+quality datasets (1932 unique invariants), suggesting invari- embeddings. However, multi-clause forms appear equally in
+ant analysis should prioritize specialized training over sole both groups: 53 among unclustered invariants and 76 among
+reliance on pre-trained models [53]. clustered ones (17.43% vs 17.08%). Hence, this structural
+property does not correlate with the low coverage of our best-
+B. The Predicate-Only Ablation
+performing configuration.
+Predicate-only views outperform predicate+message, which
+indicates error messages introduce lexical noise via common D. Why Six Categories Were Previously Unnoticed
+message templates, creating spurious similarity across seman-
+We attribute the discovery of the six new categories to two
+tically distinct checks while separating semantically identical
+contributingfactors.(1)Template-drivenblindness:Priortools
+checks with different messages. Messages increase coverage
+usepredefinedinvarianttemplatesandhand-craftedcategories
+6% (52% → 58%) by capturing edge cases but degrade clus-
+of invariants that excel at finding anticipated patterns but
+ter homogeneity. For taxonomy construction, which requires
+cannot discover out-of-distribution defenses. Our data-driven
+semantic coherence, predicate-only views are preferable.
+approachmakesnoaprioriassumptions,discoveringstructure
+C. Reasons for the Coverage-Quality Trade-off from observed behavior. (2) Exploit-centric bias: security
+research emphasizes offensive analysis [10], [13], biasing
+The stark difference between DBSCAN’s conservative as-
+templates toward vulnerabilities in exploited contracts; while
+signment (52-58% coverage, Silhouette 0.93) and HDB-
+prevented attacks leave only silent reverted transactions.
+SCAN’s inclusive approach (72-86% coverage, Silhouette
+0.73-0.85) reflects the precision-recall tension in cluster as-
+E. Open Questions
+signment. DBSCAN’s noise labeling acts as a semantic confi-
+dence threshold where border points between clusters remain Our work opens several research directions: (1) Scaling
+unassigned rather than unreliably clustered. This conserva- to Full Transaction History. The 20k sample analyzed here
+tiveness is appropriate for RAVEN’s goal. When claiming a represents0.3%ofthe6.31Mfailuresinour9-monthwindow.
+cluster represents, e.g., “replay prevention checks,” we need Scaling RAVEN to the full corpus—and extending back to
+high confidence that the majority of members share that Ethereum’s genesis block—would reveal: (a) temporal evo-
+intent.Manualanalysisrevealsthatthe48%classifiedasnoise lution of defenses (when did slippage guards emerge?), (b)
+also show patterns of (1) micro clusters or (2) multi-clause protocol-specific patterns (do DeFi protocols share defensive
+invariants detailed below. characteristics?), and (c) what rare but important checks exist
+Micro clusters. Manual review reveals multiple micro- inthenoise?(2)Cross-ChainComparativeAnalysis.Applying
+clusters within the unclustered invariants of our best con- RAVEN to other blockchain networks (e.g., Solana) would
+figuration. For instance, tx.gasprice > amount, tx.gasprice test whether defensive patterns are EVM-universal or chain-
+(cid:44)→ > _gas, tx.gasprice > nefwhitelist, and tx.gasprice > specific. Solana’s account model and Rust-based constraints
+(cid:44)→ _rfee[from] && _rfee[from] != 0 could be clustered to- may produce different invariant families. Such a comparison
+gether, but our best configuration’s conservativeness leaves
+them as noise. Review of the results for the configuration
+4https://github.com/mojtaba-eshghie/Raven/blob/main/clustering/
+(SmartBERT embedding, HDBSCAN, predicate-only view) experiments/without/hdbscan SmartBert.txt
+can inform cross-chain security practices. (3) Hybrid Neuro- labels. VeriSmart [20] statically synthesizes logical invariants
+Symbolic Approaches. While RAVEN uses neural embed- with SMT to prove or refute safety properties of smart
+dings for scalability, pairwise symbolic comparison (e.g., via contracts. Both FLAMES [6] and VeriSmart [20] produce
+SINDI [54]) could validate intra-cluster semantic consistency. invariants on source or IR, and do not characterize which
+Ahybridapproachthatcombinesneuralclusteringfordiscov- defensive checks actually block real-world attacks.
+ery and symbolic validation of the discovered invariant. This Neuralandsymboliccoderepresentations.General-purpose
+could reduce false positives in clustering membership. encoders, such as CodeBERT [31], provide contextual em-
+beddings for code, whereas domain-specific models like
+F. Threats to Validity
+SmartBERT-v2 [29] are tailored to Solidity sources. Sol-
+1) Extraction Pipeline Accuracy: Our invariant extraction BERT [26] uses contrastive learning with AST views, and
+relies on Tenderly’s dynamic analysis API, which has a 3% SmartEmbed [30] fuses CFG features to detect clone-related
+failurerateanda13.8%sourcecodemismatchwithEtherscan bugs. SINDI [54] compares the semantic strength of pairs of
+(when the tool does not yield an invariant but the source code invariantssymbolically.Theseenablesemanticembeddingbut
+is present on Etherscan). Nevertheless, manual validation of either operate at contract granularity, rely on templates, or
+1000 transactions confirmed 100% accuracy for the success- addresspairwiserelationsratherthanglobalstructure. RAVEN
+fully extracted invariants. differs by fine-tuning an invariant-level encoder (Solidity
+2) BiasTowardsVerifiedContracts: The23.3%“Nosource syntax) on failed transaction invariants and applying semantic
+code found” exclusion creates survivor bias toward profes- clustering to reveal semantic invariant groups without labels.
+sionally developed and verified contracts. While there is no Empirical studies of failed transactions.Large-scalestudies
+definitive answer for the proportion of unverified contracts report why transactions fail and where gas is spent (e.g., out-
+being malware, unverified source code is typically used as a of-gas, bot-driven spam) [11], [22]. These studies quantify
+red flag for malware detection [55]. failure modes but typically record error strings or high-level
+reasons,anddonotextractandaggregatethepreciseinvariants
+VII. RELATEDWORKS
+responsible for the reverts, nor do they build an invariant
+The conceptual framework of invariants was established taxonomy.RAVENclosesthisgapbyextractinginvariantpred-
+by Floyd [56]. He introduced a method for reasoning about icatesresponsibleforthetransactionfailures,andsemantically
+a program’s correctness by associating assertions, known clustering them. RAVEN enables a future large-scale study of
+as invariants, with specific points in a control flow graph, all failed transactions (e.g., on Ethereum) to determine the
+such as condition branches or loops. This foundation was most failure-inducing and potentially attack-reverting invari-
+extended by Hoare Logic [57], which laid the groundwork ants effective in severe recent DeFi incidents [10].
+for formal program verification by treating such assertions as
+conditionsthatmustremaintruethroughoutexecution.Related
+VIII. CONCLUSION
+research on invariants and semantic clustering falls into three This work presents RAVEN, a tool to analyze and seman-
+threads: dynamic mining and static synthesis of invariants, tically cluster Ethereum’s on-chain failed (reverted) transac-
+code representations, and empirical studies on blockchain’s tions.WereframerevertedexecutionsonEthereumasasignal
+failed transactions. We position RAVEN against each of these. forunderstandingwhatdefensesimplementedbythecontracts
+Smart contract invariant mining and synthesis. actually work on the chain. More specifically, the transac-
+Trace2Inv [15] infers invariants from transaction traces tionsthatwererevertedbyrequire/assert/if...revert/throw
+using templates and reports coarse categories (e.g., access statements (invariants) in the smart contract on Ethereum are
+control, data flow, time lock). InvCon [17] and its successor, the input to RAVEN. RAVEN extracts the precise predicates
+InvCon+ [18], target token-centric invariants (ERC-20 and that trigger reverts, embeds them with a contrastively fine-
+ERC-721) via specification templates (i.e., catalogs of tuned BERT-based model, and semantically clusters them.
+Solidity invariants) and transaction history. SmartOracle [16] On a representative sample of 20k failed transaction failures
+also mines pattern-based properties from transaction history. (mapping to 727 unique invariants that revert them), RAVEN
+Eshghie et al. [46], [48] offer a formalization of 15 business yieldswell-separatedclusters.Amanualexpertanalysisofthe
+logic properties that encode many well-known smart contract generated 19 clusters confirms coherent defensive invariants
+invariants and are used for tasks such as monitoring and alignedwithpriortaxonomiesandidentifiessixpreviouslyun-
+PoC exploit synthesis [3], [5]. InvSol [19] transcompiles the reported categories (e.g., replay prevention, signature/Merkle
+SoliditycontracttoJava+JML,usesatestcraftertogenerate verification,allow/ban/botlists,etc.),indicatingsemanticanal-
+many test cases via which it infers Daikon-style invariants. ysisrevertedexecutionsonblockchainrevealsdefensepatterns
+All mentioned works use invariant templates that do not missed by the literature. Our case study on a real-world
+benefit from the deployed successful defenses on Ethereum. incident further validates the utility of these invariants as
+Instead, they rely on hand-crafted template invariants that security analysis oracles. We envision RAVEN as a tool for
+are not comprehensive and may not reflect the real-world researchers and security practitioners to map the ecosystem’s
+defenses. FLAMES [6] generates invariants in the form of working defensive surface, informing invariant catalogs of
+pre-/post-conditions to harden contracts without vulnerability invariant synthesizers/miners and analysis tools.
+REFERENCES [21] W.Ma,D.Wu,Y.Sun,T.Wang,S.Liu,J.Zhang,Y.Xue,andY.Liu,
+Combining Fine-Tuning and LLM-Based Agents for Intuitive Smart
+ContractAuditingwithJustifications. IEEEPress,2025,p.1742–1754.
+[1] C.Shou,S.Tan,andK.Sen,“Ityfuzz:Snapshot-basedfuzzerforsmart
+[Online].Available:https://doi.org/10.1109/ICSE55347.2025.00027
+contract,” in Proceedings of the 32nd ACM SIGSOFT International
+[22] L.Liu,L.Wei,W.Zhang,M.Wen,Y.Liu,andS.-C.Cheung,“Charac-
+SymposiumonSoftwareTestingandAnalysis,ser.ISSTA2023. New
+terizingtransaction-revertingstatementsinethereumsmartcontracts,”in
+York, NY, USA: Association for Computing Machinery, 2023, p.
+202136thIEEE/ACMInternationalConferenceonAutomatedSoftware
+322–333.[Online].Available:https://doi.org/10.1145/3597926.3598059
+Engineering(ASE),2021,pp.630–641.
+[2] H. Wang, Y. Liu, Y. Li, S.-W. Lin, C. Artho, L. Ma, and Y. Liu, [23] A. Petukhova, J. P. Matos-Carvalho, and N. Fachada, “Text clustering
+“Oracle-supported dynamic exploit generation for smart contracts,” with large language model embeddings,” International Journal of
+IEEETransactionsonDependableandSecureComputing,vol.19,no.3, Cognitive Computing in Engineering, vol. 6, p. 100–108, Dec. 2025.
+pp.1795–1809,2022. [Online].Available:http://dx.doi.org/10.1016/j.ijcce.2024.11.004
+[3] M. Eshghie and C. Artho, “Oracle-guided vulnerability diversity and [24] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,“Bert:Pre-training
+exploit synthesis of smart contracts using llms,” in Proceedings of ofdeepbidirectionaltransformersforlanguageunderstanding,”inPro-
+the 39th IEEE/ACM International Conference on Automated Software ceedingsofthe2019conferenceoftheNorthAmericanchapterofthe
+Engineering,2024,pp.2240–2248. associationforcomputationallinguistics:humanlanguagetechnologies,
+[4] M.Eshghie,C.Artho,andD.Gurov,“DynamicVulnerabilityDetection volume1(longandshortpapers),2019,pp.4171–4186.
+on Smart Contracts Using Machine Learning,” in Evaluation and [25] R.XuandD.Wunsch,“Surveyofclusteringalgorithms,”IEEETrans-
+AssessmentinSoftwareEngineering,ser.EASE2021. NewYork,NY, actionsonNeuralNetworks,vol.16,no.3,pp.645–678,2005.
+USA: Association for Computing Machinery, Jun. 2021, pp. 305–312. [26] Z. Tian, Y. Teng, X. Ke, Y. Chen, and L. Chen, “Solbert:
+[Online].Available:https://dl.acm.org/doi/10.1145/3463274.3463348 Advancing solidity smart contract similarity analysis via self-
+[5] M. Eshghie, C. Artho, H. Stammler, W. Ahrendt, T. Hildebrandt, and supervised pre-training and contrastive fine-tuning,” Information and
+G. Schneider, “Highguard: Cross-chain business logic monitoring of Software Technology, vol. 184, p. 107766, 2025. [Online]. Available:
+smart contracts,” in Proceedings of the 39th IEEE/ACM International https://www.sciencedirect.com/science/article/pii/S0950584925001053
+ConferenceonAutomatedSoftwareEngineering,2024,pp.2378–2381. [27] C. Ragkhitwetsagul and J. Krinke, “Siamese: scalable and incremental
+[6] M. Eshghie, G. Morello, M. Lauretano, A. Bartel, and M. Monperrus, code clone search via multiple code representations,” Empirical
+“Flames: Fine-tuning llms to synthesize invariants for smart contract Software Engineering, vol. 24, no. 4, pp. 2236–2284, Aug. 2019.
+security,”2025.[Online].Available:https://arxiv.org/abs/2510.21401 [Online].Available:https://doi.org/10.1007/s10664-019-09697-7
+[7] “Ethereum Yellow Paper,” Dec. 2022. [Online]. Available: https: [28] A.Vaswani,N.Shazeer,N.Parmar,J.Uszkoreit,L.Jones,A.N.Gomez,
+//github.com/ethereum/yellowpaper L.Kaiser,andI.Polosukhin,“Attentionisallyouneed,”inProceedings
+[8] S.Team,“Soliditydocumentation,”https://docs.soliditylang.org/en/v0.8. ofthe31stInternationalConferenceonNeuralInformationProcessing
+30/,accessed:2025-06-12. Systems,ser.NIPS’17. RedHook,NY,USA:CurranAssociatesInc.,
+[9] G.Morello,M.Eshghie,S.Bobadilla,andM.Monperrus,“Disl:Fueling 2017,p.6000–6010.
+Research with A Large Dataset of Solidity Smart Contracts,” https:// [29] Y. Huang, J. Li, S. Fang, Y. Li, P. Yang, and B. Hu, “Smart contract
+arxiv.org/abs/2403.16861,2024. intent detection with pre-trained programming language model,” 2025.
+[10] H. Rezaei, M. Eshghie, K. Anderesson, and F. Palmieri, “Sok: [Online].Available:https://arxiv.org/abs/2508.20086
+Root cause of $1 billion loss in smart contract real-world attacks [30] Z. Gao, V. Jayasundara, L. Jiang, X. Xia, D. Lo, and J. Grundy,
+via a systematic literature review of vulnerabilities,” 2025. [Online]. “Smartembed: A tool for clone and bug detection in smart contracts
+Available:https://arxiv.org/abs/2507.20175 through structural code embedding,” in 2019 IEEE International Con-
+ference on Software Maintenance and Evolution (ICSME), 2019, pp.
+[11] X. Zheng, Z. Wan, D. Lo, D. Xie, and X. Yang, “Why does my
+394–397.
+transaction fail? a first look at failed transactions on the solana
+blockchain,” Proc. ACM Softw. Eng., vol. 2, no. ISSTA, Jun. 2025. [31] Z. Feng, D. Guo, D. Tang, N. Duan, X. Feng, M. Gong,
+[Online].Available:https://doi.org/10.1145/3728943 L. Shou, B. Qin, T. Liu, D. Jiang, and M. Zhou, “CodeBERT:
+A pre-trained model for programming and natural languages,” in
+[12] “TotalfailedtransactionstocontractsonEthereum.”[Online].Available:
+Findings of the Association for Computational Linguistics: EMNLP
+https://www.dune.com/queries/6115433
+2020, T. Cohn, Y. He, and Y. Liu, Eds. Online: Association
+[13] L. Zhou, X. Xiong, J. Ernstberger, S. Chaliasos, Z. Wang, Y. Wang,
+for Computational Linguistics, Nov. 2020, pp. 1536–1547. [Online].
+K.Qin,R.Wattenhofer,D.Song,andA.Gervais,“SoK:Decentralized
+Available:https://aclanthology.org/2020.findings-emnlp.139/
+Finance (DeFi) Attacks,” in 2023 IEEE Symposium on Security and
+[32] P. Jain, A. Jain, T. Zhang, P. Abbeel, J. Gonzalez, and I. Stoica,
+Privacy(SP),May2023,pp.2444–2461.
+“Contrastive code representation learning,” in Proceedings of the
+[14] A. Gervais and L. Zhou, “Ai agent smart contract exploit generation,”
+2021 Conference on Empirical Methods in Natural Language
+2025.[Online].Available:https://arxiv.org/abs/2507.05558
+Processing, M.-F. Moens, X. Huang, L. Specia, and S. W.-t. Yih,
+[15] Z. Chen, Y. Liu, S. M. Beillahi, Y. Li, and F. Long, “Demystifying
+Eds. Online and Punta Cana, Dominican Republic: Association
+invariant effectiveness for securing smart contracts,” Proc. ACM
+for Computational Linguistics, Nov. 2021, pp. 5954–5971. [Online].
+Softw. Eng., vol. 1, no. FSE, Jul. 2024. [Online]. Available:
+Available:https://aclanthology.org/2021.emnlp-main.482/
+https://doi.org/10.1145/3660786
+[33] B. Probierz, J. Kozak, and A. Hrabia, “Clustering of scientific
+[16] J.Su,J.Chen,Z.Fang,X.Lin,Y.Tang,andZ.Zheng,“Smartoracle: articles using natural language processing,” Procedia Computer
+Generating smart contract oracle via fine-grained invariant detection,” Science, vol. 207, pp. 3449–3458, 2022, knowledge-Based and
+IEEE Transactions on Software Engineering, vol. 51, no. 4, pp. 947– Intelligent Information & Engineering Systems: Proceedings of
+959,2025. the 26th International Conference KES2022. [Online]. Available:
+[17] Y. Liu and Y. Li, “Invcon: A dynamic invariant detector for ethereum https://www.sciencedirect.com/science/article/pii/S1877050922012947
+smart contracts,” in Proceedings of the 37th IEEE/ACM International [34] K. P. Sinaga and M.-S. Yang, “Unsupervised k-means clustering algo-
+Conference on Automated Software Engineering, ser. ASE ’22. New rithm,”IEEEAccess,vol.8,pp.80716–80727,2020.
+York,NY,USA:AssociationforComputingMachinery,2023.[Online]. [35] D. Deng, “Dbscan clustering algorithm based on density,” in 2020
+Available:https://doi.org/10.1145/3551349.3559539 7th International Forum on Electrical Engineering and Automation
+[18] Y. Liu, C. Zhang, and Y. Li, “Automated invariant generation for (IFEEA),2020,pp.949–953.
+soliditysmartcontracts,”IEEETransactionsonDependableandSecure [36] X. Ran, Y. Xi, Y. Lu, and et al., “Comprehensive survey on
+Computing,pp.1–17,2025. hierarchical clustering algorithms and the recent developments,”
+[19] K.Kaushik,R.Halder,andS.Mondal,“Strengtheningsolidityinvariant Artificial Intelligence Review, vol. 56, pp. 8219–8264, 2023. [Online].
+generation: From post- to pre-deployment,” 2024. [Online]. Available: Available:https://doi.org/10.1007/s10462-022-10366-3
+https://arxiv.org/abs/2409.01804 [37] C. Malzer and M. Baum, “A hybrid approach to hierarchical density-
+[20] S.So,M.Lee,J.Park,H.Lee,andH.Oh,“Verismart:Ahighlyprecise based cluster selection,” in 2020 IEEE International Conference on
+safetyverifierforethereumsmartcontracts,”in2020IEEESymposium MultisensorFusionandIntegrationforIntelligentSystems(MFI),2020,
+onSecurityandPrivacy(SP),2020,pp.1678–1694. pp.223–228.
+[38] Statistics How To, “Sample size in statistics (how to
+find it): Excel, cochran’s formula, general tips,” accessed:
+2025-05-29. [Online]. Available: https://www.statisticshowto.com/
+probability-and-statistics/find-sample-size/#Cochran
+[39] J. Barlett, J. Kotrlik, and C. Higgins, “Organizational research: De-
+termining appropriate sample size in survey research,” Information
+Technology,Learning,andPerformanceJournal,vol.19,012001.
+[40] S. Team. (2023) Breaking changes in solidity. Accessed:
+2025-04-28. [Online]. Available: https://docs.soliditylang.org/en/latest/
+080-breaking-changes.html
+[41] Tenderly, “Tenderly api documentation,” n.d., accessed: 2025-04-02.
+[Online].Available:https://docs.tenderly.co/reference/api
+[42] S. Zhang and H.-S. Wong, “Arimp: A generalized adjusted rand index
+forclusterensembles,”in201020thInternationalConferenceonPattern
+Recognition,2010,pp.778–781.
+[43] P. Rousseeuw, “Rousseeuw, p.j.: Silhouettes: A graphical aid to the
+interpretationandvalidationofclusteranalysis.comput.appl.math.20,
+53-65,” Journal of Computational and Applied Mathematics, vol. 20,
+pp.53–65,111987.
+[44] Y.Liu,Z.Li,H.Xiong,X.Gao,andJ.Wu,“Understandingofinternal
+clusteringvalidationmeasures,”in2010IEEEInternationalConference
+onDataMining,2010,pp.911–916.
+[45] OpenZeppelin, “Access – OpenZeppelin Contracts 2.x API,”
+Online, 2025, accessed: 2025-06-13. [Online]. Available:
+https://docs.openzeppelin.com/contracts/2.x/api/access
+[46] M. Eshghie, W. Ahrendt, C. Artho, T. Troels Hildebrandt, and
+G. Schneider, “Formalizing smart contract design patterns with dcr
+graphs,” qC 20250505. [Online]. Available: https://www.diva-portal.
+org/smash/record.jsf?pid=diva2%3A1956132&dswid=293
+[47] SunWeb3Sec,“DeFiHacksReproduce-Foundry,”accessed:2025-10-
+08.[Online].Available:https://github.com/SunWeb3Sec/DeFiHackLabs
+[48] M.Eshghie,W.Ahrendt,C.Artho,T.T.Hildebrandt,andG.Schneider,
+“Capturing Smart Contract Design with DCR Graphs,” in Software
+Engineering and Formal Methods, C. Ferreira and T. A. C. Willemse,
+Eds. Cham:SpringerNatureSwitzerland,2023,pp.106–125.
+[49] B.Mariano,Y.Chen,Y.Feng,S.K.Lahiri,andI.Dillig,“Demystifying
+loops in smart contracts,” in 2020 35th IEEE/ACM International Con-
+ferenceonAutomatedSoftwareEngineering(ASE),2020,pp.262–274.
+[50] “Decentralized Robbery: Dissecting the Nomad Bridge Hack and Fol-
+lowingtheMoney|Mandiant.”[Online].Available:https://cloud.google.
+com/blog/topics/threat-intelligence/dissecting-nomad-bridge-hack
+[51] Immunefi, “Hack Analysis: Nomad Bridge, August 2022,”
+Jan. 2023. [Online]. Available: https://medium.com/immunefi/
+hack-analysis-nomad-bridge-august-2022-5aa63d53814a
+[52] E.Aghaei,X.Niu,W.Shadid,andE.Al-Shaer,“Securebert:Adomain-
+specific language model for cybersecurity,” in Security and Privacy in
+CommunicationNetworks,F.Li,K.Liang,Z.Lin,andS.K.Katsikas,
+Eds. Cham:SpringerNatureSwitzerland,2023,pp.39–56.
+[53] C. Zhou, P. Liu, P. Xu, S. Iyer, J. Sun, Y. Mao, X. Ma, A. Efrat,
+P. Yu, L. Yu, S. Zhang, G. Ghosh, M. Lewis, L. Zettlemoyer, and
+O.Levy,“Lima:lessismoreforalignment,”inProceedingsofthe37th
+InternationalConferenceonNeuralInformationProcessingSystems,ser.
+NIPS’23. RedHook,NY,USA:CurranAssociatesInc.,2023.
+[54] M. Eshghie, “Sindi: Semantic invariant differencing for solidity
+smart contracts,” accessed: 2025-10-02. [Online]. Available: https:
+//github.com/mojtaba-eshghie/Sindi
+[55] D. Sun, W. Ma, L. Nie, and Y. Liu, “Sok: A taxonomic analysis
+of defi rug pulls: Types, dataset, and tool assessment,” Proc. ACM
+Softw. Eng., vol. 2, no. ISSTA, Jun. 2025. [Online]. Available:
+https://doi.org/10.1145/3728900
+[56] R. W. Floyd, “Assigning meanings to programs,” in Program
+Verification, ser. Studies in Cognitive Systems, T. R. Colburn, J. H.
+Fetzer,andT.L.Rankin,Eds. Dordrecht:Springer,1993,vol.14,pp.
+19–32.[Online].Available:https://doi.org/10.1007/978-94-011-1793-7
+4
+[57] C. A. R. Hoare, “An axiomatic basis for computer programming,”
+Commun. ACM, vol. 12, no. 10, p. 576–580, Oct. 1969. [Online].
+Available:https://doi.org/10.1145/363235.363259

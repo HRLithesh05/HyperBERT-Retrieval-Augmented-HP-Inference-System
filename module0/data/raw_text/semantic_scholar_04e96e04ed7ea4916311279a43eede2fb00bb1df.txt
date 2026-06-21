@@ -1,0 +1,578 @@
+ReceivedFebruary22,2021,acceptedMarch21,2021,dateofpublicationApril15,2021,dateofcurrentversionApril30,2021.
+DigitalObjectIdentifier10.1109/ACCESS.2021.3073428
+Improving Distantly-Supervised Relation
+Extraction Through BERT-Based Label and
+Instance Embeddings
+DESPINACHRISTOU ANDGRIGORIOSTSOUMAKAS
+SchoolofInformatics,AristotleUniversityofThessaloniki,54124Thessaloniki,Greece
+Correspondingauthor:DespinaChristou(christoud@csd.auth.gr)
+ThisworkwassupportedbytheEuropeanRegionalDevelopmentFundoftheEuropeanUnionandGreeknationalfundsthroughthe
+OperationalProgramCompetitiveness,EntrepreneurshipandInnovation,throughthecallRESEARCH–CREATE-INNOVATE,inthe
+contextoftheExploitationofCulturalAssetswithcomputer-assistedRecognition,Labelingandmeta-dataEnrichment(ECARLE)Project
+underProjectT1EDK-05580.
+ABSTRACT Distantly-supervised relation extraction (RE) is an effective method to scale RE to large
+corpora but suffers from noisy labels. Existing approaches try to alleviate noise through multi-instance
+learningandbyprovidingadditionalinformationbutmanagetorecognizemainlythetopfrequentrelations,
+neglectingthoseinthelong-tail.WeproposeREDSandT(RelationExtractionwithDistantSupervisionand
+Transformers),anoveldistantly-supervisedtransformer-basedREmethodthatmanagestocaptureawider
+set of relations through highly informative instance and label embeddings for RE by exploiting BERT’s
+pre-trained model, and the relationship between labels and entities, respectively. We guide REDSandT to
+focussolelyonrelationaltokensbyfine-tuningBERTonastructuredinput,includingthesub-treeconnecting
+anentitypairandtheentities’types.Usingtheextractedinformativevectors,weshapelabelembeddings,
+whichwealsouseasanattentionmechanismoverinstancestofurtherreducenoise.Finally,werepresent
+sentencesbyconcatenatingrelationandinstanceembeddings.Experimentsinthetwobenchmarkdatasets
+for distantly-supervised RE, NYT-10 and GDS, show that REDSandT captures a broader set of relations
+withhigherconfidence,achievingastate-of-the-artAUC(0.424)inNYT-10andanexcellentAUC(0.862)
+inGDS.
+INDEXTERMS Relationextraction,distantsupervision,BERT,labelembeddings,relationattention,entity
+information.
+I. INTRODUCTION [2] relaxed this assumption so that it does not hold for all
+Relation Extraction (RE) aims to detect semantic relation- instances and along with [3], [4] proposed multi-instance
+shipsbetweenentitypairsinnaturaltextsandhasproventobe based learning. Under this setting, classification shifts from
+crucial in various natural language processing (NLP) appli- instance-level to bag-level, with a bag consisting of all
+cations, including question answering, and knowledge-base instancesthatcontainaspecificentitypair.
+(KB)population. Currentstate-of-the-artREmethodstrytoreducetheeffect
+MostREmethodsfollowasupervisedapproach,withthe of noisy instances by: i) identifying valid instances through
+requirednumberoflabeledtrainingdatarenderingthewhole multi-instancelearningandselectiveattention[5],ii)reduc-
+processtimeandlabor-intensive.Toautomaticallyconstruct inginner-sentencenoisebycapturinglong-rangedependen-
+datasetsforRE,[1]proposedtousedistantsupervision(DS) ciesusingsyntacticinformationfromdependencyparses[1],
+from a KB, assuming that if two entities exhibit a relation- [6], [7], specialized models like piecewise CNN (PCNN)
+ship in a KB, then all sentences mentioning these entities and graph CNN (GCNN), or word-level attention [6], and
+express this relation. Inevitably, this assumption generates iii)enhancingmodeleffectivenessusingexternalknowledge
+false-positivesandleadsdistantly-createddatasetstocontain (i.e. KB entity types [8], entity descriptions [9], [10], rela-
+erroneous labels. To alleviate the wrong labeling problem, tion phrases [8]) or transfer knowledge from pre-trained
+models[11].
+The associate editor coordinating the review of this manuscript and The study of the above approaches led us to the follow-
+approvingitforpublicationwasChun-WeiTsai . ing core observations. First, among all models used in the
+62574 ThisworkislicensedunderaCreativeCommonsAttribution4.0License.Formoreinformation,seehttps://creativecommons.org/licenses/by/4.0/ VOLUME9,2021
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+literature,theuseofapretrainedtransformer-basedlanguage II. REDSANDT
+model (LM) can help in recognizing a broader set of rela- Givenabagofsentences{s ,s ,...,s }thatconcernaspe-
+1 2 n
+tions, even though at the expense of time and computa- cific entity pair, REDSandT generates a probability distri-
+tional resources, and second, the relationship between label bution on the set of possible relations. REDSandT utilizes
+and entities can entail valuable information but rarely used BERTpre-trainedLMtocapturethesemanticandsyntactic
+over external knowledge. Driven by these observations we features of sentences by transferring pre-trained common-
+inspired to develop a novel transformer-based model that senseknowledge.WeextendBERTtohandlemulti-instance
+canefficientlycaptureinstanceandlabelembeddingsinless learning,andwefine-tunethemodeltoclassifytherelation
+complexitysoastodriveREinrecognizingabroadersetof linkingtheentitypairgiventheassociatedsentences.
+relations. During fine-tuning, we employ a structured, RE-specific
+WeproposeREDSandT(RelationExtractionwithDistant input to minimize architectural changes to the model [13].
+Supervision and Transformers), a novel transformer-based Each sentence is adapted to a structured text, including the
+RE model for distant supervision. To handle the problem sentences’tokensconnectingtheentitypair(STP)alongwith
+of noisy instances, we guide REDSandT to focus solely on theentitiestypes.Wetransformtheinputintoa(sub-)word-
+relationaltokensbyfine-tuningBERTonastructuredinput, level distributed representation using BPE and positional
+including the sub-tree connecting an entity pair (STP) and embeddings from BERT fine-tuned on our corpora. Then,
+theentities’types.Theinput’sRE-specificformation,along weformfinalsentencerepresentationbyconcatenatingrela-
+with BERT’s knowledge from unsupervised pre-training, tion embedding and sentence representation weighted with
+results in REDSandT generating informative vectors. Using the relation embedding. Lastly, we use attention over the
+thesevectors,weshaperelationembeddingsrepresentingthe bag’ssentencestoshapebagrepresentation,whichisthenfed
+entities’ distance in vector space. Relation embeddings are toasoftmaxlayertogetthebag’srelationdistribution.
+thenusedasrelation-wiseattentionoverinstancerepresenta- REDSandT can be summarized in three components,
+tion to reduce the effect of less-informative tokens. Finally, namely sentence encoder, bag encoder, and model train-
+REDSandTencodessentencesbyconcatenatingrelationand ing. Each component is described in detail in the following
+weighted-instance embeddings, with relation classification sectionswiththeoverallarchitectureshowninFig.1and3.
+to occur at bag-level as a weighted sum over its sentences’
+A. SENTENCEENCODER
+predictions.
+Givenasentencex andanentitypair(cid:104)h,t(cid:105),REDSandTcon-
+We chose BERT over other transformer-based mod-
+structsadistributedrepresentationofthesentencebyconcate-
+els because it considers bidirectionality while training.
+nating relation and instance embeddings. Overall sentence
+Weassumethatthischaracteristicisimportanttoefficiently
+encodingisrepresentedinFig.1,withfollowingsectionsto
+captureentities’interactionswithoutrequiringanadditional
+examinethesentenceencoderpartsinabottom-upway.
+taskthatimportantlyincreasescomplexity(i.e.fine-tuningan
+auxiliaryobjectiveinGPT[11]).
+1) INPUTREPRESENTATION
+Themaincontributionsofthispapercanbesummarizedas
+Relationextractionrequiresastructuredinputthatcansuffi-
+follows:
+cientlycapturethelatentrelationbetweenanentitypairand
+• We extend BERT to handle multi-instance learning to
+its surrounding text. Our input representation encodes each
+directlyfine-tunethemodelinaDSsettingandreduce
+sentenceasasequenceoftokens,depictedintheverybottom
+erroraccumulation.
+ofFig.1.
+• RelationembeddingscapturedthroughBERTfine-tuned
+It starts with the head entity type and token(s) followed
+on our RE-specific input help to recognize a
+by delimiter [H-SEP], continues with the tail entity type,
+wider set of relations, including relations in the
+and token(s) followed by delimiter [T-SEP] and ends with
+long-tail.
+the token sequence of the sentence’s STP path. The whole
+• Suppressing the input sentence to its relational tokens
+inputstartsandendswithspecialdelimiters[CLS]and[SEP],
+throughSTPencodingallowedustocaptureinformative
+respectively.InBERT,[CLS]typicallyactsasapoolingtoken
+instance embeddings while preserving low complexity
+representingthewholesequencefordownstreamtasks,such
+totrainourmodelonmodesthardware.
+asRE.
+• Experiments on the NYT-10 dataset show REDSandT Severalothersentenceencodingswereattempted1withthe
+to surpass state-of-the-art models [8], [11], [12] in
+presented one to perform the best. Moreover, the ablation
+AUC (1.0 & 0.2 & 39 units respectively) and perfor-
+studies in section IV-B, reveal the importance of encoding
+manceathigherrecallvalues,whileachievinga7-10%
+entities’ types and compressing the original sentence to the
+improvementinP@{100,200,300}over[11].
+below-presented STP path. Below, we present in brief how
+• Experiments on the GDS dataset show REDSandT to
+weformthesub-treeparseoftheinputandtheentitytypes.
+surpassthestate-of-the-artRESIDE[8]inP@{100,200,
+300}values.
+1Trialsincludedencodingoverallsentencetokens,STPtokensonly,SDP
+• We make our code publicly available at https://github. ([14])tokensonly,usingcommon(cid:104)h,t(cid:105)delimiter,usingsingledelimiter
+com/DespinaChristou/REDSandT. betweenentitiesandSTP,removingentitytypeinformation.
+VOLUME9,2021 62575
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+FIGURE1. SentenceRepresentationinREDSandT.Theinputembeddingh0toBERTiscreatedbysummingoverthepositionalandbytepairembeddings
+foreachtokeninthestructuredinput.Statesht areobtainedbyself-attendingoverthestatesofthepreviouslayerht−1.Finalsentencerepresentationis
+obtainedbyconcatenatingtherelationembeddingrht,andthefinalfine-tunedBERTlayerhLweightedwithrelationattentionα r.Headandtailtokens
+participatingintherelationembeddingformationaremarkedwithboldanddashedlinesrespectively.
+accessible with our experiments in section IV-B indicating
+theirinclusiontoimproveperformance.
+2) INPUTEMBEDDINGS
+Theinputembeddingh toBERTiscreatedbysummingover
+0
+thepositionalandbytepairembeddingsforeachtokeninthe
+FIGURE2. ExampleofSTPandSDPsentenceencoding.
+structuredinput.
+a: SUB-TREEPARSEOFINPUTSENTENCE
+We utilize the sub-tree parse (STP) of the input sentence in a: BYTE-PAIRTOKENSENCODING
+order to reduce the noisy words within sentence and focus To make use of sub-word information, we tokenize input
+on the relational tokens. As seen in Fig. 2, STP preserves usingbyte-pairencoding(BPE)[16].Weparticularlyusethe
+the path of the sentence that connects the two entities with tokenizerfromthepre-trainedmodel(30,000tokens),which
+their least common ancestor (LCA)’s parent. Compared to we extend with 20 task-specific tokens (e.g., [H-SEP], [T-
+otherimplementations[7],whoshapethefinalSTPsequence SEP], and the 18 entity type tokens). Added tokens serve a
+by re-assigning the participating tokens into their origi- specialmeaningintheinputrepresentation,thusarenotsplit
+nal sequence order, we preserve the tokens’ order within intosub-wordsbythetokenizer.
+STP achieving a grammatical normalization of the original
+b: POSITIONALENCODING
+sentence.
+Positional encoding is an essential part of BERT’s attention
+b: ENTITYTYPESPECIALTOKENS mechanism.Precisely,BERTlearnsauniquepositionembed-
+In the extent that every relation puts some constraint on the dingtorepresenteachoftheinput(sub-word)tokenpositions
+type of participating entities [8], [15], we incorporate the withinthesequence.
+entity type in the model’s structured input (see bottom of
+3) SENTENCEREPRESENTATION
+Fig.1).
+Inputsequenceistransformedintofeaturevectors(h )using
+Precisely,weincorporate18genericentitytypes,captured L
+BERT’s pre-trained language model, fine-tuned in our task.
+fromrecognizingNYT-10sentence’sentitieswiththespaCy
+model.2 We assume these types KB-independent and easily Inspiteofcommonpracticetorepresentthesentencebythe
+[CLS]vectorinh [11],wearguethatnotallwordscontribute
+L
+2https://spacy.io/models/en equallytosentencerepresentation.
+62576 VOLUME9,2021
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+By encoding the underlying relation as a function of selective attention [5] to emphasize on sentences that better
+the examining entities and by giving attention to vectors expresstheunderlyingrelation.
+relatedtothisunderlyingrelation,wecanfurtherreducesen- (cid:88)
+B= αs, (5)
+tencenoiseandimproveprecision.Coremodulesconstitute i i
+the relation embedding, entities-wise attention, and relation i
+attention.Weexaminethembelow. As seen, selective attention represents bag as a weighted
+sum of the individual sentences. Attention α is calculated
+i
+a: RELATIONEMBEDDING bycomparingeachsentencerepresentationagainstalearned
+:WeformulaterelationembeddingsusingtheTransEmodel representationr:
+[17].TransEmodelregardstheembeddingoftheunderlying
+exp(sr)
+relationlasthedistance(difference)betweenhandtembed- α i = (cid:80)n exi
+p(sr)
+(6)
+dings(l =t −h),assumingthatarelationr holdsbetween j=1 j
+i i i
+an entity pair (h,t). Then, we shape relation embedding for Finally,bagrepresentationBisfedtoasoftmaxclassifier
+each sentence i by applying a linear transformation on the toobtaintheprobabilitydistributionovertherelations.
+headandtailentitiesvectors,activatedthroughaTanhlayer
+p(r)=Softmax(W ·B+b ), (7)
+tocapturepossiblenonlinearities: r r
+l i =Tanh(w l(t i−h i)+b l), (1) where W r is the relation weight matrix and b r ∈ (cid:60)dr is the
+biasvector.
+where w is the underlying relation weight matrix and b ∈
+l l
+(cid:60)dt is the bias vector. We mark relation embedding as l
+C. TRAINING
+becauseitrepresentsthepossibleunderlyingrelationbetween
+REDSandT utilizes a transformer model, precisely BERT,
+the two entities and not the actual relationship r. Head h
+i whichfine-tunesonourspecificsetuptocapturethesemantic
+andtailt embeddingsreflectonlytheentities’relatedtokens,
+i featuresofrelationalsentences.Below,wepresenttheoverall
+whichwecapturebyselectingsolelytheheadandtailtoken
+process.
+embeddingsfromh asshowninFig.1.
+L
+1) MODELPRE-TRAINING
+b: RELATIONATTENTION
+Forourexperiments,weusethepre-trainedbert-base-cased
+Even though REDSandT is trained on STP that naturally
+languagemodel[18],whichconsistsof12layers,12attention
+preservesonlyrelationaltokens,wewantedtofurtherreduce
+heads, and 110M parameters, with each layer being a bidi-
+possibleleftnoiseonsentence-level.Forthisreason,weuse
+rectionalTransformerencoder[19].Themodelistrainedon
+arelationattentiontoemphasizeonsentencetokensthatare
+casedEnglishtextofBooksCorpusandWikipediawithatotal
+mostlyrelatedtotheunderlyingrelationl.Wecalculaterela-
+i
+tionattentionα bycomparingeachsentencerepresentation of 800M and 2.5K words respectively. BERT is pre-trained
+r
+usingtwounsupervisedtasks:maskedLMandnextsentence
+fromthelastlayerL againstthelearnedrepresentationl for
+i
+prediction,withmaskedLMbeingitscorenoveltyasitallows
+eachsentencei:
+thepreviouslyimpossiblebidirectionaltraining.
+exp(h l)
+α = iL i (2)
+r (cid:80)n
+exp(h l)
+j=1 jL i 2) MODELFINE-TUNING
+Then,weweightBERT’slasthiddenlayerh
+L
+∈(cid:60)dh with We initialize REDSandT model’ s weights with the
+relationembedding: pre-trained BERT model, and we fine-tune its last four
+layers under the multi-instance learning setting presented
+T
+h(cid:48) =(cid:88) α ·h (3) in Fig. 3, given the specific input shown in Fig. 1. We end
+L r it
+upfine-tuningonlythelastfourlayersafterexperimentation.
+t=1
+Duringfine-tuning,weoptimizethefollowingobjective:
+Finally,sentencerepresentations
+i
+∈ (cid:60)dh∗2 iscomputed
+|B|
+a ses nt th ee ncc eo ’snc wa ete ign ha tt eio dn hio df deth ne rer pe rla et si eo nn tae tim onbe hd (cid:48)d :ing l i and the L(D)=(cid:88) logP(l i|B i;θ), (8)
+L
+s =(cid:2) l ; h(cid:48) (cid:3) (4) i=1
+i i L where for all entity pair bags |B| in the dataset, we want to
+Several other representation techniques were tested, with maximize the probability of correctly predicting the bag’s
+thepresentedmethodtooutperform. relationgivenitssentences’representationandparameters.
+B. BAGENCODER III. EXPERIMENTALSETUP
+Bag encoding, i.e., aggregation of sentence representations A. DATASETS
+inabag,comestoreducenoisegeneratedbytheerroneously Weconductexperimentsonthetwowidely-usedbenchmark
+annotatedrelationsaccompanyingDS.Assumingthatnotall datasetsfordistantly-supervisedRE,namelyNYT-10[2]and
+sentencescontributeequallytothebagrepresentation,weuse GDS [20]. NYT-10 dataset was built by aligning triples in
+VOLUME9,2021 62577
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+TABLE2. Dataset-specificmodelhyper-parameters.
+C. BASELINEMODELS
+To show the proposed method’s effectiveness, we com-
+pare against five strong baselines in the two benchmark
+datasets for distantly-supervised RE. Precisely, we compare
+REDSandTto[1],[5],[8],[11],[12]intheNYT-10dataset
+and to [8], [12] in the GDS dataset. The above choice was
+taken considering the publicly available source codes and
+FIGURE3. Transformerarchitecture(left)andtrainingframework(right).
+available precision-recall results. Our reported results are
+Sentencerepresentationsi isformedasshowninFig.1.
+thosepresentedintheoriginalpapersorwerecapturedusing
+TABLE1. Datasets’Statistics. theopen-source,releasedcodes.
+1) FEATURE-BASEDMETHODS
+• Mintz[1]:Amulti-classlogisticregressionmodelunder
+distantsupervisionsetting.
+• PCNN+ATT [5]: A CNN model with instance-level
+attention
+FreebasetotheNYTcorpus,consistsofmanyinstancesand
+2) NEURALNETWORKMETHODS
+relations, but contains much noise coming both from incor-
+• RESIDE [8]: A NN model that uses several side
+rectlabelsandunlabelledinstances(73.8%oftraininstances
+information (entity types,3 relational phrases) and
+and 96.3% of test instances exhibit no relation (‘‘NA’’)),
+employsGraph-CNNtocapturesyntacticinformationof
+whereasGDSwasbuilttopreciselyovercomeDSnoise(only
+instances.
+25% of the {train, val, test} instances exhibit no relation
+• BERT-SIDE [12]: A related approach to RESIDE.
+(‘‘NA’’)),butconsistsoffewinstancesandrelations.Youcan
+Simplifies its complex sentence encoding with BERT
+viewdatasets’statisticsinFig.1.
+embeddings.Nofine-tuningisapplied.
+Moreover, we provide an enhanced version of both
+• DISTRE [11]: A transformer model, GPT fine-tuned
+datasets, including STP encoding of the input sentences as
+for RE with an auxiliary objective under the distant
+well as the head and tail entity types to facilitate future
+supervisionsetting.
+implementations.
+B. HYPER-PARAMETERSETTINGS D. EVALUATIONCRITERIA
+In our experiments we utilize bert-base-cased model with Wereporttop-Nprecision(P@N,withN ∈{100,200,300,
+hidden layer dimension D h = 768, while we fine-tune the 500}), precision-recall curves, and relation distribution on
+model with max_seq_length D t = 64. We use the Adam top-300 predicted relations. Moreover, we present several
+optimization scheme [21] with β 1 = 0.9,β 2 = 0.999 and ablation studies and we show the relation-wise attention’s
+a cosine learning rate decay schedule with warm-up over effectondataset’sinstances.
+0.1%oftrainingupdates.Also,weminimizelossusingcross
+entropycriterionweightedondataset’sclassestohandlethe IV. EXPERIMENTALRESULTSANDANALYSIS
+unbalancedtrainingset. A. COMPARISONWITHBASELINES
+Regarding dataset-specific model’s hyper-parameters, Forevaluatingtheeffectivenessofourmodel,wepresentfor
+we manually tune them on the training (NYT-10) and val- both datasets the precision-recall (P-R) curves (Fig. 4, 5),
+idation (GDS) set based on AUC score. Fig. 2 presents AUC and precision at various points in the P-R curve
+the applied searching space and selected values for the (Fig.3,4).Also,wereportfortheNYT-10datasetthedistri-
+dataset-specifichyper-parameters. butionoverrelationtypesforthetop-300predictions(Fig.5)
+Experiments conducted on a PC with 32.00 GB RAM, toreviewourmodel’sefficiencyinextractingawidersetof
+Inteli7-7800XCPU@3.5GHzandNVIDIA’sGeForceGTX relationsintop-Npredictions.
+1080with8GB.Trainingtimetakesabout100min/epochand
+3min/epochfortheNYT-10andGDSdatasets,respectively. 3Compared to our 18 KB-independent entity types, authors use
+Ourcodewillbepubliclyavailableuponacceptance. 38Freebase-specificentitytypes.
+62578 VOLUME9,2021
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+FIGURE4. Precision-RecallcurvesinNYT-10dataset. FIGURE5. Precision-RecallcurvesinGDSdataset.
+Fig.4comparestheprecision-recallcurvesofREDSandT TABLE3. AUCandP@NevaluationresultsatNYT-10dataset.
+inNYT-10datasetagainstbothfeature-basedandneural-based
+baseline models. We observe that: (1) The fine-tuned on
+distantly-supervised RE task NN-based approaches outper-
+form the feature-based approaches (Mintz, PCNN+ATT),
+showing human-designed features limitation against neural
+networks’automaticallyextractedfeatures.(2)BERT-SIDE,
+whichisnotfine-tunedonthetask,presentsasuddendecline
+inprecisionquicklyenough,whichitsauthorsattributetothe tobetterhandlethenegatives(only25%oftestinstances)in
+highpercentageofnegatives(96.3%oftestinstances)thatthe thisdatasetcomparedtoitsperformanceonNYT-10.(3)The
+modelcannotefficientlyhandle.(3)RESIDE,DISTRE,and extensiveside-informationoftheRESIDE-basedapproaches
+REDSandT achieve better performance than PCNN+ATT, addsvalueonlyinthevery-high(>0.8)recallvalues.
+whichevenexhibitingthehighestprecisioninthebeginning Fig. 3, and 4, which present AUC and precision at var-
+soon follows an abrupt decline. This reveals the importance ious points in the P-R curve for both datasets, reveal that
+ofbothside-information(i.e.,entitytypesandrelationalias), ourmodelpreservesthestate-of-the-artAUCintheNYT-10
+and transfer knowledge. (4) RESIDE performs the best in dataset and only 1.1 units less than RESIDE in the GDS
+low recalls and generally performs well, which we attribute dataset.Precisely,intheNYT-10dataset,ourmodel’spreci-
+to the multitude of side-information given. (5) Although sionisbetweenthatofRESIDEandDISTRE.REDSandT’s
+DISTRE exhibits 3.5% greater precision in medium-level s precision does not exceed RESIDE’, even though it is
+recalls, it presents 2-12% lower precision in recall values closeenough,suggestingthatadditionalside-informationor
+<0.25comparedtoRESIDE,andREDSandT.(6)Ourmodel freebase-specificentitieswouldimproveperformance.Addi-
+shows a stable behavior, with a steady, downward trend, tionally, REDSandT surpasses DISTRE’s precision, which
+acting similar to RESIDE at the low and medium recalls weattributetoourselectedpre-trainedmodelthatefficiently
+and surpassing all baselines in the very high recall val- captures label embeddings. Also, even though BERT-SIDE
+ues. We believe the reason is that we use potential label exhibitsthegreatest(100%)precisionintop-{100-500}pre-
+information as an additional feature and as attention over dictions, it presents far opposite results in AUC, show-
+the instance tokens. The learned label embeddings are of ing that it is efficient in much fewer top-N predictions
+high quality since they carry common-knowledge from the to the rest models. Meanwhile, in the GDS dataset, our
+pre-trainedmodelfine-tunedonthespecificdatasetandtask. modelsurpassesRESIDEintopprecisionvaluesbutexhibits
+Moreover, the chosen pre-trained model, BERT, considers 1.1 units less in AUC, following the P-R curve analysis.
+bidirectionalitywhiletraining,beingthusabletoefficiently Moreover, similarly to NYT-10, BERT-SIDE achieves the
+capture head and tail interaction. Respectively, Fig. 5 com- highest precision in top-{100-500} predictions but shows
+pares the P-R curves of REDSandT in the GDS dataset the least AUC. Consequently, our model is more consistent
+against the RESIDE-based approaches (RESIDE, BERT- across the various points of the P-R curve regardless of
+SIDE). We observe that: (1) REDSandT and RESIDE per- thedataset.
+form almost equally, with REDSandT outperforming in the Fig. 5 shows the distribution over relation types for the
+up-to-0.8 level recalls, while RESIDE surpasses all models top300predictionsofREDSandTandbaselinemodelsinthe
+in the highest-level recalls. (2) BERT-SIDE shows the most NYT-10.REDSandTencompasses10distinctrelationtypes,
+inferior performance among the three models, but it seems twoofwhich(/place_founded,/geographic_distribution)are
+VOLUME9,2021 62579
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+TABLE4. AUCandP@NevaluationresultsatGDSdataset. TABLE6. AUCandP@NofvariantmodelsonNYT-10dataset.
+TABLE5. Relationdistributionoverthetop300predictionsforREDSandT
+andcomparisonmodelsinNYT-10dataset.
+TABLE7. AUCandP@NofvariantmodelsonGDSdataset.
+not recognized by none of rest models. PCNN+ATT pre-
+FIGURE6. Relationattentionweightsinchallenginglong-tailrelations.
+dictions are highly biased towards a set of only four rela- Inthetopexampleweseeaninstanceofa‘‘/people/person/children’’
+relation,whereasinthebottomweviewaninstanceofa
+tion types, while RESIDE captures three additional types.
+‘‘/location/neighborhood/neighborhood_of’’relation.
+DISTRE and REDSandT manage to recognize more types
+than all models, emphasizing the contribution of transfer with inspection of top-300 predictions revealing a focus on
+knowledge. Moreover, REDSandT correctly not recognizes 5relationtypesonly,with/location/containstomakeupthe
+/location/country/capitalrelationthatDISTREdoes,astheir 79% of these. Simple integration of entity types in input
+authorsfoundmosterrorstoarisefromthespecificpredicted representationisthenextmostimportantfeaturethatboosts
+relation in manual evaluation. Meanwhile, we highlight ourmodel.Next,‘‘REDSandTw.SDP’’,showsSTP’ssupe-
+REDSandT’ s effectiveness in recognizing relations in the riority,whileamanualinspectioninthemodel’stop300pre-
+long-tail.Particularly,ourmodelcaptures,/founders(1.47%), dictionsproveSDP’sweaknesstorecognizerelationsinthe
+/neighborhood_of (1.06%), /person/children (0.47%), and long tail, with focus given on /person/nationality relation.
+/sports_team/location(0.16%)relations.Relationsarelisted Finally,removingtherelationattentionoverinstancetokens
+in descending order regarding population in test set with exhibitstheleasteffectinAUC(0.002)andprecision(∼2%).
+respectivepercentagereferencedinparentheses. Meanwhile,wenoticethatmodelfocusessolelyon8relation
+We also manually inspect the top-300 predictions of typesinthetop300predictions.
+REDSandT in the GDS dataset. All four relations includ- Respectively,thegreatestimpactintheGDSdatasetcomes
+ing those in the long-tail were captured, while none ‘‘NA’’ from the relation attention mechanism with its removal to
+relationwaspredicted. induce a 7-unit drop in AUC and a 11-14% drop in P@
+{100-300}. Manual inspection in top-300 predictions
+B. ABLATIONSTUDIES revealed‘‘NA’’relationtobeamongthetoppredicted.Next
+To assess the effectiveness of the different modules of significant decline comes by removing relation embedding,
+REDSandT,wecreatefourablationmodels: which from manual inspection leads in recognizing only
+• REDSandTw/oET:Removesentitytypesfrominput themost-frequentrelation(/people/person/place_of_birth)in
+sentencerepresentation. top-300 predictions ignoring all rest relations. At last, sub-
+• REDSandTw/or ht:Removesrelationembeddingand tractingentitytypeinformationshowstheleastdropinper-
+relation attention. We represent sentence using the formance,suggestingthatourmodel’srobustnessregardless
+[CLS]tokenofBERT’slasthiddenlayerh L. side-information.
+• REDSandT w/o a r: Removes relation attention on
+C. CASESTUDY:EFFECTOFRELATIONATTENTION
+instancetokens.
+Fig.6showsavisualization4oftherelationattentionweights,
+• REDSandT w. SDP: Replaces STP with SDP [14] in
+highlighting the different parts of the sentence that drive
+sentenceencoding.
+relationextraction,fortwolong-tailrelationsintheNYT-10
+AsshowninFig.6,7allmodulescontributetofinalmodel’
+dataset. In both cases, we see that the special tokens pre-
+s effectiveness, in both datasets. Starting to the NYT-10,
+serve important information, while also the entity type is
+the greatest impact comes from relation embeddings with
+their removal resulting in the highest AUC (2 units) and 4Obtained with https://github.com/jiesutd/Text-Attention-Heatmap-
+P@300 (5.3%) drop. Meanwhile, P@100 goes up to 80% Visualization
+62580 VOLUME9,2021
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+given more weight than the entity itself. Moreover, we see RESIDE [8] model uses relation phrases and incorpo-
+which tokens affect more the relation. Tokens ‘‘girlfriend’’, ratesFreebase-specificentitytypesachievingstate-of-the-art
+‘‘son’’, and the repetition of name ‘‘James’’ are predictive precision at higher recall values, whereas [9], [10] use
+of the ‘‘children’’ relation, while tokens ‘‘neighborhood’’, entity descriptors to enhance entity and label embeddings,
+‘‘was’’,‘‘in’’,alongwithaGPEentitytypeshowaprobable respectively.
+‘‘neighborhood_of’’relation.
+D. SUB-PARSESOFINPUT
+V. RELATEDWORK
+Shortest-dependencypath(SDP)[14]hasbeenprovedimpor-
+Our work is related to distant supervision, neural relation
+tant in reducing irrelevant to RE words, while preserving
+extraction(mainlypre-trainedLMs),sub-treeparseofinput,
+the sub-path of the sentence that connects the two entities
+labelembedding,andentitytypesideinformation.
+with their least common ancestor’s parent (STP) [7] can
+further reduce the noise within sentences. Contrary to [7],
+A. DISTANTSUPERVISION
+DSplaysakeyroleinRE,asitsatisfiesitsneedforextensive whoshapethefinalSTPsequencebyre-assigningthepartic-
+training data, easily and inexpensively. The use of DS [22], ipatingtokensintotheiroriginalsequenceorder,wepreserve
+[23]togeneratelargetrainingdataforREwasproposedby the tokens’ order within the STP to maintain the emerged
+[1], who assumed that all sentences that include an entity grammarinformation.
+pair,whichexhibitsarelationshipinaKB,expressthesame
+relation.However,thisassumptioncomeswithnoisylabels, E. LABELEMBEDDING
+especiallywhentheKBisnotdirectlyrelatedtothedomain Label embeddings aim to embed labels in the same space
+at hand. Multi-instance learning methods were proposed to with word vectors. The idea comes from computer vision,
+alleviatetheissue,byconductingrelationclassificationatthe with [28] to introduce them in text classification and [10]
+bag level, with a bag including instances that mention the to use them as attention-mechanism over relational tokens
+sameentitypair[2],[3]. indistantly-supervisedRE.WemakeuseoftheTransE[17]
+model to shape label embeddings as the entities’ distance
+B. NEURALRELATIONEXTRACTION in BERT’s vector space, and we show that their use both
+While the performance of the above approaches heavily as a feature and as attention over sentences significantly
+relies on handcrafted features (POS tags, named entity improvesRE.
+tags,morphologicalfeatures,etc.),theadventofneuralnet-
+works (NNs) in RE set the focus on model architecture. VI. CONCLUSION
+Initially,aCNN-basedmethodwasproposedby[24]toauto- We presented a novel transformer-based relation extrac-
+matically capture the semantics of sentences, while PCNN tion model for distant supervision. REDSandT manages
+[25] became the common architecture to embed sentences. to acquire high-informative instance and label embeddings
+PCNN is used in several approaches that handle DS noisy and is efficient at handling the noisy labeling problem of
+patterns, such as intra-bag attention [5], inter-bag attention DS. REDSandT captures high-informative embeddings for
+[26], soft labeling [27], [28] and adversarial training [29], RE by fine-tuning BERT on a RE-specific structured input
+[30]. Moreover, Graph-CNNs proved an effective way to that focuses solely on relational arguments, including the
+encodesyntacticinformationfromtext[8]. sub-tree connecting the entities along with entities’ types.
+The latest development of pre-trained LMs relying on Then, it utilizes these vectors to encode label embeddings,
+transformerarchitecture[19]hasshowntocapturesemantic whicharealsousedasattentionmechanismoverinstancesto
+and syntactic features better [13], with [31] proving that reducetheeffectofless-informativetokens.Finally,relation
+pretrainedLMssignificantlyimprovetheperformanceintext extraction occurs at bag-level by concatenating label and
+classificationtasks,preventoverfitting,andincreasesample weightedinstanceembeddings.Extensiveexperimentsonthe
+efficiency.Moreover,works[32],[33]thatfine-tunethepre- NYT-10andGDSdatasetsillustrateREDSandT’seffective-
+trained LM models (most of them BERT [18]) have shown ness over existing baselines in current literature. Precisely,
+thatsimpleNNsbuiltontopofpretrainedtransformer-based REDSandTmanagestorecognizerelationsthatothermeth-
+models improve performance. Meanwhile, DISTRE model odsfailtodetect,includingrelationsinthelong-tail.Future
+[11]extendedGPT[13]totheDSsettingbyincorporatinga work includes an investigation of whether additional infor-
+multi-instance training mechanism, proving that pre-trained mation, such as entity descriptors, influence REDSandT’s
+LMsprovideastrongersignalforDSthanspecificlinguistic performance and to what extent, while also whether the
+and side-information features [8]. To this extent, we take special token embeddings can act as global embeddings
+advantageoftheknowledgethatthesemodelscarrytocapture forRE.
+labelembeddingsandboostRE.
+REFERENCES
+C. SIDEINFORMATION [1] M. Mintz, S. Bills, R. Snow, and D. Jurafsky, ‘‘Distant supervision
+for relation extraction without labeled data,’’ in Proc. Joint Conf. 47th
+Apart from model architecture, several methods propose
+Annu.MeetingACL4thInt.JointConf.NaturalLang.Process.AFNLP
+additionalinformationtofurtherreducenoise.Forexample, (ACL-IJCNLP),col.2,2009,pp.1003–1011.
+VOLUME9,2021 62581
+D.Christou,G.Tsoumakas:ImprovingDistantly-SupervisedREThroughBERT-BasedLabelandInstanceEmbeddings
+[2] S.Riedel,L.Yao,andA.McCallum,‘‘Modelingrelationsandtheirmen- [25] D.Zeng,K.Liu,Y.Chen,andJ.Zhao,‘‘Distantsupervisionforrelation
+tionswithoutlabeledtext,’’inProc.JointEur.Conf.Mach.Learn.Knowl. extractionviapiecewiseconvolutionalneuralnetworks,’’inProc.Conf.
+DiscoveryDatabases,vol.6323.2010,pp.148–163. EmpiricalMethodsNaturalLang.Process.,2015,pp.1753–1762.
+[3] R. Hoffmann, C. Zhang, X. Ling, L. Zettlemoyer, and D. S. Weld, [26] Z.-X. Ye and Z.-H. Ling, ‘‘Distant supervision relation extraction with
+‘‘Knowledge-basedweaksupervisionforinformationextractionofover- intra-bag and inter-bag attentions,’’ in Proc. Conf. North, vol. 1, 2019,
+lappingrelations,’’inProc.49thAnnu.MeetingAssoc.Comput.Linguis- pp.2810–2819.
+tics:Hum.Lang.Technol.,vol.1,2011,pp.541–550. [27] T.Liu,K.Wang,B.Chang,andZ.Sui,‘‘Asoft-labelmethodfornoise-
+[4] M. Surdeanu, J. Tibshirani, R. Nallapati, and C. D. Manning, ‘‘Multi- tolerantdistantlysupervisedrelationextraction,’’inProc.Conf.Empirical
+instancemulti-labellearningforrelationextraction,’’inProc.JointConf. MethodsNaturalLang.Process.,2017,pp.1790–1795.
+EmpiricalMethodsNaturalLang.Process.Comput.NaturalLang.Learn., [28] G. Wang, C. Li, W. Wang, Y. Zhang, D. Shen, X. Zhang, R. Henao,
+2012,pp.455–465. andL.Carin,‘‘Jointembeddingofwordsandlabelsfortextclassifica-
+[5] Y.Lin,S.Shen,Z.Liu,H.Luan,andM.Sun,‘‘Neuralrelationextraction tion,’’ in Proc. 56th Annu. Meeting Assoc. Comput. Linguistics, 2018,
+with selective attention over instances,’’ in Proc. 54th Annu. Meeting pp.2321–2331.
+Assoc.Comput.Linguistics,vol.1,2016,pp.2124–2133. [29] Y. Wu, D. Bamman, and S. Russell, ‘‘Adversarial training for relation
+[6] Z.He,W.Chen,Z.Li,M.Zhang,W.Zhang,andM.Zhang,‘‘SEE:Syntax- extraction,’’ in Proc. Conf. Empirical Methods Natural Lang. Process.,
+awareentityembeddingforneuralrelationextraction,’’inProc.32ndAAAI 2017,pp.1778–1783.
+Conf.Artif.Intell.(AAAI),2018,pp.5795–5802. [30] P.Qin,W.Xu,andW.Y.Wang,‘‘DSGAN:Generativeadversarialtraining
+[7] T. Liu, X. Zhang, W. Zhou, and W. Jia, ‘‘Neural relation extraction fordistantsupervisionrelationextraction,’’inProc.56thAnnu.Meeting
+viainner-sentencenoisereductionandtransferlearning,’’inProc.Conf. Assoc.Comput.Linguistics,LongPapers,vol.1,2018,pp.496–505.
+EmpiricalMethodsNaturalLang.Process.,Stroudsburg,PA,USA,2018, [31] J.HowardandS.Ruder,‘‘Universallanguagemodelfine-tuningfortext
+pp.2195–2204. classification,’’inProc.56thAnnu.MeetingAssoc.Comput.Linguistics,
+[8] S.Vashishth,R.Joshi,S.S.Prayaga,C.Bhattacharyya,andP.Talukdar, vol.1,2018,pp.328–339.
+‘‘RESIDE:Improvingdistantly-supervisedneuralrelationextractionusing [32] P. Shi and J. Lin, ‘‘Simple BERT models for relation extraction and
+sideinformation,’’inProc.Conf.EmpiricalMethodsNaturalLang.Pro- semantic role labeling,’’ 2019, arXiv:1904.05255. [Online]. Available:
+cess.,2018,pp.1257–1266. http://arxiv.org/abs/1904.05255
+[9] H.She,B.Wu,B.Wang,andR.Chi,‘‘Distantsupervisionforrelation [33] X. Han and L. Wang, ‘‘A novel document-level relation extraction
+extractionwithhierarchicalattentionandentitydescriptions,’’inProc.Int. method based on BERT and entity information,’’ IEEE Access, vol. 8,
+JointConf.NeuralNetw.(IJCNN),Jul.2018,pp.1–8. pp.96912–96919,2020.
+[10] L. Hu, L. Zhang, C. Shi, L. Nie, W. Guan, and C. Yang, ‘‘Improving
+distantly-supervised relation extraction with joint label embedding,’’ in
+Proc.Conf.EmpiricalMethodsNaturalLang.Process.9thInt.JointConf.
+NaturalLang.Process.(EMNLP-IJCNLP),2019,p.3821. DESPINA CHRISTOU received the B.S. degree
+[11] C.Alt,M.Hübner,andL.Hennig,‘‘Fine-tuningpre-trainedtransformer fromtheUniversityofMacedonia,Thessaloniki,
+languagemodelstodistantlysupervisedrelationextraction,’’inProc.57th
+Greece, in 2015, and the M.S. degree in arti-
+Annu.MeetingAssoc.Comput.Linguistics,2019,pp.1388–1398.
+ficial intelligence from The University of Edin-
+[12] J. Moreira, C. Oliveira, D. Macedo, C. Zanchettin, and L. Barbosa,
+burgh,U.K.,in2016.Sheiscurrentlypursuingthe
+‘‘Distantly-supervised neural relation extraction with side information
+Ph.D.degreeinnaturallanguageprocessingwith
+usingBERT,’’inProc.Int.JointConf.NeuralNetw.(IJCNN),Jul.2020,
+pp.1–7. theAristotleUniversityofThessaloniki(AUTH),
+[13] A.RadfordandT.Salimans.(2018).ImprovingLanguageUnderstanding Greece.
+by Generative Pre-Training. [Online]. Available: https://s3-us-west- Her current research interests include deep
+2.amazonaws.com/openai-assets/research-covers/language-unsupervised/ learning models for knowledge-centered NLP
+language_understanding_paper.pdf tasks,suchasrelationextraction,entitylinking,andreasoning.Sheisinter-
+[14] Y.Xu,L.Mou,G.Li,Y.Chen,H.Peng,andZ.Jin,‘‘Classifyingrela- estedininvestigatingdeeplearningmodelsunderthepeculiaritiesofcreative
+tions via long short term memory networks along shortest dependency writingbystudyingtheabovetasksonliteraturecorpora.Sheisinvolvedin
+paths,’’inProc.Conf.EmpiricalMethodsNaturalLang.Process.,2015,
+twonationalprojectsdealingwithsemanticanalysisandmetadataenrich-
+pp.1785–1794.
+mentofmodernGreekcorpora,whileshehasworkedasaMachineLearning
+[15] Y.Liu,K.Liu,L.Xu,andJ.Zhao,‘‘Exploringfine-grainedentitytype
+ScientistandaConsultantintheprivatesector.
+constraintsfordistantlysupervisedrelationextraction,’’inProc.25thInt.
+Conf.Comput.Linguistics,COLING:Tech.Papers,2014,pp.2107–2116.
+[16] R.Sennrich,B.Haddow,andA.Birch,‘‘Neuralmachinetranslationofrare
+wordswithsubwordunits,’’inProc.54thAnnu.MeetingAssoc.Comput. GRIGORIOS TSOUMAKAS receivedthedegree
+Linguistics,vol.1,2016,pp.1715–1725. in computer science from the Aristotle Univer-
+[17] A.Bordes,N.Usunier,A.Garcia-Durán,J.Weston,andO.Yakhnenko, sity of Thessaloniki (AUTH), Greece, in 1999,
+‘‘Translating embeddings for modeling multi-relational data,’’ in Proc. theM.S.degreeinartificialintelligencefromThe
+Adv.NeuralInf.Process.Syst.,2013,pp.2787–2795. UniversityofEdinburgh,U.K.,in2000,andthe
+[18] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,‘‘BERT:Pre-training
+Ph.D. degree in computer science from AUTH,
+of deep bidirectional transformers for language understanding,’’ 2018,
+in2005.
+arXiv:1810.04805.[Online].Available:http://arxiv.org/abs/1810.04805
+He is currently an Associate Professor of
+[19] A. Vaswani, G. Brain, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones,
+A.N.Gomez,K.Kaiser,andI.Polosukhin,‘‘Attentionisallyouneed,’’in machinelearningandknowledgediscoverywith
+Proc.Adv.NeuralInf.Process.Syst.,2017,pp.5998–6008. the School of Informatics, AUTH. His research
+[20] S. Jat, S. Khandelwal, and P. Talukdar, ‘‘Improving distantly super- expertise focuses on supervised learning techniques (ensemble methods
+vised relation extraction using word and entity based attention,’’ 2018, andmulti-targetprediction)andtextmining(semanticindexing,keyphrase
+arXiv:1804.06987.[Online].Available:http://arxiv.org/abs/1804.06987 extraction,andsummarization).Hehaspublishedmorethan100research
+[21] D.P.KingmaandJ.L.Ba,‘‘Adam:Amethodforstochasticoptimization,’’ articlesandaccordingtoGoogleScholar,hehasmorethan13,000citations
+inProc.ICLR,2015. andanH-indexof44.HeisanAdvocateofappliedresearchthatmattersand
+[22] M.CravenandJ.Kumlien,‘‘Constructingbiologicalknowledgebasesby
+hasworkedasamachinelearninganddataminingdeveloper,researcher,
+extractinginformationfromtextsources,’’Proc.7thInt.Conf.Intell.Syst.
+andconsultantinseveralnational,international,andprivatesectorfunded
+Mol.Biol.,1999,pp.77–86.
+researchanddevelopmentprojects.InFebruary2019,heco-foundedMedoid
+[23] R. Snow, D. Jurafsky, and A. Y. Ng, ‘‘Learning syntactic patterns for
+automatichypernymdiscovery,’’inProc.Adv.NeuralInf.Process.Syst., AI,aspin-offcompanyoftheAristotleUniversityofThessaloniki,develop-
+2005,pp.1297–1304. ingcustomAIsolutionsbasedonmachinelearningtechnology.
+[24] D.Zeng,K.Liu,S.Lai,G.Zhou,andJ.Zhao,‘‘Relationclassification Dr.TsoumakasisaSeniorMemberoftheACMandanActionEditorof
+viaconvolutionaldeepneuralnetwork,’’inProc.25thInt.Conf.Comput. theDataMiningandKnowledgeDiscoveryjournal.
+Linguistics,Proc.COLING:Tech.Papers,2014,pp.2335–2344.
+62582 VOLUME9,2021

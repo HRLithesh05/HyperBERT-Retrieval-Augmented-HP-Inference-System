@@ -1,0 +1,651 @@
+NCTB-QA: A Large-Scale Bangla Educational Question
+Answering Dataset and Benchmarking Performance
+AbrarEyasir+ TahsinAhmed+ MuhammadIbrahim*
+DepartmentofComputerScienceandEngineering
+UniversityofDhaka
+{eyasir2047, tahsin030602}@gmail.com, ibrahim313@du.ac.bd
+Abstract
+Readingcomprehensionsystemsforlow-resourcelanguagesfacesignificantchallengesinhan-
+dlingunanswerablequestions. Thesesystemstendtoproduceunreliableresponseswhencorrect
+answersareabsentfromcontext.Tosolvethisproblem,weintroduceNCTB-QA,alarge-scaleBangla
+questionansweringdatasetcomprising87,805question-answerpairsextractedfrom50textbooks
+publishedbyBangladesh’sNationalCurriculumandTextbookBoard.UnlikeexistingBangladatasets,
+NCTB-QAmaintainsabalanceddistributionofanswerable(57.25%)andunanswerable(42.75%)
+questions. NCTB-QAalsoincludesadversariallydesignedinstancescontainingplausibledistractors.
+We benchmark three transformer-based models (BERT, RoBERTa, ELECTRA) and demonstrate
+substantialimprovementsthroughfine-tuning. BERTachieves313%relativeimprovementinF1
+score(0.150to0.620). SemanticanswerqualitymeasuredbyBERTScorealsoincreasessignificantly
+acrossallmodels.OurresultsestablishNCTB-QAasachallengingbenchmarkforBanglaeducational
+questionanswering. Thisstudydemonstratesthatdomain-specificfine-tuningiscriticalforrobust
+performanceinlow-resourcesettings.
+1 Introduction
+Questionanswering(QA)systemshavemadestrongprogressinhigh-resourcelanguages,largelydueto
+theavailabilityoflargedatasetssuchasSQuAD(Rajpurkaretal.,2016),SQuAD2.0(Rajpurkaretal.,
+2018), HotpotQA (Yang et al., 2018), and Natural Questions (Kwiatkowski et al., 2019). In contrast,
+low-resource languages remain underexplored, even though they are spoken by a large share of the
+world’s population. Bangla, the seventh most spoken language with over 230 million speakers, is a
+clearexample. ExistingBanglaQAdatasetsarelimitedinsizeandcoverage. Thesedatasetsshowlittle
+emphasisoneducationalcontentorunanswerablequestions.
+For real-world use, QA systems must also know when a question cannot be answered from the given
+context. Rajpurkaretal.(2018)demonstratesthatmodelstrainedonlyonanswerablequestionsoften
+*Correspondingauthor:ibrahim313@du.ac.bd
+1
+6202
+raM
+5
+]LC.sc[
+1v26450.3062:viXra
+NCTB-QADataset
+respondwithhighconfidenceevenwhentherequiredinformationismissing. Thishallucinationbehaviour
+of models results in producing fluent but incorrect answers. This issue is quite serious in educational
+settings. Incorrectresponsescanconfuselearnersandreducetrustinautomatedsystems.
+MostexistingBanglaQAdatasetsaresmallinscale. Theytypicallycontainbetween3,000(Khondoker
+etal.,2024)and14,889(Ekrametal.,2022)question–answerpairs,whichisnotsufficientfortraining
+robusttransformer-basedmodels. Second,althoughTigerLLM(RaihanandZampieri,2025)isconsider-
+ablylarger,containingnearly10milliontokenscollectedfrom163textbooksforgrades6–12,itdoes
+notincludeunanswerablequestions. Thislimitsitsusefulnessforevaluatingamodel’sabilitytoabstain
+fromhallucinatedresponses. Third,BanglaRQA(Ekrametal.,2022)includesonlyasmallnumberof
+factoid-style unanswerable questions and lacks adversarially constructed cases. More broadly, many
+existingBanglaQAdatasetsfocuspredominantlyonfactoidquestions. Thesequestionsrestrictlinguistic
+diversityandlimitdeeperreasoning-basedevaluation.
+Toaddresstheselimitations,weintroduceNCTB-QA,alarge-scaleBanglaquestionansweringdataset
+designedspecificallyforeducationaluse. Thedatasetcontains87,805question–answerpairscollected
+from50textbookspublishedbyBangladesh’sNationalCurriculumandTextbookBoard(NCTB),covering
+grades 1 through 10. NCTB-QA maintains a balanced distribution of answerable and unanswerable
+questions. NCTB-QAalsointroducesunanswerableinstancesadversariallydesignedtoincludeplausible
+distractors. Theadversarialquestionsforcethemodeltounderstandgenuinecontextualreasoning. By
+sourcingallcontentdirectlyfromofficialNCTBmaterials,thedatasetremainscloselyalignedwithreal
+educationalcurricula.
+2 Related Work
+2.1 EnglishQuestionAnswering
+TheStanfordQuestionAnsweringDataset(SQuAD)introducesmorethan100,000crowd-writtenques-
+tionsbasedonWikipediaarticles(Rajpurkaretal.,2016)andestablishesextractivereadingcomprehension
+asacentralbenchmarkforNLPresearch. However,SQuADcontainsonlyanswerablequestions,which
+oftenleadmodelstoproduceplausiblebutfabricatedanswerswhennocorrectresponseispresentinthe
+context.
+Toaddressthislimitation,Rajpurkaretal.(2018)introducesunanswerablequestionsintheSQuAD2.0
+dataset. Theseadditionsforcemodelstolearnwhentorefrainfromanswering. Thedatasetcomprises
+130,319examples,including43,498unanswerablequestions. Thisresultsinamorebalancedevaluation
+setting.
+2.2 BanglaQuestionAnswering
+BanglaQAresearchhasimprovedgradually; however,availabledatasetsremainsmallandlimitedin
+scope. Anearlywork, MultipleBERTModelsforBanglaQuestionsinNCTBTextbooks, introduces
+2
+NCTB-QADataset
+Dataset QAPairs Contexts Answerable Unanswerable Domain
+NCTB-QA(Ours) 87,805 10,070 50,270(57.25%) 37,535(42.75%) Educational
+TigerLLM(RaihanandZampieri) 10Mtokens 163textbooks 100% 0% Educational
+BanglaRQA(Ekrametal.) 14,889 3,000 11,258(75.6%) 3,631(24.4%) General
+BEnQA(Shafayatetal.) 5,161 – 100% 0% Educational
+NCTB(Khondokeretal.) 3,000 – 3,000(100%) 0% Educational
+BanglaQA(Shahriaretal.) 178,012 15,997articles 142,181(79.87%) 35,831(20.13%) News
+Table 1: Comparison of NCTB-QA with existing Bangla question–answering datasets. NCTB-QA
+uniquelycombineslarge-scale,educationaldomainspecificity,andarelativelybalanceddistributionof
+answerableandunanswerablequestions.
+approximately 3,000 human-annotated question–answer pairs (Khondoker et al., 2024). However, it
+includesonlyanswerablequestionsandremainslimitedinsize.
+BanglaRQA represents a significant step forward for Bangla question answering. It contains 3,000
+passages and 14,889 QA pairs, including both answerable and unanswerable questions (Ekram et al.,
+2022). Amongthese,11,258areanswerableand3,631areunanswerable. Transformer-basedmodelssuch
+asmBERT,BanglaBERT,mT5,andBanglaT5areevaluated,achievingabestperformanceof62.42%
+ExactMatchand78.11%F1. However,theimbalancebetweenanswerableandunanswerablequestions
+(approximately3:1)limitsthedataset’seffectivenessforrobustanswerabilitydetection.
+TigerLLMfocusesonlanguagemodelingusing10milliontokensfromNCTBtextbooksbutdoesnot
+includeunanswerablequestions(RaihanandZampieri,2025). Morerecently,theBEnQAbenchmark
+introducesapproximately5,161Bangla–Englishexamquestionsfromschoolsciencesubjects(Shafayat
+etal.,2024). Itincludesbothfactualandreasoningquestions. Thisstudyfindsthatmodelsperformworse
+inBanglathaninEnglish.
+Overall,existingBanglaQAdatasetslacksufficientscale,domainfocus,andbalancedanswerableand
+unanswerableexamples,highlightingacleargapinBanglaQAresources. Table1comparesNCTB-QA
+withpreviousdatasets.
+3 NCTB-QA
+3.1 DatasetConstruction
+Textbooks for grades 1–10 were collected from the official website of the National Curriculum and
+TextbookBoard(NCTB)1.Toensurereproducibilityandconsistency,thecollectionprocesswasfully
+automatedusingaweb-scrapingpipelineratherthanmanualdownloading.
+Weiteratedthroughclass-wisetextbooklistingsandextractedsubject-specificbookentries. Downloaded
+files were stored in a hierarchical directory structure organized by class. We enforced short delays
+1https://nctb.gov.bd/site/page/934d6561-1fb4-466c-a0e9-330b748098e6
+3
+NCTB-QADataset
+Figure 1: Overview of the content extraction and QA generation pipeline. Markdown textbooks are
+cleaned,segmented,andthematicallygroupedintocoherentcontexts,whicharethenprocessedbyGemini
+togeneratestructuredQApairsinJSONformat.
+betweenrequeststoavoidserveroverload.
+Duplicatetextbookswereautomaticallydetectedandremoved. Thisensuresthateachtextbookappeared
+exactlyonceinthecorpus. Thefinaldatasetconsistsof50uniquetextbooks. Thesetextbookscovera
+widerangeofacademicsubjects,includinglanguagearts,science,andsocialstudies. Theyserveasthe
+primarysourcematerialfordownstreamcontentextractionandQAgeneration.
+3.2 ContentExtraction
+Alltextbookswereprocessedintheirtext-basedMarkdownformat. BeforeQAgeneration,weapplieda
+multi-stagecontentextractionandcleaningpipelinetotransformrawMarkdownfilesintohigh-quality
+contextualsegmentssuitableforlanguagemodelinference,asillustratedinFigure1.
+First, raw Markdown files were cleaned to remove non-instructional artifacts such as page numbers,
+formattingnoise,extractionerrors,exercisequestions,andmetadata. Thiscleaningsteppreservedthe
+core explanatory and narrative educational content while discarding elements not useful for reading
+comprehensiontasks.
+Next,thecleanedMarkdowndocumentsweresegmentedintocoherenttextualcontexts. Weimplemented
+a line-aware segmentation strategy with a maximum chunk size of 2000 characters and an overlap of
+500 characters between adjacent segments to preserve contextual continuity. Segmentation respected
+paragraphandlineboundariestopreventsemanticfragmentation.
+4
+NCTB-QADataset
+Tofurtherimprovesemanticcoherence, eachchunkwasanalyzedusingalanguagemodeltoidentify
+logicaltopicboundaries. Contentwasdividedintothematicallyconsistentsectionsbasedonconceptual
+similarity. Weappliedadditionalqualityfilteringbyremovingsegmentsshorterthan150characters.
+Thefinaloutputofthisstageisacollectionofhigh-quality,semanticallycoherentcontextualsegments
+storedinstructuredJSONformat. TheyserveasdirectinputforQAgeneration.
+3.3 Question–AnswerGeneration
+We generated a large-scale Bangla QA dataset from the extracted contextual segments using Gem-
+ini2.5Pro. Foreachcontext,themodelwaspromptedtogeneratediversequestiontypes. Thequestions
+aresemanticallyalignedwiththecontext.
+Thegenerationprocessproducedbetween2and15questionspercontext,resultinginanaverageof8.74
+questions. Weenforcedanear-equalbalancebetweenanswerableandunanswerablequestions,achieving
+aratioof1.34:1(50,270answerablevs.37,535unanswerable).
+For answerable questions, answers were constrained to be extractable text spans within the context,
+withprecisecharacter-levelstartandendoffsets. Unanswerablequestionswerecarefullyconstructedto
+remaintopicallyrelevantwhileensuringthatthecontextcontainedinformationoftheappropriateanswer
+typebutnotthecorrectansweritself. Weexplicitlydiscouragedtrivialcuessuchaslowlexicaloverlap,
+mismatchedanswertypes,orunrelatedtopics.
+Qualitycontrolincludedthreeautomatedvalidationsteps: (i)minimumcontextlengthenforcement,(ii)
+verificationthatanswerspansoccurredatthespecifiedoffsets,and(iii)duplicatequestiondetection. All
+QApairswereserializedintheSQuAD-styleJSONformat(Rajpurkaretal.,2016).
+Intotal,thepipelineprocessed11,344contextualsegmentsandgenerated87,805QApairs. Theresulting
+datasetconstitutesahigh-qualityBanglaeducationalQAcorpussuitableforreadingcomprehensionand
+QAresearch.
+4 Dataset Analysis
+WepresentacomprehensiveanalysisoftheNCTB-QAdataset. Weexamineitsdistributionalproperties,
+questioncharacteristics,andsubject-mattercoverage. Thisanalysisprovidesinsightsintothecomplexity
+anddiversityofNCTB-QA.ThisestablishesitssuitabilityforevaluatingBanglareadingcomprehension
+systems.
+4.1 OverallStatistics
+Table2presentsthekeystatisticsofNCTB-QA.Thedatasetcomprises87,805question-answerpairs
+derivedfrom10,070contextualsegmentsacross50sourcetextbooksspanninggrades1–10. Anotable
+characteristic is the balanced distribution between answerable (57.25%) and unanswerable (42.75%)
+5
+NCTB-QADataset
+Context: ি�স্টাে�িবজ্ঞানীরাদারেফাড� পরমাণুরগঠনসম্পেক� একটিমেডলপ্রদানকেরন
+এমেডলঅনুসাের,প্রেত্যকটিপরমাণুরএকটি�কন্দ্রআেছএই�কেন্দ্ররনামিনউি�য়াসিনউ-
+ি�য়ােসর�ভতের�প্রাটনওিনউট্রনএবংিনউি�য়ােসরবাইেরইেলকট্রনঅবস্থানকের�যেহতু
+আেপ�ক্ষকভােবইেলকট্রেনরভরশূন্যধরাহয়কােজইিনউি�য়ােসর�ভতেরঅব�স্থত�প্রাটন
+এবং িনউট্রেনর ভরই পরমাণুর ভর িহেসেব িবেবচনা করা হয় িনউি�য়াস অত্যন্ত ক্ষুদ্র এবং
+িনউি�য়ােসর বাইের ও পরমাণুর �ভতেরর �বিশর ভাগ জায়গাই ফাাকা �সৌরজগেত সূয�েক
+�কন্দ্র কের িবিভন্ন কক্ষপেথ �যমন গ্রহগুেলা ঘুের �তমিন িনউি�য়াসেক �কন্দ্র কের িবিভন্ন
+কক্ষপেথইেলকট্রনগুেলাঘুরেছ�কােনাপরমাণুরিনউি�য়ােস�যকয়টি�প্রাটনথােকিনউ-
+ি�য়ােসরবাইেরঠিক�সইকয়টিইেলকট্রনথােক�যেহতু �প্রাটনএবংইেলকট্রেনরচাজ�এেক
+অপেররসমানওিবপরীতিচে�র,তাইপরমাণুরসামিগ্রকভােবচাজ� শূন্যধনাত্মকচাজ�বাহী
+িনউি�য়ােসরপ্রিতঋণাত্মকচাজ�বাহীইেলকট্রনএকধরেনরআকষ�ণবলঅনুভবকেরএই
+আকষ�ণবল�কন্দ্রমুখীবলএবংএই�কন্দ্রমুখীবেলরকারেণপৃিথবী�যরূপসূেযর� চারিদেক
+ঘুেরইেলকট্রন�সরূপিনউি�য়ােসরচারিদেকঘুেররাদারেফােড�রপরমাণুমেডলেক�সৌরজ-
+গেতরসােথতুলনাকরাহেয়েছবেলএমেডলটিেক�সালারিসেস্টমমেডলবা�সৌরমেডল
+বেল...
+Question: রাদারেফােড�রমেডলঅনুসােরপরমাণুর�কেন্দ্ররনামকী?
+Answer: িনউি�য়াস
+answer_start: 145
+cot: এইপ্রশ্নটিপরমাণুর�কেন্দ্ররনামজানেত�চেয়েছ,যাসরাসিরপ্রসে�'এই�কেন্দ্ররনাম
+িনউি�য়াস'বাক্যাংশ�থেকপাওয়াযায়।
+Figure2: SampleofDataset
+Metric Value
+TotalQApairs 87,805
+Answerablequestions 50,270(57.25%)
+Unanswerablequestions 37,535(42.75%)
+Contextualsegments 10,070
+Sourcetextbooks 50
+Gradelevels 1–10
+Table2: OverallstatisticsoftheNCTB-QAdataset.
+questions. This ensures that models must learn both answer extraction and answerability detection
+capabilities. Figure2showsanexamplefromourdataset.
+4.2 ContextandQuestionCharacteristics
+ContextLengthDistribution. Figure3presentsthedistributionofcontextlengthsinNCTB-QA.The
+statisticsshowawell-controlledandmoderatelyright-skeweddistribution. Themeancontextlengthis
+290.48words,whilethemedianis259words,indicatingthatmostcontextsareconcentratedaround250–
+300words,withasmallerproportionoflongercontextsformingtherighttail. Thestandarddeviationis
+128.17words. Thisreflectsmoderatevariabilitywithoutextremedispersion. Contextlengthsrangefrom
+aminimumof101wordstoamaximumof769words. Thisdemonstratestheabsenceofbothtrivially
+shortandexcessivelylongcontexts. Percentileanalysisfurthersupportsthisobservation. Specifically,
+50%ofcontextsfallbetween188and369words(interquartilerange). Again,90%,95%,and99%of
+contextscontainfewerthan482,547.55,and644words,respectively. Thisconfirmsthatlongercontexts
+6
+NCTB-QADataset
+800
+600
+400
+200
+0
+100 200 300 400 500 600 700 800
+Context Length (words)
+ycneuqerF
+Mean (290.5)
+Median (259.0)
+n = 10,070
+= 290.48
+= 128.17
+Range: [101, 769]
+Figure3: DistributionofwordcountpercontextinNCTB-QA.Thedistributionspansfrom103to1,871
+words,withthemajorityofcontextscontainingbetween150–400words.
+arerelativelyrareanddonotdominatethedataset
+QuestionLengthDistribution. AsshowninFigure4,questionsinNCTB-QAarerelativelyconcise,
+withameanlengthof9.80words(SD=3.45)andamedianof9words. Thedistributionisapproximately
+normal, with 75% of questions containing 12 or fewer words. The peak frequency occurs at 9 words
+(12.32% of questions), which demonstrates consistency in question formulation. This conciseness
+aligns with natural educational question-asking patterns while maintaining sufficient complexity for
+comprehensionassessment.
+Answer Length Distribution. Figure 5 presents the distribution of answer lengths for the 50,270
+answerablequestions. Answersaremorevariablethanquestions,withanaveragelengthof10.40words
+andamedianof7words. Thedistributionisright-skewed: mostanswersareshort(75%contain14words
+orfewer),whileasmallnumberextendtoover200words. Notably,30.29%ofanswersare1–3words
+long. Thisindicatesasubstantialproportionoffactualquestionsrequirebriefresponses. Again,thelong
+tailreflectsquestionsdemandingmoreelaborateexplanations.
+AnswerPositionDistribution. Figure6showsthedistributionofanswerstartpositionswithincontexts
+(measuredincharacterindices). Themeanpositionis754.26characters(SD=654.24),withamedian
+of 612 characters. While answers are distributed throughout the contexts, there is a slight tendency
+towardearlierpositions,with25%ofanswersbeginningwithinthefirst240characters. However,25%
+7
+NCTB-QADataset
+10000
+8000
+6000
+4000
+2000
+0
+0 10 20 30 40
+Question Length (words)
+ycneuqerF
+Mean (9.8)
+Median (9.0)
+n = 87,805
+= 9.80
+= 3.45
+Range: [2, 40]
+Figure4: DistributionofwordcountperquestioninNCTB-QA.Questionsarepredominantlyconcise,
+withmostcontainingbetween7–12words.
+of answers start beyond character 1,079, and some answers appear as late as character 3,968. This
+demonstratesthatthedatasetrequiresmodelstosearchcomprehensivelythroughouttheentirecontext
+ratherthanrelyingonpositionalbiases.
+4.3 SubjectDistribution
+Figure7reportsthedistributionofNCTB-QAacross17curricularsubjects,decomposedintoanswerable
+andunanswerableinstances. Thedatasetexhibitsbroadtopicalcoveragewithconsistentsupervisionbal-
+anceacrossdomains. GeneralStudiescomprisesthelargestsharewith10,621examples,ofwhich6,102
+areanswerableand4,519areunanswerable(57.45%answerable). AgricultureandHomeSciencefollow
+with9,129examples(5,213/3,916)and8,245examples(4,711/3,534), respectively. Banglalanguage
+andliteraturearestronglyrepresented,includinggeneralBanglawith8,216instances(4,745/3,471)and
+Banglanovelswith5,784instances(3,288/2,496).
+STEMdisciplinesaccountforasubstantialfractionofthecorpus,includingSciencewith8,857instances
+(5,093 answerable, 3,764 unanswerable), Biology with 4,490 (2,570/1,920), Chemistry with 4,242
+(2,393/1,849), and ICT with 4,944 (2,832/2,112). Humanities and social sciences further broaden
+coverage, notably History with 4,752 examples (2,740/2,012), Geography with 3,291 (1,882/1,409),
+Economicswith1,939(1,118/821),andBusinessStudieswith2,013(1,154/859).
+Theproportionofanswerablequestionsremainstightlyconcentratedaround57%acrossallsubjects(std.
+8
+NCTB-QADataset
+5000
+4000
+3000
+2000
+1000
+0
+0 10 20 30 40 50
+Answer Length (words)
+ycneuqerF
+Mean (10.4)
+Median (7.0)
+n = 50,270
+= 10.40
+= 10.96
+Range: [1, 222]
+Figure5: DistributionofwordcountperanswerinNCTB-QA.Theright-skeweddistributionshowsmost
+answersarebrief,whilesomerequireextendedresponses.
+dev. <0.6%). Thissuggestscontrolleddatasetconstructionandminimalsubject-inducedsupervision
+skew. Thisuniformity,combinedwithwidecurricularbreadth,positionsNCTB-QAasadomain-diverse
+benchmarkforrobustcomprehensionmodelinginlow-resourceeducationalcontexts.
+4.4 QuestionTypeAnalysis
+TobetterunderstandthecontentsofNCTB-QA,weanalyzethedistributionofdifferentquestion-answer
+types for train, validation, and test sets. We partitioned NCTB-QA using an 80/10/10 split: 70,167
+questionsfortraining,8,798forvalidation,and8,840fortesting. Splitsmaintainedbalancedanswerable
+andunanswerableratioswithproportionalrepresentationacrossquestiontypesandsubjectareas. We
+ensurednocontextappearedinmultiplesplitstopreventdataleakage.
+Table3categorizesquestionsbylinguisticandsemantictypeacrossthetrain,validation,andtestsplits.
+Weidentifysixprimaryquestiontypes: Factualquestionsseekingspecificinformation(23.65%ofall
+questions),Causalquestionsexploringcause-effectrelationships(7.07%),Comparativequestionsrequir-
+ingcomparison(5.00%),Negationquestionsinvolvingnegativeconstructions(10.66%),Confirmation
+questionsseekingyes/noresponses(0.13%),andOtherscapturingremainingquestiontypes(53.49%).
+Thedistributionremainsconsistentacrosssplits. Allsplitsmaintainsimilarproportionsofeachquestion
+type. Theratioofunanswerabletoanswerablequestionsisrelativelyconsistentwithineachtype,though
+comparativequestionsshowahigherproportionofunanswerableinstances(54.46%unanswerablevs.
+45.54%answerable). Thissuggeststhatcomparativereasoningmaybeparticularlysensitivetocontext
+9
+NCTB-QADataset
+5000
+4000
+3000
+2000
+1000
+0
+0 412 824 1236 1648 2060
+Answer Start Position (characters)
+ycneuqerF
+Mean (754.3)
+Median (612.0)
+n = 50,287
+= 754.26
+= 654.24
+Range: [0, 3968]
+Figure6: Distributionofanswerstartpositions(characterindex)inNCTB-QA.Answersaredistributed
+throughoutcontexts,mitigatingpositionalbias.
+coverage. Thepredominanceofthe"others"category(53.49%)reflectsthediversityofeducationalassess-
+mentquestionsbeyondtraditionaltaxonomies. Thepresenceoffactual(23.65%),causal,comparative,
+andnegationquestionsalsoensuresthedatasettestsvariousreasoningcapabilities.
+Overall, the dataset’s scale, subject coverage, and structural diversity make it suitable for evaluating
+Banglareadingcomprehensionsystemsacrosseducationallevels.
+5 Methodology
+Thetaskisreadingcomprehension-basedQA.Themodelisgiventhequestionanditsassociatedcontext
+passageasinputandthemodeloutputstheanswer. Ifthequestionisunanswerable,thentheoutputis
+an empty string. Three different models were implemented: BERT, RoBERTa, and ELECTRA. This
+sectionexplainsthewholepipelineoftheexperiments,frompreprocessingthedatatomodeltrainingand
+evaluation. Wereporttraininghyperparametersandexperimentalsetupforreproducibility.
+5.1 DataPreprocessing
+Weappliedamulti-stagepreprocessingpipelinetopreparetheSQuAD-formatdataformodeltraining.
+Answerspancorrection. Wefixedmisalignedanswer_startoffsetsby(1)verifyingthatthecharacter
+10
+NCTB-QADataset
+10000
+8000
+6000
+4000
+2000
+0
+accounting agri ban a-gl ua pponash biology busine cs hs
+e
+mistry econ finance gene gr eal ography health history ho m e ict science work
+gl
+n
+a
+b
+Subject Class
+snoitseuQ
+fo
+rebmuN
+Figure7: Subject-wisedistributionofanswerable(blue)andunanswerable(red)questionsinNCTB-QA,
+showingconsistentanswerabilityratiosacrossdomains.
+span at answer_start matches the answer text; (2) if not, searching for the answer via exact, case-
+insensitive,andwhitespace-normalizedmatching; and(3)fallingbacktopartialmatchingonthefirst
+threewordswhenfullmatchingfails. Entrieswithunfixablespanswerediscarded.
+Long-contextwindowing. Tohandlecontextsexceedingthemodel’smaximumsequencelengthwhile
+preservinganswerlocality,wespliteachcontextintooverlappingwindows. Weusedamaximumof2,000
+tokensperwindowwithastrideof300tokens. Foreachwindow,weretainedonlyQApairswhoseanswer
+spans fall entirely within that window. This converted absolute character offsets to window-relative
+offsets.
+Unanswerablehandling. Questionsmarkedis_impossibleorwithemptyanswerlistsweretreated
+as unanswerableand assigned emptyanswer spans. The pipeline supportsSQuAD 2.0-style negative
+examplesthroughout.
+5.2 ModelArchitectureandTrainingSetup
+Wefine-tunedthreeencoder-onlytransformerarchitecturesforextractiveQA:BERT-base-cased(Devlin
+etal.,2019),RoBERTa-base(Liuetal.,2019),andELECTRA-base-discriminator(Clarketal.,2020). All
+modelswereimplementedviatheSimpleTransformersQuestionAnsweringModel. Thesemodelswere
+trainedtopredictstartandendtokenpositionsofanswerspanswithintheconcatenatedquestion–context
+input.
+Trainingconfiguration. Weusedmemory-optimizedsettingssuitablefor12GBVRAM:mixed-precision
+(FP16)training,noevaluationduringtraining,andgradientaccumulationtosimulatelargerbatchsizes.
+Model-specifichyperparametersarelistedinTable4. WeusedtheAdamWoptimizerwithlinearlearning
+ratedecayandwarmup(10%ofsteps),weightdecay0.01,andmaxgradientnorm1.0. Forinference,
+weusedn_best_size=3,max_answer_length=30,andnull_score_diff_threshold=0.0tosupport
+unanswerablepredictions.
+11
+NCTB-QADataset
+Split Unanswerable Answerable
+Train
+Factual 7,359 9,223
+Confirmation 15 67
+Causal 2,092 2,792
+Comparative 1,900 1,607
+Negation 3,441 4,116
+Others 15,218 22,473
+Validation
+Factual 899 1,124
+Confirmation 2 7
+Causal 300 356
+Comparative 232 208
+Negation 415 501
+Others 1,831 2,726
+Test
+Factual 959 1,206
+Confirmation 2 17
+Causal 296 373
+Comparative 259 184
+Negation 413 473
+Others 1,902 2,817
+Total 37,535 50,270
+Table3: Distributionofquestiontypesacrosstrain,validation,andtestsplitsinNCTB-QA.Theconsistent
+proportionsacrosssplitsensurebalancedevaluationofdifferentreasoningcapabilities.
+Implementationdetails. Modelsweretrainedsequentiallywithfullresourcecleanupbetweenrunsto
+avoidout-of-memoryerrors. Inputsweretokenizedwithmaxsequencelengthof384andadocument
+strideof128. ThepipelinewasimplementedinPythonusingPyTorch,Transformers,andSimpleTrans-
+formers.
+5.3 EvaluationMetrics
+Wereportedthreemetricsonthetestset.
+ExactMatch(EM).Apredictioniscorrectif,afternormalization(lowercasing,punctuationremoval,
+whitespacecollapse),itexactlymatchesanygoldanswer. Forunanswerablequestions,themodelmust
+predictanemptyorunanswerablestringtoreceivecredit.
+F1 Score. We computed token-level F1 between the predicted and gold answer, treating answers as
+multisetsoftokens(Rajpurkaretal.,2016). Precisionistheproportionofpredictedtokensthatappearin
+thegoldanswer. Again,recallistheproportionofgoldtokensthatappearintheprediction. F1isthe
+harmonicmean. Unanswerablequestionswerescored1.0ifthemodelcorrectlyabstained,else0.0.
+BERTScore. WeusedBERTScore(Zhangetal.,2020)withtheBengalilanguagecode(bn)tomeasure
+semanticsimilaritybetweenpredictionsandreferences. BERTScoreF1wascomputedinbatchesof16
+andaveragedoveranswerableQApairs. Andunanswerablequestionswerehandledseparately(correct
+12
+NCTB-QADataset
+Hyperparameter BERT RoBERTa ELECTRA
+Pre-trainedmodel bert-base-cased roberta-base google/electra-base-discriminator
+Maxsequencelength 384 384 384
+Documentstride 128 128 128
+Trainbatchsize 2 2 4
+Evalbatchsize 4 4 8
+Gradientaccumulationsteps 16 16 8
+Effectivebatchsize 32 32 32
+Learningrate 3×10−5 2×10−5 3×10−5
+Epochs 2 2 2
+Warmupratio 0.1 0.1 0.1
+Weightdecay 0.01 0.01 0.01
+Adamϵ 10−8 10−8 10−8
+Maxgradientnorm 1.0 1.0 1.0
+Optimizer AdamW AdamW AdamW
+Scheduler Linear+warmup Linear+warmup Linear+warmup
+FP16mixedprecision Yes Yes Yes
+n-bestsize 3 3 3
+Maxanswerlength 30 30 30
+Table4: TraininghyperparametersforBERT,RoBERTa,andELECTRAextractiveQAmodels.
+abstention=1.0).
+Allmetricswerecomputedwithseparatebreakdownsforanswerableandunanswerablesubsetstosupport
+analysisofmodelbehavioronbothquestiontypes.
+5.4 TrainingHyperparameters
+Table4summarizesthetraininghyperparametersforeachmodel. BERTandRoBERTasharesimilar
+settings; ELECTRA uses larger per-step batch sizes and fewer gradient accumulation steps due to its
+morememory-efficientarchitecture.
+5.5 ExperimentalSetup
+Experiments were conducted on a single GPU with 12GB VRAM. We validated the data files before
+trainingandbuiltaground-truthdictionaryfromthetestsetforevaluationpurposes. Eachmodelwas
+evaluatedbeforeandafterfine-tuningonthesamepreprocessedtestdata. Predictionsweregenerated
+in batches of 16 to manage memory. Results were saved with per-model breakdowns (answerable vs.
+unanswerableEM/F1andBERTScore)foranalysis.
+13
+NCTB-QADataset
+Model Stage EM F1 BERTScore
+Before 0.059 0.150 0.665
+BERT
+After 0.509 0.620 0.880
+Before 0.427 0.428 0.667
+RoBERTa
+After 0.450 0.469 0.867
+Before 0.395 0.406 0.664
+ELECTRA
+After 0.411 0.550 0.825
+Table5: ModelperformanceonNCTB-QAtestsetbeforeandafterfine-tuning
+6 Results
+6.1 OverallPerformance
+Table5presentsperformancebeforeandafterfine-tuning. Fine-tuningyieldsdramaticimprovements
+acrossallmetricsandmodels.
+BERT shows the largest gains with F1 increasing from 0.150 to 0.620, representing 313% relative
+improvement. ExactMatchimprovesfrom0.059to0.509,anincreaseof0.450points. Thisdramatic
+change suggests that while pre-training provides weak initial transfer to Bangla educational content,
+BERTpossessesstrongadaptationcapabilitythroughfine-tuning. BERTScoreincreasesfrom0.665to
+0.880,reflectingamarkedenhancementinsemanticanswerquality.
+RoBERTademonstratesthestrongestzero-shotperformance,achievinganF1scoreof0.428andanEM
+scoreof0.427,likelyduetoitslargerpre-trainingcorpusandenhancedtrainingprocedures. However,
+gainsfromfine-tuningaremoremodest,withF1increasingto0.469(9.6%relativeimprovement)and
+EM to 0.450. Despite smaller F1 gains, RoBERTa shows substantial BERTScore improvement from
+0.667to0.867,indicatingenhancedsemanticanswerquality.
+ELECTRA achieves an F1 of 0.550 after fine-tuning, up from 0.406, representing 35.5% relative
+improvement. ExactMatchimprovesfrom0.395to0.411. BERTScoreincreasesfrom0.664to0.825.
+Thisdemonstratesefficientadaptationthroughitsreplacedtokendetectionobjective.
+AllmodelsshowsignificantBERTScoreimprovementsrangingfrom0.161to0.215points. Fine-tuning
+improves not only exact matching but also semantic answer quality. This improvement is critical for
+practicaldeployment,whereparaphrasedanswersshouldbeaccepted,particularlyimportantforBangla
+withitsrichmorphologicalvariations.
+6.2 PerformancebyQuestionType
+Table6reportsF1scoresoffine-tunedmodelsacrossdifferentquestiontypes. Overall,allmodelsbenefit
+fromfine-tuning;however,performancevariessubstantiallydependingonthereasoningdemandsofeach
+questioncategory.
+BERTdemonstratesthemostsubstantialimprovementsacrossallquestiontypes,withgainsrangingfrom
+14
+NCTB-QADataset
+Model Stage Factual Confirm. Causal Compar. Negation Others
+BERT Before 0.150 0.148 0.156 0.126 0.159 0.163
+After 0.613 0.679 0.517 0.767 0.673 0.610
+RoBERTa Before 0.396 0.437 0.440 0.672 0.482 0.380
+After 0.443 0.500 0.444 0.688 0.497 0.438
+ELECTRA Before 0.379 0.410 0.424 0.617 0.449 0.355
+After 0.551 0.575 0.454 0.701 0.601 0.501
+Table6: F1scoresacrossquestiontypesbeforeandafterfine-tuning. Allmodelsshowconsistentgains,
+withBERTachievingthelargestimprovements.
++0.361(Causal)to+0.641(Comparative). Themodelachieves0.767F1onComparativequestionsafter
+fine-tuning. Fine-tuningeffectivelyaddressesBERT’sinitialweaknessincomparativereasoning.
+RoBERTa, despite starting from a stronger baseline, shows more modest improvements. The model
+exhibitsminimalgainsonCausal(+0.004)andComparative(+0.016)questions. Thisindicatesthatits
+pre-training already equipped it with robust capabilities for these reasoning tasks. Improvements are
+moresubstantialonConfirmation(+0.063)andOthers(+0.058)categories.
+ELECTRA occupies a middle ground, with improvements ranging from +0.030 (Causal) to +0.172
+(Factual). ThemodelshowsparticularlystronggainsonFactual,Confirmation,andNegationquestions,
+withlimitedimprovementonCausalquestions,similartoRoBERTa.
+7 Discussion
+The performance gap between zero-shot and fine-tuned models reveals a fundamental challenge in
+adaptingEnglish-pretrainedmodelstotypologicallydistinctlanguages. WhilemodelslikeRoBERTa
+demonstratereasonablezero-shotcapabilities,theBangla-specificlinguisticphenomena(SOVwordorder,
+extensiveagglutination, andcasemarkers)requiresubstantialtask-specificadaptation. Thedivergent
+learningcurvesacrossmodelssuggestthatpre-trainingobjectivesmatteralot. BERT’smaskedlanguage
+modeling shows greater plasticity for downstream adaptation. Again, RoBERTa’s and ELECTRA’s
+discriminativeobjectivesprovidestrongerinitialrepresentationsbutlimitedheadroomforimprovement.
+The near-identical performance of all models on unanswerable questions (0.82–0.98 F1) contrasts
+sharply with their variable performance on answerable questions. Abstention is a simpler learned
+behaviorthanaccurateextraction. Thisasymmetryhaspracticalimplications. Deployingthesemodels
+ineducationalsettingswouldyieldhighprecisiononunanswerabledetectionbutinconsistentanswer
+qualityonanswerablequestions.
+Ourdatasetincludeschain-of-thought(CoT)reasoningannotationsthatremainunexploredinthiswork.
+Future research should leverage these CoT annotations with generative models such as Qwen 2.5-
+7B,trainingon(context, question)inputswith(CoT,answer)labelstoenableinterpretablereasoning
+processes(Weietal.,2023). Additionally,monolingualBanglapre-trainingoradapter-basedmethods
+couldclosetheremainingperformancegap. Thedataset’seducationaldomainalsoenablesexploration
+15
+NCTB-QADataset
+ofpedagogicalapplications,suchasautomatedassessmentgenerationorpersonalizedlearningsystems
+tailoredtoBangladesh’snationalcurriculum. Finally,asthecurrentreleaseispurelytext-based,extending
+NCTB-QAintoamultimodalbenchmarkincorporatingdiagrams,tables,andtextbookfiguresrepresents
+animportantdirectionforfuturework.
+8 Conclusion
+NCTB-QAaddressesacriticalgapinBanglaNLPresourcesbyprovidingalarge-scale,educationally
+groundedquestionansweringbenchmarkwithbalancedanswerabilitydistributionandchain-of-thought
+reasoning annotations. Our evaluation establishes baseline performance with extractive models and
+demonstratesthatsubstantialimprovementsareachievablethroughfine-tuning. However,thereremains
+significant room for advancing Bangla reading comprehension. We release NCTB-QA publicly to
+accelerate research in low-resource language understanding and educational technology for Bangla-
+speakingcommunities.
+Dataset
+Thedatasetusedinthisstudyisnotpubliclyavailableasitiscurrentlybeingutilizedinongoingresearch
+projects.
+Limitations
+Themaximumanswerlengthof30tokens,constrainedby12GBVRAM,mayexcludelongereducational
+explanations. Ourevaluationfocusesexclusivelyonencoder-onlyextractivemodelsanddoesnotutilize
+thechain-of-thought(CoT)annotationspresentinthedataset. Futureworkwithgenerativemodelscould
+leverage these CoT reasoning paths. Single-domain data (NCTB textbooks) may limit cross-domain
+generalization. LLM-basedquestiongenerationcouldintroducesystematicartifacts. ExtractiveQAscope
+excludesmulti-hopandabstractivereasoningtasks.
+Ethics Statement
+NCTB-QAusespubliclyavailableeducationalmaterialswithnopersonaldata. Intendedforresearch
+advancingBanglaNLPandeducationaltechnology. Usersmustvalidatemodeloutputsbeforeeducational
+deployment,asincorrectanswerscouldmisleadlearners.
+16
+NCTB-QADataset
+Acknowledgments
+WethanktheNationalCurriculumandTextbookBoardofBangladeshforopeneducationalresources.
+References
+KevinClark,Minh-ThangLuong,QuocV.Le,andChristopherD.Manning. Electra: Pre-trainingtext
+encodersasdiscriminatorsratherthangenerators,2020. URLhttps://arxiv.org/abs/2003.10555.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. BERT: Pre-training of deep
+bidirectionaltransformersforlanguageunderstanding. InJillBurstein,ChristyDoran,andThamar
+Solorio,editors,Proceedingsofthe2019ConferenceoftheNorthAmericanChapteroftheAssociation
+forComputationalLinguistics: HumanLanguageTechnologies,Volume1(LongandShortPapers),
+pages4171–4186,Minneapolis,Minnesota,June2019.AssociationforComputationalLinguistics.
+doi: 10.18653/v1/N19-1423. URLhttps://aclanthology.org/N19-1423/.
+Syed Mohammed Sartaj Ekram, Adham Arik Rahman, Md. Sajid Altaf, Mohammed Saidul Islam,
+MehrabMustafyRahman,MdMezbaurRahman,MdAzamHossain,andAbuRaihanMostofaKamal.
+BanglaRQA:Abenchmarkdatasetforunder-resourcedBanglalanguagereadingcomprehension-based
+questionansweringwithdiversequestion-answertypes. InYoavGoldberg,ZornitsaKozareva,and
+YueZhang,editors,FindingsoftheAssociationforComputationalLinguistics: EMNLP2022,pages
+2518–2532, Abu Dhabi, United Arab Emirates, December 2022. Association for Computational
+Linguistics. doi: 10.18653/v1/2022.findings-emnlp.186. URLhttps://aclanthology.org/2022.
+findings-emnlp.186/.
+Abdullah Khondoker, Enam Ahmed Taufik, Md Iftekhar Islam Tashik, S M Ishtiak mahmud, and
+AntaraFirozParsa. Unlockingthepotentialofmultiplebertmodelsforbanglaquestionansweringin
+nctbtextbooks,2024. URLhttps://arxiv.org/abs/2412.18440.
+Tom Kwiatkowski, Jennimaria Palomaki, Olivia Redfield, Michael Collins, Ankur Parikh, Chris Al-
+berti, Danielle Epstein, Illia Polosukhin, Jacob Devlin, Kenton Lee, Kristina Toutanova, Llion
+Jones, Matthew Kelcey, Ming-Wei Chang, Andrew M. Dai, Jakob Uszkoreit, Quoc Le, and Slav
+Petrov. Natural questions: A benchmark for question answering research. Transactions of the
+Association for Computational Linguistics, 7:452–466, 2019. doi: 10.1162/tacl_a_00276. URL
+https://aclanthology.org/Q19-1026/.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,MandarJoshi,DanqiChen,OmerLevy,MikeLewis,
+LukeZettlemoyer,andVeselinStoyanov. Roberta: Arobustlyoptimizedbertpretrainingapproach,
+2019. URLhttps://arxiv.org/abs/1907.11692.
+NishatRaihanandMarcosZampieri. TigerLLM-afamilyofBanglalargelanguagemodels. InWanxiang
+Che,JoyceNabende,EkaterinaShutova,andMohammadTaherPilehvar,editors,Proceedingsofthe
+63rdAnnualMeetingoftheAssociationforComputationalLinguistics(Volume2: ShortPapers),pages
+17
+NCTB-QADataset
+887–896,Vienna,Austria,July2025.AssociationforComputationalLinguistics. ISBN979-8-89176-
+252-7. doi: 10.18653/v1/2025.acl-short.69. URL https://aclanthology.org/2025.acl-short.
+69/.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,andPercyLiang. SQuAD:100,000+questionsfor
+machinecomprehensionoftext. InJianSu,KevinDuh,andXavierCarreras,editors,Proceedingsof
+the2016ConferenceonEmpiricalMethodsinNaturalLanguageProcessing,pages2383–2392,Austin,
+Texas,November2016.AssociationforComputationalLinguistics. doi: 10.18653/v1/D16-1264. URL
+https://aclanthology.org/D16-1264/.
+PranavRajpurkar,RobinJia,andPercyLiang. Knowwhatyoudon’tknow: Unanswerablequestionsfor
+SQuAD. InIrynaGurevychandYusukeMiyao,editors,Proceedingsofthe56thAnnualMeetingof
+theAssociationforComputationalLinguistics(Volume2: ShortPapers),pages784–789,Melbourne,
+Australia,July2018.AssociationforComputationalLinguistics. doi: 10.18653/v1/P18-2124. URL
+https://aclanthology.org/P18-2124/.
+Sheikh Shafayat, H Hasan, Minhajur Mahim, Rifki Putri, James Thorne, and Alice Oh. BEnQA:
+A question answering benchmark for Bengali and English. In Lun-Wei Ku, Andre Martins, and
+Vivek Srikumar, editors, Findings of the Association for Computational Linguistics: ACL 2024,
+pages1158–1177,Bangkok,Thailand,August2024.AssociationforComputationalLinguistics. doi:
+10.18653/v1/2024.findings-acl.68. URLhttps://aclanthology.org/2024.findings-acl.68/.
+Md Shihab Shahriar, Ahmad Al Fayad Chowdhury, Md. Amimul Ehsan, and Abu Raihan Kamal.
+Question answer generation in Bengali: Mitigating the scarcity of QA datasets in a low-resource
+language. In Jong C. Park, Yuki Arase, Baotian Hu, Wei Lu, Derry Wijaya, Ayu Purwarianti, and
+Adila Alfa Krisnadhi, editors, Proceedings of the 13th International Joint Conference on Natural
+Language Processing and the 3rd Conference of the Asia-Pacific Chapter of the Association for
+Computational Linguistics (Volume 1: Long Papers), pages 430–441, Nusa Dua, Bali, November
+2023. Association for Computational Linguistics. doi: 10.18653/v1/2023.ijcnlp-main.29. URL
+https://aclanthology.org/2023.ijcnlp-main.29/.
+JasonWei,XuezhiWang,DaleSchuurmans,MaartenBosma,BrianIchter,FeiXia,EdChi,QuocLe,
+andDennyZhou. Chain-of-thoughtpromptingelicitsreasoninginlargelanguagemodels,2023. URL
+https://arxiv.org/abs/2201.11903.
+Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and
+ChristopherD.Manning. HotpotQA:Adatasetfordiverse,explainablemulti-hopquestionanswering.
+In Ellen Riloff, David Chiang, Julia Hockenmaier, and Jun’ichi Tsujii, editors, Proceedings of the
+2018ConferenceonEmpiricalMethodsinNaturalLanguageProcessing,pages2369–2380,Brussels,
+Belgium, October-November 2018. Association for Computational Linguistics. doi: 10.18653/v1/
+D18-1259. URLhttps://aclanthology.org/D18-1259/.
+TianyiZhang,VarshaKishore,FelixWu,KilianQ.Weinberger,andYoavArtzi. Bertscore: Evaluating
+textgenerationwithbert,2020. URLhttps://arxiv.org/abs/1904.09675.
+18

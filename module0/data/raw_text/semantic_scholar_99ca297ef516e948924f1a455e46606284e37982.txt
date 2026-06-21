@@ -1,0 +1,839 @@
+Meta Fine-Tuning Neural Language Models for Multi-Domain Text
+Mining
+ChengyuWang1,MinghuiQiu1∗,JunHuang1,XiaofengHe2
+1 AlibabaGroup2 EastChinaNormalUniversity
+{chengyu.wcy, minghui.qmh, huangjun.hj}@alibaba-inc.com
+hexf@cs.ecnu.edu.cn
+Abstract toencodethesemanticsandlinguisticknowledge
+frommassivetextcorpora(Jawaharetal.,2019;Ko-
+Pre-trained neural language models bring sig-
+valevaetal.,2019;Liuetal.,2019a;Tenneyetal.,
+nificant improvement for various NLP tasks,
+by fine-tuning the models on task-specific 2019). By simple fine-tuning, models can trans-
+training sets. During fine-tuning, the param- fer the universal Natural Language Understand-
+eters are initialized from pre-trained models ing(NLU)abilitiestospecifictasks(Wangetal.,
+directly, which ignores how the learning pro- 2019a). However, state-of-the art language mod-
+cessofsimilarNLPtasksindifferentdomains
+elsmostlyutilizeself-supervised tasksduringpre-
+is correlated and mutually reinforced. In this
+training(forinstance,maskedlanguagemodeling
+paper,weproposeaneffectivelearningproce-
+andnextsentencepredictioninBERT(Devlinetal.,
+durenamedMetaFine-Tuning(MFT),serving
+as a meta-learner to solve a group of similar 2019)). This unavoidably creates a learning gap
+NLP tasks for neural language models. In- betweenpre-trainingandfine-tuning. Besides,for
+stead of simply multi-task training over all agroupofsimilartasks,conventionalpracticesre-
+thedatasets,MFTonlylearnsfromtypicalin- quiretheparametersofalltask-specificmodelsto
+stances of various domains to acquire highly
+beinitializedfromthesamepre-trainedlanguage
+transferable knowledge. It further encour-
+model,ignoringhowthelearningprocessindiffer-
+ages the language model to encode domain-
+entdomainsiscorrelatedandmutuallyreinforced.
+invariant representations by optimizing a se-
+riesofnoveldomaincorruptionlossfunctions. Abasicsolutionisfine-tuningmodelsbymulti-
+After MFT, the model can be fine-tuned for tasklearning. Unfortunately,multi-taskfine-tuning
+each domain with better parameter initializa- ofBERTdoesnotnecessarilyyieldbetterperfor-
+tion and higher generalization ability. We im- mance across all the tasks (Sun et al., 2019a). A
+plement MFT upon BERT to solve several
+probable cause is that learning too much from
+multi-domaintextminingtasks. Experimental
+other tasks may force the model to acquire non-
+results confirm the effectiveness of MFT and
+transferable knowledge, which harms the overall
+itsusefulnessforfew-shotlearning.1
+performance. AsimilarfindingispresentedinBin-
+1 Introduction
+gelandSøgaard(2017);McCannetal.(2018)on
+multi-task training of neural networks. Addition-
+Recentyearshaswitnessedaboominpre-trained
+ally, languagemodelssuchasBERTdonothave
+neural language models. Notable works include
+the“shared-private”architecture(Liuetal.,2017)
+ELMo (Peters et al., 2018), BERT (Devlin et al.,
+toenableeffectivelearningofdomain-specificand
+2019), Transformer-XL (Dai et al., 2019), AL-
+domain-invariantfeatures. Otherapproachesmod-
+BERT(Lanetal.,2019),StructBERT(Wangetal.,
+ify the structures of language models to accom-
+2019b)andmanyothers. Thesemodelsrevolution-
+modate multi-task learning and mostly focus on
+ize the learning paradigms of various NLP tasks.
+specificapplications,withoutprovidingaunified
+After pre-training, only a few fine-tuning epochs
+solution for all the tasks (Stickland and Murray,
+arerequiredtotrainmodelsforthesetasks.
+2019;Zhouetal.,2019b;Gulyaevetal.,2020).
+The “secrets” behind this phenomenon owe to
+A recent study (Finn et al., 2017) reveals that
+themodels’strongrepresentationlearningpower
+meta-learningachievesbetterparameterinitializa-
+∗Correspondingauthor.
+tionforagroupoftasks,whichimprovesthemod-
+1Our code will be available at: https://github.
+com/alibaba/EasyTransfer/. els’ generalization abilities in different domains
+2.1 Pre-trainedLanguageModels
+Domain A Meta Fine-tune Domain A
+θA θ’A
+θB θM
+Meta Task
+θ’B Pre-trainedlanguagemodelshavegainedmuchat-
+LM Domain B LM Domain B
+θC Learning θ’C tention from the NLP community recently (Qiu
+etal.,2020). Amongthesemodels,ELMo(Peters
+Fine-tune Domain C Fine-tune Domain C
+et al., 2018) learns context-sensitive embeddings
+a) Conventional Approach b) The Proposed Approach
+foreachtokenformbothleft-to-rightandright-to-
+leftdirections. BERT(Devlinetal.,2019)isusu-
+Figure 1: Comparison between fine-tuning and MFT.
+“LM”referstopre-trainedlanguagemodels. allyregardedasthemostrepresentativework,em-
+ployingtransformerencoderstolearnlanguagerep-
+resentations. Thepre-trainingtechniqueofBERT
+andmakesthemeasiertofine-tune. Aspre-trained
+isimprovedinLiuetal.(2019c). Follow-upworks
+languagemodelshavegeneralNLUabilities,they
+employtransformer-basedarchitectures,including
+shouldalsohavetheabilitytolearnsolvingagroup
+Transformer-XL(Daietal.,2019),XLNet(Yang
+ofsimilarNLPtasks. Inthiswork, weproposea
+et al., 2019), ALBERT (Lan et al., 2019), Struct-
+separatelearningprocedure,insertedbetweenpre-
+BERT(Wangetal.,2019b)andmanymore. They
+trainingandfine-tuning,namedMetaFine-Tuning
+change the unsupervised learning objectives of
+(MFT).Thisworkisoneoftheearlyattemptsfor
+BERTinpre-training. MT-DNN(Liuetal.,2019b)
+improvingfine-tuningofneurallanguagemodels
+istherepresentativeofanothertypeofpre-trained
+by meta-learning. Take the review analysis task
+languagemodels,whichemployssupervisedlearn-
+as an example. MFT only targets at learning the
+ingobjectivesacrosstaskstolearnrepresentations.
+polarityofreviews(positiveornegative)ingeneral,
+Afterlanguagemodelsarepre-trained,theycan
+ignoring features of specific aspects or domains.
+befine-tunedforavarietyofNLPtasks. Thetech-
+After that, the learned model can be adapted to
+niquesoffine-tuningBERTaresummarizedinSun
+any domains by fine-tuning. The comparison be-
+et al. (2019a). Cui et al. (2019) improve BERT’s
+tweenfine-tuningandMFTisshowninFigure1.
+fine-tuningbysparseself-attention.AraseandTsu-
+Specifically, MFT first learns the embeddings of
+jii (2019) introduce the concept of “transfer fine-
+classprototypesfrommulti-domaintrainingsets,
+tuning”,whichinjectsphrasalparaphraserelations
+and assigns typicality scores to individuals, indi-
+into BERT. Compared to previous methods, fine-
+cating the transferability of each instance. Apart
+tuningformulti-domainlearninghasnotbeensuf-
+fromminimizingthemulti-taskclassificationloss
+ficientlystudied.
+overtypicalinstances,MFTfurtherencouragesthe
+language model to learn domain-invariant repre-
+2.2 TransferLearning
+sentations by jointly optimizing a series of novel
+Transfer learning aims to transfer the resources
+domaincorruptionlossfunctions.
+or models from one domain (the source domain)
+Forevaluation,weimplementtheMFTstrategy
+to another (the target domain), in order to im-
+upon BERT (Devlin et al., 2019) for three multi-
+provethemodelperformanceofthetargetdomain.
+domaintextminingtasks: i)naturallanguageinfer-
+Due to space limitation, we refer readers to the
+ence(Williamsetal.,2018)(sentence-pairclassi-
+surveys (Pan and Yang, 2010; Lu et al., 2015;
+fication), ii) review analysis (Blitzer et al., 2007)
+Zhuang et al., 2019) for an overview. For NLP
+(sentenceclassification)andiii)domaintaxonomy
+applications,the“shared-private”architecture(Liu
+construction(Luuetal.,2016)(word-pairclassifi-
+etal.,2017)ishighlypopular,whichincludesub-
+cation). Experimentalresultsshowthattheeffec-
+networks for learning domain-specific represen-
+tivenessandsuperiorityofMFT.Wealsoshowthat
+tations and a shared sub-network for knowledge
+MFTishighlyusefulformulti-domaintextmining
+inthefew-shotlearningsetting. 2 transferanddomain-invariantrepresentationlearn-
+ing. Recently, adversarial training has been fre-
+2 RelatedWork quentlyapplied(Shenetal.,2018;Huetal.,2019;
+Cao et al., 2018; Li et al., 2019b; Zhou et al.,
+We overview recent advances on pre-trained lan-
+2019a),wherethedomainadversarialclassifiersare
+guagemodels,transferlearningandmeta-learning.
+trainedtohelpthemodelstolearndomain-invariant
+features. Multi-domainlearningisaspecialcaseof
+2AlthoughwefocusonMFTforBERTonly,MFTisgen-
+eralandcanbeappliedtootherlanguagemodelseasily. transferlearningwhosegoalistotransferknowl-
+Label Prediction Corrupted Domain Corrupted Domain
+Domain A Weight Classifier Classifier 1 Classifier 2
+Injection to
+Domain B Classifiers
+Pre-trained BERT Model
+Domain C
+[CLS] Token Embeddings +
+Embeddings
+High
+[CLS] Token Embeddings +
+Embeddings
+Low Mean Pooling Domain
+[CLS] Token Embeddings of Token E(cid:80)(cid:69)(cid:72)(cid:71)(cid:71)(cid:76)(cid:81)(cid:74)(cid:86)
+Embeddings Embeddings
+Typicality Scores
+[CLS] Input Tokens True Domain Label
+Multi-Domain Class Prototypes
+Figure2: TheneuralarchitectureofMFTforBERT(Devlinetal.,2019). Duetospacelimitation,weonlyshow
+twocorrupteddomainclassifiersandthreelayersoftransformerencoders,withothersomitted.
+edgeacrossmultipledomainsformutualtraining inputtextandtheclasslabeloftheithsample,re-
+reinforcement(Peietal.,2018;Lietal.,2019a;Cai spectively3. Nk isthenumberoftotalsamplesin
+and Wan, 2019). Our work also addresses multi- Dk. ThegoalofMFTistotrainameta-learnerini-
+domain learning, but solves the problem from a tializedfromapre-trainedlanguagemodel,based
+meta-learningaspect. onthetrainingsetsofK domains: D = (cid:83)K Dk.
+k=1
+Themeta-learnerprovidesbetterparameterinitial-
+2.3 Meta-learning
+izations,suchthatitcanbeeasilyadaptedtoeach
+Comparedtotransferlearning,meta-learningisa oftheK domainsbyfine-tuningthemeta-learner
+slightlydifferentlearningparadigm. Itsgoalisto overthetrainingsetofthekthdomainseparately.
+train meta-learners that can adapt to a variety of Duetothelargeparameterspaceofneurallan-
+differenttaskswithlittletrainingdata(Vanschoren, guagemodels,itiscomputationallychallengingto
+2018),mostlyappliedtofew-shotlearning,which searchfortheoptimalvaluesofthemeta-learner’s
+istypicallyformulatedasaK-wayN-shotlearning parameters. Asdiscussedearlier,buildingatrivial
+problem. In NLP, existing meta-learning models multi-task learner over D does not guarantee sat-
+mostly focus ontraining meta-learners for single isfactory results either (Sun et al., 2019a). Here,
+applications, such as link prediction (Chen et al., we set up two design principles for MFT: Learn-
+2019),dialogsystems(Madottoetal.,2019),lexi- ingfromTypicalityandLearningDomain-invariant
+calrelationclassification(Wangetal.,2020)andse- Representations,introducedasfollows:
+manticparsing(Guoetal.,2019).Douetal.(2019)
+leveragemeta-learningforlow-resourceNLU. Learning from Typicality To make the meta-
+Compared with traditional meta-learning re- learnereasiertobefine-tunedtoanydomains,the
+search,thetaskofourworkisnotK-wayN-shot. encodedknowledgeshouldbehighlygeneraland
+Instead,weaimtoemploymeta-learningtotraina transferable,notbiasedtowardsspecificdomains.
+better“meta-learner”whichcapturestransferable Hence,onlytypicalinstancesw.r.t. allthedomains
+knowledgeacrossdomains. Inthissense,ourwork should be the priority learning targets. We first
+canbealsoviewedasatransferlearningalgorithm generatemulti-domainclassprototypesfromD to
+whichemploysmeta-learningforbetterknowledge summarize the semantics of training data. Based
+transferandfastdomainadaptation. ontheprototypes,wecomputetypicalityscoresfor
+alltraininginstances,treatedasweightsforMFT.
+3 MFT:TheProposedFramework
+Learning Domain-invariant Representations
+Inthissection,westartwithsomebasicnotations
+Agoodmeta-learnershouldbeadaptedtoanydo-
+andanoverviewofMFT.Afterthat, wedescribe
+mains quickly. Since BERT has strong represen-
+thealgorithmictechniquesofMFTindetail.
+tation power, this naturally motivates us to learn
+3.1 Overview domain-invariantrepresentationsarevitalforfast
+DenoteDk = {xk,yk|i ∈ [1,Nk]}asthetraining
+i i 3Notethatxkcanbeeitherasinglesentence,asentence
+set of the kth domain, where xk and yk are the pair,oranyothei rpossibleinputtextsofthetargetNLPtask.
+i i
+domainadaptation(Shenetal.,2018). InMFT,be- whereβ > 0istheclustermembershipofxk w.r.t.
+n i
+sidesminimizingtheclassificationloss,wejointly eachclasslabeln ∈ M.
+minimizenewlearningobjectivestoforcethelan- Aftertypicalityscoresarecomputed,wediscuss
+guagemodeltohavedomain-invariantencoders. howtosetupthelearningobjectivesforMFT.The
+Basedonthetwogeneralprinciples,wedesign firstlossisthemulti-tasktypicality-sensitivelabel
+theneuralarchitectureofMFT,withtheexample classificationlossL . Itpenalizesthetextclas-
+TLC
+forBERT(Devlinetal.,2019)showninFigure2. sifierforpredictingthelabelsoftypicalinstances
+Thetechnicaldetailsareintroducedsubsequently. ofallK domainsincorrectly,whichisdefinedas:5
+3.2 LearningfromTypicality 1 (cid:88) (cid:88)
+L =− 1 tk·
+Denote M as the class label set of all K do- TLC |D| (y ik=m) i
+mains. Dk is the collection of input texts in (xk i,y ik)∈Dm∈M
+m
+Dk that have class label m ∈ M, i.e., D mk = logτ m(f(xk i)),
+{xk|(xk,yk) ∈ Dk,yk = m}. As class proto-
+i i i i
+typescansummarizethekeycharacteristicsofthe wheretk servesastheweightofeachtrainingin-
+i
+correspondingdata(Yaoetal.,2020),wetreatthe stance. τ m(f(xk i)) is the predicted probability of
+class prototype ck as the averaged embeddings xk having the class label m ∈ M, with the d-
+m i
+of all the input texts in Dk . Formally, we have dimensional“[CLS]”tokenembeddingsofthelast
+m
+ck = 1 (cid:80) E(xk)whereE(·)mapsxk to layerofBERT(denotedasf(xk))asfeatures.
+m |D mk| xk i∈D mk i i i
+itsd-dimensionalembeddings. AsforBERT(De-
+3.3 LearningDomain-invariant
+vlin et al., 2019), we utilize the mean pooling of
+Representations
+representationsofxk fromthelasttransformeren-
+i
+coderasE(xk). Based on previous research of domain-invariant
+i
+Ideally,weregardatraininginstance(xk,yk)to learning (Shen et al., 2018; Hu et al., 2019), we
+i i
+betypicalifitissemanticallyclosetoitsclasspro- could add an additional domain adversarial clas-
+totypeck ,andalsoisnottoofarawayfromclass sifierforMFTtooptimize. However,weobserve
+m
+prototypesgeneratedfromotherdomainsforhigh thataddingsuchclassifierstomodelssuchasBERT
+transferability. Therefore,thetypicalityscoretk of maybesub-optimal. Foreaseofunderstanding,we
+i
+(xk i,y ik)canbedefinedasfollows:4 onlyconsidertwodomainsk
+1
+andk 2. Thelossof
+theadversarialdomainclassifierL is:
+tk =αcos(E(xk),ck ) AD
+i i m
+K 1 (cid:88)
++ K1− −α
+1
+·(cid:88) 1 (k˜(cid:54)=k)cos(E(xk i),ck m˜ ), L AD =− Nk1 +Nk2
+k˜=1
+(xk i,y ik)∈Dk1∪Dk2
+where α is the pre-defined balancing factor (0 < (y iklogσ(xk i)+(1−y ik)log(1−σ(xk i))),
+α < 1), cos(·,·) is the cosine similarity function
+and 1 (·) is the indicator function that returns 1 if wherey ik = 1ifthedomainisk 1 and0otherwise.
+theinputBooleanfunctionistrueand0otherwise.
+σ(xk)isthepredicatedprobabilityofsuchadver-
+i
+Asoneprototypemaynotbeinsufficienttorep- sarial domain classifier. In the min-max game of
+resentthecomplicatedsemanticsoftheclass(Cao adversarial learning (Shen et al., 2018), we need
+etal.,2017),wecanalsogeneratemultipleproto- to maximize the loss L AD such that the domain
+types by clustering, with the jth prototype to be classifierfailstopredictthetruedomainlabel. The
+ck . Here,tk isextendedbythefollowingformula: min-maxgamebetweenencodersandadversarial
+mj i
+classifiersiscomputationallyexpensive,whichis
+(cid:80) β cos(E(xk),ck)
+tk = α n∈M n i n lessappealingtoMFToverlargelanguagemodels.
+i (cid:80) β
+n∈M n Additionally, models such as BERT do not have
+1−α (cid:88)K 1 (k˜(cid:54)=k)(cid:80) n∈Mβ ncos(E(xk i),ck n˜ ) the“shared-private”architecture(Liuetal.,2017),
++ · (cid:80) , frequentlyusedfortransferlearning. Onecanalso
+K −1 β
+k˜=1 n∈M n replaceL
+AD
+byaskingtheclassifiertopredictthe
+flippeddomainlabelsdirectly(Shuetal.,2018;Hu
+4Here,weassumethatthetraininginstance(xk,yk)has
+i i
+theclasslabelm∈M.Becauseeachinstanceisassociated
+withonlyonetypicalityscore,forsimplicity,wedenoteitas 5Forclarity,weomitalltheregularizationtermsinobjec-
+tk,insteadoftk . tivefunctionsthroughoutthispaper.
+i i,m
+etal.,2019). Hence,wecaninsteadminimizethe Algorithm1LearningAlgorithmforMFT
+flippeddomainlossL FD: 1: RestoreBERT’sparametersfromthepre-trainedmodel,
+withothersrandomlyinitialized;
+1 (cid:88) 2: foreachdomainkandeachclassmdo
+L FD =− Nk1 +Nk2 3: Computeprototypeembeddingsck m;
+(xk,yk)∈Dk1∪Dk2 4: endfor
+i i 5: foreachtraininginstance(xk,yk)∈Ddo
+((1−y ik)logσ(xk i)+y iklog(1−σ(xk i))). 6: Computetypicalityscorei tk i;i
+7: endfor
+Weclaimthat,applyingL toBERTasanaux- 8: whilenumberoftrainingstepsdonotreachalimitdo
+FD
+9: Sampleabatch{(xk,yk)}fromD;
+iliary loss does not necessarily generate domain- i i
+10: Shuffledomainlabelsof{(xk,yk)}togenerate{z };
+invariantfeatures. WhenL FD isminimized,σ(xk i) 11: Estimatemodelpredictionsi ofi inputs{(xk i,k)}ai nd
+always tends to predict the wrong domain label comparethemagainst{(yk,z )};
+i i
+(whichpredictsk fork andk fork ). Theopti- 12: Updateallmodelparametersbybackpropagation;
+1 2 2 1
+13: endwhile
+mizationofL stillmakesthelearnedfeaturesto
+FD
+be domain-dependent, since the domain informa-
+tionisencodedimplicitlyinσ(xk),onlywithdo- embeddings: h (xk)+E (k),withthetypicality-
+i l i D
+mainlabelsinter-changed. Asimilarcaseholdsfor sensitivedomaincorruptionlossL as:
+TDC
+multipledomainswhereweonlyforcetheclassifier
+topredictthedomainoftheinputtextxkj
+intoany 1 (cid:88)
+(cid:88)K
+i L =− 1 tk
+oneofthereminderK−1domains(excludingk j). TDC |D| (k=zi) i
+Therefore, it is necessary to modify L
+FD
+which (xk i,y ik)∈Dk=1
+trulyguaranteesdomaininvarianceandavoidsthe ·logδ (h (xk)+E (k)),
+zi l i D
+expensive(andsometimesunstable)computation
+ofadversarialtraining. whereδ zi(·)isthepredictedprobabilityoftheinput
+Inthiswork,weproposethedomaincorruption featureshavingthecorrupteddomainlabelz i. We
+strategytoaddressthisissue. Givenatrainingin- deliberatelyfeedthetruedomainembeddingE D(k)
+stance (xk,yk) of the kth domain, we generate a intotheclassifiertomakesureeveniftheclassifier
+i i
+corruptdomainlabelz
+i
+fromacorrupteddomain knowsthetruedomaininformationfromE D(k),it
+distribution Pr(z ). z is unrelated to the true do- can only generate corrupted outputs. In this way,
+i i
+mainlabelk, whichmayormaynotbethesame weforcetheBERT’srepresentationsh l(xk i)tohide
+as k. The goal of the domain classifier is to ap- anydomaininformationfrombeingrevealed,mak-
+proximatePr(z )insteadofalwayspredictingthe ingtherepresentationsofxk domain-invariant.
+i i
+incorrectdomainsasinHuetal.(2019). Inpractice, We further notice that neural language models
+Pr(z )canbedefinedwitheachdomainuniformly may have deep layers. To improve the level of
+i
+distributed,iftheK domaindatasetsarerelatively domaininvarianceofalllayersandcreateabalance
+balancedinsize. Toincorporatepriorknowledge betweeneffectivenessandefficiency,wefollowthe
+ofdomaindistributionsintothemodel,Pr(z )can work (Sun et al., 2019b) to train a series of skip-
+i
+alsobenon-uniform,withdomainprobabilitiesesti- layer classifiers. Denote L s as the collection of
+matedfromD bymaximumlikelihoodestimation. selectedindicesoflayers(forexample,onecanset
+Considertheneuralarchitectureoftransformer L s = {4,8,12} for BERT-base). The skip-layer
+encodersinBERT(Devlinetal.,2019). Leth l(xk i) domain corruption loss L SDC is defined as the
+be the d-dimensional mean pooling of the token average cross-entropy loss of all |L s| classifiers,
+embeddings of xk in the lth layer (excluding the definedasfollows:
+i
+“[CLS]”embeddings),i.e.,
+K
+1 (cid:88) (cid:88)(cid:88)
+L =−
+h l(xk i) = Avg(h l,1(xk i),··· ,h l,Max(xk i)), SDC |L s|·|D|
+(xk,yk)∈Dl∈Lsk=1
+i i
+w dih ne gre ofh tl h,j e(x jtk i h) tr oe kp er nes ie nn xts k,th ae ndl-t Mhe al xay iser the em mb ae xd -- 1 (k=zi)tk i ·logδ zi(h l(xk i)+E D(k)).
+i
+imum sequence length. Additionally, we learn a Insummary,theoveralllossLforMFTtomini-
+d-dimensional domain embedding of the true do- mizeisalinearcombinationofL andL ,
+TLC SDC
+main label of (xk,yk), denoted as E (k). The i.e.,L = L +λL ,whereλ > 0isatuned
+i i D TLC SDC
+input features are constructed by adding the two hyper-parameter.
+3.4 JointOptimization Dataset Domain #Train #Dev #Test
+Telephone 83,348 2,000 -
+WedescribehowtooptimizeLforMFT.Basedon Government 77,350 2,000 -
+theformationofL,itistrivialtoderivethat: MNLI Slate 77,306 2,000 -
+Travel 77,350 2,000 -
+1 (cid:88) (cid:88) Fiction 77,348 2,000 -
+L =− ( 1 tk· Book 1,763 120 117
+|D| (y ik=m) i DVD 1,752 120 128
+(xk i,y ik)∈D m∈M Amazon Electronics 1,729 144 127
+K Kitchen 1,756 119 125
+λ (cid:88)(cid:88)
+logτ (f(xk))+ 1 tk· Animal 8,650 1,081 1,076
+m i |L | (k=zi) i Taxonomy Plant 6,188 769 781
+s
+l∈Lsk=1 Vehicle 842 114 103
+logδ (h (xk)+E (k))).
+zi l i D
+Table1: Statisticalsummarizationofdatasets.
+Asseen,MFTcanbeefficientlyoptimizedvia
+gradient-based algorithms with slight modifica-
+Dataset(Blitzeretal.,2007)(containingprod-
+tions. The procedure is shown in Algorithm 1.
+uctreviewsoffourdomainscrawledfromthe
+It linearly scans the multi-domain training set D
+Amazonwebsite)aspositiveornegative.
+tocomputeprototypesck andtypicalityscorestk.
+m i
+Next, itupdatesmodelparametersbybatch-wise • Domain taxonomy construction: predict-
+training. Foreachbatch{(xk,yk)},asanefficient ing whether there exists a hypernymy (“is-
+i i
+implementation, we shuffle the domain labels to a”)relationbetweentwoterms(words/noun
+generate the corrupted labels {z i}, as an approx- phrases) for taxonomy derivation. Labeled
+imation of sampling from the original corrupted term pairs sampled from three domain tax-
+domain distribution Pr(z i). This trick avoids the onomiesareusedforevaluation. Thedomain
+computationoverthewholedataset,andbeadapted taxonomies are constructed by Velardi et al.
+tothechangesofdomaindistributionsifnewtrain- (2013). withlabeleddatasetscreatedandre-
+ingdataiscontinuouslyaddedtoD throughtime. leasedbyLuuetal.(2016)7 .
+When the iterations stop, we remove all the ad-
+ditional layers that we have added for MFT, and BecauseMNLIdoesnotcontainpubliclabeled
+fine-tune BERT for the K domains over their re- test sets that can be used for single-genre evalua-
+spectivetrainingsets,separately. tion, we hold out 10 thousand training instances
+fromtheoriginaltrainingsetforparametertuning
+4 Experiments andreporttheperformanceoftheoriginaldevelop-
+mentsets. Weholdout2,000labeledreviewsfrom
+WeconductextensiveexperimentstoevaluateMFT
+theAmazondataset(Blitzeretal.,2007)andsplit
+onmultiplemulti-domaintextminingtasks.
+them into development and test sets. As for the
+4.1 DatasetsandExperimentalSettings taxonomyconstructiontask,becauseBERTdoes
+notnaturallysupportword-pairclassification,we
+WeemploytheGoogle’spre-trainedBERTmodel6
+combineatermpairtoformasequenceoftokens
+as the language model, with dimension d = 768.
+separated by the special token “[SEP]” as input.
+Threemulti-domainNLPtasksareusedforevalua-
+Theratiosoftraining,developmentandtestingsets
+tion,withstatisticsofdatasetsreportedinTable1:
+of the three domain taxonomy datasets are set as
+• Naturallanguageinference: predictingthe 80%:10%:10%.
+relation between two sentences as “entail- The default hyper-parameter settings of MFT
+ment”,“neutral”or“contradiction”,usingthe are as follows: α = 0.5, L = {4,8,12} and
+s
+datasetMNLI (Williamsetal.,2018). MNLI λ = 0.1. During model training, we run 1 ∼ 2
+isalarge-scalebenchmarkcorpusforevaluat- epochsofMFTandfurtherfine-tunethemodelin
+ingnatural languageinferencemodels, with 2 ∼ 4 epochs for each domain, separately. The
+multi-domaindatadividedintofivegenres. initiallearningrateissetas2×10−5 inallexper-
+iments. Theregularizationhyper-parameters, the
+• Reviewanalysis: classifyingtheproductre-
+viewsentimentofthefamousAmazonReview 7FollowingLuuetal.(2016),inthistask,weonlydothe
+binaryclassificationofdomaintermpairsashypernymyor
+6Weusetheuncased,baseversionofBERT.See:https: non-hypernymyanddonotconsiderreconstructingthegraph
+//github.com/google-research/bert. structuresofthedomaintaxonomies.
+optimizerandtheremindersettingsarethesameas 100
+in Devlin etal. (2019). In MFT, only7K∼11.5K
+95
+additional parameters need to be added (depend-
+ing on the number of domains), compared to the 90
+originalBERTmodel. Allthealgorithmsareimple-
+85
+mentedwithTensorFlowandtrainedwithNVIDIA
+TeslaP100GPU.Thetrainingtimetakeslessthan 80
+0 1 2 3 4
+onehour. Forevaluation,weuseAccuracyasthe
+Epoch of Meta Fine-tuning
+evaluationmetricforallmodelstrainedviaMFT
+andfine-tuning. Alltheexperimentsareconducted
+threetimes,withtheaveragescoresreported.
+4.2 GeneralExperimentalResults
+WereportthegeneraltestingresultsofMFT.For
+faircomparison,weimplementfollowingthefine-
+tuningmethodsasstrongbaselines:
+• BERT (S): It fine-tunes K BERT models,
+eachwithsingle-domaindata.
+• BERT (Mix): It combines all the domain
+dataandfine-tunesasingleBERTmodelonly.
+• BERT(MTL):Itfine-tunesBERTbymulti-
+taskfine-tuning(Sunetal.,2019a).
+• BERT(Adv): Itfine-tunesBERTbyBERT
+(C)withanadditionaladversarialdomainloss
+proposedinHuetal.(2019).
+WealsoevaluatetheperformanceofMFTand
+itsvariantsunderthefollowingthreesettings:
+• MFT (DC): It is MFT with domain corrup-
+tion. Allthetypicalityscoresintheobjective
+functionareremoved.
+• MFT(TW):ItisMFTwithtypicalityweight-
+ing. Thedomaincorruptionlossisremoved.
+• MFT(Full): Itisthefullimplementation.
+Theresultsofthreemulti-domainNLPtasksare
+reported in Table 2, Table 3 and Table 4, respec-
+tively. Generally, the performance trends of all
+threetasksareprettyconsistent. WithMFT,theac-
+curacyoffine-tunedBERTboosts2.4%fornatural
+languageinference,2.6%forreviewanalysisand
+3%fordomaintaxonomyconstruction. Thesimple
+multi-task fine-tuning methods do not have large
+improvement,ofwhichtheconclusionisconsistent
+withSunetal.(2019a). Ourmethodhasthehighest
+performancein10domains(genres)outofatotalof
+12domainsofthethreetasks,outperformingprevi-
+ousfine-tuningapproaches. Forablationstudy,we
+ycaruccA
+Book Electronics
+DVD Kitchen
+(a) Dataset:Amazon
+100
+95
+90
+85
+80
+0 1 2 3 4
+Epoch of Meta Fine-tuning
+ycaruccA
+Animal
+Vehicle
+Plant
+(b) Dataset:Taxonomy
+Figure3: TuningthelearningepochsofMFT.
+compareMFT(DC),MFT(TW)andMFT(Full).
+The results show that domain corruption is more
+effective than typicality weighting in MNLI, but
+lesseffectiveinAmazonandTaxonomy.
+4.3 DetailedModelAnalysis
+In this section, we present more experiments on
+detailedanalysisofMFT.Wefirststudyhowmany
+training steps of MFT we should do before fine-
+tuning. Asdatasetsofdifferenttasksvaryinsize,
+wetunetheepochsofMFTinstead. Inthissetof
+experiments,wefixparametersasdefault,varythe
+training epochs of MFT and then run fine-tuning
+for 2 epochs for all domains. The results of two
+NLPtasksareshowninFigure3. Itcanbeseenthat
+toomanyepochsofMFTcanhurttheperformance
+becauseBERTmaylearntoomuchfromotherdo-
+mainsbeforefine-tuningonthetargetdomain. We
+suggest that a small number of MFT epochs are
+sufficientformostcases. Next,wetunethehyper-
+parameterλfrom0to0.5,withtheresultsshownin
+Figure4. Theinverted-Vtrendsclearlyreflectthe
+balance between the two types of losses in MFT,
+withveryfewexceptionsduetothefluctuationof
+thestochasticlearningprocess.
+We also vary the number of corrupted domain
+classifiers by changing L . Due to space limita-
+s
+tion, weonlyreportaveragedaccuracyacrossall
+Method Telephone Government Slate Travel Fiction Average
+BERT(S) 82.5 84.9 78.2 83.1 82.0 82.1
+BERT(Mix) 83.1 85.2 79.3 85.1 82.4 83.0
+BERT(MTL) 83.8 86.1 80.2 85.2 83.6 83.8
+BERT(Adv) 81.9 84.2 79.8 82.0 82.2 82.0
+MFT(DC) 84.2 86.3 80.2 85.8 84.0 84.1
+MFT(TW) 83.8 86.5 81.3 83.7 84.4 83.9
+MFT(Full) 84.6 86.3 81.5 85.4 84.6 84.5
+Table2: NaturallanguageinferenceresultsoverMNLI(dividedintofivegenres)intermsofaccuracy(%).
+Method Book DVD Elec. Kit. Avg.
+BERT(S) 90.7 88.2 89.0 85.7 88.4
+BERT(Mix) 91.8 89.4 87.8 88.4 89.3
+BERT(MTL) 92.2 89.0 88.3 88.2 89.0
+BERT(Adv) 89.3 87.4 86.5 86.7 87.5
+MFT(DC) 90.6 89.4 92.5 88.7 90.3
+MFT(TW) 90.4 88.9 94.5 89.1 90.7
+MFT(Full) 91.2 88.8 94.8 89.2 91.0
+Table3: ReviewanalysisresultsoverAmazonReview
+Datasetintermsofaccuracy(%).
+Method Animal Plant Vehicle Avg.
+BERT(S) 93.6 91.8 84.2 89.3
+BERT(Mix) 93.8 88.2 83.6 88.5
+BERT(MTL) 94.2 89.2 82.4 88.6
+BERT(Adv) 92.8 86.3 83.2 87.4
+MFT(DC) 94.3 91.8 86.8 91.0
+MFT(TW) 94.0 92.0 89.2 91.7
+MFT(Full) 94.5 92.3 90.2 92.3
+Table 4: Domain taxonomy construction results over
+TaxonomyDatasetintermsofaccuracy(%).
+100
+95
+90
+85
+80
+0.0 0.1 0.2 0.3 0.4 0.5
+λ
+ycaruccA
+Book Electronics
+DVD Kitchen
+(a) Dataset:Amazon
+100
+95
+90
+85
+80
+0.0 0.1 0.2 0.3 0.4 0.5
+λ
+ycaruccA
+domains, shown in Table 7. In a majority of sce-
+narios, adding more corrupted domain classifiers
+slightlyimprovetheperformance,asitposesstrong
+domain-invarianceconstraintstodeeperlayersof
+transformerencodersinBERT.
+For more intuitive understanding of MFT, we
+presentsomecasesfromAmazonReviewDataset
+with relatively extreme (low and high) typicality
+scores,showninTable5. Asseen,reviewtextswith
+lowscoresareusuallyrelatedtocertainaspectsof
+specific products (for example, “crooked spoon
+handle”and“fragileglass”),whoseknowledgeis
+non-transferable on how to do review analysis in
+general. In contrast, reviews with high typicality
+scoresmaycontainexpressionsonthereviewpolar-
+itythatcanbefrequentlyfoundinvariousdomains
+(forexample,“hugedeal”and“awasteofmoney”).
+From the cases, we can see how MFT can create
+ameta-learnerthatiscapableoflearningtosolve
+NLPtasksindifferentdomains.
+4.4 ExperimentsforFew-shotLearning
+Acquiringasufficientamountoftrainingdatafor
+emergingdomainsoftenposeschallengesforNLP
+researchers. In this part, we study how MFT can
+benefitfew-shotlearningwhenthesizeofthetrain-
+ing data in a specific domain is small 8. Because
+theoriginalMNLIdataset(Williamsetal.,2018)
+islargeinsize,werandomlysample5%,10%and
+20%oftheoriginaltrainingsetforeachgenre,and
+do MFT and fine-tuning over BERT. For model
+Animal
+evaluation,weusetheentiredevelopmentsetwith-
+Vehicle
+Plant outsampling. Inthissetofexperiments,wedonot
+tuneanyhyper-parametersandsetthemasdefault.
+Duetothesmallsizesofourfew-shottrainingsets,
+werunMFTforonlyoneepoch,andthenfine-tune
+BERTfor2epochspergenre.
+In Table 6, we report the few-shot learning re-
+sults,andcomparethemagainstfine-tunedBERT
+(b) Dataset:Taxonomy without MFT. From the experimental results, we
+Figure4: Tuningthehyper-parameterλ. 8NotethatthisexperimentisnotconductedusingtheK-
+wayN-shotsetting.RefertoRelatedWorkfordiscussion.
+Typicality Domain Label ReviewText
+Book NEG Morehatebooks.Howcouldanyonewriteanythingsowrong.
+Low Kitchen NEG Thespoonhandleiscrookedandtherearemarks/damagetothewood.Avoid.
+Kitchen NEG Theglassisquitefragile.Ihadtwobreaks.
+Kitchen POS Iwouldrecommendthemtoeveryone..andattheirprice,it’saHUGEDEAL!
+High Electronics NEG Whatawasteofmoney.For$300youshouldn’tHAVEtobuyaprotectionplanfor...
+Electronics NEG Donotwasteyourmoney,thiswasunderrecommendations,butIwouldNOT...
+Table5: CasesofreviewtextsfromAmazonReviewDatasetwithhighandlowtypicalityscores.
+WithMFT? WithMFT? WithMFT?
+Genre Improvement Improvement Improvement
+No Yes No Yes No Yes
+Trainingdata 5%oftheoriginal 10%oftheoriginal 20%oftheoriginal
+Telephone 70.5 74.7 4.2%↑ 74.1 76.4 2.3%↑ 75.9 79.8 3.9%↑
+Government 76.5 78.1 1.6%↑ 78.8 81.0 2.2%↑ 80.5 82.9 2.4%↑
+Slate 64.2 69.8 5.7%↑ 67.6 71.8 4.2%↑ 71.8 74.1 2.3%↑
+Travel 71.9 75.4 3.5%↑ 74.8 78.1 3.3%↑ 78.3 80.3 2.0%↑
+Fiction 69.7 73.8 4.1%↑ 73.3 76.6 3.3%↑ 76.2 78.4 2.2%↑
+Average 70.5 74.4 3.9%↑ 73.7 76.8 3.1%↑ 76.5 79.1 2.6%↑
+Table6: Few-shotnaturallanguageinferenceresultsoverMNLIintermsofaccuracy(%).
+L s ↓Dataset→ Amazon Taxonomy supported by the National Key Research and De-
+{12} 90.7 91.3
+velopment Program of China under Grant No.
+{6,12} 90.8 92.0
+{4,8,12} 91.4 92.5 2016YFB1000904. M. Qiu is partially funded
+{3,6,9,12} 91.2 92.8 by China Postdoctoral Science Foundation (No.
+2019M652038).
+Table 7: Change of prediction accuracy when the se-
+lectedlayerindicesL takedifferentvalues(%).
+s
+References
+can safely come to the following conclusions. i)
+Yuki Arase and Jun’ichi Tsujii. 2019. Transfer fine-
+MFTimprovestheperformancefortextminingof
+tuning: A BERT case study. In EMNLP-IJCNLP,
+allgenresinMNLI,regardlessofthepercentages
+pages5392–5403.
+of the original training sets we use. ii) MFT has
+a larger impact on smaller training sets (a 3.9% Joachim Bingel and Anders Søgaard. 2017. Identify-
+improvement in accuracy for 5% few-shot learn- ing beneficial task relations for multi-task learning
+indeepneuralnetworks. InEACL,pages164–169.
+ing, compared to a 2.6% improvement for 20%).
+iii)TheimprovementofapplyingMFTbeforefine-
+JohnBlitzer,MarkDredze,andFernandoPereira.2007.
+tuningisalmostthesameasdoublingthetraining Biographies, bollywood, boom-boxes and blenders:
+data size. Therefore, MFT is highly useful for Domain adaptation for sentiment classification. In
+few-shotlearningwhenthetrainingdataofother ACL.
+domainsareavailable.
+YitaoCaiandXiaojunWan.2019. Multi-domainsen-
+timentclassificationbasedondomain-awareembed-
+5 ConclusionandFutureWork
+dingandattention. InIJCAI,pages4904–4910.
+Inthispaper,weproposeanewtrainingprocedure
+Pengfei Cao, Yubo Chen, Kang Liu, Jun Zhao, and
+named Meta Fine-Tuning (MFT) used in neural
+Shengping Liu. 2018. Adversarial transfer learn-
+languagemodelsformulti-domaintextmining. Ex-
+ing for chinese named entity recognition with self-
+perimentalresultsshowtheeffectivenessofMFT attentionmechanism. InEMNLP,pages182–192.
+fromvariousaspects. Inthefuture,weplantoapply
+YixinCao,LifuHuang,HengJi,XuChen,andJuanzi
+MFTtootherlanguagemodels(e.g.,Transformer-
+Li. 2017. Bridge text and knowledge by learning
+XL (Dai et al., 2019) and ALBERT (Lan et al.,
+multi-prototypeentitymentionembedding. InACL,
+2019))andforotherNLPtasks. pages1623–1633.
+Acknowledgements MingyangChen,WenZhang,WeiZhang,QiangChen,
+and Huajun Chen. 2019. Meta relational learning
+Wewouldliketothankanonymousreviewersfor
+forfew-shotlinkpredictioninknowledgegraphs. In
+their valuable comments. This work is partially EMNLP-IJCNLP,pages4216–4225.
+Baiyun Cui, Yingming Li, Ming Chen, and Zhongfei Nelson F. Liu, Matt Gardner, Yonatan Belinkov,
+Zhang. 2019. Fine-tune BERT with sparse self- MatthewE.Peters,andNoahA.Smith.2019a. Lin-
+attention mechanism. In EMNLP-IJCNLP, pages guistic knowledge and transferability of contextual
+3546–3551. representations. InNAACL-HLT,pages1073–1094.
+ZihangDai, ZhilinYang, YimingYang, JaimeG.Car- Pengfei Liu, Xipeng Qiu, and Xuanjing Huang. 2017.
+bonell, Quoc Viet Le, and Ruslan Salakhutdinov. Adversarial multi-task learning for text classifica-
+2019. Transformer-xl: Attentive language models tion. InACL,pages1–10.
+beyondafixed-lengthcontext. InACL,pages2978–
+2988. XiaodongLiu,PengchengHe,WeizhuChen,andJian-
+feng Gao. 2019b. Multi-task deep neural networks
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and for natural language understanding. In ACL, pages
+Kristina Toutanova. 2019. BERT: pre-training of 4487–4496.
+deep bidirectional transformers for language under-
+standing. InNAACL-HLT,pages4171–4186. YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Zi-Yi Dou, Keyi Yu, and Antonios Anastasopoulos. Luke Zettlemoyer, and Veselin Stoyanov. 2019c.
+2019. Investigating meta-learning algorithms for Roberta:ArobustlyoptimizedBERTpretrainingap-
+low-resource natural language understanding tasks. proach. CoRR,abs/1907.11692.
+InEMNLP-IJCNLP,pages1192–1197.
+JieLu,VahidBehbood,PengHao,HuaZuo,ShanXue,
+ChelseaFinn,PieterAbbeel,andSergeyLevine.2017. andGuangquanZhang.2015. Transferlearningus-
+Model-agnosticmeta-learningforfastadaptationof ing computational intelligence: A survey. Knowl.
+deepnetworks. InICML,pages1126–1135. BasedSyst.,80:14–23.
+PavelGulyaev,EugeniaElistratova,VasilyKonovalov, AnhTuanLuu,YiTay,SiuCheungHui,andSee-Kiong
+Yuri Kuratov, Leonid Pugachev, and Mikhail Burt- Ng.2016. Learningtermembeddingsfortaxonomic
+sev. 2020. Goal-oriented multi-task bert-based dia- relationidentificationusingdynamicweightingneu-
+loguestatetracker. CoRR,abs/2002.02450. ralnetwork. InEMNLP,pages403–413.
+Daya Guo, Duyu Tang, Nan Duan, Ming Zhou, and AndreaMadotto,ZhaojiangLin,Chien-ShengWu,and
+Jian Yin. 2019. Coupling retrieval and meta- Pascale Fung. 2019. Personalizing dialogue agents
+learningforcontext-dependentsemanticparsing. In viameta-learning. InACL,pages5454–5459.
+ACL,pages855–866.
+BryanMcCann,NitishShirishKeskar,CaimingXiong,
+Mengting Hu, Yike Wu, Shiwan Zhao, Honglei Guo, andRichardSocher.2018. Thenaturallanguagede-
+Renhong Cheng, and Zhong Su. 2019. Domain- cathlon: Multitask learning as question answering.
+invariant feature distillation for cross-domain sen- CoRR,abs/1806.08730.
+timent classification. In EMNLP-IJCNLP, pages
+5558–5567. Sinno Jialin Pan and Qiang Yang. 2010. A survey on
+transfer learning. IEEE Trans. Knowl. Data Eng.,
+Ganesh Jawahar, Benoˆıt Sagot, and Djame´ Seddah. 22(10):1345–1359.
+2019. What does BERT learn about the structure
+oflanguage? InACL,pages3651–3657. ZhongyiPei,ZhangjieCao,MingshengLong,andJian-
+min Wang. 2018. Multi-adversarial domain adapta-
+Olga Kovaleva, Alexey Romanov, Anna Rogers, and tion. InAAAI,pages3934–3941.
+AnnaRumshisky.2019. Revealingthedarksecrets
+ofBERT. InEMNLP-IJCNLP,pages4364–4373. MatthewE.Peters,MarkNeumann,MohitIyyer,Matt
+Gardner, Christopher Clark, Kenton Lee, and Luke
+Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Zettlemoyer.2018. Deepcontextualizedwordrepre-
+Kevin Gimpel, Piyush Sharma, and Radu Sori- sentations. InNAACL-HLT,pages2227–2237.
+cut. 2019. ALBERT: A lite BERT for self-
+supervised learning of language representations. Xipeng Qiu, Tianxiang Sun, Yige Xu, Yunfan Shao,
+CoRR,abs/1909.11942. Ning Dai, and Xuanjing Huang. 2020. Pre-trained
+models for natural language processing: A survey.
+YitongLi,TimothyBaldwin,andTrevorCohn.2019a. CoRR,abs/2003.08271.
+Semi-supervised stochastic multi-domain learning
+using variational inference. In ACL, pages 1923– Jian Shen, Yanru Qu, Weinan Zhang, and Yong Yu.
+1934.AssociationforComputationalLinguistics. 2018. Wasserstein distance guided representation
+learning for domain adaptation. In AAAI, pages
+Zheng Li, Xin Li, Ying Wei, Lidong Bing, Yu Zhang, 4058–4065.
+and Qiang Yang. 2019b. Transferable end-to-end
+aspect-basedsentimentanalysiswithselectiveadver- Rui Shu, Hung H. Bui, Hirokazu Narui, and Stefano
+sarial learning. In EMNLP-IJCNLP, pages 4589– Ermon.2018. ADIRT-Tapproachtounsupervised
+4599. domainadaptation. InICLR.
+Asa Cooper Stickland and Iain Murray. 2019. BERT Fuzhen Zhuang, Zhiyuan Qi, Keyu Duan, Dongbo Xi,
+and pals: Projected attention layers for efficient YongchunZhu,HengshuZhu,HuiXiong,andQing
+adaptation in multi-task learning. In ICML, pages He.2019. Acomprehensivesurveyontransferlearn-
+5986–5995. ing. CoRR,abs/1911.02685.
+Chi Sun, Xipeng Qiu, Yige Xu, and Xuanjing Huang.
+2019a. How to fine-tune BERT for text classifica-
+tion? InCCL,pages194–206.
+SiqiSun,YuCheng,ZheGan,andJingjingLiu.2019b.
+PatientknowledgedistillationforBERTmodelcom-
+pression. InEMNLP-IJCNLP,pages4322–4331.
+Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019.
+BERT rediscovers the classical NLP pipeline. In
+ACL,pages4593–4601.
+Joaquin Vanschoren. 2018. Meta-learning: A survey.
+CoRR,abs/1810.03548.
+Paola Velardi, Stefano Faralli, and Roberto Navigli.
+2013. Ontolearnreloaded:Agraph-basedalgorithm
+fortaxonomyinduction. ComputationalLinguistics,
+39(3):665–707.
+Alex Wang, Amanpreet Singh, Julian Michael, Felix
+Hill, Omer Levy, and Samuel R. Bowman. 2019a.
+GLUE: A multi-task benchmark and analysis plat-
+formfornaturallanguageunderstanding. InICLR.
+Chengyu Wang, Minghui Qiu, Jun Huang, and Xi-
+aofeng He. 2020. KEML: A knowledge-enriched
+meta-learning framework for lexical relation classi-
+fication. CoRR,abs/2002.10903.
+WeiWang,BinBi,MingYan,ChenWu,ZuyiBao,Li-
+wei Peng, and Luo Si. 2019b. Structbert: Incorpo-
+ratinglanguagestructuresintopre-trainingfordeep
+languageunderstanding. CoRR,abs/1908.04577.
+Adina Williams, Nikita Nangia, and Samuel R. Bow-
+man. 2018. A broad-coverage challenge corpus
+for sentence understanding through inference. In
+NAACL-HLT,pages1112–1122.
+ZhilinYang, ZihangDai, YimingYang, JaimeG.Car-
+bonell,RuslanSalakhutdinov,andQuocV.Le.2019.
+Xlnet: Generalized autoregressive pretraining for
+language understanding. In NeurIPS, pages 5754–
+5764.
+HuaxiuYao,XianWu,ZhiqiangTao,YaliangLi,Bolin
+Ding,RuiruiLi, andZhenhuiLi.2020. Automated
+relationalmeta-learning. CoRR,abs/2001.00745.
+JoeyTianyiZhou, HaoZhang, DiJin, HongyuanZhu,
+Meng Fang, Rick Siow Mong Goh, and Kenneth
+Kwok. 2019a. Dual adversarial neural transfer for
+low-resource named entity recognition. In ACL,
+pages3461–3471.
+Junru Zhou, Zhuosheng Zhang, and Hai Zhao.
+2019b. LIMIT-BERT : Linguistic informed multi-
+taskBERT. CoRR,abs/1910.14296.

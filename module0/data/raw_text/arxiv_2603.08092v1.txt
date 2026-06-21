@@ -1,0 +1,398 @@
+Language-Invariant Multilingual Speaker Verification for the TidyVoice 2026
+Challenge
+ZeLi1,4,XiaoxiaoMiao4,JuanLiu2,MingLi ID 2,3,4,∗∗
+1 SchoolofComputerScience,WuhanUniversity,Wuhan,China
+2 SchoolofArtificialIntelligence,WuhanUniversity,Wuhan,China
+3 SchoolofArtificialIntelligence,TheChineseUniversityofHongKong,Shenzhen,China
+4 DigitalInnovationResearchCenter,DukeKunshanUniversity,Kunshan,China
+lize389@whu.edu.cn, xiaoxiao.miao@dukekunshan.edu.cn, liujuan@whu.edu.cn,
+ming.li.cuhksz@gmail.com
+Abstract PTMistrainedon4.5millionhoursofunlabeledspeechspan-
+ning143languages,makingithighlysuitableforcross-lingual
+Multilingualspeakerverification(SV)remainschallengingdue
+SVtasks. Lietal.[9]builtastate-of-the-artSVsystembased
+tolimitedcross-lingualdataandlanguage-dependentinforma-
+onw2v-BERT2.0. Intheirapproach,LayerAdapters[10]are
+tion in speaker embeddings. This paper presents a language-
+appliedtotheoutputsofeachConformerlayertoreducedimen-
+invariantmultilingualSVsystemfortheTidyVoice2026Chal-
+sionalityandfacilitatedomainadaptation.Theadaptedfeatures
+lenge. We adopt the multilingual self-supervised w2v-BERT
+fromalllayersarethenaggregatedusingaMulti-scaleFeature
+2.0 model as the backbone, enhanced with Layer Adapters
+Aggregation (MFA) [11] framework to generate speaker em-
+and Multi-scale Feature Aggregation to better exploit multi-
+beddings,andLow-RankAdaptation(LoRA)[12]isemployed
+layer representations. A language-adversarial training strat-
+duringtrainingtofine-tunethemodelefficiently.
+egy with a Gradient Reversal Layer is applied to promote
+Speakerembeddingsextractedfrommultilingualdataoften
+language-invariant speaker embeddings. Moreover, a mul-
+containnotonlyidentityinformationbutalsolanguage-specific
+tilingual zero-shot text-to-speech system is used to synthe-
+characteristics, which can reduce cross-lingual generalization
+size speech in multiple languages, improving language diver-
+androbustness.Tomitigatethisissue,itisnecessarytoencour-
+sity. Experimental results demonstrate that fine-tuning the
+agethelearningoflanguage-invariantspeakerrepresentations.
+large-scale pretrained model yields competitive performance,
+Similarapproacheshavebeenadoptedinotherscenarios,such
+while language-adversarial training further enhances robust-
+asage-invariantspeakerrepresentationlearning[13],wheread-
+ness. Inaddition, syntheticspeechaugmentationprovidesad-
+versarialtrainingisusedtosuppressage-relatedinformationin ditional gains under limited training data conditions. Source
+theembeddings.
+code is available at https://github.com/ZXHY-82/
+LI-MSV-TidyVoice2026. In this work, we follow the approach in [9] to build SV
+Index Terms: speaker verification, cross-lingual, language- systems based on the w2v-BERT 2.0 PTM. To further im-
+invariant provecross-lingualrobustness,alanguage-adversarialtraining
+strategy is introduced to encourage the learning of language-
+invariantspeakerrepresentationsandsuppresslanguage-related
+1. Introduction
+variations in the embedding space. In addition, although the
+Speakerverification(SV)aimstoverifytheidentityofspeak- official TidyVoiceX training set is multilingual, each speaker
+ers by analyzing their voice samples. In recent years, with typically contains only two to three languages, which lim-
+the rapid development of deep neural networks and the avail- its language diversity for robust cross-lingual speaker mod-
+ability of large-scale labeled speech datasets, deep learning- eling. Recent advances in Zero-Shot Text-To-Speech (ZS-
+basedSVsystems[1–4]haveachievedremarkableperformance TTS) [14,15] technology have made it possible to synthesize
+acrossawiderangeofacousticconditions. However,theper- high-quality speech that preserves the vocal characteristics of
+formance of SV systems degrades significantly under the lan- a target speaker using only a few seconds of reference audio,
+guagemismatchcondition,whichisfurtherexacerbatedbythe withoutrequiringspeaker-specifictraining. Thisenablesflex-
+field’srelianceonEnglish-centricdatasets.Inaddition,thelim- ible voice cloning across different languages and textual con-
+itedavailabilityofmultilingualspeechfromindividualspeakers tents. Leveragingthiscapability, weadoptamultilingualZS-
+often leads to speaker embeddings that entangle identity with TTS system, Qwen3-TTS [15], to synthesize speech in addi-
+language-specificcharacteristics,reducingcross-lingualgener- tional languages for each speaker. We aim to enrich the mul-
+alizationandrobustness. tilingual speech data for each speaker, thereby facilitating the
+Large-scale self-supervised Pre-Trained Models (PTMs), learningofmorelanguage-invariantspeakerrepresentations.
+suchasWavLM[5], wav2vec2.0[6], HuBERT[7]andw2v-
+BERT2.0[8],aretrainedonhundredsofthousandsorevenmil- 2. Methods
+lionsofhoursofunlabeledspeechdataandproviderichspeech
+representations. Thesemodelshavebeenincreasinglyadopted 2.1. Fine-tuningofthew2v-BERT2.0Pre-trainedModel
+in research to enhance performance on various downstream
+tasks,includingtheSVtask. Inparticular,thew2v-BERT2.0 W2v-BERT 2.0 is a large-scale multilingual self-supervised
+speech representation model, developed as part of the Seam-
+**indicatesthecorrespondingauthor. lessM4Tframework[8]. Itextendstheoriginalw2v-BERTar-
+6202
+raM
+9
+]SA.ssee[
+1v29080.3062:viXra
+Figure1:Overviewofthew2v-BERT2.0-basedspeakerverificationsystemwithlanguage-invariantlearning
+chitecture[16]byemployinga24-layerConformerencoderand
+jointlyoptimizingcontrastiveandmaskedpredictionobjectives.
+Themodelistrainedonapproximately4.5millionhoursofun-
+labeledspeechdataacross143languages, enablingittolearn
+richandrobustmultilingualspeechrepresentations.
+Our approach follows the method of [9]. As shown in
+Fig.1(a),givenaninpututterancex,wefirstextractFbankfea-
+turesandfeedthemintothepre-trainedw2v-BERT2.0model.
+Thehiddenrepresentationsh fromeachConformerlayerare
+i
+thenpassedthroughindividualLayerAdapters[10],whichre-
+ducefeaturedimensionalityandfacilitatedomainadaptationfor
+thespeakerverificationtask. Theadaptedfeaturesh′ fromall
+i
+layersareconcatenatedandsubsequentlyaggregatedusingan
+attentive statistics pooling (ASP) [17] module, followed by a
+linearprojectionlayertoobtainthefinalspeakerembeddinge.
+Duringtraining,weemployLow-RankAdaptation(LoRA)[12]
+toefficientlyfine-tunethepre-trainedmodel.
+[h 0,h 1,...,h L]=w2v-BERT-2.0(Fbank(x)) (1) Figure2:SpeechSynthesisPipeline
+h′ =LayerAdapter (h ), i=0,1,...,L (2)
+i i i loss, and y and y are the labels of the speaker and lan-
+spk lang
+e=Linear(ASP(Concat(h′ 0,h′ 1,...,h′ L))) (3) guage,respectively.
+2.2. Language-InvariantSpeakerRepresentationLearning 2.3. MultilingualSyntheticSpeechDataAugmentation
+Language mismatch introduces undesired variability into
+RecentadvancesinZS-TTShaveenabledhigh-qualityspeech
+speakerembeddings,potentiallydegradingtheperformanceof
+synthesisacrossmultiplelanguagesfromonlyafewsecondsof
+speaker verification systems in multilingual scenarios. To ad-
+reference audio. Leveraging this capability, we generate syn-
+dressthisissue,weaimtolearnlanguage-invariantspeakerrep-
+thetic speech for each speaker in multiple languages, aiming
+resentations by explicitly removing language-related informa-
+toimprovethelanguage-invarianceofspeakerembeddingsand
+tionasshowninFig.1(b).
+enhancecross-lingualspeakerverificationperformance.
+Specifically, we introduce an auxiliary language classifier
+In this work, we employ Qwen3-TTS [15] for synthetic
+connected to the speaker embedding extractor through a Gra-
+speech generation. Qwen3-TTS is a model capable of multi-
+dientReversalLayer(GRL)[18]. Giventheextractedspeaker
+lingualvoicecloning,enablingittogeneratespeechintenlan-
+embeddinge, thelanguageclassifierpredictsthelanguagela-
+guages,includingChinese,English,Japanese,Korean,German,
+bel, whiletheGRLreversesthegradientduringbackpropaga-
+French,Russian,Portuguese,Spanish,andItalian.Asshownin
+tion. Thisadversariallearningstrategyencouragestheembed-
+Fig.2,forthetextcorpus,weuseEnglishsentencesfromLib-
+dingextractortoproducerepresentationsthatarediscriminative
+riTTS[19],whicharethentranslatedintothetargetlanguages
+forspeakeridentitywhilebeinguninformativeaboutlanguage
+usingtheM2M100[20]multilingualtranslationmodel. Refer-
+identity.Thefinallossisformulatedas:
+ence audio is processed with Whisper-large-v3 [21] to obtain
+(cid:0) (cid:1) thecorrespondingtranscript,andboththereferenceaudioand
+L (e)=l C (e),y (4)
+spk spk spk spk textarefedintoQwen3-TTStogeneratesyntheticspeechinthe
+(cid:16) (cid:0) (cid:1) (cid:17) specifiedlanguageandtargettext.
+L (e)=l C GRL (e) ,y (5)
+lang lang lang λGRL lang
+L =L +λ L (6) 3. ExperimentalSetup
+total spk lang lang
+where C (·) and C (·) are the speaker and language
+spk lang 3.1. Datasets
+classifiers, l (·) and l (·) are the corresponding loss func-
+spk lang
+tions,GRL (·)isthegradientreversallayerwithscaleλ , To train a robust multilingual SV system, in addition to the
+λGRL GRL
+λ isahyperparametercontrollingtheweightofthelanguage official TidyVoiceX training set provided by the TidyVoice
+lang
+2026Challenge[22],wealsoincorporateseveralpubliclyavail- blelanguagesupervision,allothermodulesarefirstfrozen,and
+abledatasets, includingVoxCeleb2[23], VoxBlink2[24], 3D- onlythelanguageclassifieristraineduntilconvergence. Sub-
+Speaker[25],KeSpeech[26],andCN-Celeb1&2[27,28],toin- sequently,thespeakerencoderandothermodulesareunfrozen,
+creasespeakerandlanguagediversity. TheSVperformanceis andaGRLisintroducedbetweenthespeakerembeddingand
+evaluatedontheofficialdevelopmentandevaluationsetspro- the language classifier. The GRL reverses the gradient from
+vided by the challenge. The evaluation set is further divided the language classification objective during backpropagation,
+intotwosubsets: tv26 eval-A,whichcontainslanguagesseen forcing the encoder to suppress language-related information
+in the official training set, and tv26 eval-U, which consists of while preserving speaker-discriminative features. The coeffi-
+38unseenlanguages. cientsλ andλ arebothsetto0.1tocontrolthestrength
+GRL lang
+ofadversariallearning.Themodelistrainedusingacosinede-
+3.2. MultilingualSyntheticSpeechGeneration caylearningrateschedule, wherethelearningratestartsfrom
+1e-5andgraduallydecreasesto5e-6over2epochs,withatotal
+We use the Qwen3-TTS-12Hz-1.7B-Base [15] model to per-
+of4trainingepochs. Thesamedataaugmentationstrategiesas
+form multilingual voice cloning. From the TidyVoiceX train-
+inthepreviousstageareapplied.ArcFacelossisadoptedasthe
+ingset,weselectuptotenutteranceslongerthan3secondsfor
+defaultlossfunctionduetoitswideadoption. Forcomparison,
+eachspeakerasreferenceaudio,resultinginatotalof3,495ref-
+we also conduct several experiments using the SphereFace2
+erenceaudios. Foreachreferenceaudio,wesynthesizespeech
+(SF2)[34]lossfunctioninthisstage.
+inthetenlanguagessupportedbyQwen3-TTS,generatingten
+utterancesperlanguage. Intotal,349,500syntheticutterances
+3.4. ScoreCalibration
+aregeneratedformultilingualdataaugmentation.
+To further improve score reliability, we adopt a Quality Mea-
+3.3. TrainingDetails sure Function (QMF) [35] to calibrate the SV scores. QMF
+aimstocompensateforscorevariabilitycausedbydifferences
+Our training process is divided into two stages, including (i)
+in speech duration, signal quality, and embedding reliability.
+Large-ScaleSpeakerModelPre-trainingand(ii)Fine-tuningon
+TheQMFmodelistrainedusingtrialsrandomlygeneratedfrom
+TidyVoiceXTrainingSetwithLanguage-InvariantLearning.
+theTidyVoiceXtrainingset. Asdescribedin[36],weadoptthe
+followingQMFqualitiessetqtocalibratethescores:
+3.3.1. Large-ScaleSpeakerModelPre-training
+In this stage, we fine-tune the pre-trained w2v-BERT 2.0 q=[log(d e),log(d t),∥e∥,∥t∥,SNR e,SNR t,s] (7)
+modelusingseverallarge-scalepublicspeakerdatasets,includ-
+ing VoxCeleb2, VoxBlink2, 3D-Speaker, KeSpeech, and CN- wherelog(d e)andlog(d t)denotethelogarithmsoftheen-
+Celeb1&2, to obtain a robust large-scale pre-trained speaker rollmentandtestutterancedurations,∥e∥and∥t∥representthe
+model. magnitudesoftheenrollmentandtestembeddings,SNR e and
+Duringtheinitialtrainingphase,thew2v-BERT2.0param- SNR t indicatethesignal-to-noiseratiosoftheenrollmentand
+etersarefrozen.Theinputacousticfeaturesare80-dimensional testutterances,andsistheverificationscore. OnlySNR e and
+fbankcoefficientswithaframelengthof25msandahopsize SNR tadopttheMax-Minnormalization.
+of 10ms. Mean and variance normalization are applied be- LogisticRegressionisadoptedtotraintheQMFmodelon
+forefeedingthefeaturesintothemodel. On-the-flydataaug- thegeneratedtrials:
+mentation[29]isappliedbyaddingbackgroundnoiseorcon-
+volutional reverberation noise. The MUSAN [30] and RIR s′ =σ(w⊤q+b) (8)
+Noise[31]datasetsareusedasnoisesourcesandroomimpulse
+where w and b are the learned parameters, and s′ is the
+responsefunctions, respectively. AdamW[32]optimizerwith
+calibratedscore.
+weight decay of 1e-4 is used, along with a StepLR scheduler
+Duringinference,thetrainedQMFmodelisappliedtopro-
+with5epochsdecay.Alinearwarm-upscheduleisapplieddur-
+ducethefinalverificationscore.
+ingthefirst5epochstostabilizetraining,followedbyaStepLR
+schedulerwithadecayfactorof0.1,whichdecreasesthelearn-
+ingratefrom1e-4to1e-5. ArcFace[33]lossisadoptedasthe 4. Results
+speaker classification objective, with the margin and scale set
+Table1presentstheperformanceofthew2v-BERT2.0-based
+to0.2and32,respectively.Theinputframelengthisrandomly
+SV systems on the TidyVoice 2026 development and evalua-
+sampledbetween200and300frames.
+tionsets. Comparedwiththeofficialbaselinesystem,SimAM-
+Afterconvergence, thew2v-BERT2.0parametersareun-
+ResNet34[22,37],whichisalsopre-trainedonalargeamount
+frozen for further fine-tuning. In this phase, the learning rate
+of data, the SV systems that fine-tune the pre-trained w2v-
+startsfrom1e-5andgraduallydecreasesto5e-6usingacosine
+BERT2.0modeldemonstrateaclearadvantage. Evenwithout
+decayscheduleover2epochs,withatotalof4epochsdedicated
+usingtheTidyVoiceXtrainingset,themodelfine-tunedsolely
+tofine-tuning.
+onpre-trainingdataachievesanEERof2.74%onthetv26 dev
+set,yieldingan11%relativereductioninEERcomparedtothe
+3.3.2. Fine-tuningonTidyVoiceXTrainingSetwithLanguage-
+baselinevalueof3.07%.
+InvariantLearning
+Furthermore, we also explored the effectiveness of differ-
+In this stage, the TidyVoiceX training set is incorporated entlossfunctionsandfine-tuningdataconfigurations. Forthe
+into the training process for further domain adaptation, and a lossfunction,inadditiontothewidelyusedArcFaceloss,we
+language-adversariallearningstrategyisintroducedtoencour- alsoevaluatedSphereFace2losseswithAandCconfigurations.
+agelanguage-invariantspeakerrepresentationlearning.Specif- Theresultsshowthatmodelsfine-tunedwithSphereFace2sig-
+ically, a language classifier consisting of two linear layers is nificantlyoutperformthoseusingArcFace,withSphereFace2-C
+newlyaddedontopofthespeakerembedding. Toensuresta- achievingthebestperformance.Thisismainlyattributedtothe
+Table 1: Performance of the w2v-BERT 2.0 based SV systems on the TidyVoice 2026 development and evaluation sets. The w2v-
+BERT2.0 Based,w2v-BERT2.0 Based ,andw2v-BERT2.0 Based denotemodelstrainedwiththedefaultArcFaceloss,
+SF2−A SF2−C
+SphereFace2-Aloss,andSphereFace2-Closs,respectively.
+tv26dev tv26eval-A tv26eval-U
+Model PretrainingData Fine-tuningData
+EER(%) mDCF0.01 EER(%) mDCF0.01 EER(%) mDCF0.01
+OfficialBaseline[22] VoxBlink2+VoxCeleb2 TidyVoiceXTrain 3.07 0.82 9.058 0.65 11.59 0.60
+w2v-BERT2.0Based None 2.740 0.79 - - - -
+w2v-BERT2.0Based 1.466 0.66 - - - -
+PretrainingData+
+w2v-BERT2.0BasedSF2−A
+TidyVoiceXTrain
+1.089 0.63 - - - -
+w2v-BERT2.0BasedSF2−C 1.065 0.62 3.061 0.24 4.338 0.29
+w2v-BERT2.0Based VoxBlink2 1.191 0.63 - - - -
+w2v-BERT2.0BasedSF2−A +VoxCeleb2
+TidyVoiceXTrain
+0.966 0.61 - - - -
+w2v-BERT2.0BasedSF2−C +3D-Speaker 0.950 0.61 - - - -
++GRL +KeSpeech 0.937 0.60 2.964 0.23 5.020 0.30
+++QMF +CnCeleb1&2 0.893 0.60 2.458 0.21 4.451 0.29
+w2v-BERT2.0BasedSF2−C AllSyntheticData 1.022 0.60 - - - -
+TidyVoiceXTrain+
+w2v-BERT2.0BasedSF2−C
+AllSyntheticData
+0.999 0.61 - - - -
+TidyVoiceXTrain+
+w2v-BERT2.0BasedSF2−C
+SubSyntheticData
+0.954 0.61 - - - -
+factthat,unlikeArcFace,whichformulatesSVasamulti-class
+classificationproblem,SphereFace2adoptsabinaryclassifica-
+tionobjectiveinthehypersphericalspace. Sincebothtraining
+and evaluation in SV rely on pairwise similarity comparison,
+thisformulationeffectivelyreducesthemismatchbetweenthe
+trainingobjectiveandtheevaluationprotocol.
+Regarding the fine-tuning data strategy, we compared us-
+ing only the TidyVoiceX training set with mixing it with the
+large-scalepre-trainingdatasets. Theresultsindicatethatfine-
+tuningsolelyontheTidyVoiceXtrainingsetachievesbetterper-
+formance on tv26 dev and tv26 eval-A, where the languages
+are seen during training, but performs worse on tv26 eval-U,
+whichcontainsunseenlanguages. Thisismainlyattributedto
+the difference between domain specialization and generaliza-
+tion. Fine-tuning exclusively on the TidyVoiceX training set
+allowsthemodeltofocusmoreonthetargetdomain,leadingto
+betterperformanceontv26 devandtv26 eval-A,wherethelan-
+guagesandacousticconditionsaresimilartothoseseenduring Figure3:t-SNEVisualizationofRealandSyntheticSpeechEm-
+training.Incontrast,incorporatinglarge-scalemultilingualpre- beddingsforSpeakerid011337.
+trainingdataimprovesthemodel’sgeneralizationbyexposing
+ittomorediverselanguagesandacousticvariations.Moreover, 5. Conclusion
+the pre-training data may include languages that overlap with
+thoseintv26 eval-U.
+Fig.3showsthet-SNEvisualizationofrealandsynthetic
+speech embeddings for speaker id011337. The synthetic em- This paper describes our SV systems for the TidyVoice2026
+beddingsarehighlyconsistentwiththerealones,indicatingthat Challenge. Inthiswork,wepresentamultilingualspeakerver-
+Qwen3-TTSeffectivelypreservesspeakeridentity. Inparticu- ificationsystembasedonthelarge-scaleself-supervisedw2v-
+lar, synthetic embeddings with the same language as the real BERT 2.0 model, leveraging Layer Adapters and an MFA
+speech (highlighted in red) are located very close to the cor- framework to extract robust speaker embeddings. To im-
+respondingrealembeddings,whilesyntheticspeechfromother provecross-lingualgeneralization,alanguage-adversarialtrain-
+languagesalsoformswell-clusteredembeddingswithclearsep- ingstrategyusingaGRLisintroduced,encouragingthelearn-
+aration. However, asshowninTable1, augmentingthetrain- ingoflanguage-invariantrepresentations.Furthermore,weem-
+ingdatawithsyntheticspeechdoesnotleadtofurtherperfor- ploy Qwen3-TTS, a multilingual ZS-TTS system, to synthe-
+manceimprovements. Interestingly,trainingonlyonsynthetic size additional speech for each speaker, enhancing language
+dataachieves1.022%EERontv26 dev, whichisclosetothe diversity in the training data. Experimental results on the
+0.95%EERobtainedwithrealdata. Itisnoteworthythatthese TidyVoice 2026 development and evaluation sets demonstrate
+syntheticsamplesaregeneratedusingonlyaboutone-tenthof thatfine-tuningonlarge-scalepre-trainedmodelssignificantly
+therealdataasreferenceaudio. Thissuggeststhat,undersuf- improves speaker verification performance. Additionally, us-
+ficienttrainingdataconditions,domainmismatchbetweensyn- ing SphereFace2 loss yields better results than ArcFace loss,
+theticand realdatamaydegrade performance. Incontrast, in while language-adversarial training provides modest improve-
+low-resource scenarios, synthetic data augmentation can be a mentsinsuppressinglanguage-specificvariations,andsynthetic
+viablestrategytoimprovecross-lingualspeakerverification. dataaugmentationiseffectiveunderlimiteddataconditions.
+6. GenerativeAIUseDisclosure
+[17] K. Okabe, T. Koshinaka, and K. Shinoda, “Attentive statistics
+poolingfordeepspeakerembedding,”inProc.Interspeech,2018,
+LargeLanguageModels(LLMs)wereusedexclusivelyforlan-
+pp.2252–2256.
+guage editing, including rephrasing and grammatical refine-
+[18] Y.GaninandV.Lempitsky,“Unsuperviseddomainadaptationby
+ment, toimproveclarityandreadability. TheLLMswerenot
+backpropagation,”inProc.ICML,2015,pp.1180–1189.
+involvedinthedevelopmentofideas,methodologydesign,ex-
+[19] H.Zen,V.Dang,R.Clark,Y.Zhang,R.J.Weiss,Y.Jia,Z.Chen,
+perimental procedures, data analysis, or interpretation of re-
+andY.Wu,“LibriTTS:ACorpusDerivedfromLibriSpeechfor
+sults. Allscientificcontentwasdevelopedandverifiedbythe
+Text-to-Speech,”inProc.Interspeech,2019,pp.1526–1530.
+authors.
+[20] A.Fan,S.Bhosale,H.Schwenk,Z.Ma,A.El-Kishky,S.Goyal,
+M.Baines,O.Celebi,G.Wenzek,V.Chaudharyetal.,“Beyond
+7. References english-centricmultilingualmachinetranslation,”JournalofMa-
+chineLearningResearch,vol.22,no.107,pp.1–48,2021.
+[1] W.Cai,J.Chen,andM.Li,“Exploringtheencodinglayerandloss
+functioninend-to-endspeakerandlanguagerecognitionsystem,” [21] A.Radford,J.W.Kim,T.Xu,G.Brockman,C.McLeavey,and
+inProc.Odyssey,2018,pp.74–81. I.Sutskever,“Robustspeechrecognitionvialarge-scaleweaksu-
+pervision,”inProc.ICML,2023,pp.28492–28518.
+[2] B.Desplanques,J.Thienpondt,andK.Demuynck,“Ecapa-tdnn:
+Emphasized channel attention, propagation and aggregation in [22] A.Farhadipour,J.Marquenie,S.Madikeri,T.Vukovic,V.Dellwo,
+tdnnbasedspeakerverification,”inProc.Interspeech,2020,pp. K.Reid,F.M.Tyers,I.Siegert,andE.Chodroff,“Tidyvoice2026
+3830–3834. challenge evaluation plan,” arXiv preprint arXiv:2601.21960,
+2026.
+[3] H.Wang,S.Zheng,Y.Chen,L.Cheng,andQ.Chen,“Cam++:A
+fastandefficientnetworkforspeakerverificationusingcontext- [23] J. Chung, A. Nagrani, and A. Zisserman, “Voxceleb2: Deep
+awaremasking,”inProc.Interspeech,2023,pp.5301–5305. SpeakerRecognition,”inProc.Interspeech,2018.
+[4] I.Yakovlev,R.Makarov,A.Balykinetal.,“ReshapeDimensions [24] Y.Lin,M.Cheng,F.Zhangetal.,“VoxBlink2:A100K+Speaker
+Network for Speaker Recognition,” in Proc. Interspeech, 2024, Recognition Corpus and the Open-Set Speaker-Identification
+pp.3235–3239. Benchmark,”inProc.Interspeech,2024,pp.4263–4267.
+[5] S. Chen, C. Wang, Z. Chen, Y. Wu, S. Liu, Z. Chen, J. Li, [25] S.Zheng,L.Cheng,Y.Chen,H.Wang,andQ.Chen,“3d-speaker:
+N.Kanda,T.Yoshioka,X.Xiaoetal.,“Wavlm:Large-scaleself- Alarge-scalemulti-device,multi-distance,andmulti-dialectcor-
+supervised pre-training for full stack speech processing,” IEEE pus for speech representation disentanglement,” arXiv preprint
+JournalofSelectedTopicsinSignalProcessing, vol.16, no.6, arXiv:2306.15354,2023.
+pp.1505–1518,2022.
+[26] Z.Tang,D.Wang,Y.Xu,J.Sun,X.Lei,S.Zhao,C.Wen,X.Tan,
+[6] A.Baevski,Y.Zhou,A.Mohamed,andM.Auli,“wav2vec2.0: C.Xie,S.Zhouetal.,“Kespeech:Anopensourcespeechdataset
+Aframeworkforself-supervisedlearningofspeechrepresenta- ofmandarinanditseightsubdialects,”inThirty-fifthconference
+tions,”inProc.NeurIPS,2020,pp.12449–12460. on neural information processing systems datasets and bench-
+[7] W.-N. Hsu, B. Bolte, Y.-H. H. Tsai et al., “Hubert: Self- markstrack(Round2),2021.
+supervisedspeechrepresentationlearningbymaskedprediction [27] Y.Fan, J.Kang, L.Lietal., “Cn-celeb: achallengingchinese
+ofhiddenunits,”IEEE/ACMtransactionsonaudio,speech,and speakerrecognitiondataset,”inProc.ICASSP,2020,pp.7604–
+languageprocessing,vol.29,pp.3451–3460,2021. 7608.
+[8] L. Barrault, Y.-A. Chung, M. C. Meglioli et al., “Seamless: [28] L. Li, R. Liu, J. Kang et al., “Cn-celeb: multi-genre speaker
+Multilingualexpressiveandstreamingspeechtranslation,”arXiv recognition,”SpeechCommunication,vol.137,pp.77–91,2022.
+preprintarXiv:2312.05187,2023.
+[29] W.Cai,J.Chen,J.Zhang,andM.Li,“On-the-FlyDataLoader
+[9] Z.Li,M.Cheng,andM.Li,“Enhancingspeakerverificationwith
+and Utterance-Level Aggregation for Speaker and Language
+w2v-bert2.0andknowledgedistillationguidedstructuredprun- Recognition,”IEEE/ACMtransactionsonaudio,speech,andlan-
+ing,”inProc.ICASSP,2026.
+guageprocessing,pp.1038–1051,2020.
+[10] D. Cai and M. Li, “Leveraging asr pretrained conformers for
+[30] D.Snyder,G.Chen,andD.Povey,“Musan:Amusic,speech,and
+speakerverificationthroughtransferlearningandknowledgedis-
+noisecorpus,”arXivpreprintarXiv:1510.08484,2015.
+tillation,” IEEE/ACM transactions on audio, speech, and lan-
+guageprocessing,vol.32,pp.3532–3545,2024. [31] T. Ko, V. Peddinti, D. Povey, M. Seltzer, and S. Khudanpur,
+“Astudyondataaugmentationofreverberantspeechforrobust
+[11] Y.Zhang,Z.Lv,H.Wu,S.Zhang,P.Hu,Z.Wuetal.,“MFA-
+speechrecognition,”inProc.ICASSP,2017,pp.5220–5224.
+Conformer: Multi-scaleFeatureAggregationConformerforAu-
+tomatic Speaker Verification,” in Proc. Interspeech, 2022, pp. [32] I.LoshchilovandF.Hutter,“Decoupledweightdecayregulariza-
+306–310. tion,”inProc.ICLR,2019.
+[12] E.J.Hu,Y.Shen,P.Wallis,Z.Allen-Zhu,Y.Li,S.Wangetal., [33] J. Deng, J. Guo, N. Xue, and S. Zafeiriou, “Arcface: Additive
+“Lora: Low-rankadaptationoflargelanguagemodels.”inProc. angularmarginlossfordeepfacerecognition,” inProc.CVPR,
+ICLR,2022. 2019,pp.4690–4699.
+[13] X.Qin,N.Li,W.Chao,D.Su,andM.Li,“Cross-agespeakerver- [34] B.Han, Z.Chen, andY.Qian, “Exploringbinaryclassification
+ification: Learningage-invariantspeakerembeddings,” inProc. lossforspeakerverification,”inProc.ICASSP. IEEE,2023,pp.
+Interspeech,2022,pp.1436–1440. 1–5.
+[14] Z. Du, C. Gao, Y. Wang, F. Yu, T. Zhao, H. Wang, X. Lv, [35] J. Thienpondt, B. Desplanques, and K. Demuynck, “The idlab
+H. Wang, C. Ni, X. Shi et al., “Cosyvoice 3: Towards in-the- voxsrc-20 submission: Large margin fine-tuning and quality-
+wildspeechgenerationviascaling-upandpost-training,” arXiv awarescorecalibrationindnnbasedspeakerverification,”inProc.
+preprintarXiv:2505.17589,2025. ICASSP. IEEE,2021,pp.5814–5818.
+[15] H. Hu, X. Zhu, T. He, D. Guo, B. Zhang, X. Wang, Z. Guo, [36] Z.Li,Y.Lin,X.Qin,N.Jiang,G.Zhao,andM.Li,“Thedku-msxf
+Z. Jiang, H. Hao, Z. Guo et al., “Qwen3-tts technical report,” speakerverificationsystemforthevoxcelebspeakerrecognition
+arXivpreprintarXiv:2601.15621,2026. challenge2023,”arXivpreprintarXiv:2308.08766,2023.
+[16] Y.-A. Chung, Y. Zhang, W. Han et al., “W2v-bert: Combin- [37] X.Qin,N.Li,C.Weng,D.Su,andM.Li,“Simpleattentionmod-
+ingcontrastivelearningandmaskedlanguagemodelingforself- ulebasedspeakerverificationwithiterativenoisylabeldetection,”
+supervisedspeechpre-training,”inProc.ASRU,2021,pp.244– inProc.ICASSP. IEEE,2022,pp.6722–6726.
+250.

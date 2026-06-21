@@ -1,0 +1,593 @@
+ProceedingsoftheTwenty-EighthInternationalJointConferenceonArtificialIntelligence(IJCAI-19)
+Story Ending Prediction by Transferable BERT
+ZhongyangLi, XiaoDing and TingLiu(cid:3)
+ResearchCenterforSocialComputingandInformationRetrieval,HarbinInstituteofTechnology
+fzyli,xding,tliug@ir.hit.edu.cn
+Abstract
+It was my final performance in Right ending: I was very
+marching band. I was playing entail proud of my performance.
+Recent advances, such as GPT and BERT, have the snare drum in the band. We
+shownsuccessinincorporatingapre-trainedtrans-
+p Tl ha ey e pd
+e
+rT foh rr mill ae nr ca en wd aR sa fd laa wr lL eso sv .e. conflict W ashro an mg
+e
+e dn od fi n mg y: pI
+e
+w rfa os
+r
+mve ar ny
+c e.
+formerlanguagemodelandfine-tuningoperationto
+improvedownstreamNLPsystems. However, this Figure1:Thisfigureshowsatypicalexamplefromthedevelopment
+framework still has some fundamental problems setofStoryClozeTest. Thereisanobviousentailmentrelationbe-
+in effectively incorporating supervised knowledge tween the story context and the right ending, and a contradiction
+relationbetweenthecontextandthewrongending.
+from other related tasks. In this study, we inves-
+tigate a transferable BERT (TransBERT) training
+framework,whichcantransfernotonlygenerallan- task. Until very recently, GPT [Radford et al., 2018] and
+guage knowledge from large-scale unlabeled data BERT [Devlin et al., 2018] have shown that a two-stage
+but also specific kinds of knowledge from vari- framework — pre-training a language model on large-scale
+oussemanticallyrelatedsupervisedtasks,foratar- unsupervised corpora and fine-tuning on target tasks — can
+get task. Particularly, we propose utilizing three bring promising improvements to various natural language
+kinds of transfer tasks, including natural language understanding tasks, such as reading comprehension [Rad-
+inference,sentimentclassification,andnextaction
+fordetal., 2018]andnaturallanguageinference(NLI)[De-
+prediction, to further train BERT based on a pre- vlin et al., 2018]. Benefiting from these advances, the SCT
+trained model. This enables the model to get a
+performancehasbeenpushedtoanewlevel[Radfordetal.,
+better initialization for the target task. We take
+2018],thoughthereisstillagapwiththehumanperformance.
+story ending prediction as the target task to con- However, we argue that the general knowledge obtained
+duct experiments. The final result, an accuracy of from unsupervised language model pre-training is not suffi-
+91.8%,dramaticallyoutperformspreviousstate-of- cientforlearningasetofperfectinitialparametersforevery
+the-art baseline methods. Several comparative ex- targettask. Inspiredbytransferlearningtechniques[Panand
+perimentsgivesomehelpfulsuggestionsonhowto Yang, 2009], we consider incorporating supervised knowl-
+selecttransfertaskstoimproveBERT. edge into this conventional pre-training framework to find a
+betterinitializationforthetargettask.Nevertheless,therestill
+remaintwofundamentalproblemsthatshouldbeaddressed:
+1 Introduction
+(cid:15) How can the pre-training framework better utilize super-
+Storyendingprediction, alsoknownastheStoryClozeTest visedknowledge?
+(SCT) [Mostafazadeh et al., 2016], is an open task for eval- (cid:15) Whatbasicrulesneedtofollowtofindappropriatesuper-
+uating story comprehension. This task requires a model to visedknowledgeforatargettask?
+select the right ending from two candidate endings (one is
+Recently,[Phangetal.,2018]gaveapossiblesolutionfor
+wrongandtheotherisright)givenastorycontext. Thegoal
+the first question. With a lot of crossing experiments over
+behind SCT is to require systems to perform deep language
+four intermediate tasks and nine GLUE tasks [Wang et al.,
+understanding and commonsense reasoning for successful
+2018], they demonstrate that further pre-training on super-
+narrativeunderstanding,whichisessentialforArtificialIntel-
+viseddatasetscanimprovetheperformanceofGPTondown-
+ligence. Therehavebeenavarietyofmodelstryingtosolve
+stream tasks. The MT-DNN model [Liu et al., 2019] also
+SCT so far [Schwartz et al., 2017; Chaturvedi et al., 2017;
+tries to answer the first question by incorporating the multi-
+Zhou et al., 2019; Li et al., 2018b]. However, these stud-
+task learning framework into BERT. However, we still have
+ies did not achieve very salient progress compared with
+no idea for answering the second challenging question from
+the human performance, demonstrating the hardness of this
+theirexperiments.
+(cid:3)ContactAuthor. Thisworkwasdonewhilethefirstauthorwas Inthisstudy,wetakeSCTasanexampleandtrytoanswer
+visitingJohnsHopkinsUniversity. the above two challenging questions through extensive ex-
+1800
+ProceedingsoftheTwenty-EighthInternationalJointConferenceonArtificialIntelligence(IJCAI-19)
+periments. Wefollowtheideafrom[Phangetal.,2018]and softmax output layer
+presentathree-stagetransferableBERT(TransBERT)frame-
+L: task-specific linear layer
+3
+work to transfer knowledge from semantically related tasks
+forSCT.AsshowninFigure1,thereadercaneasilyfindthat L 2 : output contextual embeddings for each token
+thestorycontextentailstherightstoryending.Incontrast,the
+Trm Trm … Trm
+storycontextconflictswiththewrongending. Thissuggests
+thattheSCTtaskhasastrongcorrelationwithNLI.Inaddi-
+Trm T r m Bidirectional Transformer Encoder Trm
+tion, we also notice that a lot of candidate story endings in
+SCT are about describing human mental states and the next …
+Trm Trm Trm
+action following the story context. Hence, we propose uti-
+lizing three semantically related supervised tasks, including L: input embeddings for each token
+1
+NLI, sentiment classification, and next action prediction to
+Lexicon Encoder layer (word, position, segment)
+further pre-train the BERT model. Then the model is fine-
+tunedwithminimaltask-specificparameterstosolveSCT. Input X: one sentence or two [SEP] concatenated sentences
+Thispapermakesthefollowingthreecontributions: Figure2: TheBERTmodelhasalexiconencoder(L ), abidirec-
+1
+(cid:15) This study presents a TransBERT framework which en- tionaltransformerencoder(L 2),andataskspecificlinearlayer(L 3).
+ables the BERT model to transfer knowledge from both
+unsupervisedcorporaandexistingsupervisedtasks. aspecial[CLS]token. IfX isconcatenatedbytwosentences
+(cid:15) Weachievenewstate-of-the-artresultsonthewidelyused X 1 andX 2,theywillbeseparatedbyaspecialtoken[SEP].
+SCT v1.0datasetandrecentlyrevisedSCT v1.5blindtest The lexicon encoder maps X into a sequence of input em-
+dataset,whicharemuchclosertothehumanperformance. beddings, one for each token, constructed by summing the
+(cid:15) Based on extensive comparative experiments, we give correspondingword,segment,andpositionembeddings.
+Bidirectional Transformer Encoder (L ): BERT uses a
+some helpful suggestions on how to select transfer tasks 2
+multilayerbidirectionaltransformerencoder[Vaswanietal.,
+toimproveBERT.
+2017]tomaptheinputembeddingsfromL intoasequence
+1
+2 Background of contextual embeddings V 2 Rd(cid:1)n (d is the word embed-
+ding size). The BERT model [Devlin et al., 2018] learns
+Languagemodelpre-traininghasshowntobeveryeffective
+the lexicon encoder and transformer encoder parameters by
+forlearninguniversallanguagerepresentationsbyleveraging
+language model pre-training, and applies it to each down-
+large amounts of unlabeled data. Some of the most promi-
+streamtaskbyfine-tuningwithminimaltask-specificparam-
+nent models are ELMo [Peters et al., 2018], GPT [Radford
+eters(L ).
+etal.,2018],andBERT[Devlinetal.,2018]. Amongthese, 3
+Supposev istheoutputcontextualembeddingofthefirst
+ELMousesabidirectionalLSTMarchitecture,GPTexploits 1
+token [CLS], which can be seen as the semantic representa-
+aleft-to-righttransformerarchitecture,whileBERTusesthe
+tionofthewholeinputX. TaketheNLItaskasanexample,
+bidirectionaltransformerarchitecture. Therearetwoexisting
+the probability that X is labeled as class c (i.e., the entail-
+strategiesforapplyingpre-trainedlanguagemodelstodown-
+ment)iscomputedbyalogisticregressionwithsoftmax:
+stream tasks: feature-based and fine-tuning. The feature-
+based approach, such as ELMo, uses task-specific architec-
+turesthatincludethepre-trainedrepresentationsasinputfea- P(cjX)=softmax(W N⊤ LI(cid:1)v 1)
+tures. The fine-tuning approaches, such as GPT and BERT,
+whereW isthetask-specificparametermatrixinL .
+introduce minimal task-specific parameters and train on the NLI 3
+ForthetaskofSCT,justtakethewholestorycontextanda
+downstream tasks by jointly fine-tuning the pre-trained pa-
+candidateendingasaninputsentencepair,andgettheoutput
+rametersandtask-specificparameters. Thistwo-stageframe-
+scoreSviatheBERTmodel.Therightendingcanbeselected
+work has been demonstrated to be very effective in various
+bycomparingthetwooutputscoresS andS ,andchoosing
+natural language processing tasks, such as reading compre- r w
+theendingwithahigherscoreastheanswer.
+hension[Radfordetal.,2018]andNLI[Devlinetal.,2018].
+Inthispaper,ourTransBERTtrainingframeworkisbased
+on the BERT encoder [Devlin et al., 2018], which exploits 3 TheTransBERTTrainingFramework
+transformerblock[Vaswanietal.,2017]asthebasiccompu-
+tationalunit. Here, wedescribethemaincomponentsofthe Figure 3 shows the three-stage TransBERT training frame-
+BERTencodershowninFigure2. work. Thebottomtaskisunsupervisedpre-trainingwithlan-
+TheinputX,whichisawordsequence(eitherasentence guagemodelingandotherrelatedtasks,suchasthenextsen-
+or two sentences concatenated together) is first represented tenceprediction. Inthemiddleofthearchitecturearevarious
+asasequenceofinputembeddings,oneforeachword,inL . semantically target-related supervised tasks, which are used
+1
+ThentheBERTencodercapturesthecontextualinformation to further pre-train the pre-trained BERT encoder. We call
+foreachwordviaself-attentionandgeneratesasequenceof such a supervised task as a Transfer Task. On the top is the
+outputcontextualembeddingsinL . target task, specifically, SCT in this paper. The three cor-
+2
+Lexicon Encoder (L ): The input X = fx ;:::;x g is a responding stages can be summarized as unsupervised pre-
+1 1 n
+sequenceoftokensoflengthn. Thefirsttokenx isalways training,supervisedpre-training,andsupervisedfine-tuning.
+1
+1801
+ProceedingsoftheTwenty-EighthInternationalJointConferenceonArtificialIntelligence(IJCAI-19)
+Supervised Target Task: Story Ending Prediction E
+Rick grew up in a troubled household. He never C Positive: Mental State
+found good support in family, and turned to gangs. E Right: He is happy now.
+Supervised Task 1: Supervised Task 2: … Supervised Task N: It wasn't long before Rick got shot in a robbery. E Wrong: He joined a gang.
+MNLI MC_MNLI SWAG The incident caused him to turn over a new leaf. C Negative: Next Action
+C
+LaL ngar ug ae g- es c Mal oe
+d
+U eln insu gp ae nr dv i Nse ed
+x
+P
+t
+r Se e- ntr ta ei nn ci en g
+P
+rT ea ds ik cs ti:
+on Amber had a lot of things to do this Sunday. She
+NE Right:P Aos miti bv ee r: wN ae sx st oA hc uti ro rn
+ied
+made a list of all the places she needed to go. N she left the list at home.
+E
+She hurried to get ready. She was worried that Wrong: Amber enjoyed a
+BERT she would not have enough time. C relaxing two hour brunch.
+C Negative: Next Action
+Figure3: Thethree-stageTransBERTtrainingframework. Inthis Positive: Mental State
+It was my final performance in marching Right: I was very proud
+framework, weonlycareabouttheperformanceofthetargettask.
+band. I was playing the snare drum in the E of my performance.
+TheBERTmodelwalkthroughasinglepathfrombottomtothetop, band. We played Thriller and Radar Love. Wrong: I was very ashamed
+suchastheredpathshowninthefigure. Hence,themodelutilizes The performance was flawless. C of my performance.
+onekindofsupervisedknowledgeeachtime. Negative: Mental State
+Figure4: Threetypicalexamplesfromthedevelopmentset,which
+3.1 TransferTasksforSCT areannotatedwithentailment,mentalstatesandactionsinformation.
+We believe that only when the source and the target tasks
+are semantically associated with each other, then the source choose the entailment, entailment, and neutral hypothesis
+taskcanbeusedasatransfertask. Inotherwords,theyneed as the ‘right’ hypothesis from the three kinds of hypothe-
+tosharecommonknowledge,andthisknowledgecanbeex- sis pairs, respectively. This dataset is used to investigate
+ploitedtosolvebothofthem. whetherthetransfertaskhavingthesameproblemdefini-
+Here, wegivemoreintuitionswhywechooseNLI,senti- tionwiththetargettaskcanprovideadditionalbenefits.
+mentclassification,andnextactionpredictionasthetransfer
+tasksforSCT.Elementaryanalysisofrandomlyselectedex- SentimentClassification
+amplessuggeststhattherearethreetypicalstoryevolvement (cid:15) IMDB [Maas et al., 2011] contains 25K polar movie re-
+styles: 1. Theprecedingpartofthecontextentailsthewrong viewsforabinarysentimentclassification.
+ending while conflicts the right ending, the succeeding part (cid:15) Twitter is a sentiment classification dataset1 containing
+is just the opposite; 2. The preceding part of the story con- 1.6Mtweets,whicharelabeledwithpositiveandnegative
+texthasaneutralrelationtoboththerightandwrongending, sentimentpolaritylabels.
+whilethesucceedingpartentailstherightandconflictswith
+NextActionPrediction
+the wrong ending; 3. The whole story context consistently
+entails the right and conflicts with the wrong ending. Natu- SWAG (Situations With Adversarial Generations) contains
+rally,ourintuitionisthatamodelthatcanwellsolvetheNLI 113k sentence-pair completion examples that evaluate com-
+task tends to have a good performance on SCT. In addition, monsense inference [Zellers et al., 2018]. Given a sentence
+a lot of stories especially the story endings describe human fromavideocaptioningdataset, thetaskistodecideamong
+mental states or the next action following the story context. fourchoicesthemostplausiblecontinuation.
+Hence, we suppose that a model that can handle the senti-
+3.2 TrainingProcess
+ment or predict the next action well, tends to have a good
+performanceonSCT.Figure4showsthreetypicalexamples The training procedure of TransBERT consists of three
+fromthedevelopmentsetofSCT v1.0, whichareannotated stages: unsupervised pre-training, supervised pre-training,
+withentailment,mentalstates,andactionsinformation. andsupervisedfine-tuning.
+The first stage follows the procedure of the BERT
+NaturalLanguageInference model[Devlinetal.,2018].Theparametersofthelexiconen-
+Givenapremise-hypothesispair,thegoalofNLIistopredict
+coderandtransformerencoderarelearnedusingtwounsuper-
+whetherthehypothesishasanentailment, acontradictionor
+vised prediction tasks: masked language modeling and next
+aneutralrelationwiththepremise.
+sentence prediction. This stage allows the model to capture
+(cid:15) SNLI(StanfordNaturalLanguageInference)datasetcon- general knowledge and representations about the language.
+tains 570k human annotated sentence pairs, in which the Inthisstudy,weusethepubliclyreleasedpre-trainedBERT
+premises are drawn from captions of Flickr30 corpus and models[Devlinetal.,2018].
+hypothesesaremanuallyannotated[Bowmanetal.,2015]. Inthesecondstage,weapplythepre-trainedBERTmodel
+(cid:15) MNLI (Multi-Genre Natural Language Inference) is a from the first stage on various supervised tasks proposed
+above. For each task, minimal task-specific parameters will
+410k crowd-sourced multi-genre entailment classification
+beintroduced. Theseparameterswillbeupdatedjointlywith
+dataset[Williamsetal.,2018].
+the parameters of the lexicon encoder and Transformer en-
+(cid:15) MC NLIstandsforMultiple-ChoiceNaturalLanguageIn-
+coder. Whenthemodelachievesthebestperformanceonthe
+ference. This dataset is a recast version of the MNLI
+corresponding development dataset, we save the parameters
+dataset. Given a premise, we construct three kinds of hy-
+of the lexicon encoder and Transformer encoder. This stage
+pothesispairs: fentailment,neutralg, fentailment,contra-
+dictiong, and fneutral, contradictiong. The problem is to 1http://help.sentiment140.com/
+1802
+ProceedingsoftheTwenty-EighthInternationalJointConferenceonArtificialIntelligence(IJCAI-19)
+enables the model to transfer different task-specific knowl- Dataset Training Development Test
+edge from various supervised tasks, and get a better model
+SCT v1.0 1,771 100 1,871
+initialization for the target task. Finally, the model is fine- SCT v1.5 1,871 1,571 1,571
+tunedtosolveSCTwithnewtask-specificparameters,similar
+tothesecondstage. Table1:Statisticsofthedatasetsusedinourexperiments.
+We train each transfer task and the SCT with 3 epochs
+monitoringonthedevelopmentset,usingacross-entropyob- Methods Accuracy(%)
+jective2. Otherhyperparametersfollow[Devlinetal.,2018]. BERT BASE(multilingual,uncased) 75.9
+BERT (multilingual,cased) 80.2
+BASE
+BERT (monolingual,cased) 87.4
+4 Evaluation BASE
+BERT (monolingual,uncased) 88.1
+BASE
+BERT (monolingual,uncased) 89.2
+We evaluate the effectiveness of our model by comparing LARGE
+BERT (monolingual,cased) 90.0
+withseveralstate-of-the-artbaselinemethods. Accuracy(%) LARGE
+ofchoosingtherightendingisusedastheevaluationmetric. Table 2: Experimental results with all the publicly released pre-
+trained BERT models on SCT v1.0 test dataset. ‘Uncased’ means
+4.1 Baselines allwordsinthetrainingcorpuswillbetransformedintolowercase
+form.‘Cased’meanskeepingallthewordsintheiroriginalform.
+Wecompareourmodelwiththefollowingbaselinemethods.
+Tothebestofourknowledge,mostoftherecentadvanceson
+StoryClozeTestarelistedhere. unlabeledstoriesdataset),1,871four-sentencestorycontexts
+along with a right ending and a wrong ending in the devel-
+(cid:15) DSSM[Huangetal.,2013]measuresthecosinesimilarity
+opment and test datasets, respectively. Here we only use
+betweenthevectorrepresentationsofthestorycontextand
+thedevelopmentandtestdatasets, andsplitdevelopmentset
+thecandidateendings.
+into 1,771 instances for training and 100 instances for de-
+(cid:15) CGAN[Wangetal., 2017]encodesthestorycontextand velopment purposes. SCT v1.5 [Sharma et al., 2018] is a
+eachendingbyGRUsandcomputesanentailscore. recently released revised version in order to overcome the
+(cid:15) HBiLSTM [Cai et al., 2017] uses LSTM to encode both human-authorship biases [Schwartz et al., 2017] discovered
+in SCT v1.0. It contains 1,571 four-sentence story contexts
+thewordsequenceandthesentencesequence,andgetthe
+along with a right ending and a wrong ending in the devel-
+modifiedcontextvectorviaattention.
+opmentandtheblindtestdatasets,respectively. Hereweuse
+(cid:15) Msap [Schwartz et al., 2017] trains a logistic regression the1,871SCT v1.0testdatasetfortrainingpurpose.
+model which uses language model and stylistic features, Actually, with the released SCT v1.5 dataset, this paper
+includinglength,wordn-grams,andcharactern-grams. treatstheSCT v1.0asadevelopmentdataset,whiletreatsthe
+(cid:15) HCM [Chaturvedi et al., 2017] trains a logistic regres- wholeSCT v1.5astherealtestdataset. Thedetaileddataset
+sionmodelwhichcombinesfeaturesfromeventsequence, statisticsareshowninTable1.
+sentiment-trajectory,andtopicconsistencyofthestory.
+5 ResultsandAnalysis
+(cid:15) HintNet [Zhou et al., 2019] exploits the hints which can
+be obtained by comparing two candidate endings to help There are several pre-trained BERT models available to the
+selectthecorrectstoryending. community [Devlin et al., 2018]. They differ in how many
+(cid:15) SeqMANN [Li et al., 2018a] uses a multi-attention neu- layers and parameters are used in the model (the basic ver-
+sionhas12-layertransformerblocks,768hidden-size,and12
+ralnetworkandintroducessemanticsequenceinformation
+self-attention heads, totally 110M parameters; the large ver-
+extractedfromSemLMasexternalknowledge.
+sion has 24-layer transformer blocks, 1024 hidden-size, and
+(cid:15) ISCK[Chenetal.,2019]isaneuralmodelthatintegrates
+16 self-attention heads, totally 340M parameters), and what
+narrativesequence,sentimentevolution,andcommonsense kindofdatasetsareusedtopre-trainthemodel(multilingual
+knowledge. ormonolingual). Wefirstconductseveralcomparativeexper-
+(cid:15) GPT [Radford et al., 2018] and BERT [Devlin et al., imentsonSCT v1.0datasettostudytheeffectivenessofdif-
+2018] both can solve the SCT by pre-training a language ferentBERTversions. ResultsareshowninTable2. Wefind
+modelusingamultilayertransformeronopendomainun- that the two multilingual models perform much worse than
+labeledcorpora,followedbydiscriminativefine-tuning. the monolingual models. An uncased BERT BASE performs
+better than the cased BERT , but a cased BERT is
+BASE LARGE
+4.2 Dataset betterthantheuncasedBERT . Thereasonsarethatthe
+LARGE
+multilingual BERT model doesn’t improve the performance
+To evaluate the effectiveness of our method, we experiment
+on the monolingual SCT english dataset; the BERT
+on two-version SCT datasets. SCT v1.0 [Mostafazadeh et LARGE
+modelcanhandlealargercasedvocabularywithmuchmore
+al., 2016] is the widely used version. It contains 98,162
+parametersbuttheBERT modelcannot.
+five-sentence coherent stories in the training dataset (a large BASE
+In the following experiments, BERT refers to the
+BASE
+2Allofourexperimentswerebasedonhttps://github.com/huggin uncased monolingual version of BERT BASE model, and
+gface/pytorch-pretrained-BERT. We also released our code at BERT LARGE refers to the cased monolingual version of
+https://github.com/eecrazy/TransBERT-ijcai2019. BERT model.
+LARGE
+1803
+ProceedingsoftheTwenty-EighthInternationalJointConferenceonArtificialIntelligence(IJCAI-19)
+Method Accuracy(%) Method Accuracy(%)
+DSSM[Huangetal.,2013] 58.5 BERT BASE(endingonly) 77.9
+CGAN[Wangetal.,2017] 60.9 BERT BASE(4) 86.4
+HBiLSTM[Caietal.,2017] 74.7 BERT BASE(3,4) 87.4
+Msap[Schwartzetal.,2017] 75.2 BERT BASE(2,3,4) 87.7
+HCM[Chaturvedietal.,2017] 77.6 BERT BASE(1,2,3,4) 88.1
+HintNet[Zhouetal.,2019] 79.2 BERT BASE+MNLI(endingonly) 78.3
+SeqMANN[Lietal.,2018a] 84.7 BERT BASE+MNLI(4) 88.5
+GPT[Radfordetal.,2018] 86.5 BERT BASE+MNLI(3,4) 88.7
+ISCK[Chenetal.,2019] 87.6 BERT BASE+MNLI(2,3,4) 88.6
+BERT BASE(OurImplementation) 88.1 BERT BASE+MNLI(1,2,3,4) 90.6
+BERT (OurImplementation) 90.0
+LARGE Table4: Experimentalresultswithdifferentsentencescombination
+BERT +SNLI(Ours) 85.9
+BASE asthestorycontext. (3,4)meansonlythethirdandthefourthsen-
+BERT +IMDB(Ours) 87.6
+BASE tencesareusedasthestorycontext,andothersettingsaresimilar.
+BERT +SWAG(Ours) 88.6
+BASE
+BERT +Twitter(Ours) 88.7
+BASE Method Accuracy(%)
+BERT +MC MNLI(Ours) 89.5
+BASE
+BERT BASE+MNLI(Ours) 90.6 BERT BASE 88.1
+BERT LARGE+MNLI(Ours) 91.8 BERT BASE+MNLI(ENonly) 86.2
+Human[Mostafazadehetal.,2016] 100.0 BERT BASE+MNLI(NConly) 88.8
+BERT +MNLI(EConly) 89.2
+BASE
+Table3:ResultsonSCT v1.0testdataset. Differencesbetweenour BERT +MNLI 90.6
+BASE
+best method and all baseline methods are significant (p < 0:01).
+BERT +MNLIalsogetstheSOTAperformanceof90.3%on Table5: Experimentalresultswithdifferentnaturallanguageinfer-
+LARGE
+SCT v1.5blindtestdataset,whichisnotshowninthistable. encecategoriesonSCT v1.0testdataset.(ENonly)meansthisset-
+ting only considers the Entailment and Neutral realtions, with the
+Contradictionrelationfilteredout.
+5.1 OverallResults
+Table 3 shows the overall experimental results on SCT v1.0
+WhetherAllFourSentencesintheStoryContextAre
+test dataset. The best previously reported result (87.6%) is
+UsefulforBERTtoChoosetheRightEnding?
+from ISCK [Chen et al., 2019]. We implemented the same
+DifferentfromNLIandSWAG,inwhichthereareonlytwo
+BERTmodelas[Devlinetal.,2018]andgotthebestbaseline
+sentencesinaninstance,theSCThasalongerfour-sentence
+resultsonSCT,whichare88.1%and90.0%fromBERT
+BASE context. We experiment to investigate whether the BERT-
+and BERT models, respectively. From Table 3 we
+LARGE based models can make full use of the long story context.
+can also find that most of our transfer tasks can further im-
+Experimental results are shown in Table 4. We find that all
+prove BERT, except SNLI and IMDB. The MNLI-enhanced
+the sentences in the story context are useful and the BERT-
+BERT models achieved the best accuracies of 90.6% and
+based models can make full use of them to infer the correct
+91.8%, which are the new state-of-the-art performances on
+ending. ThisismainlybecausetheBERT-basedmodelshave
+SCT v1.0.Thisisbecauseourmethodcanlearntask-specific
+theabilitytohandlelongdistancedependencywiththeself-
+knowledgefromtransfertasks,whichishelpfulforSCT,and
+attentionmechanism[Vaswanietal.,2017].
+MNLIisthemostinformativetask.
+Table 3 also shows some interesting results. Comparing ExploretheEffectivenessofDifferentMNLICategories
+the SNLI and MNLI-enhanced BERT models, we find that Ourexperimentssuggestthatwecanachievethebestperfor-
+though NLI can help SCT intuitively, the data source still mance when using MNLI as the transfer task. But we also
+playsanimportantrole.MNLIisamulti-genredataset,while wanttoknowwhichcategoryamongtheEntailment,Neutral
+SNLIdataisfromthespecificimagecaptiondomain. Hence, and Contradiction is the most informative for SCT. The re-
+theMNLItendstohelptheopendomainSCTbutSNLIdoes sultsareshowninTable5. Wefindthatthecontradictionre-
+not.ComparingtheIMDBandTwitter-enhancedBERTmod- lationisthemostinformativeone,thenentailment,andneu-
+els,wecangetsimilarconclusionsthattheopendomainTwit- traltheleast. It’sinterestingthattheperformanceevendrops
+tercanimprovetheperformanceofBERTonSCT,whilethe a lot without the contradiction. The reason is that the abil-
+specificdomainIMDBhurtsthemodel’sperformance. Com- itytorecognizeconflictendingsenablesthemodeltopickup
+paring the MC MNLI and MNLI-enhanced BERT models, therightendingmoreeasily. Finally,thebestperformanceis
+wefindthatMNLIhelpsmoreforSCT(multiplechoicetask). achievedbyusingallthreerelationstogether, demonstrating
+Hence,wecangettheconclusionthatthetransfertaskdoesn’t thateachrelationcanhelpSCTfromdifferentaspects.
+need to have the same problem definition as the target task.
+5.3 DiscussionandAnalysis
+Thisismainlybecausethemodelcangetabetterknowledge
+about entailment when NLI is formulated as a classification TheMNLI-enhancedBERTmodelspushtheperformanceto
+task(MNLI),otherthanamultiplechoicetask(MC MNLI). 91.8%and90.3%accuraciesonSCT v1.0andSCT v1.5test
+datasets, respectively, which are much closer to the human
+5.2 ComparativeExperiments
+performance (100%). Though very effective in natural lan-
+Severalcomparativeexperimentsareconductedtoinvestigate guage understanding, there are still about 9% of the test in-
+somefine-grainedaspects. stances that the BERT-based models cannot handle. Error
+1804
+ProceedingsoftheTwenty-EighthInternationalJointConferenceonArtificialIntelligence(IJCAI-19)
+analysis of the unsolved instances shows that BERT-based similarity. SeqMANN [Li et al., 2018a] integrated external
+models make a lot of mistakes when one of the two candi- knowledge into a multi-attention network. GPT [Radford et
+date endings is about mental state while the other describes al.,2018]pre-trainedatransformerlanguagemodelandfine-
+the next action. Better models will be needed to handle this tunedthemodeltosolveSCT.ISCK[Chenetal.,2019]used
+properly. a neural model that integrated narrative sequence, sentiment
+We are also curious about why MNLI can improve SCT evolution,andcommonsenseknowledge.Insteadofchoosing
+withsuchalargemargin. Hence, wetrainedamodelonthe the right ending, several previous studies aimed to directly
+MNLI dataset and directly applied it to solve the SCT task. generateareasonableending[Lietal.,2018c].
+Surprisingly, this simple method got a relatively high accu- Differentfromthepreviouscommonsensemodels, wetry
+racyof63.4%onSCT v1.0testset, evenbetterthanDSSM toincorporateknowledgefromothersupervisedtasksintothe
+and CGAN which were trained on the SCT dataset. This mostadvancedBERTrepresentationmodel.
+demonstrates the high correlation between MNLI and SCT.
+LearningUniversalLanguageRepresentations
+We argue that the SCT task can be seen as a more compli-
+Language model pre-training has shown to be very effec-
+cated NLI task, where the premise is a four-sentence evolv-
+tiveforlearninguniversallanguagerepresentations. Among
+ing context. The goal is to find the right ending that can be
+these models, ELMo [Peters et al., 2018] and ULM-
+entailedwithahigherprobabilitythanthewrongending.
+FiT[HowardandRuder,2018]usedaBiLSTMarchitecture,
+Herewetrytoanswertheabovetwochallengingquestions:
+while GPT [Radford et al., 2018] and BERT [Devlin et al.,
+(cid:15) How can the pre-training framework better utilize su- 2018] utilized the transformer architecture [Vaswani et al.,
+pervised knowledge: One way is to add a second pre- 2017].Unlikemostearlierapproaches,suchasELMo,where
+trainingstagetointegrateknowledgefromexistingsuper- the weights of the encoder were frozen after pre-training,
+visedtasks,likewhattheSTILTs[Phangetal.,2018]and
+ULMFiT,GPTandBERTjointlyfine-tunedtheencoderand
+TransBERTdo. Butthismethodcanonlyexploitonesin- task-specificparametersonthedownstreamtasks.
+glesupervisedtaskeachtime. Anotherwayistopre-train STILTs [Phang et al., 2018] fine-tuned a GPT model on
+the transfer tasks in a multi-task learning manner [Liu et some intermediate tasks to get better performance on the
+al.,2019](e.g.trainMNLI,Twitter,andSWAGsimultane- GLUE [Wang et al., 2018] benchmark. However, they gave
+ously). But it’sunknownwhether this multi-task learning littleanalysisofthistransfermechanism. TakeSCTasanex-
+mannercanbringmoreimprovementtoSCT,evenifeach ample,wegivesomehelpfulsuggestionsandourinsightson
+ofthethreetasksishelpful. Weleavethisasfuturework. howtoselecttransfertasks.
+(cid:15) Whatbasicrulesneedtofollowtofindappropriatesuper-
+TransferLearningandMulti-taskLearning
+vised knowledge for a target task: First, the transfer task
+Transfer learning [Pan and Yang, 2009] is widely adopted
+andthetargettaskneedtobesemanticallyassociatedwith
+in the NLP community, such as dialogue system [Mo et
+each other and share common knowledge between them.
+al., 2018] and text style transfer [Fu et al., 2018]. This
+This knowledge can be exploited to solve both of them.
+workisalsorelatedtomulti-tasklearning[Liuetal., 2015],
+Second, this paper explores transferring knowledge from
+where multiple tasks were jointly trained to get an over-
+different supervised tasks to SCT, showing that a specific
+all performance improvement. MT-DNN [Liu et al., 2019]
+domain dataset (SNLI) is not sufficient for improving an
+extended multi-task learning by incorporating a pre-trained
+open domain target task (SCT), even though they are se-
+BERTmodel,whichisveryclosetotheworkofthispaper.
+mantically associated with each other. Third, the transfer
+task doesn’t need to have the same problem definition as
+7 Conclusion
+the target task. A classification transfer task (MNLI) can
+helpamultiplechoicetargettask(SCT). In this paper, we present a three-stage training framework
+TransBERT, which can transfer not only general language
+6 RelatedWork knowledge from large-scale unlabeled data but also specific
+kindsofknowledgefromvarioussemanticallyassociatedsu-
+TheStoryClozeTest
+pervised tasks for a target task, such as SCT. This training
+StoryClozeTest[Mostafazadehetal.,2016]isataskforeval-
+framework can enable a better and task-specific initializa-
+uatingstoryunderstanding.Previousmethodsonthistaskcan
+tionfordifferenttargettasks,whichissuperiortothewidely
+be roughly categorized into two lines: feature-based meth-
+usedtwo-stagepre-trainingandfine-tuningframework. The
+ods[Schwartzetal.,2017;Chaturvedietal.,2017]andneural
+MNLI-enhanced BERT model pushes the SCT v1.0 task to
+models[Caietal.,2017].
+91.8%accuracy,whichismuchclosertohumanperformance.
+Feature-based methods for SCT [Schwartz et al., 2017]
+ItalsogetstheSOTAperformanceof90.3%onSCT v1.5.
+adoptedshallowsemanticfeatures,suchasn-gramsandPOS
+tags, and trained a linear regression model to determine
+Acknowledgments
+whether a candidate ending is plausible. HCM [Chaturvedi
+etal.,2017]furtherintegratedevent,sentimentandtopicinto This work is supported by the National Natural Science
+feature-basedmethods. Foundation of China via grants 61632011, 61702137 and
+Neuralmodels[Caietal.,2017;Zhouetal.,2019]forSCT 61772153. It was also sponsored by the China Scholarship
+learnembeddingsforthestorycontextandcandidateendings, Council. The authors thank the reviewers, Benjamin Van
+and select the right ending by computing the embeddings’ DurmeandJiangGuofortheircommentsanddiscussion.
+1805
+ProceedingsoftheTwenty-EighthInternationalJointConferenceonArtificialIntelligence(IJCAI-19)
+References [Moetal.,2018] KaixiangMo,YuZhang,ShuangyinLi,Ji-
+ajunLi,andQiangYang. Personalizingadialoguesystem
+[Bowmanetal.,2015] Samuel R Bowman, Gabor Angeli,
+withtransferreinforcementlearning. InAAAI,2018.
+Christopher Potts, and Christopher D Manning. A large
+[Mostafazadehetal.,2016] Nasrin Mostafazadeh,
+annotated corpus for learning natural language inference.
+Nathanael Chambers, Xiaodong He, Devi Parikh,
+InEMNLP,pages632–642,2015.
+Dhruv Batra, Lucy Vanderwende, Pushmeet Kohli, and
+[Caietal.,2017] Zheng Cai, Lifu Tu, and Kevin Gimpel. James Allen. A corpus and cloze evaluation for deeper
+Pay attention to the ending: Strong neural baselines for understanding of commonsense stories. NAACL, pages
+therocstoryclozetask. InACL,pages616–622,2017. 740–750,2016.
+[Chaturvedietal.,2017] SnigdhaChaturvedi,HaoruoPeng, [PanandYang,2009] Sinno Jialin Pan and Qiang Yang. A
+and Dan Roth. Story comprehension for predicting what survey on transfer learning. TKDE, 22(10):1345–1359,
+happensnext. InEMNLP,pages1603–1614,2017. 2009.
+[Chenetal.,2019] JiaaoChen,JianshuChen,andZhouYu. [Petersetal.,2018] MatthewPeters,MarkNeumann,Mohit
+Incorporatingstructuredcommonsenseknowledgeinstory Iyyer, Matt Gardner, Christopher Clark, Kenton Lee, and
+completion. AAAI,2019. LukeZettlemoyer. Deepcontextualizedwordrepresenta-
+tions. InNAACL,volume1,pages2227–2237,2018.
+[Devlinetal.,2018] Jacob Devlin, Ming-Wei Chang, Ken-
+[Phangetal.,2018] Jason Phang, Thibault Fe´vry, and
+ton Lee, and Kristina Toutanova. Bert: Pre-training of
+SamuelRBowman. Sentenceencodersonstilts: Supple-
+deep bidirectional transformers for language understand-
+mentarytrainingonintermediatelabeled-datatasks. arXiv
+ing. arXivpreprintarXiv:1810.04805,2018.
+preprintarXiv:1811.01088,2018.
+[Fuetal.,2018] Zhenxin Fu, Xiaoye Tan, Nanyun Peng, [Radfordetal.,2018] Alec Radford, Karthik Narasimhan,
+Dongyan Zhao, and Rui Yan. Style transfer in text: Ex-
+Tim Salimans, and Ilya Sutskever. Improving language
+plorationandevaluation. InAAAI,2018.
+understandingbygenerativepre-training. 2018.
+[HowardandRuder,2018] Jeremy Howard and Sebastian [Schwartzetal.,2017] Roy Schwartz, Maarten Sap, Ioan-
+Ruder. Universallanguagemodelfine-tuningfortextclas- nisKonstas, LeilaZilles, YejinChoi, and NoahASmith.
+sification. InACL,volume1,pages328–339,2018. Storyclozetask: Uwnlpsystem. InLSDSem, pages52–
+55,2017.
+[Huangetal.,2013] Po-Sen Huang, Xiaodong He, Jianfeng
+Gao,LiDeng,AlexAcero,andLarryHeck.Learningdeep [Sharmaetal.,2018] Rishi Sharma, James Allen, Omid
+structured semantic models for web search using click- Bakhshandeh, and Nasrin Mostafazadeh. Tackling the
+throughdata. InCIKM,pages2333–2338.ACM,2013. story ending biases in the story cloze test. In ACL, vol-
+ume2,pages752–757,2018.
+[Lietal.,2018a] Qian Li, Ziwei Li, Jin-Mao Wei, Yanhui
+[Vaswanietal.,2017] AshishVaswani,NoamShazeer,Niki
+Gu, Adam Jatowt, and Zhenglu Yang. A multi-attention
+Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+based neural network with external knowledge for story
+Łukasz Kaiser, and Illia Polosukhin. Attention is all you
+endingpredictingtask.InColing,pages1754–1762,2018.
+need. InNIPS,pages5998–6008,2017.
+[Lietal.,2018b] Zhongyang Li, Xiao Ding, and Ting Liu.
+[Wangetal.,2017] Bingning Wang, Kang Liu, and Jun
+Constructingnarrativeeventevolutionarygraphforscript
+Zhao. Conditional generative adversarial networks for
+eventprediction. InIJCAI,pages4201–4207,2018.
+commonsense machine comprehension. In IJCAI, pages
+[Lietal.,2018c] Zhongyang Li, Xiao Ding, and Ting Liu. 4123–4129,2017.
+Generating reasonable and diversified story ending using [Wangetal.,2018] Alex Wang, Amanpreet Singh, Julian
+sequencetosequencemodelwithadversarialtraining. In Michael, Felix Hill, Omer Levy, and Samuel Bowman.
+Coling,pages1033–1043.ACL,August2018. Glue: A multi-task benchmark and analysis platform for
+[Liuetal.,2015] Xiaodong Liu, Jianfeng Gao, Xiaodong natural language understanding. In EMNLP Workshop,
+pages353–355,2018.
+He,LiDeng,KevinDuh,andYe-yiWang. Representation
+learningusingmulti-taskdeepneuralnetworksforseman- [Williamsetal.,2018] Adina Williams, Nikita Nangia, and
+ticclassificationandinformationretrieval.pages912–921, SamuelBowman. Abroad-coveragechallengecorpusfor
+2015. sentenceunderstandingthroughinference.InNAACL,vol-
+ume1,pages1112–1122,2018.
+[Liuetal.,2019] Xiaodong Liu, Pengcheng He, Weizhu
+Chen, and Jianfeng Gao. Multi-task deep neural net- [Zellersetal.,2018] Rowan Zellers, Yonatan Bisk, Roy
+worksfornaturallanguageunderstanding. arXivpreprint Schwartz,andYejinChoi.Swag:Alarge-scaleadversarial
+arXiv:1901.11504,2019. datasetforgroundedcommonsenseinference. InEMNLP,
+pages93–104,2018.
+[Maasetal.,2011] Andrew L Maas, Raymond E Daly, Pe-
+[Zhouetal.,2019] Mantong Zhou, Minlie Huang, and Xi-
+ter T Pham, Dan Huang, Andrew Y Ng, and Christopher
+aoyan Zhu. Story ending selection by finding hints from
+Potts. Learning word vectors for sentiment analysis. In
+pairwisecandidateendings. TASLP,2019.
+ACL,pages142–150.ACL,2011.
+1806

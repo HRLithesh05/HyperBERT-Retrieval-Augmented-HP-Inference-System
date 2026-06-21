@@ -1,0 +1,769 @@
+BERTnesia: Investigating the capture and forgetting of knowledge in
+BERT
+JonasWallat JaspreetSingh AvishekAnand
+L3SResearchCenter L3SResearchCenter L3SResearchCenter
+Hannover,Germany Hannover,Germany Hannover,Germany
+wallat@l3s.de singh@l3s.de anand@l3s.de
+Abstract specific pattern – like local syntax, long-range
+semantics or even compositional reasoning –
+Probing complex language models has re- by constructing inputs whose expected output
+cently revealed several insights into linguistic
+would not be possible to predict without the
+andsemanticpatternsfoundinthelearnedrep-
+ability to detect that pattern. While a large body
+resentations. In this paper, we probe BERT
+of work exists on probing BERT for linguistic
+specificallytounderstandandmeasurethere-
+lational knowledge it captures. We utilize patterns and semantics, there is limited work on
+knowledgebasecompletiontaskstoprobeev- probingthesemodelsforthefactualandrelational
+ery layer of pre-trained as well as fine-tuned knowledgetheystore.
+BERT (ranking, question answering, NER).
+Recently, Petroni et al. (2019) probed BERT
+Our findings show that knowledge is not just
+and other language models for relational knowl-
+contained in BERT’s final layers. Intermedi-
+edge(e.g.,TrumpisthepresidentoftheUSA)in
+atelayerscontributeasignificantamount(17-
+60%) to the total knowledge found. Probing ordertodeterminethepotentialofusinglanguage
+intermediate layers also reveals how different models as automatic knowledge bases. Their ap-
+types of knowledge emerge at varying rates. proach converted queries in the knowledge base
+When BERT is fine-tuned, relational knowl- (KB) completion task of predicting arguments or
+edgeisforgottenbuttheextentofforgettingis
+relations from a KB triple into a natural language
+impacted by the fine-tuning objective but not
+cloze task, e.g., [MASK] is the president of the
+thesizeofthedataset. Wefoundthatranking
+USA. This is done to make the query compati-
+modelsforgettheleastandretainmoreknowl-
+blewiththepre-trainingmaskedlanguagemodel-
+edge in their final layer. We release our code
+ongithub1torepeattheexperiments. ing(MLM)objective. Theyconsequentlyshowed
+that a reasonable amount of knowledge is cap-
+1 Introduction tured in BERT by considering multiple relation
+probes. However,therearesomenaturalquestions
+Large pre-trained language models like
+that arise from these promising investigations: Is
+BERT (Devlin et al., 2019) have heralded
+there more knowledge in BERT than what is re-
+an Imagenet moment for NLP2 with not only
+ported? What happens to relational knowledge
+significantimprovementsmadetotraditionaltasks
+when BERT is fine-tuned for other tasks? Is
+such as question answering and machine transla-
+knowledgegainedandlostthroughthelayers?
+tion but also in the new areas such as knowledge
+base completion. BERT has over 100 million
+Our Contribution. In this paper, we study the
+parametersandessentiallytradesofftransparency
+emergence of knowledge through the layers in
+and interpretability for performance. Loosely
+BERTbydevisingaproceduretoestimateknowl-
+speaking, probing is a commonly used technique
+edge contained in every layer and not just the last
+to better understand the inner workings of BERT
+(as done by Petroni et al. (2019)). While this
+and other complex language models (Dasgupta
+typeoflayer-by-layerprobinghasbeenconducted
+et al., 2018; Ettinger et al., 2018). Probing, in
+forsyntactic,grammatical,andsemanticpatterns;
+general, is a procedure by which one tests for a
+knowledgeprobinghasonlybeenconductedonfi-
+1https://github.com/jwallat/knowledge-probing nal layer representations. Observing only the fi-
+2https://thegradient.pub/nlp-imagenet/ nal layer (as we will show in our experiments)
+(i) underestimates the amount of knowledge and 2.1 Probingforsyntax,semantics,and
+(ii)doesnotrevealhowknowledgeemerges. Fur- grammar
+thermore,weexplorehowknowledgeisimpacted
+Initial work on probing dealt with linguistic pat-
+when fine-tuning on knowledge-intensive tasks
+terndetection. Petersetal.(2018)investigatedthe
+such as question answering and ranking. We list
+abilityofvariousneuralnetworkarchitecturesthat
+thekeyresearchquestionsweinvestigatedandkey
+learn contextualized word representations to cap-
+findingscorrespondingtothem:
+turelocalsyntaxandlong-rangesemanticslikeco-
+reference resolution while Dasgupta et al. (2018);
+RQ I: Do intermediary layers capture knowl-
+Ettinger et al. (2018) probed language models for
+edgenotpresentinthelastlayer? (Section4.1)
+compositionalreasoning.
+Wefindthatasubstantialamountofknowledge McCoy et al. (2019); Goldberg (2019) found
+isstoredintheintermediatelayers(≈ 24%onav- that BERT is able to effectively learn syntactic
+erage) heuristicswithnaturallanguageinferencespecific
+probes. Tenney et al. (2019); Liu et al. (2019);
+RQ II: Does all knowledge emerge at the same
+Jawaharetal.(2019)investigatedBERTlayer-by-
+rate? Do certain types of relational knowledge
+layer for various syntactic and semantic patterns
+emergemorerapidly? (Section4.2)
+like part-of-speech, named entity recognition, co-
+reference resolution, entity type prediction, se-
+Wefindthatnotallrelationalknowledgeiscap-
+mantic role labeling, etc. They all found that ba-
+tured gradually through the layers with 15% of
+siclinguisticpatternslikepartofspeechemergeat
+relationship types essentially doubling in the last
+the lower layers. However, there is no consensus
+layer and 7% of relationship types being maxi-
+withregardstosemanticswithsomewhatconflict-
+mallycapturedinanintermediatelayer.
+ing findings (equally spread vs final layer (Jawa-
+har et al., 2019)). Kovaleva et al. (2019) found
+RQ III: What is the impact of fine-tuning data
+that the last layers of fine-tuned BERT contain
+onknowledgecapture? (Section4.3)
+the most amount of task-specific knowledge. van
+We find that the dataset size does not play a Akenetal.(2019)showedthesameresultforfined
+major role when the training objective is fixed as tuned QA BERT with specially designed probes.
+MLM. Fine-tuning on a larger dataset does not Theyfoundthatthelowerandintermediarylayers
+leadtolessforgetting. werebettersuitedtolinguisticsubtasksassociated
+withQA.Foracomprehensivesurveywepointthe
+RQ IV: What is the impact of the fine tuning
+readerto(Rogersetal.,2020)
+objectiveonknowledgecapture? (Section4.4)
+Our work is similar to these studies in terms of
+setup. In particular, our probes function on the
+Finetuningalwayscausesforgetting. Whenthe
+sentence level and are applied to each layer of a
+size of the dataset is fixed and training objective
+pre-trained BERT model as well as BERT fine-
+varies, the ranking model (RANK-MSMARCO in
+tuned on several tasks. However, we do not focus
+ourexperiments)forgetslessthantheQAmodel.
+on detecting linguistic patterns and focus on rela-
+tionalandfactualknowledge.
+2 RelatedWork
+2.2 Probingforknowledge
+In this section, we survey previous work on prob-
+ing language models (LMs) with a particular fo- In parallel, there have been investigations into
+cus on contextual embeddings learned by BERT. probing for factual and world knowledge. Most
+Probeshavebeendesignedforbothstaticandcon- recently, Petroni et al. (2019) found that LMs
+textualized word representations. Static embed- like BERT can be directly used for the task of
+dings refer to non-contextual embeddings such as knowledge base completion since they are able to
+GloVe (Pennington et al., 2014). For the static memorizemorefactsthansomeautomaticknowl-
+case, the reader can refer to this survey by Be- edge bases. They created cloze statement tasks
+linkov and Glass (2019). Now we detail prob- forfactualandcommonsenseknowledgeandmea-
+ingtasksforcontextualizedembeddingsfromlan- sured cloze-task performance as a proxy for the
+guagemodels. knowledge contained. However, using the same
+probing framework, Kassner and Schu¨tze (2020) 1(Rajpurkaretal.,2016). Thetrainedmodel
+showed that this factoid knowledge is influenced achievedanF1scoreof88.5onthetestset.
+by surface-level stereotypes of words. For ex-
+ample, BERT often predicts a typically German
+3. QA-SQUAD-2: QA span prediction trained
+Squad 2 (Rajpurkar et al., 2018). The F1
+name as a German citizen. Tangentially, Forbes
+scorewas67(note: SQUAD2isamorechal-
+et al. (2019) investigated BERT’s awareness of
+lengingversionofSQUAD1).
+the world. They devised object property and ac-
+tion probes to estimate BERT’s ability to reason
+4. RANK-MSMARCO: Ranking model
+about the physical world. They found that BERT
+trained on the MSMarco passage reranking
+isrelativelyincapableofsuchreasoningbutisable
+task (Nguyen et al., 2016). We used the
+to memorize some properties of real-world ob-
+fine-tuningproceduredescribedin(Nogueira
+jects. Thisinvestigationtestedcommonsensespa-
+and Cho, 2019) to obtain a regression model
+tialreasoningratherthanpurefactoidknowledge.
+that predicts a relevance score given query
+Rather than focusing on newer knowledge
+andpassage.
+types, we focus on the true coverage of already
+known relations and facts in BERT. In terms 5. MLM-MSMARCO: BERT fine-tuned on the
+of experiments, we do not focus on knowledge passages from the MSMarco dataset using
+containment in different language models, rather the masked language modeling objective as
+focus on investigating how knowledge emerges per (Devlin et al., 2019). 15% of the tokens
+specifically in BERT. Here, we are more inter- maskedatrandom.
+ested in relative differences. To this end, we de-
+vise a procedure to adapt the layerwise probing 6. MLM-SQUAD: BERT fine-tuned on text
+methodologyoftenemployedforlinguisticpattern from SQUAD using the masked language
+detectionby vanAkenetal.(2019);Tenneyetal. modeling objective as per Devlin et al.
+(2019); Liu et al. (2019) for the probe tasks sug- (2019). 15%ofthetokensmaskedatrandom.
+gestedinPetronietal.(2019).
+When fine-tuning, our goal was to not only
+3 ExperimentalSetup achieve good performance but also to minimize
+the number of extra parameters added. More pa-
+3.1 Models
+rameters outside BERT may increase the chance
+BERT is a bidirectional text encoder built by of knowledge being stored elsewhere leading to
+stacking several transformer layers. BERT is of- unreliable measurement. We used the Hug-
+tenpre-trainedwithtwotasks: nextsentenceclas- gingface transformers library (Wolf et al., 2019)
+sificationandmaskedlanguagemodeling(MLM). for implementing all models in our experiments.
+MLM is cast as a classification task over all to- Moredetailsonhyperparametersandtrainingcan
+kens in the vocabulary. It is realized by train- befoundintheAppendix.
+ing a decoder that takes as input the mask to-
+3.2 Knowledgeprobes
+kenembeddingandoutputsaprobabilitydistribu-
+tion over vocabulary tokens. In our experiments We utilized the existing suite of LAMA knowl-
+we used BERT base (12 layers) pretrained on edgeprobessuggestedin(Petronietal.,2019)3for
+the BooksCorpus (Zhu et al., 2015) and English our experiments. Table 1 briefly summarizes the
+Wikipedia. We use this model for fine-tuning to keydetails. Theprobesaredesignedasclozestate-
+keep comparisons consistent. Henceforth, we re- ments and limited to single token factual knowl-
+fer to pre-trained BERT as just BERT. The fol- edge,i.e.,multi-wordentitiesandrelationsarenot
+lowingisalistofallfine-tunedmodelsusedinour included.
+experiments: Each probe in LAMA is constructed to test a
+specific relation or type of relational knowledge.
+1. NER-CONLL:(cased)namedentityrecogni-
+ConceptNetisdesignedtotestforgeneralcon-
+tion model tuned on Conll-2003 (Sang and
+ceptualknowledgesinceitmaskssingletokenob-
+Meulder,2003).
+jects from randomly sampled sentences whereas
+T-REx consists of hundreds of sentences for 41
+2. QA-SQUAD-1: A question answering
+model (span prediction) trained on SQuAD 3https://github.com/facebookresearch/LAMA
+Name #Rels #Instances Example Answer
+ConceptNet - 12514 Rocksare[MASK]. solid
+T-REx 41 34017 ThecapitalofGermanyis[MASK]. Berlin
+Google-RE 3 5528 EyolfKlevenwasbornin[MASK]. Copenhagen
+Squad - 305 NathanAltermanwasa[MASK]. Poet
+Table1: Knowledgeprobesusedintheexperiments. Petronietal.(2019)subsampledConceptNet(Speerand
+Havasi,2012),T-REx(ElSaharetal.,2018),Google-RE(Orr,2013)andSquad(Rajpurkaretal.,2016).
+specific relationship types like member of and theAdamoptimizer(KingmaandBa,2015). With
+language spoken. Google-RE tests for 3 spe- thenewdecodingheads,theLAMAprobescanbe
+cifictypesoffactualknowledgerelatedtopeople: appliedtoeverylayer.
+place-of-birth (2937), date-of-birth (1825), and
+Measuring Knowledge We convert the probabil-
+place-of-death (766 instances). The date-of-birth
+ity distribution output of the decoding head to a
+is a strict numeric prediction that is not covered
+ranking with the most probable token at rank 1.
+by T-REx. Finally, Squad uses context insensi-
+The amount of knowledge stored at each layer is
+tive questions from SQuAD that has been manu-
+measured by precision at rank 1 (P@1 for short).
+ally rewritten to cloze-style statements. Note that
+We use P@1 as the main metric in all our experi-
+thisisthesamedatasetusedtotrainQA-SQUAD-
+ments. Sincerankdepthof1isastrictmetric,we
+1 and QA-SQUAD-2.
+also measured P@10 and P@100. We found the
+trends to be similar across varying rank depths.
+3.3 ProbingProcedure
+For completeness, results for P@10 and P@100
+Our goal is to measure the knowledge stored in can be found in the appendix. Additionally, we
+BERT viaknowledgeprobes. LAMAprobesrely measurethetotalamountofknowledgecontained
+on the MLM decoding head to complete cloze in BERT by
+statement tasks. Note that this decoder is only
+trained for the mask token embedding of the fi- P@1 = max({Pl@1| ∀l ∈ L})
+nal layer and is unsuitable if we want to probe all
+layersof BERT.Toovercomethiswetrainanew where L is the set of all layers and Pl@1 is
+decoding head for each layer of a BERT model the P@1 for a given layer l. In our experiments
+underinvestigation. |L| = 12. This metric allows us to consider
+knowledgecapturedatalllayersofBERT,notjust
+Training: Wetrainanewdecodingheadforeach a specific layer. If knowledge is always best cap-
+layer the same way as standard pre-training us- tured at one specific layer l then P@1 = Pl@1.
+ing MLM. We also used Wikipedia (WikiText-2 Ifthelastlayeralwayscontainsthemostinforma-
+data)–samplingpassagesatrandomandthenran- tion then total knowledge is equal to the knowl-
+domly masking 15% of the tokens in each. Our edgestoredinthelastlayer.
+decoding head uses the same architecture as pro-
+Caveats of probing with cloze statements:
+posed by Devlin et al. (2019) – a fully connected
+Note that BERT, MLM-MSMARCO, and MLM-
+layer with GELU activation and layer norm (ep-
+SQUAD are trained for the task of masked word
+silon of 1e-12) resulting in a new 768 dimension
+prediction which is exactly the same task as our
+embedding. Thisembeddingisthenfedtoalinear
+probes. The last layers of BERT have shown to
+layerwithsoftmaxactivationtooutputaprobabil-
+contain mostly task-specific knowledge – how to
+itydistributionoverthe30Kvocabularyterms. In
+predict the masked word in this case (Kovaleva
+total, the decoding head possesses ∼24M param-
+et al., 2019). Hence, good performance in our
+eters. We froze BERT’s parameters and trained
+probes at the last layers for MLM models can be
+the the decoding head only for every layer using
+partiallyattributedtotask-basedknowledge.
+the same training data. We initialized the new
+decoding heads with the parameters of the pre-
+4 Results
+traineddecodingandthenfine-tunedit. Ourexper-
+iments with random initialization yielded no sig- In contrast to existing work, we want to analyze
+nificant difference. We used a batch size of 8 and relation knowledge across layers to measure the
+trained until validation loss was minimized using total knowledge contained in BERT and observe
+the evolution of relational knowledge through the We observe that the amount of relational
+layers. knowledge captured increases steadily with
+each additional layer. While some relations are
+4.1 IntermediateLayersMatter
+easier to capture early on, we see an almost-
+The first question we tackle is – Does knowledge exponential growth of relational knowledge after
+residestrictlyinthelastlayerof BERT? Layer 8. This indicates that relational knowl-
+Figure 1 compares the fraction of correct pre- edge is predominantly stored in the last few lay-
+dictions in the last layer as against all the correct ers as against low-level linguistic patterns are
+predictions computed at any intermediate layer in learned at the lower layers (similar to van Aken
+terms of P@1. It is immediately evident that a et al. (2019)). In Figure 3 we inspect relationship
+significant amount of knowledge is stored in the types that show uncharacteristic growth or loss in
+intermediatelayers. Whilethelastlayerdoescon- T-REx.
+tain a reasonable amount of knowledge, a con- Whilemember ofisforgotteninthelastlay-
+siderable proportion of relations seem to be for- ers, the relation diplomatic relation is
+gotten and the intermediate layers contain re- neverlearnedatall,andofficial language
+lational knowledge that is absent in the fi- ofisonlyidentifiableinthelasttwolayers. Note
+nal layer. Specifically, 18% for T-REx and
+thatthemajorityofrelationsfollowthenearlyex-
+33% approximately for the others are forgotten
+ponential growth curve of the mean performance
+by BERTs last layer. For instance, the answer in Figure 2 (see line T-REx). From our calcula-
+to Rocky Balboa was born in [MASK]
+tions, nearly 15% of relationship types double in
+is correctly predicted as Philadelphia by
+meanP@1atthelastlayer.
+Layer 10 whereas the rank of Philadelphia
+We now analyze evolution in fine-tuned mod-
+inthelastlayerdropsto26for BERT.
+els to understand the impact of fine-tuning on the
+The intermediary layers also matter for fine-
+knowledge contained through the layers. There
+tunedmodels. ModelswithhighP@1tendtohave
+are two effects at play once BERT is fine-tuned.
+a smaller fraction of knowledge of stored in the
+First, during fine-tuning BERT observes addi-
+intermediatelayers–20%forRANK-MSMARCO
+tional task-specific data and hence has either op-
+on T-REx. In other cases, the amount of knowl-
+portunity to monotonically increase its relational
+edgelostinthefinallayerismoredrastic–3×for
+knowledge or replace relational knowledge with
+QA-SQUAD-2 onGoogle-RE.
+more task-specific information. Second, the task-
+We also measured the fraction of relationship
+specificlossfunctionmightbemisalignedwiththe
+types in T-REx that are better captured in the in-
+MLM probing task. This means that fine-tuning
+termediary layers (Table 2). On average, 7% of
+might result in difficulties in retrieving the actual
+all relation types in T-REx are forgotten in the
+knowledgeusingtheMLMhead. Inthefollowing,
+last layer for BERT. RANK-MSMARCO forgets
+we first look at the overall results and then focus
+the least amount of relation types (2%) whereas
+onspecificeffectsthereafter.
+QA-SQUAD-1forgetsthemost(43%)inT-REx,
+Figure4showstheevolutionofknowledgein3
+while also being the least knowledgeable (lowest
+differentmodelswhencomparedto BERT.
+or second-lowest P@1 in all probes). This is fur-
+All models possess nearly the same amount of
+therproofofourclaimthatBERT’soverallcapac-
+knowledge until layer 6 but then start to grow
+ity can be better estimated by probing all layers.
+Surprisingly, RANK-MSMARCO is able to con-
+at different rates. Most surprisingly, RANK-
+sistently store nearly all of its knowledge in the
+MSMARCO’s evolution is closest to BERT
+whereas the other models forget information
+last layer. We postulate that for ranking in partic-
+rapidly. With previous studies indicating that the
+ular, relational knowledge is a key aspect of the
+last layers make way for task-specific knowledge
+task specific knowledge commonly found in the
+(Kovalevaetal.,2019), therankingmodelcanre-
+lastlayers.
+tainalargeramountofknowledgewhencompared
+4.2 RelationalKnowledgeEvolution tootherfine-tuningtasksinourexperiments.
+Next, we study the evolution of relational knowl- These results raise the question: Is RANK-
+edge through the BERT layers presented in Fig- MSMARCO able to retain more knowledge be-
+ure2thatreportsP@1atdifferentlayers. causeMSMarcoisabiggerdatasetorisitbecause
+Figure1: P@k(uppervalue)vslastlayerP@k(lowervalue)forallmodelsforeachLAMAprobe.
+4.3 Effectoffine-tuningdata
+To isolate the effect of the fine-tuning dataset,
+we first fix the fine-tuning objective. We exper-
+imented with an MLM and a QA span predic-
+tionobjective. ForMLM,weusedmodelstrained
+on fine-tuning task data of varying size – BERT,
+MLM-MSMARCO (∼ 8.8 million unique pas-
+Figure2: MeanP@1ofBERTacrossalllayers.
+sages) and MLM-SQUAD (∼ 500+ unique arti-
+cles). FortheQAobjective,weexperimentedwith
+QA-SQUAD-1 and QA-SQUAD-2 which utilize
+thesamedatasetofpassagesbutQA-SQUAD-2is
+trainedon50Kextraunanswerablequestions.
+Figure 1 shows the total knowledge and Fig-
+ure 5 shows the evolution of knowledge for both
+MLM models as compared to BERT. When fine-
+tuning, BERT seemingly tends to forget some
+relational knowledge to accommodate for more
+domain-specificknowledge. Wesuspectitforgets
+Figure 3: P@1 across all layers for BERT for select certainrelations(foundintheprobe)tomakeway
+relationshiptypesfromT-REx. forotherknowledgenotdetectablebyourprobes.
+Inthecasewheretheprobeisalignedwiththefine
+tuningdata(Squad), MLM-SQUAD learnsmore
+aboutitsdomainandoutperforms BERT butonly
+by a small margin (< 5%). Even though MLM-
+MSMARCOusesadifferentdatasetitisabletore-
+tain a similar level of knowledge in Squad. The
+evolution trends in Figure 5 further confirm that
+fine tuning leads to forgetting mostly in the last
+layers. Sincethefinetuningobjectiveandprobing
+tasksarealigned,itismoreevidentintheseexper-
+imentsthatrelationalknowledgeisbeingforgotten
+Figure4: Knowledgecontainedperlayermeasuredin
+orreplaced.
+termsofP@1onT-REx.
+When observing P@1 and P@1, accord-
+ing to T-REx and Google-RE in particular,
+therankingobjectiveisbettersuitedtoknowledge MLM-MSMARCO forgets a large amount of
+retentionascomparedtoQA,MLMorNER? knowledge but retains common sense knowledge
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure5: Effectofdatasetsize. MeanP@1acrosslayersforBERT,MLM-MSMARCOandMLM-SQUAD.
+(a)ConceptNet
+(b)T-REx (c)Squad (d)Google-RE
+Figure6: Effectofdatasetsize. MeanP@1acrosslayersforQA-SQUAD-1andQA-SQUAD-2.
+(ConceptNet). MLM-SQUAD contains sub- Models P@1 P@10 P@100
+BERT 0.07 0.02 0.07
+stantially more knowledge overall according to
+QA-SQUAD-1 0.43 0.38 0.38
+2/4 probes and nearly the same in the others QA-SQUAD-2 0.17 0.19 0.17
+as compared to MLM-MSMARCO. Seemingly, MLM-SQUAD 0.12 0.07 0.07
+RANK-MSMARCO 0.02 0.05 0.05
+the amount of knowledge contained in fine tuned
+MLM-MSMARCO 0.10 0.10 0.14
+models is not directly correlated with the size of NER-CONLL 0.26 0.33 0.43
+thedataset. Therecanbeseveralcontributingfac-
+Table 2: Fraction of relationship types (of the 41
+tors to this phenomenon potentially related to the
+T-REx) that are forgotten in the last layer. If mean
+datadistributionandalignmentoftheprobeswith
+P12@1 < mean Pl@1 for a particular relation type
+thefinetuningdata. Weleavetheseavenuesopen then that relation is considered to be forgotten at the
+tofuturework. lastlayer.
+Considering the QA span prediction objective,
+we first see that the total amount of knowledge
+stored (P@1) in QA-SQUAD-2 is higher for 3/4 periments where we fixed the dataset and com-
+knowledge probes (from Figure 1). Figure 6 pared the MLM objective (MLM-MSMARCO)
+shows the evolution of knowledge captured for vs the ranking objective RANK-MSMARCO and
+QA-SQUAD-1vsQA-SQUAD-2. QA-SQUAD- MLM-SQUAD vs the span prediction objective
+2 capturesmoreknowledgeatthelastlayerin3/4 (QA-SQUAD-2). Figure 8 shows the evolution
+probes with both models showing similar knowl- of knowledge captured for MLM-MSMARCO vs
+edge emergence trends. This result hints to the RANK-MSMARCO.
+fact that a more difficult task (SQUAD2) on the We observe that RANK-MSMARCO performs
+same dataset forces BERT to remember more re- quite similar to MLM-MSMARCO across all
+lational knowledge in its final layers as compared probes and layers. Although MLM-MSMARCO
+to the relatively simpler SQUAD1. This point is has the same training objective as the probe, the
+further emphasized in Table 2. Only 17% of rela- ranking model can retain nearly the same amount
+tion types are better captured in the intermediary of knowledge. We hypothesize that this is be-
+layers of QA-SQUAD-2 as compared to 43% for cause the downstream fine-tuning task is sensi-
+QA-SQUAD-1. tive to relational information. Specifically, rank-
+ing passages for open-domain QA is a task that
+4.4 Effectoffinetuningobjective
+relies heavily on identifying pieces of knowledge
+The second effect that we previously discussed that are strongly related – For example, given
+is the effect of the task objective function that the query: How do you mow the lawn?, RANK-
+might be misaligned with the probing proce- MSMARCO must effectively identify concepts
+dure. To study this effect, we conducted 2 ex- andrelationsincandidatepassagesthatarerelated
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure7: EffectofFine-TuningObjectiveonfixedsizedata: SQUAD.
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure8: EffectofFine-TuningObjectiveonfixedsizedata: MSMarco.
+tolawnmowing(liketypesofgrassandlawnmow- tain more factual knowledge (MLM-MSMARCO
+ers)toestimaterelevance. < MLM-SQUAD as measured by P@1). In-
+Reading comprehension /span prediction (QA) stead, we find that knowledge-intensive tasks like
+however seems to be a less knowledge-intensive ranking do mitigate forgetting compared to span
+task both in terms of total knowledge and at the prediction. Although the fine-tuned models al-
+last layer (Figure 1). In Figure 7 we see that the wayscontainlessknowledge,withsignificant(and
+final layers are the most impacted here as well. expected) forgetting in the last layers, RANK-
+FromTable2weobservethat MLM-SQUAD for- MSMARCO remembers relatively more relation-
+getslessinitsfinallayer(12%vs17%),withQA- shiptypesthanBERT(2%vs7%forgotten)inits
+SQUAD-2 seemingly forgoing relational knowl- last layer (Table 2). This result can partially ex-
+edgeforspanpredictiontaskknowledge. plain findings in Chang et al. (2019) where they
+found that pretraining BERT with inverse cloze
+5 DiscussionandConclusion tasks aids it’s transferability to a retrieval and
+rankingsetting. Essentially,rankingtasksencour-
+In this paper, we introduce a framework to probe age the retention of factual knowledge (as mea-
+all layers of BERT for knowledge. We exper- sured by cloze tasks) since they are seemingly
+imented on a variety of probes and fine-tuning required for reasoning between the relative rele-
+tasksandfoundthat BERT containsmoreknowl- vanceofdocumentstoaquery.
+edge than was reported earlier. Our experiments Our results have direct implications on the
+shed light on the hidden knowledge stored in use of BERT as a knowledge base. By ef-
+BERT and also some important implications to fectively choosing layers to query and adopting
+model building. Since intermediate layers con- earlyexitingstrategiesknowldgebasecompletion
+tain knowledge that is forgotten by the final lay- can be improved. The performance of RANK-
+ers to make way for task-specific knowledge, our MSMARCO also warrants further investigation
+probingprocedurecanmoreaccuratelycharacter- into ranking models with different training objec-
+izetheknowledgestored. tives – pointwise (regression) vs pairwise vs list-
+We show that factual knowledge, like syntac- wise. More knowledge-intensive QA models like
+tic and semantic patterns, is also forgotten at the answer generation models may also show a simi-
+last layers due to fine-tuning. However, the last lartrendasrankingtasksbutrequireinvestigation.
+layercanalsomakewayformoredomainspecific We also believe that our framework is well suited
+knowledge when the fine tuning objective is the tostudyingvariantsofBERTarchitectureandpre-
+same as the pretraining objective (MLM) as ob- trainingmethods.
+served in Squad. Interestingly, forgetting is not
+mitigatedbylargerdatasetswhichpotentiallycon-
+References commonsense? In Proceedings of the 41th Annual
+Meeting of the Cognitive Science Society, CogSci
+Betty van Aken, Benjamin Winter, Alexander Lo¨ser,
+2019: Creativity+Cognition+Computation,Mon-
+and Felix A. Gers. 2019. How does BERT answer
+treal, Canada, July24-27, 2019, pages1753–1759.
+questions?: A layer-wise analysis of transformer
+cognitivesciencesociety.org.
+representations. InProceedingsofthe28thACMIn-
+ternational Conference on Information and Knowl-
+YoavGoldberg.2019. Assessingbert’ssyntacticabili-
+edge Management, CIKM 2019, Beijing, China,
+ties. CoRR,abs/1901.05287.
+November3-7,2019,pages1823–1832.ACM.
+Ganesh Jawahar, Benoˆıt Sagot, and Djame´ Seddah.
+YonatanBelinkovandJamesR.Glass.2019. Analysis
+2019. WhatdoesBERTlearnaboutthestructureof
+methods in neural language processing: A survey.
+language? InProceedingsofthe57thAnnualMeet-
+InProceedingsofthe2019ConferenceoftheNorth
+ing of the Association for Computational Linguis-
+American Chapter of the Association for Computa-
+tics, pages 3651–3657, Florence, Italy. Association
+tional Linguistics: Human Language Technologies,
+forComputationalLinguistics.
+NAACL-HLT2019,Minneapolis,MN,USA,June2-
+7, 2019, Volume 1 (Long and Short Papers), pages
+NoraKassnerandHinrichSchu¨tze.2020. Negatedand
+3348–3354.AssociationforComputationalLinguis-
+misprimed probes for pretrained language models:
+tics.
+Birdscantalk,butcannotfly. InProceedingsofthe
+58thAnnualMeetingoftheAssociationforCompu-
+Wei-ChengChang,XYuFelix,Yin-WenChang,Yim-
+tational Linguistics, ACL 2020, Online, July 5-10,
+ing Yang, and Sanjiv Kumar. 2019. Pre-training
+2020, pages 7811–7818. Association for Computa-
+tasks for embedding-based large-scale retrieval. In
+tionalLinguistics.
+International Conference on Learning Representa-
+tions.
+Diederik P. Kingma and Jimmy Ba. 2015. Adam: A
+method for stochastic optimization. In 3rd Inter-
+Ishita Dasgupta, Demi Guo, Andreas Stuhlmu¨ller,
+national Conference on Learning Representations,
+Samuel Gershman, and Noah D. Goodman. 2018.
+ICLR 2015, San Diego, CA, USA, May 7-9, 2015,
+Evaluating compositionality in sentence embed-
+ConferenceTrackProceedings.
+dings. InProceedingsofthe40thAnnualMeetingof
+the Cognitive Science Society, CogSci 2018, Madi-
+Olga Kovaleva, Alexey Romanov, Anna Rogers, and
+son,WI,USA,July25-28,2018.cognitivescienceso-
+AnnaRumshisky.2019. Revealingthedarksecrets
+ciety.org.
+ofBERT. InProceedingsofthe2019Conferenceon
+EmpiricalMethodsinNaturalLanguageProcessing
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+and the 9th International Joint Conference on Nat-
+Kristina Toutanova. 2019. BERT: pre-training of
+ural Language Processing, EMNLP-IJCNLP 2019,
+deepbidirectionaltransformersforlanguageunder-
+standing. In Proceedings of the 2019 Conference Hong Kong, China, November 3-7, 2019, pages
+of the North American Chapter of the Association 4364–4373.AssociationforComputationalLinguis-
+for Computational Linguistics: Human Language tics.
+Technologies,NAACL-HLT2019,Minneapolis,MN,
+Nelson F. Liu, Matt Gardner, Yonatan Belinkov,
+USA,June2-7,2019,Volume1(LongandShortPa-
+MatthewE.Peters,andNoahA.Smith.2019. Lin-
+pers), pages 4171–4186. Association for Computa-
+guistic knowledge and transferability of contextual
+tionalLinguistics.
+representations. InProceedingsofthe2019Confer-
+Hady ElSahar, Pavlos Vougiouklis, Arslen Remaci, ence of the North American Chapter of the Associ-
+Christophe Gravier, Jonathon S. Hare, Fre´de´rique ation for Computational Linguistics: Human Lan-
+Laforest, and Elena Simperl. 2018. T-rex: A large guageTechnologies,NAACL-HLT2019,Minneapo-
+scalealignmentofnaturallanguagewithknowledge lis, MN, USA, June 2-7, 2019, Volume 1 (Long and
+base triples. In Proceedings of the Eleventh Inter- Short Papers), pages 1073–1094. Association for
+national Conference on Language Resources and ComputationalLinguistics.
+Evaluation, LREC 2018, Miyazaki, Japan, May 7-
+12, 2018. European Language Resources Associa- Tom McCoy, Ellie Pavlick, and Tal Linzen. 2019.
+tion(ELRA). Right for the wrong reasons: Diagnosing syntactic
+heuristics in natural language inference. In Pro-
+AllysonEttinger,AhmedElgohary,ColinPhillips,and ceedings of the 57th Conference of the Association
+PhilipResnik.2018. Assessingcompositioninsen- forComputationalLinguistics,ACL2019,Florence,
+tence vector representations. In Proceedings of Italy, July28- August 2, 2019, Volume1: Long Pa-
+the27thInternationalConferenceonComputational pers, pages 3428–3448. Association for Computa-
+Linguistics,pages1790–1801,SantaFe,NewMex- tionalLinguistics.
+ico, USA. Association for Computational Linguis-
+tics. Tri Nguyen, Mir Rosenberg, Xia Song, Jianfeng Gao,
+Saurabh Tiwary, Rangan Majumder, and Li Deng.
+MaxwellForbes,AriHoltzman,andYejinChoi.2019. 2016. MS MARCO: A human generated machine
+Do neural language representations learn physical reading comprehension dataset. In Proceedings
+of the Workshop on Cognitive Computation: Inte- R. Speer and Catherine Havasi. 2012. Represent-
+grating neural and symbolic approaches 2016 co- ing general relational knowledge in conceptnet 5.
+located with the 30th Annual Conference on Neu- In Proceedings of the Eighth International Confer-
+ral Information Processing Systems (NIPS 2016), enceonLanguageResourcesandEvaluation,LREC
+Barcelona, Spain, December9, 2016, volume1773 2012, Istanbul, Turkey, May 23-25, 2012, pages
+ofCEURWorkshopProceedings.CEUR-WS.org. 3679–3686.EuropeanLanguageResourcesAssoci-
+ation(ELRA).
+RodrigoNogueiraandKyunghyunCho.2019. Passage
+re-rankingwithBERT. CoRR,abs/1901.04085. Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019.
+BERT rediscovers the classical NLP pipeline. In
+DaveOrr.2013. 50,000lessonsonhowtoread: are- Proceedings of the 57th Conference of the Asso-
+lation extraction corpus. Online: Google Research ciation for Computational Linguistics, ACL 2019,
+Blog,11. Florence, Italy, July 28- August 2, 2019, Volume
+1: Long Papers, pages 4593–4601. Association for
+Jeffrey Pennington, Richard Socher, and Christo- ComputationalLinguistics.
+pher D. Manning. 2014. Glove: Global vectors for
+word representation. In Proceedings of the 2014 Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Conference on Empirical Methods in Natural Lan- Chaumond,ClementDelangue,AnthonyMoi,Pier-
+guage Processing, EMNLP 2014, October 25-29, ricCistac, TimRault, Re´miLouf, MorganFuntow-
+2014,Doha,Qatar,AmeetingofSIGDAT,aSpecial icz, and Jamie Brew. 2019. Huggingface’s trans-
+InterestGroupoftheACL,pages1532–1543.ACL. formers: State-of-the-art natural language process-
+ing. CoRR,abs/1910.03771.
+MatthewE.Peters,MarkNeumann,LukeZettlemoyer,
+andWen-tauYih.2018. Dissectingcontextualword Yukun Zhu, Ryan Kiros, Richard S. Zemel, Ruslan
+embeddings: Architecture and representation. In Salakhutdinov, Raquel Urtasun, Antonio Torralba,
+Proceedings of the 2018 Conference on Empirical andSanjaFidler.2015. Aligningbooksandmovies:
+MethodsinNaturalLanguageProcessing,Brussels, Towards story-like visual explanations by watching
+Belgium, October 31 - November 4, 2018, pages movies and reading books. In 2015 IEEE Interna-
+1499–1509.AssociationforComputationalLinguis- tionalConferenceonComputerVision,ICCV2015,
+tics. Santiago, Chile, December 7-13, 2015, pages 19–
+27.IEEEComputerSociety.
+Fabio Petroni, Tim Rockta¨schel, Sebastian Riedel,
+Patrick S. H. Lewis, Anton Bakhtin, Yuxiang Wu,
+and Alexander H. Miller. 2019. Language mod-
+els as knowledge bases? In Proceedings of the
+2019 Conference on Empirical Methods in Natu-
+ral Language Processing and the 9th International
+Joint Conference on Natural Language Processing,
+EMNLP-IJCNLP2019,HongKong,China,Novem-
+ber 3-7, 2019, pages 2463–2473. Association for
+ComputationalLinguistics.
+Pranav Rajpurkar, Robin Jia, and Percy Liang. 2018.
+Know what you don’t know: Unanswerable ques-
+tionsforsquad. CoRR,abs/1806.03822.
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+PercyLiang.2016. Squad: 100,000+questionsfor
+machine comprehension of text. In Proceedings of
+the2016ConferenceonEmpiricalMethodsinNat-
+ural Language Processing, EMNLP 2016, Austin,
+Texas,USA,November1-4,2016,pages2383–2392.
+TheAssociationforComputationalLinguistics.
+Anna Rogers, Olga Kovaleva, and Anna Rumshisky.
+2020. Aprimerinbertology: Whatweknowabout
+howBERTworks. CoRR,abs/2002.12327.
+Erik F. Tjong Kim Sang and Fien De Meulder.
+2003. Introduction to the conll-2003 shared task:
+Language-independentnamedentityrecognition. In
+Proceedings of the Seventh Conference on Natural
+Language Learning, CoNLL 2003, Held in cooper-
+ation with HLT-NAACL 2003, Edmonton, Canada,
+May31-June1,2003,pages142–147.ACL.
+6 Appendix • Average runtime: Circa 3 hours per layer
+(that is training the MLM head and probing
+6.1 Models
+theLAMAprobes)onasingleGPU.
+• BERT: Off the shelf ”bert-base-uncased”
+• Number of parameters: Since we use stan-
+from the huggingface transformers library
+dard BERT, the base model + MLM head
+(Wolfetal.,2019)
+combinedhave110,104,890parameters. The
+MLMheaditselfhas24,459,834parameters.
+• QA-SQUAD-1: Both SQuAD QA models
+aretrainedwiththehuggingfacequestionan-
+• Validationperformancefortestresults: Since
+swering training script 4. This adds a span
+we probed the data, we could not do valida-
+prediction head to the default BERT, I.e. a
+tiononit.
+linear layer that computes logits for the span
+start and span end. So for a given ques- • Explanation of evaluation metrics used with
+tion and a context, it classifies the indices in links to code: It is done in knowl-
+in which the answer starts and ends. As a edge probing/probing/metrics.py. But the
+lossfunctionitusescrossentropy. Themodel one that we use are Precision @ k where we
+was trained on a single GPU. We used the just check if the model predicts the correct
+huggingface default training script and stan- tokenatindex<=k(P@k)
+dard parameters: 2 epochs, learning rate 3e-
+6.3 Hyperparameterseach:
+5,batchsize12.
+Notapplicable.
+• QA-SQUAD-2: SingleGPU,alsousinghug-
+6.4 Datasets:
+gingfacetrainingscriptwithstandardparam-
+eters. Learning rate was 3e-5, batch size 12, • Wikitext-2: Used for fine-tuning the MLM
+bestmodelafter2epochs. head. Subset of the Englisch Wikipedia for
+long term dependency language modeling.
+• MLM-SQUAD: Fine tuned on text from 2,088,628 tokens for training, 217.646
+SQUAD using the masked language model- for validation, 245.569 for testing. Vo-
+ing objective as per (Devlin et al., 2019). cab size: 33,278 out of vocab: 2.6% of
+15% of the tokens masked at random. tokens. It can be downloaded from here:
+Trained for 4 epochs with LR 5e-5. Single https://www.salesforce.com/products/einstein/ai-
+GPU. research/the-wikitext-dependency-language-
+modeling-dataset/
+• RANK-MSMARCO: Trained as described in
+• LAMA probe data: Can be
+(Nogueira and Cho, 2019). MSMARCO,
+downloaded from their github:
+100k iterations with batch size 128 (on a
+https://github.com/facebookresearch/LAMA
+TPUv3-8).
+. Only used for testing. Consists of:
+• MLM-MSMARCO: 15% of the tokens Google-RE: 5528 instances over 3 relations.
+masked at random. 3 epochs, batch size 8, T-REx: 34017 instances over 41 relations.
+LR5e-5. Singlegpu. ConceptNet: 12514 instances. This is not
+groupedintorelations. Squad: 305instances.
+6.2 Experimentalresults: Context in-sensitive questions rewritten to
+cloze-statements. Nospecificrelationeither.
+• Computing infrastructure used: Everything
+can be run in Colab notebook with 12gb of • SQuAD 1.1: Can be downloaded from
+RAM and the standard GPU. The experi- here: https://rajpurkar.github.io/SQuAD-
+ments, however, havebeenrunonacomput- explorer/ . 100,000+ question answer pairs
+ing cluster with 6 nodes. Every node had 4 based on wikipedia articles. Produced by
+gtx1080tiand128gbRAM.Thusbeingable crowdworkers.
+toparallizetheprobingofdifferentlayers.
+• SQuAD 2: Can be downloaded from here:
+4https://github.com/huggingface/transformers https://rajpurkar.github.io/SQuAD-explorer/
+. Combines the 100,000+ question answer 6.5 KnowledgecapturedinBERT
+pairswith50,000unanswerablequestions.
+6.5.1 IntermediateLayersMatter
+• MSMARCO:Canbedownlaodedfromhere: AdditionalprecisionsforFigure4canbefoundin
+https://microsoft.github.io/msmarco/ . For Figure9.
+ranking: Dataset for passage reranking was
+6.5.2 RelationalKnowledgeEvolution
+used. Given 1,000 passages, re-rank by rele-
+AdditionalprecisionsforFigure2canbefoundin
+vance. Dataset contains 8,8m passages. For
+Figure10.
+MLM training: Dataset for QA was used.
+It consists of over 1m queries and the 8,8m 6.5.3 Effectofdatasetsize
+passages. Each query has 10 candidate pas-
+Figure11and12showtheP@10andP@100plots
+sages. For MLM, we appended the queries
+forFigure5. Respectively,Figure13and14show
+with all candidate passages before feeding
+thesamefor6.
+intoBERT.
+6.6 Effectoffinetuningobjective
+ForcomparingMLMandQAonSQuAD(7),Fig-
+ure 15 and 16 show more precisions. Also, for
+comparing fine tune objectives on MSMARCO
+(Figure 8), Figure 17 and 18 show P@10 and
+P@100.
+(a)P@1 (b)P@10 (c)P@100
+Figure 9: Mean performance in different precisions on T-REx sets for BERT, QA-SQUAD-2, RANK-
+MSMARCO,NER-CONLL.
+(a)P@1 (b)P@10 (c)P@100
+Figure10: MeanperformanceofBERTacrossalllayersandprobesets.
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure11: Effectofdatasetsize. ShowingP@10
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure12: Effectofdatasetsize. ShowingP@100
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure13: Effectofdatasetsize. ShowingP@10fortheQAobjective.
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure14: Effectofdatasetsize. ShowingP@100fortheQAobjective.
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure15: EffectofFine-TuningObjectiveonfixedsizedata: SQUAD.ShowingP@10.
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure16: EffectofFine-TuningObjectiveonfixedsizedata: SQUAD.ShowingP@100.
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure17: EffectofFine-TuningObjectiveonfixedsizedata: MSMarco. ShowingP@10.
+(a)ConceptNet (b)T-REx (c)Squad (d)Google-RE
+Figure18: EffectofFine-TuningObjectiveonfixedsizedata: MSMarco. ShowingP@100.
+Model Google-RE T-REx ConceptNet Squad
+P@1 P@1 P@1 P@1 P@1 P@1 P@1 P@1
+BERT 10 15 29 34 15 21 13 20
+QA-SQUAD-1 3 9 6 15 7 15 5 15
+QA-SQUAD-2 3 9 10 19 8 16 6 13
+MLM-SQUAD 4 10 15 23 9 16 6 16
+RANK-MSMARCO 6 11 23 29 12 19 10 20
+MLM-MSMARCO 3 7 14 21 11 17 7 12
+Table3: Meanknowledgecontainedinthelastlayer(P@1)vsknowledgecontainedinalllayers(P@1)foreachprobe.

@@ -1,0 +1,355 @@
+DictaBERT: A State-of-the-Art BERT Suite for Modern Hebrew
+ShaltielShmidman1,†,AviShmidman1,2,‡,MosheKoppel1,2,†
+1DICTA/Jerusalem,Israel 2BarIlanUniversity/RamatGan,Israel
+†{shaltieltzion,moishk}@gmail.com
+‡avi.shmidman@biu.ac.il
+Abstract ficationstothetrainingparameters,aswellasim-
+provedtrainingsetandanimprovedprocedurefor
+We present DictaBERT, a new state-of-the- preprocessingtrainingsamples. Themodeloutper-
+art pre-trained BERT model for modern He-
+formspreviousBERTmodelsonmostbenchmarks,
+brew,outperformingexistingmodelsonmost
+withthemostnoticeableimprovementseenonthe
+benchmarks. Additionally, we release three
+QAtask. Thisgainissignificant,astheQAtaskre-
+fine-tunedversionsofthemodel,designedto
+quiresmorecomplexsyntacticunderstandingthan
+performthreespecificfoundationaltasksinthe
+analysisofHebrewtexts: prefixsegmentation, othertasks. Theperformancegainonthistaskmay
+morphologicaltaggingandquestionanswering. indicateincreasedlanguagecomprehensioninthe
+Thesefine-tunedmodelsallowanydeveloper model. Notably, the model’s performance on the
+toperformprefixsegmentation,morphological QA task is essentially equivalent2 to that of the
+taggingandquestionansweringofaHebrewin-
+mT5-XL model, a model with over 10 times as
+putwithasinglecalltoaHuggingFacemodel,
+manyparametersasDictaBERT.
+withouttheneedtointegrateanyadditionalli-
+We also present DictaBERT-morph,
+brariesorcode. Inthispaperwedescribethe
+detailsofthetrainingaswellandtheresultson DictaBERT-seg and DictaBERT-heq,
+thedifferentbenchmarks. Wereleasethemod- customized models fine-tuned for morphological
+els1tothecommunity,alongwithsamplecode tagging, prefix segmentation and question an-
+demonstratingtheiruse. Wereleasethesemod- swering, respectively. The models are released
+elsaspartofourgoaltohelpfurtherresearch with sample code for easy integration.3 These
+anddevelopmentinHebrewNLP.
+fine-tunedmodelsallowanydevelopertoperform
+prefix segmentation and morphological tagging
+1 Introduction
+and question answering of a Hebrew input with
+In recent years, Hebrew NLP research has made a single call to a HuggingFace model, without
+major progress with the release of various pre- the need to integrate any additional libraries or
+trained language models with Hebrew support. code. Thedetailsofthefine-tuningaredetailedin
+Thefirstwasthemulti-lingualtransformermodel section4.
+mBERT,basedontheBERTarchitecture(Devlin
+2 Approach
+etal.,2019),whichwasthenfollowedbyseveral
+other models of a similar architecture (HeBERT
+2.1 Tokenizer
+(Chriqui and Yahav, 2022), AlephBERT (Seker
+We use the Word-Piece tokenization method pro-
+et al., 2021), AlephBERTGimmel (Gueta et al.,
+posedbySongetal.(2021)withthedefaultnormal-
+2023),andHeRo(ShalumovandHaskey,2023)).
+izersandpreprocessorssuggestedbyHuggingFace,
+Earlierthisyearitwasshownthatwhenfinetuned,
+withthefollowingmodification:
+themuchlargermT5(Xueetal.,2021)modelsper-
+We added a pre-tokenizer to handle usage of
+formverywellonthevariousHebrewbenchmarks
+quotation marks and apostrophes in Modern He-
+(Eyal et al., 2022) resulting in SOTA scores for
+brew. Wemakesuretokeepassingletokenswords
+mostoftheexperiments.
+We present our model DictaBERT which is 2The QA task is scores with two measures: EM (exact
+basedontheBERTarchitecturewithminormodi- match)andF1.DictaBERTachievesaslightlyhigherscore
+fortheEM,whereasmT5-XLachievesaslightlyhigherscore
+1Exact license can be found at https:// fortheF1.
+creativecommons.org/licenses/by-sa/4.0/ 3Thesamplecodecanbefoundintheappendix.
+3202
+tcO
+31
+]LC.sc[
+2v78661.8032:viXra
+withquotationmarksmeantasabbreviations(e.g., canbefitwithinthetrainingexample,withoutany
+) and words with an apostrophe indicating prematuresentencetruncation.
+foreignsounds(e.g., ). 3. Inordertohelpthemodelcopewithdatathat
+Following the work in AlephBertGimmel, the isn’tfullyclean,andinordertoexpandtheutilityof
+tokenizer was trained with a vocabulary size of theMLMfunctionfordownstreamtasks,weinsert
+128,000tokens. randomlyin10%ofinstancesa[BLANK]token.
+This token helps the model learn that sometimes
+2.2 Pre-trainingData
+therecanbeawordinasentencethatdoesn’tactu-
+Ourtrainingdatasetisamixtureofseveralsources, allybelongthere. Anexampleofadownstreamuse
+summing to a total of three billion words (3.8B caseinwhichthiswouldbeusefuliswhenutilizing
+tokens). We’d like to emphasize that none of the the MLM feature to predict word alternates: the
+dataissynthetic. Thedatasetisbuiltupofseveral predictionofa[BLANK]indicatesthattheword
+differentcomponents: canbeoptionallybeleftoutaltogether.
+C4 [70%]. We start with the HeDC4 corpus 4. Inaddition,inordertokeepthetrainingdata
+released by (Shalumov and Haskey, 2023), and as clean as possible, we throw out any training
+continuefurthercleaningit. Weremovedapproxi- instancewiththe[UNK]token,inordertoensure
+mately15%ofthecorpususingvarioustechniques that we train on authentically Hebrew data. This
+including histograms and gibberish detectors, as resultedinthrowingoutapproximately3%ofthe
+wellasremovingsentencesthathadaveryhighper- sentencesinouralreadycleaneddataset.
+plexitywhenrunthroughanMLMscoringfunction.
+We limited our training corpus to contain mainly 2.4 TrainingDetailsandHyperparameters
+English and Hebrew; sentences that contained a
+We trained our model with the HuggingFace ar-
+disproportionate number of non-English/Hebrew chitecturewrappedwithNVIDIAlibraries4 which
+tokenswereremoved. Inaddition,inordertoretain
+are highly optimized for training compute-heavy
+onlydocumentsofsubstantialcontent,wefilterout
+machine learning models on NVIDIA hardware.
+anydocumentwithlessthan50words.
+Wepre-trainedthemodelon4A10040GBGPUs
+Othersources[30%]. Wecollecteddatafrom
+for a total of 36,000 iterations, for a total of 35B
+variousothersourcesincludingnewssites,blogs,
+tokens(1.75epochsofeachexample5times). The
+tvandmoviesubtitles,novels,andmore. Thisdata
+trainingwasdonein3phases:
+wasalsorunthroughthecleaningprocessdescribed
+(1)Sequencesofupto256tokenswithalearning
+above,althoughwithoutthefinalfilterbylength.
+rateof6e-3for0.7epochs.
+(2)Sequencesof256tokenswithalearningrate
+2.3 TrainingObjectives
+of1e-4for0.3epochs.
+IntheoriginalBERTarticle(Devlinetal.,2019),
+(3)Sequencesof512tokenswithalearningrate
+the model was pretrained using two objectives:
+of5e-5for0.75epochs.
+MLM(maskedlanguagemodeling)andNSP(next
+Thetotaltrainingtimewas9.4days. Thetrain-
+sentence prediction). Following the work by Liu
+ing was done with a global batch size of 8,192,
+etal.(2019),weremovedtheNSPobjectivefrom
+warmupproportionof0.2843forphase1&2,and
+thetraining,andonlytrainedwiththeMLMobjec-
+0.128forphase3.
+tive.
+In addition, we made slight adjustments to the
+3 ExperimentsandResults
+constructionsofthetrainingexamplesfortheMLM
+objective,asfollows: WecomparetheperformanceofDictaBERTwith
+1. Wedon’tmasktokensthatarebrokenupinto previousHebrewmodelsofsimilarparamatersize,
+multiple word-pieces. In our research, we found drawingresultsfromtheirrespectivepublications
+thatmaskingpartofawordandtrainingtopredict whentheyexist;otherwisewefillinthescoresby
+itresultsinlowerqualitymodel. finetuning the models ourselves. The models we
+2. We never truncate part of a sentence. If we compare to are: mBERT, AlephBert, AlephBert-
+are creating a training example from a document Gimmel, HeRo, mT5-Base. For the QA task, we
+thatislongerthanthemaximumlength,weremove
+4https://github.com/NVIDIA/
+entiresentencesfromtheendoftheexample,such
+DeepLearningExamples/tree/master/
+thatwemaximizethenumberoffullsentencesthat PyTorch/LanguageModeling/BERT
+Seg POS Features Sentiment NER
+mBERT 96.07 93.14 92.68 mBERT 84.21 79.11
+AlephBert 97.88 95.81 95.27 AlephBert 89.02 83.62
+ABG 98.09 96.22 95.76 AlephBertGimmel 89.51 85.26
+HeRo 97.86 96.05 95.61 HeRo 89.56 86.79
+mT5-Base 96.34 95.9 - mT5-Base 87.25 74.7
+DictaBERT 98.16 96.25 96.1 DictaBERT 89.79 87.01
+Table1: PerformanceComparisonofDifferentModels Table2: PerformanceComparisonofDifferentModels
+ontheMorphologytask ontheSentimentandNERtasks
+HeQ-EM HeQ-F1
+alsocompareourresultstothemuchlargermT5- mBERT 62.7 71.42
+XLmodel(3.7Bparameters). AlephBert 57.91 67.66
+Followingpreviouspublications,wetestedour AlephBertGimmel 57.12 67.37
+modelonthefollowingtasks: HeRo 61.89 71.3
+mT5-Base 53.65 65.03
+MorphologyWefollowthemulti-taskconfigu-
+ration setup and evaluation procedure detailed in mT5-XL 63.4 73.5
+Sekeretal.(2021)inordertofine-tuneforsegmen- DictaBERT 63.6 72.9
+tation,partofspeech,andfine-grainedmorpholog- ChatGPT 9.38 32.19
+icalfeatureprediction,andinordertocalculatethe
+Table3: PerformanceComparisonofDifferentModels
+MultiSet(mset)scoresforevaluation. Wetrainthe
+ontheQAtask
+model with the same training & test data used in
+previous works for this task. The results for this
+task are listed in Table 1. DictaBERT outper- 4 Fine-tunedModels
+formsallpreviousmodels.
+With this publication, we are also releasing three
+NamedEntityRecognition(NER)Wetrainon
+fine-tuned models, with sample code, in order to
+theNEMOdatasetpresentedbyBareketandTsar-
+alloweasyintegrationofDictaBERT’ssegmenta-
+faty(2021),whichcontains9categoriesand6,220
+tion and morph analysis and question answering
+sentences(7,713entities). WereportthetokenF1
+capabilitiesintoanyproductorexperiment.
+scoreforeachmodel. Theresultsforthistaskare
+Wewishtoemphasizethatforthemorphanal-
+listed in Table 2. DictaBERT outperforms all
+ysis and segmentation models, although the eval-
+previousmodels.
+uationaboveusedtheexacttrainingandtestdata
+SentimentAnalysisWeevaluateourmodelon
+usedinpreviousworksinordertoensurefaircom-
+thesentimentanalysisdatasetpresentedinAmram
+parisonofDictaBERT’scapabilitieswithprevious
+etal.(2018),basedon12Ksocialmediacomments.
+BERT models, the fine-tuned models that we are
+The results for this task are also listed in Table 2.
+currentlyreleasingwerefine-tunedonmuchlarger
+DictaBERToutperformsallpreviousmodels.
+corporaandwithasimpleroutputformatforeasy
+Question Answering For this task we use the integration,inordertoprovidemaximumpractical
+newlyreleasedHeQdatasetbyCohenetal.(2023), valuetothecommunity.
+whichcontains30Khighqualitysamplesfromthe
+GeekTime newsfeed, and from Wikipedia. The 4.1 DictaBERT-seg
+results for this task are listed in Table 3. As dis-
+This model was trained on a prefix segmentation
+cussedabove,DictaBERToutperformsallprevi-
+task,wherein,givenasentence,weaimtoidentify
+ousmodelsofsimilarparametersize,andperforms
+the letters that function as proclitics at the begin-
+essentiallyequivalenttothemuchlargermT5-XL
+ningsofthewords,segmentingthemfromthees-
+model5.
+sential word unit. For example, the word
+("thatwent")wouldbesegmentedinto ("that")
+5Wearealsopleasedtosharetheweightstoourfinetuned and ("went"). Notethatthismodeldoesnot
+version of mT5-XL, after finetuning it on the HeQ corpus.
+segmentsuffixes,ifany,attheendsofthewords.
+Themodelisavailableforuseonhuggingfacehere:https:
+//huggingface.co/dicta-il/mt5-xl-heq Training Data The training data for the fine-
+tuningofDictaBERT-segismadeupofvarious formthepredictionsonthefirstwordpiece. The5
+modernHebrewtextsincludingWikipedia,blogs, classifiersareasfollows:
+and more. The prefix segmentation training set
+• PredictionofthePOSforthemainword
+was initially automatically derived from Dicta’s
+in-house diacritized corpus, and subsequently re-
+• Prediction of the proclitic functions (can be
+viewedandcorrectedbyanexperthumanannotator.
+multipleornone-e.g., ["fromthe
+Thetrainingdataconsistsof52Ksentenceswitha
+meal"]hasbothanADPandDETprefix)
+totalof1.2Mwords.
+ArchitectureThearchitectureofthemodelisas • Predictionofthefine-grainedmorphological
+follows: Weruneachwordofthesentencethrough featuresoftheword(gender,number,person,
+eightclassifiersinordertopredicttheprobability andtense)
+ofeachofeightdifferentpossibleprefixfunctions
+• Prediction of whether there is a suffix and
+aHebrewprocliticmayserve. Wetrainthemodel
+whichfunctionitserves
+topredicttherelevantprefixclassesforeachword
+given its sentence context. During inference, we • Predictionsoffine-grainedfeaturesofthesuf-
+limitthepredictionstovalidsetsofprocliticfunc- fix(gender,number,andperson),iftheprevi-
+tions given the initial letters of the word. When ousclassifierpredictsthatthereisasuffix
+wordsarecomprisedofmultiplewordpieces,we
+trainonthefirstwordpiecealone,becausethepro- Sample code and output is displayed in Ap-
+clitics will virtually always be contained within pendixB.
+theinitialwordpiece(althoughwedeterminethe
+4.3 DictaBERT-heq
+validsetsofprocliticfunctionsbasedonthewhole
+Thismodelwastrainedonthequestionanswering
+word).
+task,wheregivenacontextandaquestion,weaim
+Sample code and output is displayed in Ap-
+toextracttheanswertothequestionfromthecon-
+pendixA.
+text. This model uses the standard HuggingFace
+4.2 DictaBERT-morph architecture for Bert-Question-Answering. The
+modelwastrainedontheHeQtraindatasetaslisted
+This model was trained on a morphology task,
+intheexperimentsection.
+where given a sentence, we aim to tag the fine-
+Sample code and output is displayed in Ap-
+grained morphological features of each word.
+pendixC.
+Specifically, DictaBERT-morph predicts part-
+of-speech,aswellasgender,number,person,and
+5 Conclusion
+tense,whereverrelevant. Similarlytotheprevious
+model,thismodelalsoidentifiesprocliticfunctions. Wearehappytoreleasethesemodeltothepublicto
+Additionally, this model also identifies whether
+helpfurtherresearchanddevelopmentinHebrew.7
+there is a suffix appended to the word, and if so,
+whichfunctionitserves,andalsothegender,num-
+References
+ber,andpersonofthesuffix.
+TrainingDataWeusedtheUDTreebank(Sade Adam Amram, Anat Ben David, and Reut Tsarfaty.
+2018. Representations and architectures in neu-
+etal.,2018)whichconsistsof5Ktaggedsentences
+ralsentimentanalysisformorphologicallyrichlan-
+in the train split, as well an additional 35K sen-
+guages: AcasestudyfromModernHebrew. InPro-
+tencesfromtheIAHLT6 UDcorpusoftaggedHe- ceedings of the 27th International Conference on
+brewsentences(Zeldesetal.,2022). ComputationalLinguistics,pages2242–2252,Santa
+ArchitectureForeverywordinasentence,we 7The base model DictaBERT is available at https:
+wetrainfiveclassifierstopredictthemorphologi- //huggingface.co/dicta-il/dictabert
+The fine-tuned segmentation model DictaBERT-seg is
+calfeaturesofthatword. Forcaseswhereaword
+available at https://huggingface.co/dicta-il/
+is broken up into multiple word pieces, we per- dictabert-seg
+Thefine-tunedmorphologymodelDictaBERT-morphis
+6We would like to express our thanks to IAHLT available at https://huggingface.co/dicta-il/
+for this tagged corpus. For more information regard- dictabert-morph
+ing the resources curated and made available by IAHLT, The fine-tuned QA model DictaBERT-heq is avail-
+see: https://github.com/IAHLT/iahlt.github. able at https://huggingface.co/dicta-il/
+io/blob/main/index.md dictabert-heq.
+Fe, New Mexico, USA. Association for Computa- AmirZeldes,NickHowell,NoamOrdan,andYifatBen
+tionalLinguistics. Moshe.2022. Asecondwaveofudhebrewtreebank-
+ingandcross-domainparsing.
+DanBareketandReutTsarfaty.2021. NeuralModel-
+ingforNamedEntitiesandMorphology(NEMO2).
+TransactionsoftheAssociationforComputational
+Linguistics,9:909–928.
+AvihayChriquiandInbalYahav.2022. HeBERTand
+HebEMO:AhebrewBERTmodelandatoolforpo-
+larityanalysisandemotionrecognition. INFORMS
+JournalonDataScience,1(1):81–95.
+AmirDNCohen, HillaMerhavFine, YoavGoldberg,
+andReutTsarfaty.2023. Heq: alargeanddiverse
+hebrewreadingcomprehensionbenchmark.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+KristinaToutanova.2019. Bert: Pre-trainingofdeep
+bidirectionaltransformersforlanguageunderstand-
+ing.
+MatanEyal,HilaNoga,RoeeAharoni,IdanSzpektor,
+andReutTsarfaty.2022. Multilingualsequence-to-
+sequencemodelsforhebrewnlp.
+Eylon Gueta, Avi Shmidman, Shaltiel Shmidman,
+CheynShmuelShmidman,JoshuaGuedalia,Moshe
+Koppel, Dan Bareket, Amit Seker, and Reut Tsar-
+faty.2023. Largepre-trainedmodelswithextra-large
+vocabularies: Acontrastiveanalysisofhebrewbert
+modelsandanewonetooutperformthemall.
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Roberta: A robustly optimized bert pretraining ap-
+proach.
+Shoval Sade, Amit Seker, and Reut Tsarfaty. 2018.
+TheHebrewUniversalDependencytreebank: Past
+present and future. In Proceedings of the Second
+WorkshoponUniversalDependencies(UDW2018),
+pages133–143,Brussels,Belgium.Associationfor
+ComputationalLinguistics.
+Amit Seker, Elron Bandel, Dan Bareket, Idan
+Brusilovsky,RefaelShakedGreenfeld,andReutTsar-
+faty.2021. Alephbert:ahebrewlargepre-trainedlan-
+guagemodeltostart-offyourhebrewnlpapplication
+with.
+Vitaly Shalumov and Harel Haskey. 2023. Hero:
+Roberta and longformer hebrew language models.
+arXiv:2304.11077.
+XinyingSong,AlexSalcianu,YangSong,DaveDopson,
+andDennyZhou.2021. Fastwordpiecetokenization.
+LintingXue,NoahConstant,AdamRoberts,MihirKale,
+RamiAl-Rfou,AdityaSiddhant,AdityaBarua,and
+ColinRaffel.2021. mT5: Amassivelymultilingual
+pre-trainedtext-to-texttransformer. InProceedings
+ofthe2021ConferenceoftheNorthAmericanChap-
+teroftheAssociationforComputationalLinguistics:
+HumanLanguageTechnologies,pages483–498,On-
+line.AssociationforComputationalLinguistics.
+A Appendix: ExampleCode&UsageofDictaBERT-seg
+Output:
+B Appendix: ExampleCode&UsageofDictaBERT-morph
+Output:
+
+
+C Appendix: ExampleCode&UsageofDictaBERT-heq
+Output:

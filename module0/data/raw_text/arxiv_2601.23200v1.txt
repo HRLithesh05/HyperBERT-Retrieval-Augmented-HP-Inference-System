@@ -1,0 +1,1788 @@
+Large Language Models for Patent Classification:
+Strengths, Trade-offs, and the Long Tail Effect
+Lorenzo Emer1,2, Marco Lippi3, Andrea Mina1,4,
+Andrea Vandin1,5*
+1*Institute of Economics and L’EMbeDS, Scuola Superiore Sant’Anna,
+Piazza Martiri della Libert`a, 33, Pisa, 56127, Italy.
+2Department of Computer Science, University of Pisa, Largo B.
+Pontecorvo 3, Pisa, 56126, Italy.
+3Department of Information Engineering, University of Florence, Via di
+Santa Marta 3, Florence, 50139, Italy.
+4Centre for Business Research, University of Cambridge, 11–12
+Trumpington Street, Cambridge, CB2 1QA, United Kingdom.
+5DTU Compute, Technical University of Denmark, Anker Engelunds
+Vej 101, Kongens Lyngby, 2800, Denmark.
+*Corresponding author(s). E-mail(s): andrea.vandin@santannapisa.it;
+Contributing authors: lorenzo.emer@santannapisa.it;
+marco.lippi@unifi.it; andrea.mina@santannapisa.it;
+Abstract
+Patent classification into CPC codes underpins large-scale analyses of techno-
+logical change but remains challenging due to its hierarchical, multi-label, and
+highlyimbalancedstructure.Whilepre–GenerativeAIsupervisedencoder-based
+models became the de facto standard for large-scale patent classification, recent
+advances in large language models (LLMs) raise questions about whether they
+can provide complementary capabilities, particularly for rare or weakly repre-
+sentedtechnologicalcategories.Inthiswork,weperformasystematiccomparison
+of encoder-based classifiers (BERT, SciBERT, and PatentSBERTa) and open-
+weight LLMs on a highly imbalanced benchmark dataset (USPTO-70k). We
+evaluate LLMs under zero-shot, few-shot, and retrieval-augmented prompting,
+and further assess parameter-efficient fine-tuning of the best-performing model.
+Our results show that encoder-based models achieve higher aggregate perfor-
+mance, driven by strong results on frequent CPC subclasses, but struggle on
+1
+6202
+naJ
+03
+]EC.sc[
+1v00232.1062:viXra
+rare ones. In contrast, LLMs achieve relatively higher performance on infre-
+quent subclasses—often associated with early-stage, cross-domain, or weakly
+institutionalised technologies—particularly at higher hierarchical levels. These
+findings indicate that encoder-based and LLM-based approaches play comple-
+mentary roles in patent classification. We additionally quantify inference time
+and energy consumption, showing that encoder-based models are up to three
+ordersofmagnitudemoreefficientthanLLMs.Overall,ourresultsinformrespon-
+siblepatentometricsandtechnologymapping,andmotivatehybridclassification
+approaches that combine encoder efficiency with the long-tail coverage of LLMs
+under computational and environmental constraints.
+Keywords:CPC,HierarchicalMulti-labelPatentClassification,LLM,Encoders
+Introduction
+Patent classification is a foundational task in the organisation and analysis of tech-
+nological information. In scientometrics and patentometrics, automated classification
+methods are widely used to map technological domains, trace innovation trajecto-
+ries,andstudytechnologicalchangeandemergence(HaghighianRoudsarietal.2022;
+Kim et al. 2020; Lu et al. 2024; Oh et al. 2020). Accurate assignment of classifica-
+tion schemes such as the IPC or CPC is essential for patent offices and downstream
+users—including legal practitioners, technology analysts, and policymakers—to sup-
+port prior art search, landscape analysis, and monitoring of emerging technologies
+(Krestel et al. 2021; Lin and Chou 2025). The rapid growth of global patent filings,
+together with the increasing granularity of classification systems, has intensified the
+need for accurate and scalable automated classification methods capable of handling
+millions ofheterogeneous, multi-label, andhierarchicallystructured documents, while
+avoidingsystematicbiasesacrosstechnologicaldomains(Kresteletal.2021;Kamateri
+et al. 2024).
+Historically, automated patent classification has progressed through several
+methodologicalphases.Earlyapproachesreliedonsparsebag-of-wordsrepresentations
+andclassicalmachinelearningalgorithms,whichcapturesurface-levellexicalpatterns
+but struggle with synonymy, polysemy, and domain-specific terminology (Chen and
+Chang 2012; Wu et al. 2010a). Subsequent work incorporated word embeddings and
+deep neural architectures such as convolutional and recurrent neural networks, offer-
+ing more expressive representations of patent text and improved performance over
+traditional pipelines (Li et al. 2018; Haghighian Roudsari et al. 2022). More recently,
+transformer-based pre-trained language models such as BERT and domain-adapted
+variants like PatentSBERTa have become a strong baseline for patent classification,
+achievingrobustperformanceonlarge-scaledatasetsacrossdifferentlevelsoftheIPC
+and CPC hierarchies (Lee and Hsiang 2020; Bekamiri et al. 2024). These encoder-
+based models remain comparatively efficient to fine-tune and deploy, making them
+attractive for large-scale patent analytics and indicator construction.
+2
+In parallel, recent advances in large language models (LLMs) have reshaped nat-
+ural language processing more broadly (Brown et al. 2020; Bommasani et al. 2021).
+LLMs are typically trained on massive text corpora and can be applied to down-
+stream tasks through prompting, that is, by providing natural-language instructions
+and examples rather than task-specific supervised training. This enables zero-shot
+classification, where no labeled examples are provided, and few-shot classification,
+whereasmallnumberofillustrativeexamplesisincludedintheprompt(Brownetal.
+2020). In addition, LLMs can be combined with external document retrieval mech-
+anisms—commonly referred to as retrieval-augmented generation (RAG)—to ground
+predictions in relevant domain-specific text (Lewis et al. 2020).
+These capabilities call for a systematic assessment of the benefits that LLMs may
+offer for patent classification, especially in sparsely populated or weakly institution-
+alised regions of the classification space, as well as an evaluation of whether these
+benefits justify their substantially higher computational cost.
+Recent studies suggest that, despite their versatility, the effectiveness of LLMs
+in highly technical, domain-specific, and large-scale multi-label settings such as CPC
+classification remains uncertain (Kamateri et al. 2024; Rafieian and V´azquez 2025).
+At the same time, recent work in scientometrics has begun to explore the use of
+large language models in research evaluation and knowledge mapping, often finding
+that LLMs can complement traditional indicator-based approaches while also intro-
+ducing systematic biases and efficiency concerns (Thelwall and Kurt 2025; Thelwall
+2025; Thelwall and Yaghi 2025; Schmitt 2024). Moreover, inference with LLMs typi-
+cally incurs substantially higher costs in terms of latency, memory usage, and energy
+consumption than encoder-based architectures, posing challenges for large-scale oper-
+ationaldeployment(Niuetal.2025).Whilefine-tuningcanimproveLLMperformance
+on domain-specific tasks, it requires access to open-weight models and introduces
+additionalcomputationalandenvironmentalcosts,makingitspracticalvalueanopen
+empirical question.
+This work addresses these issues by conducting a systematic comparison between
+strong encoder-based baselines (BERT, SciBERT, PatentSBERTa) and a diverse set
+of open-weight LLMs. We evaluate multiple inference strategies, including zero-shot
+prompting, few-shot prompting, retrieval-augmented generation (RAG), and hybrid
+RAG-plus–few-shot configurations, in order to assess how different forms of con-
+textualisation affect CPC multi-label classification performance across frequent and
+infrequentsubclasses.Inaddition,weapplyparameter-efficientfine-tuningusingLow-
+Rank Adaptation (LoRA) (Hu et al. 2022) to the best-performing LLM to examine
+whethertargetedadaptationcannarrowthegapwithdomain-specificencodermodels.
+Finally, we quantify computational cost and energy consumption using the CodeCar-
+bon framework (Courty et al. 2024), enabling a principled analysis of the trade-off
+between predictive performance, scalability, and sustainability. To assess the robust-
+ness and generalisability of our findings across institutional contexts, we further
+conduct an external evaluation on an independent dataset of European Patent Office
+(EPO) patents, without retraining or adapting the models.
+Across these evaluations, we obtain four main results. First, supervised encoder-
+based models remain highly competitive on frequent CPC subclasses and achieve
+3
+superior micro-averaged performance (which aggregates predictions over all labels
+and is driven by frequent subclasses), but they exhibit substantial performance
+degradationonraresubclasses,resultinginlowmacro-level(label-balanced)andhier-
+archicalrecall.Second,LLMs—particularlywhenaugmentedwithfew-shotprompting
+and lightweight retrieval—provide more balanced coverage across the CPC hierar-
+chy and systematically improve recall on rare and infrequent subclasses. Third, these
+gains come at the cost of significantly higher computational and energy require-
+ments,whichlimitthescalabilityofLLM-basedapproachesinlarge-scaleclassification
+settings. Fourth, no single modelling approach dominates across all evaluation crite-
+ria: encoder-based models offer unmatched efficiency and scalability, whereas LLMs
+provide complementary semantic flexibility that is most valuable in long-tail and
+exploratoryclassificationscenarios.Thisisespeciallyimportantforscientometricanal-
+ysesconcernedwithemergingtechnologies,asthesetendtofirstappearinthelongtail
+of patent classification systems, where categories are sparse, unstable, or subject to
+revision(Wangetal.2016).Byprovidingacontrolledempiricalcomparisonunderreal-
+istic evaluation settings, this study clarifies the practical advantages and limitations
+of LLM-based approaches relative to established transformer architectures, and iden-
+tifies when their use is justified in both research and operational patent classification
+contexts.
+Related Work
+This section reviews prior work on automated patent classification by focusing on
+the evolution of modeling paradigms rather than on specific application domains. We
+organize the literature along a methodological trajectory, moving from traditional
+machinelearningpipelinestoencoder-basedtransformermodelsand,morerecently,to
+largelanguagemodels.Wealsodiscusshowissuessuchaslabelimbalance,hierarchical
+structure, and evaluation choices have shaped both model development and empirical
+assessment.
+From traditional pipelines to encoder-based models
+Early work on automatic patent classification relied on classical text classification
+pipelines in which patent documents were represented using bag-of-words (BoW) fea-
+tures and classified with supervised learners such as support vector machines (SVMs)
+(Wu et al. 2010b) or k-nearest neighbours (KNNs) (Murata et al. 2005). Term Fre-
+quency–Inverse Document Frequency (TF–IDF) has been the dominant BoW scheme
+for encoding titles, abstracts, or claims into high-dimensional sparse vectors. These
+representations were typically used for multi-label prediction of IPC or CPC codes
+using linear classifiers. Representative approaches include multi-phase and hybrid
+pipelines combining TF–IDF, feature selection, and SVM- or KNN-based classifiers,
+achieving moderate performance on collections of tens of thousands of patents (Chen
+andChang2012;Wuetal.2010a).Despitetheirscalabilityandsimplicity,BoW-based
+methods are fundamentally limited by their inability to capture semantic similarity
+beyond lexical overlap and by their sensitivity to vocabulary drift in rapidly evolving
+technological domains (Turney and Pantel 2010).
+4
+The introduction of distributed word representations marked a transition from
+sparse BoW features to dense, low-dimensional embeddings. Word2vec- and fastText-
+style embeddings trained on large patent corpora enabled more semantically mean-
+ingful representations of technical terminology and were combined with neural
+architectures such as convolutional neural networks (CNNs), recurrent neural net-
+works (RNNs), gated recurrent units (GRUs), and long short-term memory (LSTM)
+networks (Xiao et al. 2018; Risch and Krestel 2019). CNN-based models, in particu-
+lar,demonstratedimprovementsoverBoW+SVMpipelinesbycapturinglocaln-gram
+patternsinpatenttext(Lietal.2018).Subsequentworkextendedthesearchitectures
+tomulti-labelandhierarchicalclassificationsettings(HaghighianRoudsarietal.2022;
+Nemati 2024). Nevertheless, these models relied on static word embeddings, limit-
+ing their ability to handle polysemy, contextual variation, and evolving terminology,
+andoftenstruggledwiththelengthandstructuralheterogeneityofpatentdocuments
+(Yang et al. 2016).
+The introduction of transformer-based language models marked a substantial
+advance in patent classification. Fine-tuning architectures such as BERT and its vari-
+ants on patent corpora led to significant performance gains across single-label and
+multi-label classification tasks and across multiple levels of the IPC and CPC hierar-
+chies (Lee and Hsiang 2020). Domain-adapted variants trained on large-scale patent
+collectionsfurtherimprovedperformancebyaligningthepretrainingdistributionwith
+patent-specific language and stylistic conventions (Bekamiri et al. 2024; Shen et al.
+2023).Asaresult,encoder-basedclassifiershavebecomeadefactostandardforauto-
+matedIPCandCPCassignment,owingtotheirstrongperformanceonfrequentlabels
+and their computational efficiency at inference time (Lu et al. 2024).
+From a patentometrics perspective, encoder models are attractive because they
+scale efficiently to millions of documents and can be seamlessly integrated into large
+indicator pipelines (Krestel et al. 2021). However, prior studies also note their sen-
+sitivity to label imbalance and their tendency to optimize performance on dominant
+subclasses (Pujari et al. 2021; Nam et al. 2014). Consequently, macro-averaged and
+hierarchical metrics are often substantially lower than micro-averaged scores, rais-
+ing concerns about their suitability for analyzing emerging or weakly represented
+technological areas (Krestel et al. 2021; Lin and Chou 2025; Kamateri et al. 2024).
+Large language models and prompt-based classification
+More recently, LLMs have been explored as an alternative paradigm for patent clas-
+sification. Unlike encoder-based systems, LLMs can perform zero-shot and few-shot
+classification by leveraging instruction-following capabilities acquired during large-
+scale pretraining. Initial studies show that LLMs can assign plausible labels without
+task-specificfine-tuningandthatperformancecanbeimprovedthroughpromptengi-
+neering, few-shot exemplars, and lightweight retrieval augmentation (Yoshikawa and
+Krestel 2024; Rafieian and V´azquez 2025; Xiong et al. 2025).
+Applications of LLMs to patent analysis are still relatively limited in number and
+scope. Parallel discussions in scientometrics emphasize a similar pattern: LLMs are
+increasingly explored as assistive tools for evaluation and mapping tasks, but their
+reliability, bias, and resource requirements remain open concerns (Thelwall 2025; Sun
+5
+2025;Cantoneetal.2025;Schmitt2024).Whilerecentstudiesdemonstratepromising
+performance in specific settings—often by integrating LLMs into hybrid or assisted
+workflowssuchasactivelearning—mostcontributionsremaintask-ordomain-specific
+and stop short of providing systematic, large-scale benchmarking across datasets,
+prompting strategies, and evaluation dimensions (Kamateri et al. 2024; Xiong et al.
+2025). Moreover, despite their relevance for operational deployment in patent offices
+and research institutions, the computational cost and energy footprint of LLM-based
+approaches are rarely analyzed as first-class evaluation criteria.
+Challenges and Responsible Use of Automated Patent
+Classification
+Patent classification remains intrinsically challenging. Patent documents are long,
+heterogeneous, and densely technical; classification systems are highly granular and
+hierarchical; and expert human examiners themselves exhibit non-negligible disagree-
+ment in code assignment (Burke and Reitzig 2007). As a result, state-of-the-art
+automated classifiers often achieve high micro-averaged performance while exhibiting
+substantially weaker macro-averaged and rare-label performance, particularly at fine-
+grainedsubclasslevels(Kresteletal.2021;LinandChou2025;Kamaterietal.2024).
+These limitations have motivated research on ensemble methods, explainability, and,
+more recently, the application of LLMs to patent classification (Kamateri et al. 2023;
+Rafieian and V´azquez 2025).
+Beyondpredictiveaccuracy,recentworkinscientometricsandpatentometricscalls
+forgreaterattentiontotheresponsibleuseofautomatedmethods,emphasizingtrans-
+parency,robustness,andawarenessofbiasinindicatorconstruction(Hicksetal.2015;
+Waltman2016).Atthesametime,theenvironmentalimpactofmachinelearningmod-
+elshasbecomeanincreasinglysalientconcernforlarge-scaletextprocessing(Schwartz
+et al. 2020). Recent contributions explicitly discuss these concerns in the context of
+large language models, highlighting both their analytical potential and the risks asso-
+ciated with opacity, bias, and uncritical adoption in evaluative settings (Thelwall and
+Kurt 2025; Sun 2025).
+However, it remains insufficiently understood how differences between encoder-
+basedmodelsandLLMstranslateintosystematicbiasesoradvantagesindownstream
+scientometric analyses, particularly in the presence of long-tailed and hierarchical
+classification systems. Against this background, the present study provides a sys-
+tematic comparison between encoder-based models and LLMs for CPC multi-label
+patentclassification.Unlikepriorwork,weevaluatebothparadigmsundercomparable
+conditions, explicitly accounting for hierarchical performance, rare-label behaviour,
+inference-time efficiency, and energy consumption. By focusing on compact, locally
+deployable LLMs and parameter-efficient fine-tuning strategies, we assess not only
+predictive performance but also the practical and methodological trade-offs faced by
+patent offices and scientometric researchers (Kamateri et al. 2024).
+6
+Methodology
+This study investigates the effectiveness of supervised encoder models and large lan-
+guage models (LLMs) for CPC subclass-level multi-label patent classification, with
+particular attention to the trade-offs between predictive performance, computational
+cost, and environmental impact (Figure 1). To enable a fair and realistic compari-
+son, we adopt an experimental pipeline based on a temporally split patent corpus,
+preprocessing, standardized evaluation metrics, and systematic tracking of energy
+consumption and CO emissions. For encoder-based models, we adopt standard fine-
+2
+tuning and decoding settings commonly used in the patent classification literature,
+obtaining performance in line with previously reported results (Lee and Hsiang 2020;
+Bekamiri et al. 2024). In contrast, while the application of LLMs to patent classifica-
+tion has so far been limited and largely focused on predictive accuracy, we evaluate
+LLMs under a rigorous and controlled experimental protocol that explicitly accounts
+forpromptingstrategies,parameter-efficientfine-tuning,inference-timeefficiency,and
+energyconsumption—dimensionsthathavereceivedlittlesystematicattentioninprior
+work.WefirstestablishstrongsupervisedbaselinesusingTransformer-basedencoders
+fine-tuned on labeled patent data. We then evaluate instruction-tuned LLMs under
+progressivelymoreinformativepromptingregimes,rangingfromzero-shotinferenceto
+retrieval-augmented few-shot prompting that incorporates both labeled examples and
+structured CPC definitions. Finally, we select the best-performing LLM configuration
+andadaptittothetaskviaparameter-efficientfine-tuningusingLoRA.Thisprogres-
+sive design allows us to disentangle the effects of domain pre-training, prompt-based
+reasoning, external knowledge injection, and task-specific adaptation, while jointly
+assessing accuracy, efficiency, and sustainability.
+Dataset
+We conduct our experiments on the USPTO-70k dataset (Pujari et al. 2021), a
+benchmark for CPC subclass-level multi-label patent classification. The corpus com-
+prises70250USPTOpatentdocumentswithachronologicalsplitdesignedtoemulate
+realistic deployment conditions: 50250 patents from 2006–2017 for training, 10000
+patentsfrom2018forvalidation,and10000patentsfrom2019fortesting.Eachpatent
+recordincludesauniqueidentifier,atitle,anabstract,andoneormoreCPCsubclass
+labels.Followingstandardpractice inlarge-scalepatentclassification,weusethecon-
+catenation of title and abstract as the textual input for all models. We apply minimal
+textpreprocessing,consistingofbasicnormalization(e.g.,lowercasingandwhitespace
+normalization),andensureconsistentformattingacrossallmodelfamilies.CPClabels
+are normalized to the four-character subclass level and encoded as multi-hot vectors.
+All models are trained and evaluated using the same textual input fields to ensure a
+fair and controlled comparison.
+Supervised encoder baselines
+We evaluate three supervised Transformer encoder models as strong non-LLM base-
+lines: BERT, SciBERT, and PatentSBERTa. In all cases, the patent title and
+7
+USPTO Patents
+~70k documents
+(Patent ID, Title, CPC subclasses) 10k EPO patents
+(2019-22) for robustness
+Preprocessing Chronological Split
+• C• T Pe Cx t n n oo rmrm .(a sl uiz ba ct li ao sn s) Trai Vn a: l2 : 0 0 26 0– 12 8017 • Download from ORBIS IP
+• Multi-label encoding Test: 2019 • Preprocessing
+Task: hierarchical, multi-label CPC
+classification
+Trainin Mg o o df e E lsncoder LargF e1 - Lb aa ns ged u ac go em Mp oa dri es lo sn ( Lo Lf Ms) EnI cn ofe dr ee rn Mce o do ef ls Inference of Large Language Models (LLMs)
+BERT MPh isi- t3 ra M l-7in Bi Prom -p zt ein rog - ss htr oa ttegies: BERT MPh isi- t3 ra M l-7in Bi Prom -p zt ein rog - ss htr oa ttegies:
+SciBERT - few-shot SciBERT LLaMA-3.1-8B - few-shot
+LLaMA-3.1-8B + RAG (CPC subclass Qwen-2.5-7B + RAG (CPC subclass
+PatentSBERTa Qwen-2.5-7B descriptions) PatentSBERTa Qwen-2.5 fine-tuned descriptions)
+F1-base Ld L Mra Snking of Qwen-2.5L -L 7M B fine-tuning LoRA Final ev Ma Hl iu c iera o rt a i / ro cMn h a io cc af r loa F l Fl 1 m 1odels: • I Rnt ae r •r e Tp e/r ce e ht ma net oi ro lg on i gn y& g mtU e as c phe pn C io na l gos ge ies s
+Energy Consumption
+TRAINING INFERENCE
+Fig. 1: Experimental pipeline used to evaluate supervised encoder models and
+instruction-tuned LLMs on hierarchical, multi-label CPC classification. Approxi-
+mately70000USPTOpatentsarepreprocessedandsplitchronologicallyintotraining
+(2006–2017), validation (2018), and test (2019) sets. Encoder models (BERT, SciB-
+ERT, PatentSBERTa) are fine-tuned on the training data, while LLMs are evaluated
+usingzero-shotandfew-shotprompting,withoptionalretrieval-augmentedgeneration
+(RAG)basedonofficialCPCsubclassdescriptions.LoRAfine-tuningofQwen-2.5-7B
+is included as a controlled experiment. Results are validated on an external dataset
+of EPO patents. All models are evaluated using flat, hierarchy-aware, and energy-
+efficiency metrics.
+abstract are encoded into a fixed-dimensional document representation, which is
+mapped to CPC subclass probabilities via a multi-label classification head.
+BERT (Devlin et al. 2019) is a general-purpose language model, while SciB-
+ERT (Beltagy et al. 2019) and PatentSBERTa (Bekamiri et al. 2024) are domain-
+adapted encoders trained on scientific and patent corpora, respectively. Comparing
+these models allows us to assess the impact of domain-specific pre-training on CPC
+subclass assignment.
+Each encoder is fine-tuned using binary cross-entropy loss with independent sig-
+moid outputs, enabling multi-label predictions over the full CPC subclass space. At
+inference time, predicted subclasses are obtained by thresholding calibrated proba-
+bilities, with the maximum number of predicted labels capped to match the LLM
+evaluation protocol. In order to enable a direct comparison with label-space retrieval
+promptinginLLMs,weadditionallyevaluateaconstraineddecodingvariantinwhich
+encoder predictions are restricted to a per-patent subset of candidate CPC subclasses
+8
+retrieved from CPC definitions. This restriction affects only the set of admissible
+labels; the final number of predicted subclasses per patent remains capped at seven,
+as in the unconstrained setting. This constraint is applied only at inference time and
+doesnotaffectencodertraining.Furthertechnicaldetailsonencodermodels(training,
+thresholds, label space) are provided in Appendix A.
+Large Language Models
+Weevaluatefourinstruction-tunedLLMs:Phi-3 Mini(Abdinetal.2024),Mistral-
+7B (Jiang et al. 2023), LLaMA-3.1-8B (Dubey et al. 2024), and Qwen-2.5-7B
+(Qwen Team 2024). These models are chosen to span multiple model families and
+training pipelines, while focusing on the 7–8B parameter range.
+This choice is driven by practical hardware considerations. Models in this range
+can be run reliably on single-GPU machines with approximately 16GB of VRAM,
+whicharerepresentativeofstandardlaptop-orworkstation-classhardware.Restricting
+our study to this regime allows us to assess the effectiveness of LLM-based patent
+classification under realistic computational constraints, without relying on large-scale
+or proprietary infrastructure. All selected models are widely used, well supported by
+open-sourcetooling,andprovidereproducibleopen-weightbaselinesforprompt-based
+inference.
+Each LLM is evaluated under four prompting configurations, defined by the pres-
+ence or absence of (i) in-context examples and (ii) CPC definition retrieval (Table
+1).
+No CPC definition retrieval CPC definition retrieval
+No examples Zero-shot Zero-shot + RAG
+Few examples Few-shot Few-shot + RAG
+Table 1: Prompting configurations defined by in-context examples and CPC
+definition retrieval.
+Full prompts and other implementation details are provided in Appendix B.
+Inthefew-shotsetting,eachpromptincludes5labeledexamples:twostaticexam-
+ples that remain fixed across all inputs, and three dynamically retrieved examples
+selected from the training set based on semantic similarity to the target patent. This
+hybrid approach balances prompt stability (static examples) with instance-specific
+adaptation (dynamic examples) under a fixed prompt budget. In preliminary experi-
+ments,purelystaticandpurelydynamicfew-shotconfigurationsresultedinlessstable
+behavior and lower recall across models; we therefore adopt the hybrid setting as a
+pragmatic compromise, fixed prior to final evaluation.
+In our retrieval-augmented prompting (RAG) settings, we do not retrieve eviden-
+tiary passages from external corpora; rather, we retrieve a per-patent allowed CPC
+subclass set from the official CPC subclass definitions1. Concretely, we embed each
+1https://www.cooperativepatentclassification.org/cpcSchemeAndDefinitions/table
+9
+CPC subclass definition (formatted as CODE: definition) with a local bi-encoder
+(E5-base-v2)andembedthepatenttext(title+abstract)asaquery.Foreachpatent,
+we select the top-K subclasses by cosine similarity (K = 20) and inject their codes
+and short definitions into the prompt, grouped hierarchically by CPC section and
+class.TheLLMisinstructedtooutputonlycodesfromthisallowedset,andourpost-
+processing enforces this constraint by filtering any non-allowed labels. Full details of
+the retrieval pipeline and parsing rules are reported in Appendix C.
+Model Selection and LoRA Fine-Tuning
+Across all LLMs and prompting configurations, Qwen-2.5-7B achieves the strongest
+validation performance (notably in micro- and hierarchical F1), and is therefore
+selectedforparameter-efficienttaskadaptationviaLoRA(Low-RankAdaptation)(Hu
+et al. 2022). LoRA adapts a pre-trained model by adding trainable low-rank updates
+toselectedweightmatrices(typicallyintheattentionand/orfeed-forwardprojections)
+while keeping the base weights frozen. Concretely, for a weight matrix W ∈ Rd×k,
+LoRA learns an additive update ∆W parameterized as a rank-r decomposition:
+W′ =W+∆W, ∆W=BA, (1)
+where A ∈ Rr×k and B ∈ Rd×r with r ≪ min(d,k). This substantially reduces
+the number of trainable parameters and the optimizer state footprint compared
+to full fine-tuning, enabling efficient adaptation of multi-billion-parameter models.
+Implementation details are available in Appendix D.
+Evaluation Metrics and Efficiency Analysis
+All models are evaluated on a held-out test set using standard metrics for multi-label
+andhierarchical classification,whicharewidelyadoptedintheliterature(Tsoumakas
+and Katakis 2007; Silla and Freitas 2011) and commonly used in large-scale patent
+classification tasks.
+Let C denote the set of CPC subclasses. For each patent i, let Y ⊆ C be the set
+i
+of ground-truth labels and Yˆ ⊆C the predicted label set after thresholding (or top-k
+i
+selection,whenspecified).Truepositives(TP),falsepositives(FP),andfalsenegatives
+(FN) are computed by aggregating predictions across all patents and labels.
+Wereportbothmicro-andmacro-averagedprecision,recall,andF1scores.Micro-
+averagedmetricspoolalllabeldecisionsacrossthetestsetandarethereforedominated
+by performance on frequent subclasses:
+TP TP 2P R
+P = , R = , F1 = µ µ . (2)
+µ TP+FP µ TP+FN µ P +R
+µ µ
+Macro-averaged metrics compute precision, recall, and F1 independently for each
+subclass and then average across labels, assigning equal weight to frequent and rare
+subclasses. Let TP , FP , and FN denote the per-label counts. The macro-F1 score
+c c c
+10
+is defined as
+1 (cid:88)
+F1 = F1 . (3)
+M |C| c
+c∈C
+To account for the hierarchical structure of the CPC taxonomy, we additionally
+reporthierarchy-awareprecision,recall,andF1scoresbasedonlabelexpansion.Each
+label is augmented with its ancestors in the CPC hierarchy. Let anc(c) denote the set
+of ancestors of label c (including c itself), and define the expanded label sets:
+YH = (cid:91) anc(c), YˆH = (cid:91) anc(c). (4)
+i i
+c∈Yi c∈Yˆ
+i
+Hierarchical metrics are computed by augmenting predicted and ground-truth labels
+with higher-level CPC labels.
+Across all models and evaluation settings, we cap the number of predicted CPC
+subclassesperpatenttoatmostseven.Thisreflectstheempiricalannotationstructure
+of the dataset: in the training set, 99.5% of patents are annotated with between one
+and seven subclasses (median: 2; 99th percentile: 7). The same constraint is applied
+uniformly to supervised encoders and LLM-based methods to ensure comparability
+and to prevent degenerate over-prediction.
+All models are evaluated under deterministic inference settings. Encoder-
+based classifiers are evaluated in eval() mode, while LLMs use greedy decoding
+(do sample=False). Repeated runs with different random seeds yield identical pre-
+dictions; therefore, results are reported from a single run per configuration.
+The evaluation of large-scale, multi-label patent classification systems requires
+careful interpretation of aggregate performance metrics, particularly in the presence
+of strong imbalances in CPC subclass frequencies. We therefore distinguish between
+overall performance assessed over the full label space and stratified analyses focusing
+on frequent and rare subclasses.
+For aggregate metrics computed over all CPC subclasses (e.g., micro- and macro-
+averagedprecision,recall,andF1),weadoptaprimarilydescriptiveperspective.Point
+estimates are complemented with non-parametric bootstrap confidence intervals to
+quantify uncertainty. In particular, CPC subclasses are resampled with replacement,
+andthecorrespondingaggregatemetricsarerecomputedover1000bootstrapsamples
+(Efron and Tibshirani 1993). This procedure captures variability across technological
+categories without relying on distributional assumptions. Formal hypothesis testing
+is not applied to overall metrics, as these comparisons are dominated by frequent
+subclasses and are not associated with a specific null hypothesis.
+To investigate performance differences across technological regimes, CPC sub-
+classes are partitioned according to their empirical frequency in the evaluation data.
+Subclasses in the top 20% of the support distribution are treated as frequent, while
+thoseinthebottom20%aretreatedasrare.Thisstratificationenablesafocusedanal-
+ysisofmodelbehavioronwell-establishedversussparselyrepresentedtechnologiesand
+supports the interpretation of macro-averaged results.
+11
+For stratified comparisons, statistical significance is assessed using paired non-
+parametric tests over CPC subclasses (Hollander et al. 2013). For each subclass, per-
+label performance scores (e.g., F1) produced by two models form paired observations.
+WeusetheWilcoxonsigned-ranktest,whichisrobusttonon-normalandzero-inflated
+distributions common among rare subclasses. Directional (one-sided) hypotheses are
+applied when theoretically motivated, for example when testing whether LLMs out-
+performsupervisedencodermodelsonraresubclasses.Thislabel-leveltestingstrategy
+is well suited to multi-label classification and avoids document-level assumptions
+required by tests such as McNemar’s test.
+Moreover, to complement predictive performance with sustainability considera-
+tions, we estimate energy usage and associated carbon emissions using CodeCar-
+bon (Courty et al. 2024). For each experimental setting (encoder fine-tuning, LLM
+inference under each prompting strategy, and LoRA fine-tuning), we record the esti-
+mated energy consumption and CO emissions. This enables a direct comparison of
+2
+accuracy–costtrade-offsacrossmodelfamilies.Recentvalidationstudies(Fischer2025)
+supportthereliabilityofCodeCarbonestimatesagainstexternalpowermeasurements.
+Experimental Setup
+All experiments are conducted on the Booster supercomputing system at CINECA,
+using single-node executions based on the BullSequana X2135 architecture and
+equipped with NVIDIA A100 GPUs. For the experimental campaign, 2000 GPU
+core-hours were allocated. As discussed above, the selected models and experimen-
+tal settings are compatible with execution on standard laptop- or workstation-class
+machinesequippedwithasingleGPU.TheuseoftheCINECAHPCinfrastructureis
+motivated by practical considerations, namely to enable large-scale experimentation,
+ensurereproducibleandinterference-freeexecution,andobtainreliablemeasurements
+under controlled conditions.
+External dataset construction and evaluation protocol (EPO)
+To validate the generalizability of our methodology beyond the USPTO setting, we
+applythesameexperimentalpipelinetoanexternaldatasetofpatentsfromtheEuro-
+pean Patent Office (EPO). We randomly select 10000 EPO patent applications filed
+between 2019 and 2022 using ORBIS Intellectual Property 2 by Moody’s as the data
+source. Patent texts are processed using the same preprocessing steps adopted for the
+USPTO dataset, including title–abstract concatenation, CPC subclass normalization
+at the four-character level, and multi-label encoding.
+Importantly,nomodelisretrainedoradaptedonEPOdata.Encoder-basedclassi-
+fiers trained on USPTO patents are evaluated in a strict out-of-domain setting, while
+largelanguagemodelsareappliedinzero-shotandretrieval-augmentedconfigurations
+identical to those used in the main experiments. Evaluation is performed exclusively
+on the EPO test set using the same flat and hierarchy-aware metrics, label-frequency
+2https://www.moodys.com/web/en/us/capabilities/company-reference-data/orbis.html
+12
+stratifications,andefficiencymeasurements.Thisdesignensuresthatperformancedif-
+ferences observed on EPO data can be attributed to model generalization properties
+rather than dataset-specific tuning or additional supervision.
+Results
+Data Description
+The patent classification task considered in this study is characterized by a highly
+imbalanced and multi-label output space. Each patent is annotated with one or more
+Cooperative Patent Classification (CPC) subclasses at the four-character level (e.g.,
+G06F, H04L), resulting in a large and sparse label vocabulary.
+Figure 2a reports the distribution of CPC subclasses in the training set, ordered
+by decreasing frequency. The distribution exhibits a pronounced long-tail structure: a
+small number of subclasses account for a substantial fraction of all label assignments,
+whilethemajorityofsubclassesappearonlyrarely.Thisimbalanceisfurtherquantified
+in Figure 2b, which shows that a limited fraction of subclasses covers most of the
+labeled instances.
+Inaddition,patentsareinherentlymulti-labeled.Figure2creportsthedistribution
+of the number of CPC subclasses per patent in both the training and test sets. The
+two splits exhibit very similar distributions, suggesting the absence of major label-
+densityshiftsbetweentrainingandevaluationdata.Furtherdetailsonthedescriptive
+statisticsoftheCPClabelsinthetestandtrainingsetsareprovidedinAppendixE.1.
+The extreme skewness of the label distribution has important implications for
+model evaluation. In particular, performance metrics aggregated over all labels (e.g.,
+micro-averaged F1) are dominated by a small set of frequent subclasses, while perfor-
+mance on rare and emerging categories contributes little to the aggregate score. This
+motivates the use of complementary evaluation perspectives and provides context for
+thecomparisonbetweensupervisedencoder-basedmodelsandlargelanguage models,
+which rely less directly on label frequency during inference.
+Classification Performance
+Table2reportsclassificationperformanceforencoder-basedbaselinesandLLMsunder
+different prompting and fine-tuning configurations. Results are reported at the CPC
+subclass level using Micro-F1 and Macro-F1, together with hierarchical Micro-F1 (H-
+F1) computed across Section, Class, and Subclass levels.
+Among encoder-based models, domain-adapted architectures outperform generic
+language models, although performance varies across encoders. SciBERT achieves
+higher Micro-F1 and H-F1 scores than standard BERT, confirming the benefits
+of domain-specific pretraining for patent classification. By contrast, PatentSBERTa
+underperforms both SciBERT and BERT in this setting. Overall, SciBERT yields
+the strongest encoder performance, particularly in terms of hierarchical F1, showing
+remarkable ability to capture CPC structure.
+In contrast, LLMs evaluated in zero-shot settings exhibit considerably lower clas-
+sification performance. Across all tested architectures, zero-shot LLMs underperform
+13
+6000
+4500
+3000
+1500
+0
+80 160 240 320 400 480 560
+Subclass rank
+ycneuqerF
+(a) Frequency of CPC subclasses in the training set, ordered by decreasing frequency.
+100
+90
+80
+70
+60
+50
+40
+30
+20
+10
+0
+0 10 20 30 40 50 60 70 80 90 100
+% of subclasses (ranked by TRAIN frequency)
+derevoc
+stnemngissa
+lebal
+fo %
+20000
+15000
+10000
+5000
+0
+0 5 10 15 20
+# subclasses per patent
+(b)Cumulativecoverageoflabelassignments
+as a function of the fraction of subclasses.
+stnetap
+#
+TRAIN (mean=1.98)
+TEST (mean=2.32)
+(c) Distribution of the number of CPC sub-
+classes per patent in the training and test
+sets.
+Fig. 2:Descriptive statistics of the CPC-labeled patent dataset.(a)Subclass
+frequency distribution exhibits a pronounced long-tail structure. (b) A small fraction
+of subclasses accounts for the majority of label assignments. (c) The distribution of
+labels per patent is similar across training and test sets, indicating no major shift in
+label density.
+encoder baselines by a large margin, especially in terms of Micro-F1. Among zero-
+shot configurations, Qwen2.5-7B-Instruct achieves the highest Micro-F1, though still
+substantially below encoder-based models.
+Few-shot prompting alone does not consistently improve performance over zero-
+shot inference and, in some cases, leads to marginal degradation. This suggests that
+limited in-context supervision is insufficient to reliably align generative models with
+the multi-label CPC classification task.
+Incorporating retrieval-augmented constraints (RAG) yields more consistent
+improvements, particularly when combined with few-shot prompting. Under few-shot
+plus RAG settings, LLMs recover a larger fraction of relevant CPC subclasses, as
+reflected by improvements in Macro-F1 and H-F1, while remaining clearly below
+14
+encoder-based baselines in Micro-F1. These results indicate that retrieval and contex-
+tualizationhelpnarrowtheperformancegaponhierarchy-awareandlong-tailmetrics,
+but do not eliminate the aggregate advantage of supervised encoders.
+Finally, parameter-efficient fine-tuning via LoRA is evaluated for Qwen2.5-7B-
+Instruct under the few-shot plus retrieval-augmented configuration. Across the
+reported metrics, LoRA fine-tuning does not yield a clear improvement in Micro-F1
+relativetoprompt-basedinferencealone,anddoesnotconsistentlyimproveMacro-F1
+or hierarchical F1. These results suggest that, in this setting, most performance gains
+stem from inference-time contextualization through prompting and retrieval rather
+than from lightweight supervised adaptation. Importantly, the absence of aggregate
+gainsshouldnotbeinterpretedasevidencethatLoRAisineffectiveperse,butrather
+that its benefits are limited or highly context-dependent when evaluated using global
+performance metrics.
+Performance on frequent vs. rare CPC subclasses
+Tofurthercharacterizemodelbehavior,wecompareperformanceonfrequentandrare
+CPCsubclasses(Figure3).Subclassesarerankedbytheiroccurrencefrequencyinthe
+test set and partitioned into frequent (top 20%) and rare (bottom 20%) subclasses.
+Performance is analyzed at the subclass level using per-label F1 scores and paired
+statistical tests. As expected, all models achieve substantially higher performance on
+frequent subclasses, as a consequence of the strong label imbalance in CPC classi-
+fication. Encoder-based models, particularly SciBERT, significantly and consistently
+outperformLLMsonfrequentsubclasses.Incontrast,LLM-basedmodelsconsistently
+achieve higher F1 scores on rare subclasses, with paired Wilcoxon signed-rank tests
+confirming statistically significant improvements over encoders across multiple LLM
+configurations (see Appendix E.2). These results suggest a complementary trade-off:
+encoder models excel on well-represented technological categories, while LLMs are
+betterabletorecoversparseorlong-tailsubclasses,likelyduetotheirbroaderseman-
+tic priors. However, these gains on rare subclasses come at a substantially higher
+computational and energy cost.
+Energy–Accuracy Trade-off
+Whileclassificationperformanceprovidesonedimensionofcomparison,Table3reveals
+pronounced differences in computational cost across model families. Encoder-based
+models operate in a distinctly low-cost regime, completing full inference runs in 1–2
+minutes with an energy consumption of approximately 0.01 kWh. In contrast, LLM-
+based approaches require between 30 and 280 minutes per run and consume 0.2–2.1
+kWh, implying that encoders are roughly 15–250× faster and 20–200× more energy-
+efficient at inference time.
+Zero-shot LLM configurations are often particularly unfavorable, especially for
+larger instruction-tuned models, as they combine relatively low classification per-
+formance with high computational cost. For instance, models such as LLaMA-3.1-
+8B-Instruct require inference times on the order of hours per run while failing to
+outperform encoder baselines in Micro-F1, placing them in an inefficient region of the
+accuracy–energy trade-off space (Figure 4).
+15
+Model Micro-F1 Macro-F1 H-F1 Bootstrap CI (Micro-F1)
+Encoders (full label space)
+BERT 0.401 0.044 0.494 [0.394,0.407]
+SciBERT 0.439 0.059 0.527 [0.432,0.446]
+PatentSBERTa 0.328 0.016 0.419 [0.322,0.335]
+Encoders (constrained label space)
+BERT(constrained) 0.303 0.053 0.433 [0.296,0.309]
+SciBERT(constrained) 0.330 0.064 0.451 [0.322,0.337]
+PatentSBERTa(constrained) 0.260 0.033 0.393 [0.253,0.266]
+LLMs (zero-shot, no RAG)
+Phi-3Mini 0.112 0.046 0.225 [0.108,0.118]
+Mistral-7B-Instruct 0.203 0.044 0.306 [0.198,0.209]
+LLaMA-3.1-8B-Instruct 0.245 0.107 0.347 [0.240,0.251]
+Qwen-2.5-7B-Instruct 0.278 0.129 0.386 [0.272,0.285]
+Qwen-2.5-7B+LoRA 0.146 0.069 0.212 [0.140,0.152]
+LLMs (few-shot, no RAG)
+Phi-3Mini 0.102 0.026 0.192 [0.097,0.106]
+Mistral-7B-Instruct 0.126 0.034 0.215 [0.123,0.133]
+LLaMA-3.1-8B-Instruct 0.206 0.103 0.294 [0.201,0.213]
+Qwen-2.5-7B-Instruct 0.210 0.104 0.297 [0.204,0.217]
+Qwen-2.5-7B+LoRA 0.221 0.132 0.272 [0.214,0.228]
+LLMs (zero-shot + RAG)
+Phi-3Mini 0.130 0.101 0.270 [0.126,0.134]
+Mistral-7B-Instruct 0.175 0.135 0.323 [0.172,0.181]
+LLaMA-3.1-8B-Instruct 0.189 0.144 0.344 [0.186,0.196]
+Qwen-2.5-7B-Instruct 0.222 0.161 0.371 [0.215,0.227]
+Qwen-2.5-7B+LoRA 0.220 0.156 0.357 [0.209,0.221]
+LLMs (few-shot + RAG)
+Phi-3Mini 0.139 0.125 0.292 [0.133,0.143]
+Mistral-7B-Instruct 0.169 0.112 0.317 [0.159,0.170]
+LLaMA-3.1-8B-Instruct 0.177 0.131 0.328 [0.170,0.181]
+Qwen-2.5-7B-Instruct 0.182 0.136 0.334 [0.177,0.188]
+Qwen-2.5-7B+LoRA 0.182 0.124 0.323 [0.172,0.183]
+Table2:PredictiveperformanceonCPCsubclassmulti-labelclassification.Allresults
+areobtainedunderdeterministicinference.Bootstrapconfidenceintervalsarereported
+for Micro-F1.
+16
+1.00
+0.75
+0.50
+0.25
+0.00
+0.25
+0.50
+0.75
+0 100 200 300 400 500 600
+CPC subclass frequency (ascending)
+redocnE1F
+-
+MLL1F
+=
+1F
+Rare (bottom 20%) Mid Frequent (top 20%)
+llama (zero-shot)
+qwen (zero-shot)
+qwen-lora (zero-shot)
+Fig. 3: Difference in F1 score (∆F1) between LLMs a supervised encoder (SciBERT)
+attheCPCsubclasslevel,plottedagainstsubclassfrequency.Eachpointcorresponds
+to one CPC subclass and shows ∆F1 = F1 − F1 . Subclasses are ordered
+LLM Encoder
+by increasing empirical frequency (encoder support). Vertical dashed lines indicate
+the 20th and 80th percentiles of the frequency distribution, separating rare (bottom
+20%), medium, and frequent (top 20%) subclasses. Positive values indicate better
+performance of the LLM, while negative values indicate better performance of the
+encoder. The results clearly show that LLMs perform better in subclasses with rare
+or medium frequency, while encoder models perform better in predicting the most
+frequent subclasses.
+Prompt engineering partially alleviates this imbalance. Few-shot prompting and
+retrieval-augmented constraints improve classification performance and recall behav-
+ior at a moderate additional energy cost relative to zero-shot inference; however, even
+under the most efficient prompting regimes, LLMs remain one to two orders of mag-
+nitude more expensive than encoder-based models in both time and energy. LoRA
+fine-tuning offers only modest performance gains in this setting while introducing
+additional training overhead and leaving the inference cost gap largely unchanged.
+As a result, any accuracy improvements must be weighed against the associated
+energy costs, particularly in large-scale or production patent classification. Overall,
+theseresultsindicatethatencoder-basedmodelsoccupyalow-energy,high-throughput
+regime, whereas LLM-based approaches operate in a high-energy regime, achieving
+competitive performance only under carefully designed prompting and fine-tuning
+strategies.
+Validation on external data (EPO)
+To assess the robustness and external validity of our findings, we replicate the evalu-
+ation on an independent dataset of 10000 patents from the European Patent Office
+(EPO). The dataset is constructed using ORBIS Intellectual Property by Moody’s
+17
+0.4
+0.3
+0.2
+0.1
+0.0
+10−2 10−1 100
+Energy consumption (kWh)
+)level
+ssalcbus
+CPC(
+1F-orciM
+SciBERT
+(Encoder)
+Qwen2.5-7B-Instruct
+(Zero-shot)
+Qwen2.5-7B-Instruct
+(Zero-shot + RAG)
+Model / Prompting Strategy
+Encoder Zero-shot + RAG Few-shot + LoRA
+Zero-shot Few-shot + RAG Zero-shot + RAG + LoRA
+Few-shot Zero-shot + LoRA Few-shot + RAG + LoRA
+Fig. 4: Accuracy–energy trade-off for CPC subclass multi-label classification. Each
+pointrepresentsamodelandpromptingconfiguration,reportingMicro-F1attheCPC
+subclasslevelversustotalenergyconsumptionduringinference.Encoder-basedmodels
+achievestrongperformanceatnegligibleenergycost,whileLLMsrequiresubstantially
+higher energy to reach comparable accuracy. The horizontal dotted line indicates the
+best-performingencoderbaseline(SciBERT).Thex-axisisdisplayedonalogarithmic
+scale to accommodate the large differences in energy consumption across model fami-
+lies.
+and includes patent applications filed between 2019 and 2022, thereby introducing
+both an institutional and temporal shift with respect to the USPTO-based bench-
+mark used in the main experiments. The EPO dataset exhibits a strongly imbalanced
+and long-tailed distribution of CPC subclasses, closely mirroring the structural prop-
+erties of the USPTO-70k dataset. Despite differences in patent office practices and
+draftingconventions,theresultsobtainedontheEPOdataarehighlyconsistentwith
+thoseobservedonUSPTOpatents(AppendixE.3).Inparticular,encoder-basedmod-
+els retain superior micro-averaged performance driven by frequent subclasses, while
+LLM-basedapproachesdisplaymorebalancedbehavioracrosstheCPChierarchyand
+improved coverage of infrequent subclasses. These results confirm that the observed
+performancetrade-offsarerobusttodomainshiftandarenotspecifictoasinglepatent
+office or dataset.
+Discussion
+Long-Tail Effects and Model-Induced Bias in Patent
+Classification
+The results reveal that the choice of classification model systematically shapes which
+technological categories become visible in CPC-based analyses, particularly in the
+presence of strong label imbalance and hierarchical structure.
+18
+Setting Model Time(min) Energy(kWh) CO2(kg) Time/pat.(s) Energy/pat.(Wh) CO2/pat.(g)
+TRAINING
+BERT 12 0.074 3.0×10−4 ———————doesnotapply———————
+Encoder PatentSBERTa 14 0.086 3.0×10−4 ———————doesnotapply———————
+SciBERT 12 0.074 3.0×10−4 ———————doesnotapply———————
+LoRA Qwen2.5-7B 76 0.648 2.5×10−3 ———————doesnotapply———————
+INFERENCE
+BERT 1 0.010 3.9×10−5 8.4×10−3 1.0×10−3 3.9×10−6
+Encoders(Full) PatentSBERTa 2 0.011 4.2×10−5 9.1×10−3 1.1×10−3 4.2×10−6
+SciBERT 1 0.010 3.8×10−5 8.2×10−3 9.5×10−4 3.8×10−6
+BERT 1 0.011 4.1×10−5 8.4×10−3 1.0×10−3 4.1×10−6
+Encoders(Top-K=20) PatentSBERTa 2 0.011 4.5×10−5 9.1×10−3 1.1×10−3 4.5×10−6
+SciBERT 1 0.010 4.0×10−5 8.2×10−3 1.0×10−3 4.0×10−6
+LLaMA 174 1.111 4.4×10−3 1.0 1.1×10−1 4.4×10−4
+Mistral 91 0.575 2.3×10−3 0.5 6.0×10−2 2.3×10−4
+Zero-shot Phi 37 0.215 8.5×10−4 0.2 2.0×10−2 8.5×10−5
+Qwen 65 0.478 1.9×10−3 0.4 5.0×10−2 1.9×10−4
+Qwen+LoRA 20 0.135 5.3×10−4 0.1 1.4×10−2 5.3×10−5
+LLaMA 63 0.439 1.7×10−3 0.4 4.0×10−2 1.7×10−4
+Mistral 54 0.395 1.6×10−3 0.3 4.0×10−2 1.6×10−4
+Few-shot Phi 42 0.281 1.1×10−3 0.3 3.0×10−2 1.1×10−4
+Qwen 87 0.617 2.4×10−3 0.5 6.0×10−2 2.4×10−4
+Qwen+LoRA 40 0.284 1.1×10−3 0.2 2.8×10−2 1.1×10−4
+LLaMA 115 0.784 3.1×10−3 0.7 8.0×10−2 3.1×10−4
+Mistral 113 0.807 3.2×10−3 0.7 8.0×10−2 3.2×10−4
+Zero-shot+RAG Phi 36 0.243 9.6×10−4 0.2 2.0×10−2 9.6×10−5
+Qwen 29 0.215 8.5×10−4 0.2 2.0×10−2 8.5×10−5
+Qwen+LoRA 30 0.22 8.7×10−4 0.2 2.2×10−2 8.7×10−5
+LLaMA 63 0.509 2.0×10−3 0.4 5.0×10−2 2.0×10−4
+Mistral 85 0.689 2.7×10−3 0.5 7.0×10−2 2.7×10−4
+Few-shot+RAG Phi 277 2.113 8.3×10−3 1.7 2.1×10−1 8.3×10−4
+Qwen 52 0.419 1.7×10−3 0.3 4.0×10−2 1.7×10−4
+Qwen+LoRA 57 0.410 1.6×10−3 0.3 4.1×10−2 1.6×10−4
+Table 3: Computational cost measured with CodeCarbon for training and inference.
+InferenceresultsaretotalsperevaluationrunonN=10000patents.Per-patentquan-
+tities are obtained by dividing totals by N.
+Encodermodels such asBERT, SciBERT, and PatentSBERTa achievestrong per-
+formance in terms of micro-averaged precision and F1; they show, therefore, high
+effectivenessonhigh-frequencyCPCsubclassesthatdominatethetrainingdata.How-
+ever,this advantage largely disappears whenmacro-averaged andhierarchicalmetrics
+are considered. Encoder-based models exhibit very low macro recall and F1, indicat-
+ing severe difficulty in predicting infrequent subclasses. By contrast, LLMs—despite
+lowermicro-F1inzero-shotsettings—displaymorebalancedbehavioracrosstheCPC
+hierarchy.Few-shotpromptingcombinedwithlightweightretrievalaugmentationsub-
+stantially improves LLM performance. These configurations consistently narrow the
+performancegapwithencodermodelsatthesubclassleveland,insomecases,outper-
+form them at higher hierarchical levels. By contrast, parameter-efficient fine-tuning
+viamethodssuchasLoRAyieldslimitedandconfiguration-dependentbenefitsinthis
+setting.Recentworksuggeststhatextensivepre-trainingmayreducethedownstream
+adaptability of large language models, making them harder to fine-tune effectively
+19
+for specific tasks, as fine-tuning can improve task-specific metrics while degrading
+broader model capabilities or transfer behavior when the downstream task departs
+fromtheoriginalpre-trainingobjectives(Springeretal.2025;Stapetal.2024).Over-
+all, encoder-based models remain strong baselines for frequent-label prediction, while
+LLMsdemonstrategreaterrobustnessacrossthefulllabelspace.Fromascientometric
+perspective,theseresultsimplythatmodelchoicesystematicallyshapeswhichtechno-
+logicalcategoriesbecomevisibleindownstreamanalyses,ratherthanmerelyaffecting
+aggregate classification accuracy.
+A central empirical finding of this study is that LLMs outperform encoder-based
+models in identifying rare CPC subclasses, which often correspond to early-stage or
+cross-domain technologies (Wang et al. 2016). Patent classification data are strongly
+long-tailed, with a few subclasses (e.g., G06F, H04L) dominating label assignments
+while many appear only rarely. Supervised encoder-based models are therefore biased
+toward frequent subclasses and exhibit low recall on rare labels. In contrast, LLMs
+rely more on semantic understanding than label frequency, enabling them to assign
+plausiblelow-frequencysubclasseseveninzero-shotsettings,withfurthergainsunder
+few-shot prompting. This capability is particularly relevant in the patent domain,
+where rare subclasses often signal emerging or interdisciplinary technologies, which
+prior research associates with higher impact and disruptiveness (Xu et al. 2025; Wu
+et al. 2024). Although this comes at some cost to precision, the improved recall sug-
+gests that LLMs can play a complementary role to encoder-based systems focused on
+established technological domains.
+To complement the quantitative results, we analyze a small set of representative
+classificationoutcomes(Table4).Inpatentsassignedtofrequentandwell-represented
+subclassessuchasG06F(electricdigitaldataprocessing)orG01R(measuringelectrical
+variables), encoder-based models like SciBERT tend to provide accurate and stable
+predictions,reflectingtheirstrengthonheadclasseswithabundanttrainingexamples.
+Conversely,forpatentsassociatedwithrareandhighlyspecificsubclasses—suchas
+F42B, which covers explosive charges and pyrotechnics—the LLM correctly identifies
+thesubclass,whiletheencodermisclassifiesthepatentintomorefrequentbutseman-
+tically adjacent categories (e.g., energy storage or generic technical collections). This
+behavior is consistent with the long-tail advantages observed in macro-averaged met-
+rics. Finally, some patents remain challenging for both approaches, as illustrated by
+themetallurgyexample,wherebothmodelsfailtorecoverthecorrectmaterial-focused
+subclasses (C21D, C22C) and instead default to overly generic or semantically distant
+technical categories. These examples confirm that the observed performance differ-
+encesarisefromsystematicsemanticbiasesratherthanisolatederrors,reinforcingthe
+motivation for hybrid encoder–LLM classification pipelines.
+Efficiency, Scalability, and Sustainability Constraints
+From a computational perspective, encoder-based models are substantially more effi-
+cientthanLLM-basedapproaches.Fullinferencerunswithencoderclassifierscomplete
+in approximately 1–2 minutes, whereas LLM inference—depending on model size and
+promptingconfiguration—requiresbetweenroughly30minutesandover4hours.This
+20
+Case Patenttitleandabstract(excerpt) CorrectCPC PredictedCPC
+Sub-class Frequency Encoder LLM
+Bothcorrect Computer readable recording G06F 16.43% G06F,H04N G06F,G06T
+medium, information processing
+apparatus,andinformationprocess-
+ingmethodfordisplayingconverted
+image data. A computer-readable
+mediumstoringaninformationprocessing
+programfortransmitting,converting,stor-
+ing,anddisplayingimagedatareceived
+fromanexternalapparatus.
+LLMonly Variable firework battery. A fire- F42B 0.17% H01M,Y02E,Y10T F42B
+workbatterycomprisingmultiplereceiving
+partsforpyrotechniccharges,connected
+via hinge elements that allow relative
+movementtoenlargethesupportbaseof
+thebattery.
+Nonecorrect Maragingsteel.Amaragingsteelcom- C21D, 0.27% Y10T H01G
+positionwithspecifiedelementalranges, C22C 0.47%
+particularlyNi,Co,Cr,Mo/W,V,andNb,
+designedtoachievedesiredmaterialprop-
+erties.
+Encoderonly Stateofchargeestimatorandmeth- G01R 1.73% G01R H05G
+odsofmakingandusingthesame.
+A method for estimating battery state
+of charge using voltage-based measure-
+mentsandreal-timelinearregressiontech-
+niques, including recursive least squares
+andKalmanfiltering.
+Table 4:Representativeclassificationoutcomesillustratingcomplementarystrengths
+and failure modes of encoder-based and LLM-based models. Each row reports one
+patentfromtheUSPTO70ktestset,showingcorrectCPCsubclassesandpredictions
+from the best-performing encoder model (SciBERT) and the best-performing LLM
+(Qwen with zero-shot + RAG prompting).
+correspondstoencoder-basedsystemsbeingapproximately one to two orders of mag-
+nitude faster than LLM-based approaches, with speedups ranging from about 15× in
+the most favorable LLM settings to over 200× in the most demanding configurations.
+Energy consumption exhibits an even larger disparity. Encoder inference requires
+on the order of 10−2 kWh per run, while LLM inference consumes between approxi-
+mately 0.2 kWh and more than 2 kWh, implying a factor difference of roughly 20×
+to 200× in energy use. As a result, encoder-based models incur negligible inference-
+time energy costs and associated emissions, making them particularly well suited for
+large-scale, high-throughput patent classification pipelines.
+These differences imply a fundamental trade-off between efficiency and modeling
+flexibility. Encoder-based models are clearly preferable when scalability, latency, and
+costefficiencyareprimaryconcerns.LLMs,whilesignificantlymoreexpensiveinboth
+time and energy, offer greater semantic flexibility and improved coverage of rare or
+emerging subclasses. Therefore, their deployment seems to be most appropriate in
+selectiveortargetedsettingsratherthanasauniversalreplacementforencoder-based
+systems.
+Implications
+The findings of this study have implications both for operational patent classification
+and for downstream research in scientometrics and patentometrics. For intellectual
+21
+property professionals and patent offices, the results support a hybrid modeling strat-
+egy. Encoder-based classifiers are well suited for routine, large-scale CPC assignment
+and for monitoring well-established technological domains. In contrast, LLM-based
+systems appear particularly valuable as decision-support tools, assisting examiners
+in identifying potentially relevant but infrequent CPC subclasses and in exploring
+emerging or cross-domain inventions.
+Beyond operational settings, these findings have broader implications for sci-
+entometrics and patentometrics research. Because CPC-based classifications are
+foundational inputs to indicators of technological diversity, novelty, and emergence,
+systematic differences in classifier behavior translate directly into differences in mea-
+sured innovation dynamics (Haghighian Roudsari et al. 2022). Biases in favour of
+frequent and well-established CPC subclasses have direct consequences for down-
+stream analyses. Indicators based on subclass frequencies, technological diversity, or
+novelty may be distorted if rare subclasses are systematically missed or misclassified
+(Motohashietal.2024;LeibelandBornmann2024).Inthisrespect,ourfindingsalign
+with recent calls for responsible scientometrics and patentometrics, which empha-
+size transparency, methodological reflexivity, and awareness of model-induced biases
+in quantitative innovation studies (Thelwall and Kurt 2025; Sun 2025; Thelwall and
+Yaghi2025;Thelwall2025).TheobservedadvantagesofLLMsincapturinginfrequent
+subclasses suggest that these models may help mitigate long-tail biases, particu-
+larly in studies focused on technological emergence, interdisciplinarity, or early-stage
+innovation dynamics.
+At the same time, the substantially higher computational and energy costs of
+LLMs raise important concerns from a responsible research perspective. Large-scale
+patentometricsstudiesofteninvolvemillionsofdocuments,makingindiscriminateuse
+ofLLMsenvironmentallyandeconomicallyimpractical.Ourresultsthereforesupport
+aselectiveandpurpose-drivenadoptionofLLMs,forexampleascomplementarytools
+to enrich analyses of specific technological niches or to validate findings derived from
+encoder-based pipelines. These considerations echo recent discussions on the role of
+large language models in research evaluation, which underline both their potential to
+enrich analytical workflows and the risks of introducing systematic biases related to
+field, publication context, and textual characteristics (Thelwall and Kurt 2025; Sun
+2025; Thelwall and Yaghi 2025; Cantone et al. 2025).
+Overall,thisstudycallsforgreatermethodologicalpluralisminpatentclassification
+and patent-based research. Rather than seeking a single “best” model, researchers
+andpractitionersshouldconsiderhowmodelchoiceinteractswithresearchobjectives,
+data imbalance, deployment constraints, and sustainability considerations.
+Future Work
+This study is methodological and comparative in nature, with the primary goal of
+systematically assessing the behavior of (pre-GenAI) encoder-based models and large
+languagemodelsforpatentclassificationunderrealisticandcontrolledconditions.Sev-
+eral observations emerging from this analysis naturally point to promising directions
+for future research.
+22
+First, the comparative evidence presented in this paper indicates complementary
+strengths of encoder-based classifiers and LLMs across different regions of the CPC
+label space. In particular, the results suggest the potential usefulness of an innovative
+hybrid methodology that integrates encoder- and LLM-based approaches to leverage
+the efficiency and stability of encoders with the flexibility and the ability to focus on
+emerging subclasses of LLMs. While this insight is directly informed by our findings,
+the design, implementation, and empirical evaluation of such hybrid systems would
+be beyond the scope of the present study and are left for future work.
+Second, by design choice, our analysis focuses on instruction-tuned LLMs in the
+7–8B parameter range. This choice reflects a methodological commitment to fair
+and meaningful comparison under realistic deployment constraints. Future work may
+nonetheless explore the performance–cost trade-offs across a broader range of model
+sizes,consideringalsoapproachesbasedonmodelreductionsuchasquantization(Gray
+and Neuhoff 1998).
+Third,wediscussedhowfine-tuningthebest-performingLLMdidnotconsistently
+leadtoperformanceimprovements.While,asdiscussed,thisbehaviorhasalreadybeen
+observed in the literature, future work could consider other fine-tuning approaches,
+including aggressive full fine-tuning, not feasible with the computational resources
+available for this study.
+Finally, while the retrieval-augmented prompting strategies explored in this work
+rely on official CPC subclass definitions, richer forms of retrieval and interaction may
+further improve practical usefulness. Promising extensions include adaptive retrieval
+over heterogeneous knowledge sources and human-in-the-loop evaluation to assess
+how LLM-generated suggestions are used by patent examiners in real workflows. In
+this broader context, the development of cost-aware hybrid systems that dynami-
+callybalanceencoderpredictions,LLMassistance,andhumanoversightrepresentsan
+especially compelling direction for future research.
+Conclusion
+Thisstudyprovidesasystematiccomparisonbetweensupervisedencoder-basedmod-
+els and open-source LLMs for CPC multi-label patent classification, with explicit
+attention to performance across the CPC hierarchy, long-tailed label distributions,
+and computational sustainability. Rather than identifying a single best-performing
+approach, the results indicate a consistent trade-off between efficiency and seman-
+tic coverage, with direct consequences for how technological domains are represented
+in downstream analyses. Encoder-based models remain highly effective for frequent
+CPC subclasses and large-scale, high-throughput classification tasks, offering strong
+micro-level performance at minimal computational and environmental cost. In con-
+trast, LLMs—particularly when augmented with few-shot prompting and lightweight
+retrieval—exhibit improved recall on rare and infrequent subclasses and more bal-
+anced coverage across the CPC hierarchy, albeit at substantially higher resource
+requirements.
+These findings have direct implications for both operational patent classification
+andscientometricanalysis.ForpatentofficesandIPprofessionals,theysupporthybrid
+23
+workflows in which efficient encoders handle routine cases while LLMs are selectively
+deployed to assist with complex or long-tail classifications. For scientometrics and
+patentometricsresearch,theresultscarryimportantconsequences:modelchoiceisnot
+merelyatechnicaldetailbutamethodologicaldecision.Infact,differentclassification
+paradigms can systematically bias the visibility of rare, interdisciplinary, or weakly
+institutionalised technologies, thereby affecting indicators of technological emergence
+and change. Overall, this work shows how the responsible use of machine learning
+in patent analysis requires aligning methodological choices with analytical objectives,
+data imbalance, and sustainability constraints. Rather than seeking universal solu-
+tions, our results point toward selective, purpose-driven integration of LLMs as a
+meansofmitigatinglong-tailblindspotswhilepreservingscalabilityandtransparency
+in large-scale innovation studies.
+Data and code availability. The USPTO 70k dataset is publicly available
+and can be accessed online (Pujari et al. 2021). The EPO data are subject to
+licensing restrictions and cannot be redistributed under the ORBIS IP license of
+Bureau van Dijk. To support transparency and reproducibility, the core experimen-
+tal code used in this study is publicly available at https://github.com/lorenzoemer/
+Encoder-Based-Models-vs-Large-Language-Models-for-Patent-Classification.
+Acknowledgements. The authors gratefully acknowledge CINECA for providing
+access to the Leonardo Booster high-performance computing system, which enabled
+the experiments reported in this paper. The work has been partially supported by
+project SMaRT COnSTRUCT (CUP J53C24001460006), in the context of FAIR
+(PE0000013, CUP B53C22003630006) under the National Recovery and Resilience
+Plan(Mission4,Component2,LineofInvestment1.3)fundedbytheEuropeanUnion
+- NextGenerationEU.
+Declarations
+Conflict of interest. The authors have no relevant financial or non-financial
+interests to disclose.
+References
+Abdin, M., Aneja, J., Awadalla, H., Awadallah, A., et al.: Phi-3 technical
+report: A highly capable language model locally on your phone. arXiv preprint
+arXiv:2404.14219 (2024) arXiv:2404.14219 [cs.CL]
+Bommasani, R., Hudson, D.A., Adeli, E., et al.: On the opportunities and risks of
+foundation models. ArXiv (2021) https://doi.org/10.48550/arXiv.2108.07258
+Bekamiri,H.,Hain,D.S.,Jurowetzki,R.:Patentsberta:Adeepnlpbasedhybridmodel
+for patent distance and classification using augmented sbert. Technological Fore-
+casting and Social Change 206, 123536 (2024) https://doi.org/10.1016/j.techfore.
+2024.123536
+24
+Beltagy,I.,Lo,K.,Cohan,A.:Scibert:Apretrainedlanguagemodelforscientifictext.
+arXiv preprint arXiv:1903.10676 (2019)
+Brown, T., Mann, B., Ryder, N., et al.: Language models are few-shot learners. In:
+Larochelle,H.,Ranzato,M.,Hadsell,R.,Balcan,M.F.,Lin,H.-T.(eds.)Advancesin
+Neural Information Processing Systems, vol. 33, pp. 1877–1901. Curran Associates,
+Inc., Red Hook, NY, USA (2020)
+Burke, P.F., Reitzig, M.: Measuring patent assessment quality—analyzing the degree
+andkindof(in)consistencyinpatentoffices’decisionmaking.ResearchPolicy36(9),
+1404–1430 (2007) https://doi.org/10.1016/j.respol.2007.06.003
+Chen,Y.-L.,Chang,Y.-C.:Athree-phasemethodforpatentclassification.Information
+Processing & Management 48(6), 1017–1030 (2012) https://doi.org/10.1016/j.ipm.
+2011.11.001
+Courty, B., Schmidt, V., Goyal-Kamal, MarionCoutarel, Feld, B., Lecourt, J., Liam-
+Connell, SabAmine, inimaz, supatomic, L´eval, M., Blanche, L., Cruveiller, A.,
+ouminasara, Zhao, F., Joshi, A., Bogroff, A., Saboni, A., Lavoreille, H., Laskaris,
+N., Abati, E., Blank, D., Wang, Z., Catovic, A., alencon, Stechly, M., Bauer, C.,
+Lucas-Otavio,JPW,MinervaBooks:Mlco2/codecarbon:V2.4.1.https://doi.org/10.
+5281/zenodo.11171501
+Cantone,G.G.,Zheng,E.-T.,Tomaselli,V.,Nightingale,P.:Estimationofdisciplinary
+similarity with large language models. Scientometrics (2025) https://doi.org/10.
+1007/s11192-025-05385-0
+Devlin, J., Chang, M., Lee, K., Toutanova, K.: BERT: pre-training of deep bidirec-
+tionaltransformersforlanguageunderstanding.In:Burstein,J.,Doran,C.,Solorio,
+T. (eds.) Proceedings of the 2019 Conference of the North American Chapter
+of the Association for Computational Linguistics: Human Language Technologies,
+NAACL-HLT 2019, Minneapolis, MN, USA, June 2-7, 2019, Volume 1 (Long and
+Short Papers), pp. 4171–4186. Association for Computational Linguistics, Texas,
+USA (2019). https://doi.org/10.18653/V1/N19-1423
+Dubey, A., Jauhri, A., Pandey, A., et al.: The llama 3 herd of models. arXiv preprint
+arXiv:2407.21783 (2024) arXiv:2407.21783 [cs.CL]
+Efron,B.,Tibshirani,R.J.:AnIntroductiontotheBootstrap.Chapman&Hall/CRC,
+Boca Raton, FL (1993)
+Fischer, R.: Ground-truthing ai energy consumption: Validating codecarbon against
+external measurements. arXiv preprint arXiv:2509.22092 (2025)
+Gray, R.M., Neuhoff, D.L.: Quantization. IEEE Transactions on Information Theory
+44(6), 2325–2383 (1998)
+25
+Haghighian Roudsari, A., Afshar, J., Lee, W., Lee, S.: Patentnet: Multi-label classifi-
+cation of patent documents using deep learning based language understanding. Sci-
+entometrics 127(1), 207–231 (2022) https://doi.org/10.1007/s11192-021-04179-4
+Hollander,M.,Wolfe,D.A.,Chicken,E.:NonparametricStatisticalMethods,3rdedn.
+Wiley Series in Probability and Statistics, vol. 751. John Wiley & Sons, Hoboken,
+NJ (2013)
+Hicks, D., Wouters, P., Waltman, L., Rijcke, S., Rafols, I.: Bibliometrics: The leiden
+manifesto for research metrics. Nature 520(7548), 429–431 (2015) https://doi.org/
+10.1038/520429a
+Hu,E.J.,shen,Wallis,P.,Allen-Zhu,Z.,Li,Y.,Wang,S.,Wang,L.,Chen,W.:LoRA:
+Low-rank adaptation of large language models. In: International Conference on
+Learning Representations (2022). https://openreview.net/forum?id=nZeVKeeFYf9
+Jiang, A.Q., Sablayrolles, A., Mensch, A., et al.: Mistral 7b. arXiv preprint
+arXiv:2310.06825 (2023) arXiv:2310.06825 [cs.CL]
+Krestel,R.,Chikkamath,R.,Hewel,C.,Risch,J.:Asurveyondeeplearningforpatent
+analysis. World Patent Information 65, 102035 (2021) https://doi.org/10.1016/j.
+wpi.2021.102035
+Kamateri, E., Salampasis, M., Diamantaras, K.: An ensemble framework for patent
+classification.WorldPatentInformation75,102233(2023)https://doi.org/10.1016/
+j.wpi.2023.102233
+Kamateri, E.,Salampasis, M., Perez-Molina, E.:Will ai solve the patent classification
+problem? World Patent Information 78, 102294 (2024) https://doi.org/10.1016/j.
+wpi.2024.102294
+Kim,J.,Yoon,J.,Park,E.,et al.:Patentdocumentclusteringwithdeepembeddings.
+Scientometrics 123, 563–577 (2020) https://doi.org/10.1007/s11192-020-03396-7
+Leibel, C., Bornmann, L.: What do we know about the disruption index in sci-
+entometrics? an overview of the literature. Scientometrics 129, 601–639 (2024)
+https://doi.org/10.1007/s11192-023-04873-5
+Lin, T.Y., Chou, L.C.: A systematic review of artificial intelligence applications and
+methodological advances in patent analysis. World Patent Information 82, 102383
+(2025) https://doi.org/10.1016/j.wpi.2025.102383
+Lu, Y., Chen, L., Tong, X., Peng, Y., Zhu, H.: Research on cross-lingual multi-label
+patentclassificationbasedonpre-trainedmodel.Scientometrics(2024)https://doi.
+org/10.1007/s11192-024-05024-0
+Lee, J.-S., Hsiang, J.: Patent classification by fine-tuning bert language model. World
+26
+Patent Information 61, 101965 (2020) https://doi.org/10.1016/j.wpi.2020.101965
+Li, S., Hu, J., Cui, Y., Hu, J.: Deeppatent: Patent classification with convolutional
+neuralnetworksandwordembedding.Scientometrics117(2),721–744(2018)https:
+//doi.org/10.1007/s11192-018-2905-5
+Lewis,P.,Perez,E.,Piktus,A.,et al.:Retrieval-augmentedgenerationforknowledge-
+intensive nlp tasks. In: Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M.F.,
+Lin, H. (eds.) Advances in Neural Information Processing Systems, vol. 33, pp.
+9459–9474. Curran Associates, Inc., Red Hook, NY, USA (2020)
+Motohashi, K., Koshiba, H., Ikeuchi, K.: Measuring science and innovation linkage
+using text mining of research papers and patent information. Scientometrics (2024)
+https://doi.org/10.1007/s11192-024-04949-w
+Murata, M., Kanamaru, T., Shirado, T., Isahara, H.: Using the k nearest neighbor
+method and bm25 in the patent document categorization subtask at ntcir-5. In:
+Proceedings of the 5th NTCIR Workshop on Evaluation of Information Access
+Technologies. National Institute of Informatics, Tokyo, Japan (2005)
+Nemati, S.: Semantic patent classification using stack generalization of deep models.
+InternationalJournalofWebResearch7(2),1–12(2024)https://doi.org/10.22133/
+ijwr.2024.449332.1210
+Nam,J.,Kim,J.,LozaMenc´ıa,E.,Gurevych,I.,Fu¨rnkranz,J.:Large-scalemulti-label
+textclassification—revisitingneuralnetworks.In:ProceedingsoftheEuropeanCon-
+ference on Machine Learning and Knowledge Discovery in Databases, pp. 437–452.
+Springer,Berlin,Heidelberg(2014).https://doi.org/10.1007/978-3-662-44851-9 28
+Niu,C.,Zhang,W.,Zhao,Y.,Chen,Y.:Energyefficientorexhaustive?benchmarking
+powerconsumptionofllminferenceengines.ACMSIGENERGYEnergyInformatics
+Review 5(2), 56–62 (2025) https://doi.org/10.1145/3757892.3757900
+Oh, S., Choi, J., Ko, N., et al.: Predicting product development directions for new
+product planning using patent classification-based link prediction. Scientometrics
+125, 1833–1876 (2020) https://doi.org/10.1007/s11192-020-03709-w
+Pujari, S.C., Friedrich, A., Str¨otgen, J.: A multi-task approach to neural multi-label
+hierarchicalpatentclassificationusingtransformers.In:Hiemstra,D.,Moens,M.-F.,
+Mothe, J., Perego, R., Potthast, M., Sebastiani, F. (eds.) Advances in Information
+Retrieval. Lecture Notes in Computer Science, vol. 12656, pp. 451–465. Springer,
+Cham (2021). https://doi.org/10.1007/978-3-030-72113-8 34
+QwenTeam:Qwen2.5technicalreport.arXivpreprintarXiv:2412.15115(2024)https:
+//doi.org/10.48550/arXiv.2412.15115 arXiv:2412.15115 [cs.CL]
+Risch, J., Krestel, R.: Domain-specific word embeddings for patent classification.
+27
+DataTechnologiesandApplications53(1),108–122(2019)https://doi.org/10.1108/
+DTA-01-2019-0002
+Rafieian, B., V´azquez, P.-P.: Improved multi-label hierarchical patent classification
+using llms. World Patent Information 81, 102356 (2025) https://doi.org/10.1016/j.
+wpi.2025.102356
+Schmitt, V.J.: Disentangling patent quality: using a large language model for
+a systematic literature review. Scientometrics (2024) https://doi.org/10.1007/
+s11192-024-05206-w
+Schwartz, R., Dodge, J., Smith, N.A., Etzioni, O.: Green ai. Communications of the
+ACM 63(12), 54–63 (2020) https://doi.org/10.1145/3381831
+Silla, C.N., Freitas, A.A.: A survey of hierarchical classification across different appli-
+cation domains. Data Mining and Knowledge Discovery 22(1–2), 31–72 (2011)
+https://doi.org/10.1007/s10618-010-0175-9
+Springer, J.M., Goyal, S., Wen, K., Kumar, T., Yue, X., Malladi, S., Neubig, G.,
+Raghunathan, A.: Overtrained language models are harder to fine-tune. arXiv
+preprint arXiv:2503.19206 (2025) https://doi.org/10.48550/arXiv.2503.19206
+Stap,D.,Hasler,E.,Byrne,B.,Monz,C.,Tran,K.:Thefine-tuningparadox:Boosting
+translation quality without sacrificing LLM abilities. In: Ku, L.-W., Martins, A.,
+Srikumar, V. (eds.) Proceedings of the 62nd Annual Meeting of the Association for
+ComputationalLinguistics(Volume1:LongPapers),pp.6189–6206.Associationfor
+Computational Linguistics, Bangkok, Thailand (2024). https://doi.org/10.18653/
+v1/2024.acl-long.336
+Shen, S., Liu, J., Lin, L., Huang, Y., Zhang, L., Liu, C., Wang, D.: Sscibert: A pre-
+trained language model for social science texts. Scientometrics 128(2), 1241–1263
+(2023) https://doi.org/10.1007/s11192-022-04602-4
+Sun, Z.: Large language models in peer review: Challenges and opportunities.
+Scientometrics (2025) https://doi.org/10.1007/s11192-025-05440-w
+Thelwall, M.: Research quality evaluation by ai in the era of large language models:
+Advantages,disadvantages,andsystemiceffects.Scientometrics(2025)https://doi.
+org/10.1007/s11192-025-05361-8
+Tsoumakas,G.,Katakis,I.:Multi-labelclassification:Anoverview.InternationalJour-
+nal of Data Warehousing and Mining 3(3), 1–13 (2007) https://doi.org/10.4018/
+jdwm.2007070101
+Thelwall, M., Kurt, Z.: Research evaluation with chatgpt: Is it age, country, length,
+or field biased? Scientometrics (2025) https://doi.org/10.1007/s11192-025-05393-0
+28
+Turney, P.D., Pantel, P.: From frequency to meaning: Vector space models of seman-
+tics. Journal of Artificial Intelligence Research 37, 141–188 (2010) https://doi.org/
+10.1613/jair.2934
+Thelwall, M., Yaghi, A.: Evaluating the predictive capacity of chatgpt for academic
+peer review outcomes across multiple platforms. Scientometrics (2025) https://doi.
+org/10.1007/s11192-025-05287-1
+Waltman, L.: A review of the literature on citation impact indicators. Journal of
+Informetrics 10(2), 365–391 (2016) https://doi.org/10.1016/j.joi.2016.02.007
+Wu,C.H.,Ken,Y.,Huang,T.:Patentclassificationsystemusinganewhybridgenetic
+algorithmsupportvectormachine.AppliedSoftComputing10(4),1164–1177(2010)
+https://doi.org/10.1016/j.asoc.2009.11.033
+Wu,C.-H.,Ken,Y.,Huang,T.:Patentclassificationsystemusinganewhybridgenetic
+algorithmsupportvectormachine.AppliedSoftComputing10(4),1164–1177(2010)
+https://doi.org/10.1016/j.asoc.2009.11.033
+Wang,C.-C.,Sung,H.-Y.,Huang,M.-H.:TechnologicalevolutionseenfromtheUSPC
+reclassifications. Scientometrics 107(2), 537–553 (2016) https://doi.org/10.1007/
+s11192-016-1851-3
+Wu,K.,Xie,Z.,Du,J.T.:Doessciencedisrupttechnology?examiningscienceintensity,
+novelty, and recency through patent-paper citations in the pharmaceutical field.
+Scientometrics (2024) https://doi.org/10.1007/s11192-024-05126-9
+Xiong, S., Chen, S., He, J., Liu, Y., Mao, J., Liu, C.: Scalable multi-label patent clas-
+sification via iterative large language model-assisted active learning. World Patent
+Information 82, 102380 (2025) https://doi.org/10.1016/j.wpi.2025.102380
+Xu, Y., Chen, X., Mao, J., Li, G.: Will patents with more interdisciplinary scientific
+knowledgehavehighertechnologicalimpact?empiricalevidencefromusptopatents.
+Scientometrics (2025) https://doi.org/10.1007/s11192-025-05280-8
+Xiao,L.,Wang,G.,Zuo,Y.:Researchonpatenttextclassificationbasedonword2vec
+and lstm. In: Proceedings of the 11th International Symposium on Computational
+Intelligence and Design (ISCID 2018), vol. 1, pp. 71–74. IEEE, Hangzhou, China
+(2018). https://doi.org/10.1109/ISCID.2018.00023
+Yoshikawa, N., Krestel, R.: Improving patent classification using ai-generated sum-
+maries. In: Proceedings of the 5th Workshop on Patent Text Mining and Semantic
+Technologies,pp.8–17.CEUR-WS.org,WashingtonD.C.,USA(2024).https://ceur-
+ws.org/Vol-3775/paper2.pdf
+Yang, Z., Yang, D., Dyer, C., He, X., Smola, A., Hovy, E.: Hierarchical attention
+networks for document classification. In: Proceedings of the 2016 Conference of the
+29
+North American Chapter of the Association for Computational Linguistics: Human
+Language Technologies, pp. 1480–1489. Association for Computational Linguistics,
+San Diego, California (2016). https://aclanthology.org/N16-1174
+30
+Appendix A Supervised encoder models:
+implementation details
+A.1 Model architecture and training
+Each encoder model (BERT, SciBERT, PatentSBERTa) is fine-tuned for multi-label
+CPC classification by attaching a linear classification head that outputs one logit per
+CPC subclass. Logits are transformed into independent probabilities via a sigmoid
+function,andmodelsaretrainedusingbinarycross-entropylossoverthefulllabelset.
+All models are trained on the same training split and evaluated on a held-out
+test set. Input sequences consist of the patent title concatenated with the abstract
+and are truncated to a maximum length of 256 tokens. Training is performed using
+standardoptimizationsettings,andthefinalcheckpointisselectedbasedonvalidation
+performance.
+A.2 Threshold calibration and label decoding
+For each encoder, prediction thresholds are calibrated on a separate development set
+to maximize micro-averaged F score. At test time, a CPC subclass is predicted for
+1
+a patent if its calibrated probability exceeds the model-specific threshold. To ensure
+comparability with LLM outputs, we additionally cap the number of predicted labels
+per patent to at most seven; if no label exceeds the threshold, the highest-probability
+subclassisselected.Infact,thenumberofCPCsubclassesassignedperpatentishighly
+sparse. In the training set (50625 patents), the mean number of labels per patent is
+1.98 and the median is 2; 90% of patents have at most four labels, 95% have at most
+four labels, and 99% have at most seven labels. Overall, 99.48% of training patents
+are annotated with between one and seven CPC subclasses, with a maximum of 18.
+The test set exhibits a similar distribution (mean: 2.32; median: 2; 99th per-
+centile: 7), with 99.21% of patents having between one and seven labels. Based on
+this empirical distribution, we restrict model outputs to at most seven subclasses per
+patentacrossallmethods.Thisconstraintisapplieduniformlytosupervisedencoders
+and LLM-based approaches and serves to prevent degenerate over-prediction while
+remaining faithful to the annotation regime.
+A.3 Constrained label-space evaluation
+In addition to standard evaluation over the full CPC subclass space, we consider a
+constrained decoding setting that mirrors label-space retrieval prompting used for
+LLMs. For each patent, a per-instance candidate set of CPC subclasses is retrieved
+by embedding official CPC subclass definitions with a bi-encoder (E5-base-v2) and
+ranking them by cosine similarity to the patent text.
+During constrained evaluation, encoder output probabilities for subclasses outside
+theretrievedtop-K set(K =20)aremaskedtozeropriortothresholdinganddecod-
+ing.ThevalueK = 20 controlsonlythesizeoftheretrievedcandidatelabelset;after
+thresholding,thenumberofpredictedCPCsubclassesisstillcappedatseven,Impor-
+tantly, this constraint is applied only at inference time and does not influence model
+training or parameter estimation.
+31
+Appendix B Prompting Strategies and Templates
+We evaluate large language models under multiple prompting regimes of increas-
+ing informational content and constraint, reflecting common practical deployment
+scenarios. Specifically, we consider: (i) zero-shot prompting; (ii) few-shot prompt-
+ing with in-context examples; (iii) constrained prompting based on an allowed CPC
+label set, implemented via retrieval from a dictionary of CPC definitions (retrieval-
+augmented prompting); and (iv) combinations of few-shot prompting with label-set
+constraints.Acrossallsettings,promptsenforceastrictJSONoutputformattoensure
+deterministic parsing and consistent evaluation.
+B.1 Prompt selection and calibration
+Prior to the main experimental evaluation, we conducted a limited prompt calibra-
+tion phase on a small validation subset of the training data. During this phase, we
+tested several semantically equivalent prompt variants differing in wording, emphasis
+on recall versus precision, and degree of explicitness regarding multi-label prediction.
+This preliminary exploration was motivated by empirical observations that large lan-
+guage models tend to be conservative in multi-label settings, often under-predicting
+the number of relevant labels when instructions are underspecified.
+Importantly, prompt selection was performed once per prompting regime (e.g.,
+zero-shot,few-shot,constrained)andexclusivelyonheld-outvalidationdata.Thefinal
+prompt templates reported in this appendix correspond to the variants that yielded
+the best overall performance in terms of micro-F1 and recall, while preserving strict
+outputformattingandcomparabilityacrossmodels.Nopromptwastunedonthetest
+set, and the same finalized prompts were used unchanged for all models within each
+experimental condition.
+B.2 Zero-shot prompting
+In the zero-shot setting, the model receives only the patent text and general instruc-
+tions, without examples or label constraints. This represents the cleanest evaluation
+of the model’s prior knowledge.
+Zero-shot system prompt
+You are an expert patent examiner for the Cooperative Patent
+Classification (CPC) system.
+Your goal is HIGH RECALL classification: it is worse to miss a relevant
+CPC subclass
+than to include a marginally relevant one.
+You assign MULTIPLE CPC subclasses (multi-label) to each patent.
+Return ONLY a strict JSON object with a single key "labels",
+whose value is a list of CPC subclass codes (e.g. ["G06Q", "Y02D"]).
+Return JSON ONLY (no extra text).
+32
+Zero-shot user prompt
+Classify the following patent into CPC subclasses (4-character level
+like A01B, G06F, Y02D).
+PATENT TEXT:
+----------------------------------------
+{patent_text}
+----------------------------------------
+TASK:
+- Assign ALL relevant CPC subclasses (multi-label).
+- Output between 1 and 7 CPC subclass codes.
+- Do NOT invent codes that are not real CPC subclasses.
+OUTPUT FORMAT (STRICT):
+{"labels": ["G06F", "H04L"]}
+B.3 Few-shot prompting
+In the few-shot setting, the model is additionally provided with labeled patent exam-
+ples drawn from the training set. These examples are used to stabilize output format
+and encourage multi-label behavior.
+Few-shot system prompt
+You are an expert patent examiner for the Cooperative Patent
+Classification (CPC) system.
+Your goal is HIGH RECALL classification: it is worse to miss a relevant
+CPC subclass
+than to include a marginally relevant one.
+You assign MULTIPLE CPC subclasses (multi-label) to each patent.
+Return ONLY a strict JSON object with a single key "labels".
+Return JSON ONLY (no extra text).
+Few-shot user prompt
+You will see some labeled examples first.
+FEW-SHOT EXAMPLES:
+{fewshot_block}
+NOW CLASSIFY THIS PATENT:
+----------------------------------------
+33
+{patent_text}
+----------------------------------------
+TASK:
+- Assign ALL relevant CPC subclasses (4-character level).
+- Output between 1 and 7 CPC subclass codes.
+OUTPUT FORMAT (STRICT):
+{"labels": ["G06F", "H04L"]}
+B.4 Zero-shot prompting with retrieval-augmented label
+constraints
+In this setting, we augment zero-shot prompting with external domain knowledge
+in the form of CPC subclass definitions. Specifically, we retrieve a dictionary of
+relevant CPC subclasses and provide the model with an explicit allowed label set,
+therebyconstrainingtheoutputspace.Thisconfigurationcorrespondstoalightweight
+retrieval-augmentedgeneration(RAG)setup,inwhichnotextualevidenceisretrieved
+for the patent itself, but the model is guided by authoritative classification metadata.
+The objective of this variant is twofold: (i) to reduce hallucinated or invalid CPC
+codes, and (ii) to encourage recall by making plausible subclasses explicitly available
+to the model. No in-context labeled examples are provided in this setting.
+Zero-shot + RAG system prompt
+You are an expert patent examiner for the Cooperative Patent
+Classification (CPC) system.
+Your goal is HIGH RECALL classification.
+You assign MULTIPLE CPC subclasses to each patent.
+You MUST only choose labels from the provided allowed set.
+If a CPC subclass is plausibly relevant, you SHOULD include it; do NOT
+be overly conservative.
+Reason hierarchically (Section -> Class -> Subclass), but output ONLY
+CPC subclass codes.
+Return ONLY a strict JSON object with key "labels".
+Zero-shot + RAG user prompt
+PATENT TEXT:
+----------------------------------------
+{patent_text}
+----------------------------------------
+34
+ALLOWED CPC SUBCLASSES (grouped hierarchically):
+{allowed_labels}
+TASK:
+- Assign ALL relevant CPC subclasses.
+- Use ONLY codes from the allowed list.
+- Return at least one and at most 7 subclasses.
+OUTPUT FORMAT (STRICT):
+{"labels": ["G06F", "G06Q", "Y02D"]}
+B.5 Few-shot prompting with retrieval-augmented label
+constraints
+This setting combines in-context learning with retrieval-augmented label constraints.
+In addition to the allowed CPC subclass set retrieved from the CPC definition dictio-
+nary, the model is provided with a small number of labeled patent examples drawn
+from the training data.
+Thisconfigurationrepresentsthemostinformativepromptingregimeconsideredin
+this work, integrating (i) domain knowledge via CPC definitions and (ii) task-specific
+examples illustrating multi-label classification behavior. As in all other settings,
+prompts are designed to favor recall and enforce structured JSON output.
+Few-shot + RAG system prompt
+You are an expert patent examiner for the Cooperative Patent
+Classification (CPC) system.
+Your goal is HIGH RECALL classification.
+You assign MULTIPLE CPC subclasses to each patent.
+You MUST only choose labels from the provided allowed set.
+If a CPC subclass is plausibly relevant, you SHOULD include it; do NOT
+be overly conservative.
+Reason hierarchically (Section -> Class -> Subclass), but output ONLY
+CPC subclass codes.
+Return ONLY a strict JSON object with key "labels".
+Few-shot + RAG user prompt
+BELOW ARE SOME EXAMPLES OF HOW TO ASSIGN MULTIPLE CPC SUBCLASSES:
+{fewshot_block}
+END OF EXAMPLES.
+NOW CLASSIFY THE FOLLOWING PATENT:
+35
+PATENT TEXT:
+----------------------------------------
+{patent_text}
+----------------------------------------
+ALLOWED CPC SUBCLASSES (grouped hierarchically):
+{allowed_labels}
+INSTRUCTIONS:
+- Assign ALL CPC subclasses that are reasonably relevant.
+- Prefer OVER-INCLUSION to under-inclusion.
+- Use ONLY codes from the allowed list.
+- Return at least one and at most 7 subclasses.
+OUTPUT FORMAT (STRICT JSON ONLY):
+{"labels": ["G06F", "G06Q", "Y02D"]}
+Appendix C Retrieval and RAG Implementation
+Details
+This appendix documents the implementation details of our retrieval-augmented
+prompting settings used for CPC multi-label prediction.
+C.1 Retrieval corpus: CPC subclass definitions
+We construct a retrieval corpus from a dictionary of CPC subclass codes mapped to
+short textual definitions (denoted cpc labels). Each retrieval item corresponds to
+one CPC subclass code (4-character level, e.g., G06F) and its definition. Before
+embedding, we normalize codes to the 4-character subclass level by (i) uppercasing,
+(ii) removing any subgroup suffix after “/” if present, and (iii) truncating to four
+characters. Each retrieval item is embedded as a single text string of the form:
+CODE: definition
+This design ensures that retrieval is performed over the semantic content of the CPC
+definition while preserving explicit label identity.
+C.2 Bi-encoder retrieval model and embeddings
+WeusealocalE5bi-encoder(e5-base-v2)toembedbothqueriesandCPC-definition
+passages. Following the E5 convention, we apply explicit prefixes:
+• Query embedding: patent text prefixed with ‘‘query: ’’.
+• Passage embedding: CPC definition text prefixed with ‘‘passage: ’’.
+The query text is the concatenation of the patent title and abstract (“title.
+abstract”), with whitespace normalization. Tokenization uses truncation to a maxi-
+mum length of 512 tokens. Embeddings are computed via mean pooling over the last
+36
+hidden states using the attention mask, and then ℓ -normalized. Because embeddings
+2
+are normalized, cosine similarity is equivalent to the dot product.
+We embed the CPC-definition corpus once (batch size 64) and reuse these vectors
+for all patents. For patent queries, we embed in batches (default batch size up to 16,
+capped by the number of items in a batch). All embedding computations run locally
+(offline), using GPU.
+C.3 Top-K retrieval and allowed-label construction
+For each patent, we compute cosine similarity between the query embedding and all
+CPC-definitionembeddingsandretrievethetop-K CPCsubclasses,withK =20.The
+resulting list forms the allowed label set for that patent. This allowed set is injected
+into the LLM prompt and also used for strict post-processing: predicted labels not
+contained in the allowed set are discarded. We fix the size of the retrieved allowed
+CPCsettoK =20acrossallmodelsandexperiments.Weconsideredalternativesizes
+oftheretrievedallowedlabelsettoassessfeasibility.WithK =10,theretrievalstage
+frequently omitted relevant CPC subclasses, leading to under-inclusive predictions.
+Conversely,K =50resultedinsubstantiallylongerpromptsthatapproachedcontext-
+lengthlimitsandincreasedinferencecostwithoutqualitativebenefits.Basedonthese
+observations, we fixed K =20 a priori and did not further tune it.
+C.4 Prompt formatting for RAG settings
+In RAG prompting, the allowed CPC subclasses are shown together with short
+definitions and grouped hierarchically to improve readability. Specifically, we group
+allowed subclasses by CPC section (first character) and class (first three characters),
+and list subclasses under each class. Each line is formatted as:
+- CODE --- definition
+To control prompt length, definitions are truncated to at most 220 characters.
+Zero-shot + RAG.
+In the zero-shot + RAG condition, the prompt contains only (i) the patent text and
+(ii) the retrieved allowed set with definitions. The model is instructed to select all
+relevant subclasses from the allowed set and to return a strict JSON object:
+{"labels": ["G06F", "H04L"]}
+Weadditionallyinstructthemodeltopreferover-inclusion(highrecall)andtooutput
+between 1 and 7 labels.
+Few-shot + RAG.
+In the few-shot + RAG condition, we use the same allowed-set retrieval as above and
+prependfew-shotexamplestotheprompt.Few-shotexamplescomefromthetraining
+setandareformattedasPATENT TEXTfollowedbythecorrespondinggoldlabelJSON.
+We include two types of few-shot examples:
+• Static examples: fixedtraining rowindices (two examples) usedin everyprompt.
+37
+• Dynamic examples: retrieved per test instance using TF–IDF cosine similarity
+over training texts (two examples), excluding the static IDs.
+We experimented with alternative few-shot configurations (static-only and
+dynamic-only retrieval), but observed reduced recall and higher variance across runs;
+for this reason, these variants were not pursued further.
+C.5 Few-shot retrieval for examples (TF–IDF)
+For dynamic few-shot retrieval, we build a TF–IDF representation of training texts
+(title + abstract) using: maximum 50000 features, (1,2)-gram range, and minimum
+document frequency of 2. For each test patent, we compute cosine similarity between
+itsTF–IDF vector andall training vectors andselect thetop-2 mostsimilar examples
+(excluding the static examples). Static examples are selected by fixed training indices
+[2, 27] to stabilize the prompt format across runs.
+C.6 LLM inference settings
+All LLMs are run locally (offline) using Hugging Face Transformers with
+device map="auto". We use bfloat16 on supported GPUs (otherwise float16).
+We generate deterministically with greedy decoding (do sample=False) and
+max new tokens=256. Tokenization uses left padding and truncation to a maximum
+input length of 2048 tokens.
+C.7 Output parsing, label normalization, and constraint
+enforcement
+We enforce structured output by requiring strict JSON in the prompt. In post-
+processing, we parse the model output as follows:
+1. Attempt to parse the entire generation as JSON and read the "labels" list.
+2. If this fails, extract the first JSON-like substring using a regex and attempt JSON
+parsing again.
+3. Normalize each predicted code to the 4-character subclass level (uppercasing,
+removing subgroup suffix after “/”, truncating to four characters).
+For RAG conditions, we enforce the allowed-label constraint by discarding any
+normalized label not present in the retrieved allowed set for that patent.
+Non-empty fallback.
+Because some LLMs may output invalid JSON or produce empty outputs, we option-
+ally enforce non-empty predictions. If parsing yields no valid labels, we (i) search for
+CPC-like tokens in the raw text and keep the first token that is in the allowed set;
+otherwise (ii) fall back to predicting the top-1 retrieved allowed label. In all settings,
+wecapthefinalpredictiontoatmost7labelsperpatent.Weconstrainthenumberof
+predicted CPC subclasses to be between 1 and 7. This range reflects the typical spar-
+sityofCPCsubclassannotationsinourdatasetandpreventsdegenerateoutputswith
+38
+excessively many labels, while still allowing over-inclusion in line with our high-recall
+objective.
+C.8 Evaluation outputs
+For each model and setting, we compute micro and macro precision/recall/F at the
+1
+subclasslevel,togetherwithAcc@1.Wealsocomputehierarchicalmicrometricsatthe
+section,class,andsubclasslevelsbymappingpredictedandgoldlabelstotheircorre-
+spondinghierarchicalprefixesandcomputingmicroprecision/recall/F .Additionally,
+1
+we export per-label (section/class/subclass) tables including support, predicted posi-
+tives,TP/FP/FN/TN,precision,recall,F ,andper-labelaccuracy.Forreproducibility
+1
+and statistical analysis (e.g., bootstrap), we always save a predictions.jsonl file
+containingthepatenttext,goldlabels,predictedlabels,thefullprompt,andretrieval
+metadata (including the retrieved allowed set and, in the few-shot setting, the IDs of
+retrieved training examples).
+Appendix D LoRA Fine-Tuning Details
+We fine-tune Qwen2.5-7B-Instruct using parameter-efficient Low-Rank Adaptation
+(LoRA).Themodelistrainedwithacausallanguagemodelingobjective,implemented
+as token-level cross-entropy loss over the target output sequence. The task is formu-
+lated as structured text generation, where the model outputs CPC subclass labels in
+a JSON format.
+LoRA adapters are applied while keeping all base model parameters frozen. We
+use a rank of r =64, a scaling factor α=16, and a dropout rate of 0.05, with no bias
+terms. Adapters are injected into both attention and feed-forward projection layers,
+including query, key, value, and output projections in the attention blocks, as well as
+the gate, up, and down projection layers in the MLP blocks.
+Optimization is performed using AdamW with a peak learning rate of 2×10−4
+and a cosine learning rate schedule with a warmup ratio of 0.05. We apply weight
+decay of 0.01. Training is carried out for three epochs with a per-device batch size of
+2 and gradient accumulation over 8 steps, resulting in an effective batch size of 16.
+The maximum sequence length is set to 2048 tokens. Training is conducted in mixed
+precision, using bfloat16 when supported by the hardware and float16 otherwise.
+Model checkpoints are saved every 500 training steps, and validation is performed
+at the same interval. All experiments are run on a single GPU without model quan-
+tization. To monitor computational cost, training time and carbon emissions are
+tracked using the CodeCarbon framework. All values correspond to standard choices
+commonly used in LoRA-based fine-tuning of large language models.
+Appendix E Additional Results
+E.1 Detailed CPC Label Statistics
+ThissubsectionprovidesadditionaldescriptivestatisticsontheCPClabeldistribution
+within the USPTO-70k dataset used in our experiments.
+39
+Table E1 reports the five most frequent and five least frequent CPC subclasses
+in the training set. The most frequent subclasses correspond to broad and general-
+purpose technological areas, such as digital data processing and telecommunications,
+while the least frequent subclasses are highly specialized and represented by fewer
+than ten training instances.
+Theratiobetweenthemostfrequentandtherarestsubclassesexceedsthreeorders
+of magnitude, highlighting the severity of the long-tail phenomenon. Such extreme
+imbalance poses a significant challenge for supervised learning approaches, which
+tend to optimize performance on frequent labels, and provides further motivation for
+exploring alternative paradigms such as large language models.
+Group CPC subclass Frequency CPC description
+Top-5 G06F 6272 Electric digital data processing (general-
+purpose computing, architectures, and data
+handling)
+H04L 4341 Transmissionofdigitalinformation(datacom-
+munication, networking protocols)
+Y10T 4290 TechnicalsubjectscoveredbyformerUSclas-
+sification (cross-reference technical topics)
+H01L 4168 Semiconductor devices; electric solid-state
+devices
+H04N 2592 Pictorial communication (e.g., television,
+image and video transmission)
+Bottom-5 C06C 9 Explosives; matches
+A44D 9 Haberdashery; personal articles not otherwise
+provided for
+B28C 9 Workingcement,clay,orstone(mixing,shap-
+ing, or processing)
+C10C 9 Processingofcoalorpetroleumproducts(e.g.,
+destructive distillation)
+C12L 4 Pitching or depitching machines; cellar tools
+Table E1: Top-5 and Bottom-5 CPC subclasses by frequency in the training set,
+with official CPC subclass descriptions.
+Finally,FigureE1reportsthecorrelationbetweensubclassfrequenciesinthetrain-
+ing and test sets. The strong positive correlation indicates that the test set largely
+preserves the label distribution observed during training, suggesting that differences
+in model performance are not driven by distributional shifts between splits.
+E.2 Rare vs. frequent CPC subclasses: paired significance
+tests
+Table E2 reports paired Wilcoxon signed-rank tests computed at the CPC subclass
+level, contrasting each LLM against a supervised encoder baseline. For each encoder–
+LLM pairing, subclasses are split by empirical frequency (support) into rare (bottom
+40
+3.5
+3.0
+2.5
+2.0
+1.5
+1.0
+0.5
+0.0
+0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
+log10(freq_train + 1)
+)1
++
+tset_qerf(01gol
+Pearson r = 0.929
+Fig. E1: Correlation between CPC subclass frequencies in the training and test sets.
+Each point corresponds to a CPC subclass. Frequencies are shown on a logarithmic
+scale(log (count+1))toaccountforthelong-taileddistributionoflabels.Thestrong
+10
+linear relationship indicates that the train–test split preserves the original subclass
+imbalance, including rare and emerging technologies.
+20%) and frequent (top 20%) groups. For rare subclasses, we test the one-sided alter-
+native that the LLM outperforms the encoder (LLM>Enc), whereas for frequent
+subclasses we test the reverse alternative (Enc>LLM). All tests are paired across the
+same set of subclasses within each group.
+Interpretation
+The table supports a consistent frequency-dependent crossover between LLMs and
+encoder baselines. On rare subclasses (bottom 20% by support), all LLM config-
+urations achieve statistically significant improvements over both encoders (one-sided
+Wilcoxon tests with p <0.05), with the strongest evidence for Qwen (LoRA, few-
+shot) (p = 3.2×10−5). This aligns with the qualitative pattern in Figure 3, where
+positive ∆F1 values concentrate in the low-frequency region.
+On frequent subclasses (top 20%), the comparison depends on the encoder
+baseline. Against SciBERT, the encoder significantly outperforms each LLM variant
+(all p < 0.01), indicating that a supervised encoder can remain highly competitive
+on well-represented categories. In contrast, against PatentSBERTa the frequent-
+subclass test yields p=1.00 for all LLMs, suggesting no detectable advantage for the
+encoder under the one-sided alternative Enc>LLM. A plausible explanation is that
+frequent subclasses are already near a performance ceiling for PatentSBERTa in this
+setup,makingpairedgainsovertheLLMssmallandinconsistent;however,thisresult
+41
+Encoder LLM Raresubclasses(bottom20%) Frequentsubclasses(top20%)
+F1LLM p(LLM>Enc) F1Enc p(Enc>LLM)
+SciBERTasencoderbaseline
+SciBERT LLaMA(zero-shot) 0.021 7.2×10−3 0.279 1.9×10−3
+SciBERT Qwen(zero-shot) 0.022 1.3×10−2 0.279 4.9×10−3
+SciBERT Qwen(LoRA,few-shot) 0.049 3.2×10−5 0.279 3.4×10−5
+PatentSBERTaasencoderbaseline
+PatentSBERTa LLaMA(zero-shot) 0.021 7.2×10−3 0.077 1.00
+PatentSBERTa Qwen(zero-shot) 0.022 1.3×10−2 0.077 1.00
+PatentSBERTa Qwen(LoRA,few-shot) 0.049 3.2×10−5 0.077 1.00
+Table E2: Paired Wilcoxon signed-rank tests on per-subclass F1 scores for rare (bot-
+tom 20%) and frequent (top 20%) CPC subclasses. For rare subclasses we report the
+mean per-subclass F1 of the LLM, F1 , and p-values for the one-sided test LLM >
+LLM
+Encoder. For frequent subclasses we report the mean per-subclass F1 of the encoder,
+F1 , and p-values for the one-sided test Encoder > LLM.
+Enc
+shouldbereadaslackofevidenceforEnc>LLM,notasevidencethatLLMsdominate
+frequent subclasses.
+Overall,thesepairedtestsreinforcethemaintakeaway:LLMsprovidetheclearest
+benefits on long-tail (rare) CPC subclasses, while supervised encoders can match or
+exceed LLM performance on high-frequency subclasses depending on the encoder and
+training regime.
+E.3 External validation on EPO patents
+To assess the robustness and external validity of our findings, we replicate the evalu-
+ation on an independent dataset of 10000 patents from the European Patent Office
+(EPO). The dataset is constructed using ORBIS Intellectual Property by Moody’s
+andincludespatentapplicationspublishedbetween2019and2022.Thissettingintro-
+ducesbothaninstitutionalshift(EPOvs.USPTO)andatemporalshiftwithrespect
+to the USPTO-based benchmark used in the main experiments.
+The EPO dataset exhibits the same structural characteristics as the USPTO-
+70k benchmark, namely a strongly imbalanced and long-tailed distribution of CPC
+subclasses. Figure E2 reports the distribution of CPC subclass frequencies, while
+FigureE3showsthecorrespondingcumulativelabelcoverage.AsintheUSPTOdata,
+asmallfractionofsubclassesaccountsforalargeshareoflabelassignments,whereasa
+long tail of infrequent subclasses remains sparsely represented. This confirms that the
+hierarchical and frequency-related challenges addressed in the main analysis persist
+under a different patent office and time period.
+Predictive performance on EPO patents is analyzed at the CPC subclass level in
+Figure E4, which reports the difference in F1-score between LLM-based models and
+the SciBERT encoder baseline as a function of subclass frequency. Despite differences
+in patent office practices and drafting conventions, the qualitative patterns observed
+onUSPTO dataarepreserved.Encoder-basedmodelsretain superior performance on
+42
+1000
+800
+600
+400
+200
+0
+80 160 240 320 400 480 560
+Subclass rank
+ycneuqerF
+Fig.E2:DistributionofCPCsubclassfrequenciesintheEPOtestdataset.Subclasses
+are ranked by increasing frequency. The distribution is strongly right-skewed, with a
+small number of frequent subclasses and a long tail of infrequent ones, closely resem-
+bling the structure of the USPTO-70k benchmark.
+100
+90
+80
+70
+60
+50
+40
+30
+20
+10
+0
+0 10 20 30 40 50 60 70 80 90 100
+% of subclasses (ranked by EPO TEST frequency)
+derevoc
+stnemngissa
+lebal
+fo
+%
+Fig. E3: Cumulative label coverage on the EPO dataset. The x-axis reports the per-
+centageofCPCsubclassesrankedbyfrequency,whilethey-axisshowsthecumulative
+fractionoflabelassignmentscovered.AsintheUSPTObenchmark,alimitedfraction
+of frequent subclasses accounts for most label assignments, while coverage increases
+slowly over the long tail.
+themostfrequentsubclasses,whileLLM-basedapproachesachieverelativelystronger
+performance on infrequent subclasses.
+Overall,theseresultsconfirmthattheperformancetrade-offsidentifiedinthemain
+analysis are robust to institutional and temporal domain shifts. The relative advan-
+tages of encoder-based models on frequent subclasses and of LLM-based approaches
+oninfrequentsubclassesarenotspecifictoasinglepatentofficeordataset,butinstead
+reflect structural properties of large-scale hierarchical patent classification.
+43
+1.00
+0.75
+0.50
+0.25
+0.00
+0.25
+0.50
+0.75
+0 100 200 300 400 500 600
+CPC subclass frequency (ascending)
+redocnE1F
+-
+MLL1F
+=
+1F
+Rare (bottom 20%) Mid Frequent (top 20%)
+llama (zero-shot)
+qwen (zero-shot)
+qwen-lora (zero-shot)
+Fig. E4: Difference in F1-score between LLM-based classifiers and the SciBERT
+encoder baseline across CPC subclasses in the EPO dataset. Subclasses are ordered
+by increasing frequency. Positive values indicate higher F1 for the LLM. Solid lines
+represent rolling averages over subclasses. LLMs tend to outperform encoders on rare
+subclasses, whereas encoders dominate on the most frequent subclasses, replicating
+the performance trade-off observed in the USPTO benchmark.
+44

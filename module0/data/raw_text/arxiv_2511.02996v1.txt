@@ -1,0 +1,916 @@
+Preprint. Underreview.
+SCALE-VLP: SOFT-WEIGHTED CONTRASTIVE
+VOLUMETRIC VISION–LANGUAGE PRE-TRAINING
+WITH SPATIAL-KNOWLEDGE SEMANTICS
+AilarMahdizadeh1,2∗ PuriaAzadiMoghadam1∗ XiangtengHe1,2∗
+ShahriarMirabbasi1 PanosNasiopoulos1 LeonidSigal1,2
+1UniversityofBritishColumbia 2VectorInstituteforAI
+ABSTRACT
+Vision–languagemodels(VLMs)havedemonstratedstrongcross-modalcapabil-
+ities, yet most work remains limited to 2D data and assumes binary supervision
+(i.e., positive vs. negative pairs), overlooking the continuous and structured de-
+pendenciespresentinvolumetricdatasuchasCT.Existingapproachesoftentreat
+volumetric scans as independent 2D slices, compromising spatial coherence and
+underutilizingrichclinicalsemantics. WeproposeSCALE-VLP,asoft-weighted
+contrastive vision-language pre-training framework that integrates (i) volumet-
+ric spatial semantics to preserve anatomical structure and (ii) domain-aware,
+knowledge-infused semantics (e.g., radiological ontologies) to guide alignment.
+Thisyieldsstructurallyconsistentandsemanticallygroundedrepresentationsun-
+derlimitedsupervision,demonstratingstrongcross-tasktransferability(retrieval,
+reportgeneration,andclassification),andcross-domaingeneralizabilitywithcon-
+sistent gains without further fine-tuning. In particular, compared to the previous
+stateoftheart,SCALE-VLPachievesupto4.3×highertop-1CT–reportretrieval,
+improvesabnormalityclassificationby10points,andreachesROUGE-L0.44and
+BERT-F1 0.89 for report generation. Further, in zero-shot evaluation on an out-
+of-domainexternaldataset,weobserveconsistentgains,indicatingthecross-task
+andcross-domaingeneralizationabilityofSCALE-VLP.1
+1 INTRODUCTION
+Medicalimagingiscrucialtomodernhealthcare,aidingindiagnosis,treatmentplanning,andmon-
+itoring. Recent advancements in AI, high-resolution imaging, and visualization techniques have
+significantly enhanced our ability to extract detailed clinical insights from complex medical data
+Pereraetal.(2024);Lietal.(2025).Despitethisprogress,mostcurrentresearchstillfocusesontwo-
+dimensional(2D)imagingLietal.(2023b);Jingetal.(2020);Wuetal.(2024), e.g. chestX-rays
+Tanida et al. (2023), overlooking the increasing availability and importance of three-dimensional
+(3D)scans(e.g. computedtomography(CT)andmagneticresonanceimaging(MRI)),whichoffer
+volumetricrepresentationsthatareessentialforcapturingthefullspatialcomplexityofanatomical
+structures and disease patterns. Therefore, advancing 3D medical imaging analysis constitutes a
+researchprioritywithdirectclinicalimpact.
+Vision-language models (VLMs) have shown promising progress in this area by aligning visual
+inputswithnaturallanguagesupervisiontolearntransferablerepresentations.However,theinherent
+characteristicsofvolumetricdataandtheirradiologyreportsposethreefundamentalchallengesfor
+vision–languagealignmentinmedicalVLMs:
+(1) Data-Scarce Representation Learning: Effective vision–language alignment in VLMs requires
+large-scalepaireddata,asexemplifiedbyCLIPRadfordetal.(2021)with400Mimage–textpairs.
+∗Equalcontribution.
+1Thecodeandanalysisscriptswillbereleaseduponacceptance.
+1
+5202
+voN
+4
+]VC.sc[
+1v69920.1152:viXra
+Preprint. Underreview.
+Medicalimaging, however, isconstrainedbyprivacyanddiagnosticcomplexity; forinstance, CT-
+RATEHamamcietal.(2024b)providesonly24,128CT–reportpairs. MedicalVLMslikeM3DBai
+etal.(2024),CT-CLIPHamamcietal.(2024b),andMerlinBlankemeieretal.(2024),adoptCLIP-
+style training with strict one-to-one alignment, inducing binary similarity targets that underweight
+partial,clinicallymeaningfulmatchesacrossstudies.
+(2)Volumetricspatialcoherencemodeling: Acentralbottleneckliesinlearningeffective3Drepre-
+sentationsthatpreservetheintrinsicspatialandsemanticstructureofthedata. Unlike2Dimages,
+3D scans, like CT and MRI, encode fine-grained spatial details across multiple slices, making it
+difficulttopairthemeffectivelywiththeirradiologyreports,includingfindingsandimpressionsLin
+etal.(2024);Hamamcietal.(2024a). Forexample,fVLMShuietal.(2025)appliesafine-grained
+anatomy-levelmatchingscheme,yetstilloperatesonadiscretelevel,leavingthecontinuousstruc-
+tureofvolumetricdataunderexploited. Recentmethods,suchasT3DLiuetal.(2023),attemptto
+addressthisviamulti-viewconsistencyand3D-awarecontrastivelearning,buttheyoftenstruggleto
+preservespatialcoherenceacrossslices,whichcanweakenalignmentwithfine-grainedreportcues
+anddisruptglobalanatomicalunderstandingWangetal.(2024);Liuetal.(2024).
+(3) Medical knowledge understanding: Radiology reports contain complex terminology, seman-
+ticrelationships,andimplicitreferencesthatchallengestandardcontrastivelearning. Forinstance,
+genericmodelstreat“consolidation”and“infiltrate”asunrelated,ignoringtheirsynonymityinpneu-
+monia diagnosis. Recent works such as MedKLIP Wu et al. (2023) and KAD Zhang et al. (2023)
+usemedicalontologies(e.g.,UMLSBodenreider(2004),RadGraphJainetal.)toenhancezero-shot
+classificationandgrounding,underscoringtheneedforclinicallyinformedalignment. Inaddition,
+binary contrastive pairs overlook partial relevance; for example, a multi-finding report may only
+partiallycorrespondtoaCTscan,leavingclinicalknowledgeunderexploited.
+To address these challenges, we propose the SCALE-VLP with a soft-weighted contrastive pre-
+trainingframeworkthatinjectsvolumetricspatialcoherenceandmedicalknowledgeintothevision-
+languagealignmentobjective.Insteadofrelyingonbinarypairwisetargets,SCALE-VLPconstructs
+a dense similarity matrix whose weights reflect semantic affinity between spatial proximity and
+clinical concepts within 3D scans. Volumetric structure is encoded through a volumetric kernel,
+whilemedicalknowledgeisinfusedviadomain-specificembeddings.Theseweightsrescalepositive
+and negative terms in a CLIP/InfoNCE-style loss, encouraging the model to favor anatomically
+consistent and clinically plausible correspondences without requiring additional supervision. To
+summarizethecontributionsofthispaperinthreefolds:
+• WedevelopanovelSoft-WeightedContrastiveAlignment(SWCA)objectivethatexplicitlyen-
+codescontinuous,semantics-awaredistancesbetweenvolumetricCTdataandreports,improv-
+ingsampleefficiencyunderlimitedsupervision.
+• We design a joint spatial-knowledge semantics aware alignment mechanism that constructs
+dense similarity matrices via volumetric spatial coherence encoding and medical knowledge
+fusion,enhancingtheintrinsicradiologicalalignmentbetweenCTscansanddiagnosticreports.
+• We demonstrate through comprehensive experiments that SCALE-VLP exhibits strong cross-
+tasktransferabilityspanningCT-reportretrieval, reportgeneration, andCTabnormalityclassi-
+fication, and cross-domain generalization to an external CT benchmark with consistent gains
+withoutfurtherfine-tuning.
+2 RELATED WORK
+Multi-ModalObjectives. Multi-modallearningaimstoleveragecomplementarycuesfromdif-
+ferent modalities, such as visual and textual data, to construct more expressive feature representa-
+tions Radford et al. (2021); Alayrac et al. (2022). While contrastive approaches are prevalent for
+aligningpairedsamplesacrossdomains,traditionalmethodsoftenrelyonsoftmax-basedlossesthat
+require normalization over the entire batch, which introduces inefficiencies and limits scalability.
+Toaddressthis,SigLIPZhaietal.(2023)proposesamoreefficientsigmoid-basedpairwiseobjec-
+tive that avoids global normalization. In parallel, Srinivasa et al. Srinivasa et al. (2023) show that
+incorporatingunimodalsimilaritysignalscanimprovecross-modalalignment,especiallywhenone
+modalityisweaker. Additionally,Subramanianetal.Subramanianetal.(2025)highlightthebenefit
+ofusingdomain-specificlanguagemodelsassemanticpriorstoenhancevisualtasks. Buildingon
+2
+Preprint. Underreview.
+redocnE
+noisiV
+D3
+daeH
+noisiV
+rotcejorP redocnE
+txeT
+𝑣!𝑣"..… 𝑣# 𝑣!
+𝑣"
+𝑣#
+..…
+𝑡!𝑡" ….. 𝑡# 𝑡!
+𝑡"
+𝑡#
+..…
+𝑡! 𝑡" ..…𝑡#
+𝑣!
+𝑣"
+𝑣#
+Volumetrictokens
+..…
+CT Volumes
+Euclideandistance
+rotcejorP
+Soft-Weighted Contrastive Alignment
+Radiologyreports
+Spatially Coherent Semantic Alignment Knowledge-Infused Semantic Alignment
+redocnE
+txeT
+lacideM egdelwonK refsnarT MLV
+lacideM
+Spatial Volumetric
+Transfer
+Figure 1: SCALE-VLP framework. A 3D vision encoder embeds CT volumes and a clinical-
+textencoderembedsreports. Soft-WeightedContrastiveAlignmentalignsmodalitiesusingfeature
+similarity,spatialproximity,andmedicalknowledgepriors.
+these advances, our method introduces a customized multi-modal learning objective that transfers
+medicalknowledgeassemanticguidancetoimproveclinicalrelevanceandgeneralizability.
+3DmedicalContrastiveLearning. Earlymedicalmultimodalcontrastivelearningfocusedon2D
+image–textalignmentusingX-raysandpairedreports, withmodelssuchasGLoRIAHuangetal.
+(2021), ConVIRT Zhang et al. (2022), and BioViL Boecking et al. (2022). These approaches en-
+abledstrongzero-shotperformanceinclassification, retrieval, andgrounding. Theintroductionof
+large-scalepaired3Ddatasets,suchasCT-RATEHamamcietal.(2024a)andBIMCV-RChenetal.
+(2024b), has accelerated the development of volumetric contrastive models. CT-CLIP Hamamci
+etal.(2024a)aligns3DCTvolumeswithradiologyreportsforzero-shotabnormalitydetectionand
+retrieval. MedFinder Chen et al. (2024b) augments this with view consistency and cross-attention
+mechanisms.M3DBaietal.(2024)integratescontrastivepretrainingwithinstructiontuningtosup-
+portdiverse3Dtasks. However,currentframeworksfallshortinconsideringspatiallygroundedand
+clinicallyguidedsemanticalignment,whicharebothcrucialandcanleadtoimprovmentindown-
+streamutilityintaskslikereportgeneration,textorCTvolumeretrieval,orabnormalitydetection.
+3 SCALE-VLP
+Our goal is to learn anatomically and semantically grounded 3D representations of CT scans and
+align them with reports to generalize across diverse medical imaging tasks. As illustrated in Fig-
+ure1, werepresentvolumetricCTstudiesassequencesofspatiallyawarepatchembeddings, pre-
+serving 3D structure. Each CT scan is paired with its radiology report, and both modalities are
+encodedusinga3DVisionTransformerandamedical-languageencoderresepctively. Weintroduce
+a novel pre-training objective based on a continuously weighted similarity matrix (Soft-Weighted
+Contrastive Alignment), which softly aligns visual and textual features by incorporating volumet-
+ricspatialinformation(Spatially-GuidedSemanticAlignment)andontologicalmedicalknowledge
+(Knowledge-Infused Semantic Alignment). Once pre-trained, the learned representations can be
+adapted to downstream tasks such as cross-modal retrieval, abnormality classification, and report
+generation,demonstratingtheflexibilityandclinicalutilityofSCALE-VLP.
+3.1 MODELARCHITECTURE
+AsshowninFigure1,SCALE-VLP adoptsadual-encoderdesignthatencodesvolumetricCTscans
+usingafrozen3DViTDosovitskiyetal.(2021)andprocessesradiologyreportswithafine-tuned
+BERT Devlin et al. (2019) encoder. The 3D ViT, pretrained on RadImageNet Mei et al. (2022),
+extracts patch-level features from input volumes. These tokens are passed through a lightweight
+3
+Preprint. Underreview.
+Transformerlayer,referredtoasthevisionhead,whichaggregatesspatialinformationandoutputs
+sequence-level embeddings. The resulting features are projected into a shared embedding space
+usingalinearprojectionlayer. TheCLStokenoutputissimilarlyprojectedandnormalizedtoalign
+with the vision embeddings. On the language side, reports are encoded using BioClinicalBERT
+Alsentzer et al. (2019), with all parameters fine-tuned during training. We compute cross-modal
+similarityviascaledcosinesimilarity,wherethescalingfactorisalearnableparameterinitializedas
+inCLIP.Duringtraining,onlytheprojectors,thevisionhead,andthelanguageencoderareupdated.
+3.2 SOFT-WEIGHTEDCONTRASTIVEALIGNMENT(SWCA)
+Similaritybetweenimagesandtextoftenexhibitsacontinuousandnon-binarynature,particularly
+indomainssuchasmedicalimaging. Forexample,aCTradiologyreportmaypartiallycorrespond
+tomultiplescanswithrelatedpathologies, andsentencesacrossdifferentreportsmaydescribethe
+sameanatomicalfindingfromvaryingdiagnosticperspectives. Asaresult, thealignmentbetween
+CT volumes and reports is inherently partial and better represented along a graded spectrum. To
+capturethisnuance,weintroduceSoft-WeightedContrastiveAlignment(SWCA),anovelcontrastive
+learning objective that integrates continuous similarity with volumetric and semantic priors. Prior
+methodseitherrelyondensebatch-wisenormalization, whichrequiresconstructingafullsimilar-
+itymatrixwithquadraticmemorycost,ordependsolelyonindependentpairwisescoringRadford
+etal.(2021);Srinivasaetal.(2023);Zhaietal.(2023).SWCAinsteadincorporatesasoft-weighting
+mechanismthatencodesthreecomplementarysignals: (i)gradedcross-modalrelevance,(ii)spatial
+coherencederivedfrom3DCTstructure,and(iii)knowledge-awarepriorsfromlargemedicallan-
+guagemodels.Inaddition,SWCA’salignmentobjectiveisformulatedasapairwiseloss,eliminating
+collectiveoperationswhilemaintainingcontinuousalignmentfidelity.
+Intra-modalsimilarityweight. Givenamini-batchofB pairedvolumetricandtextualsamples,
+wecomputeintra-modalembeddingsz ∈RDwithineachmodalitytoestimatesoftsimilarity-based
+i
+weights. Intra-modalsimilaritybetweenembeddingsiscomputedas:
+a =exp(β cos(z ,z )), a =0. (1)
+ij i j ii
+Row-normalizationproducesthesimilaritysoftweightsasfollows:
+a
+wIntra-sim = ij , wIntra-sim =0. (2)
+ij B ii
+(cid:88)
+a +ε
+ik
+k=1,k̸=i
+whereεisasmallconstantfornumericalstability.
+Cross-modal similarity. We extract volumetric and textual embeddings v ,t ∈ RD for each
+i j
+CT–reportpair(i,j). Forscaledcosinesimilarity,weℓ -normalizebothmodalities:
+2
+v t
+vˆ = i , ˆt = j .
+i ∥v ∥ j ∥t ∥
+i 2 j 2
+Thecross-modalsimilarityisthen
+s =τvˆ⊤ˆt , (3)
+ij i j
+whereτ >0isalearnabletemperature. Thesamenormalizationisappliedatevaluation(retrieval),
+keepingtrainingandtestingconsistent.
+Soft-weightedcontrastiveloss. Withbinarytargetsy ,whichequals1ifi=j and0otherwise,
+ij
+thesoft-weightedcontrastivelossforonedirection(e.g.,V→T)isdefinedas:
+B B
+LV→T = 1 (cid:88)(cid:88) (wIntra-sim+y )(cid:2) −y logσ(s )
+SWCA B ij ij ij ij (4)
+i=1j=1
+(cid:3)
+−(1−y )log(1−σ(s )) ,
+ij ij
+4
+Preprint. Underreview.
+where σ(·) denotes the logistic sigmoid. The additive y term guarantees that exact matches are
+ij
+always prioritized, while the soft weights wIntra-sim enable continuous supervision from partially
+ij
+similar pairs. To enforce mutual alignment, the loss is computed in both directions (V→T and
+T→V)andaveraged:
+Lbidirectional = 1(cid:0) LV→T +LT→V(cid:1) . (5)
+SWCA 2 SWCA SWCA
+ThesimilarityweightwIntra-simiscomputedtwiceundertwocomplementaryconditions:(i)aspatial
+ij
+coherencecomponentwspatial inspatially-guidedsemanticalignment,and(ii)amedicalknowledge
+ij
+componentwknowledgeinknowledge-infusedsemanticalignment.
+ij
+3.3 SPATIALLYCOHERENTSEMANTICALIGNMENT
+RadiologistsinterpretCTscansascoherent3Dvolumesratherthanunorderedcollectionsofaxial
+slices; spatial locality carries semantic importance. To encode this intuition into the alignment
+objective, weextendthesoft-weightedcontrastivelosswithaspatialsimilarityweight wspatial that
+ij
+emphasizesalignmentconsistentwith3Dgeometry.
+EachvolumeiisdividedintoN cubicpatches,withpatchmrepresentedbyitsnormalizedcentroid
+c ∈[0,1]3. Wecomputeanon-negativesaliencyscorer foreachpatch(e.g.,basedonfeature
+i,m i,m
+normsorattentionweights),andnormalize:
+r
+α = i,m . (6)
+i,m (cid:80)N
+r
+n=1 i,n
+Using these coefficients, we summarize each scan with a weighted centroid (µ ) and a covariance
+i
+descriptor:
+N N
+(cid:88) (cid:88)
+µ = α c , Σ = α (c −µ )(c −µ )⊤, (7)
+i i,m i,m i i,m i,m i i,m i
+m=1 m=1
+whereΣ isa3×3covariancematrixthatcapturesthespreadofthepatchcentroids. Thespatial
+i
+proximitybetweentwovolumes(p )isthendefinedas:
+ij
+(cid:16) ∥µ −µ ∥2(cid:17) (cid:16) ∥Σ −Σ ∥2 (cid:17)
+p = exp − i j 2 ·exp − i j F , (8)
+ij 2κ2 2κ2
+µ Σ
+whereκ andκ controlthedecaywithrespecttocentroiddisplacementandstructuraldifference.
+µ Σ
+Spatial similarity weight. We combine this kernel with the intra-modal similarity weights
+wIntra-sim(Equation(2))viaelementwisemultiplication:
+ij
+δ = wIntra-simp , (9)
+ij ij ij
+androw-normalize:
+δ
+wspatial = ij . (10)
+ij (cid:80) δ +ε
+k ik
+ReplacingwIntra-simwithwspatialinEquation(4)andEquation(5)yieldsaspatiallyawarelossLspatial.
+ij ij SWCA
+Thisformulationleveragescentroiddisplacementandstructuraldistributiontoemphasizespatially
+coherentalignments.
+3.4 KNOWLEDGE-INFUSEDSEMANTICALIGNMENT
+Weincorporatemedicalknowledgeintothelearningprocesswithoutincreasingthenumberoftrain-
+ableparametersbyleveragingafrozenpre-trainedmedicallanguagemodel,suchasHuatuoGPT-o1
+7BChenetal.(2024a). Thismodelencodesclinicalreasoning,andunderstandingofmedicaltermi-
+nologyderivedfromlarge-scalemedicalcorpora. Ourframeworkremainsmodel-agnosticandcan
+supportanycomparablemedicalLLMsuchasLLaVA-MedLietal.(2023a),MeditronChenetal.
+(2023),orBioMistralLabraketal.(2024)withminimalchanges.
+5
+Preprint. Underreview.
+Medical-knowledgesimilarityweight. Eachmedicalreportispassedthroughtheselectedmed-
+icalLLM(e.g.,HuatuoGPT)ininferencemode. Thefinalhiddenstatesaremean-pooledandpro-
+jected,yieldingafixedknowledgeembeddingh ∈Rdforsamplei. Wereusethesimilarityformu-
+i
+lationinEquation(1)andthesoftnormalizationfromEquation(2),whereznowcorrespondstothe
+knowledge embeddings h. This produces the semantic similarity weights wknowledge, which reflect
+ij
+report-level alignment. Substituting these into Equation (4) and Equation (5) defines the medical
+knowledge-infusedlossLknowledge,encouragingalignmentacrosssemanticallyrelatedcases.
+SWCA
+3.5 OPTIMIZATIONOBJECTIVE
+Thespatially-weightedandknowledge-weightedlossesaremergedwithaconvexcombination:
+Lspatial,knowledge =αLspatial +(1−α)Lknowledge,α∈[0,1], (11)
+SWCA SWCA SWCA
+where α balances pure spatially-guided semantic alignment against knowledge-infused semantic
+alignment. This unified objective integrates these two complementary semantics and continuous
+similarity into a single differentiable framework, producing representations that respect where ab-
+normalitiesarelocatedandhowcliniciansdescribethem.
+4 EXPERIMENTS
+Weassessmodelperformanceacrossvariousevaluationscenariosusingmultipleobjectivemetrics.
+AdditionalimplementationdetailsareprovidedinSectionA.2.
+4.1 DATASETS
+We use two publicly available CT-report datasets: CT-RATE Hamamci et al. (2024a), which pro-
+vides 50,188 reconstructed non-contrast chest CT volumes from 21,304 patients. We retain one
+reconstruction per scan, yielding 24,128 volumes for training, while the testing set of CT-RATE
+itself (1,564 volumes) is used as the in-domain test set. BIMCV-R Chen et al. (2024b), which
+contains8,069chestCTvolumespairedwithcorrespondingradiologyreports,isusedonlyforout-
+of-domain,zero-shotevaluation. Forbothdatasets,scansareresampledto256×256×32voxels,
+quantizedto8-bitintegers,andstoredincompressedNIfTIformat.
+4.2 MULTI-TASKADAPTATIONEVALUATION
+AsshowninFigure4intheappendix,forcomprehensivebenchmarkingofSCALE-VLP,wecon-
+duct extensive evaluations on three downstream clinical applications: (1) CT-report cross-modal
+retrieval,(2)reportgeneration,and(3)CTabnormalityclassification.
+4.2.1 CT-REPORTCROSS-MODALRETRIEVAL
+We evaluate retrieval in both CT-to-report and report-to-CT directions by ranking ℓ -normalized
+2
+embeddingsusingcosinesimilarity. AllcomponentsofSCALE-VLP,includingthe3Dvisionen-
+coder,textencoder,andprojectionheads,arekeptfrozenduringevaluation,asillustratedinFigure4
+intheappendix. PerformanceisreportedasRecall@K,definedasthefractionofqueriesforwhich
+thecorrectmatchappearsinthetop-K results. Inaddition,wereportSumR(thesumofallavailable
+recallsperdirection),whichprovidesasingle,scale-sensitivesummaryacrosscutoffs(Table1).
+AsshowninTable1,SCALE-VLPoutperformsallstate-of-the-art(SOTA)methodsateveryrecall
+threshold and in both directions. At N=100, SCALE-VLP yields 10.0 points (IR) and 8.0 points
+(TR) improvements in R@1 compared to the strongest SOTA methods, respectively, and this ad-
+vantage persists as the pool size grows. Even at N=1564, SCALE-VLP sustains its lead with the
+bestperformance,underscoringrobustnessatscale. WhilefVLMbenefitsfromexplicitanatomical
+priors through organ segmentation in pre-training, SCALE-VLP surpasses it, suggesting that our
+spatial–andknowledge–awarealignmenteffectivelycapturefine-grainedclinicalsemantics.
+6
+Preprint. Underreview.
+IR(CT→Report) TR(Report→CT)
+N Model
+R@1 R@5 R@10 R@50 R@100 SumR R@1 R@5 R@10 R@50 R@100 SumR
+CT-CLIPHamamcietal.(2024a) 2.0 9.0 15.0 68.0 — 94.0 3.0 9.0 17.0 67.0 — 96.0
+M3DBaietal.(2024) 3.0 9.0 16.0 69.0 — 97.0 3.0 8.0 20.0 74.0 — 105.0
+SigLIPZhaietal.(2023) 1.0 6.0 12.0 55.0 — 74.0 1.0 5.0 10.0 52.0 — 68.0
+MerlinBlankemeieretal.(2024) 1.0 15.0 28.0 86.0 — 130.0 4.0 15.0 28.0 84.0 — 131.0
+100
+fVLMShuietal.(2025) 2.0 9.0 16.0 61.0 — 88.0 6.0 17.0 25.0 64.0 — 112.0
+SCALE-VLPw/oSpatial&Knowledge 8.0 30.0 47.0 89.0 — 174.0 11.0 31.0 46.0 89.0 — 177.0
+SCALE-VLPw/oSpatial 12.0 37.0 55.0 93.0 — 197.0 13.0 40.0 54.0 92.0 — 199.0
+SCALE-VLP 13.0 40.0 56.0 94.0 — 203.0 14.0 42.0 59.0 93.0 — 208.0
+CT-CLIPHamamcietal.(2024a) 0.6 1.6 2.8 14.8 29.6 49.4 0.6 1.8 3.2 14.8 28.8 49.2
+M3DBaietal.(2024) 0.8 1.6 3.2 15.2 28.8 49.6 1.0 3.0 5.4 21.0 37.2 67.6
+SigLIPZhaietal.(2023) 0.2 1.4 2.6 12.0 21.6 37.8 0.2 1.0 2.0 10.2 20.6 34.0
+MerlinBlankemeieretal.(2024) 1.8 6.6 9.4 34.2 55.8 107.8 0.6 6.4 10.2 35.8 57.2 110.2
+500
+fVLMShuietal.(2025) 0.0 2.2 3.0 14.4 27.0 46.6 1.4 3.2 7.2 25.4 36.4 73.6
+SCALE-VLPw/oSpatial&Knowledge 3.0 8.2 14.2 46.6 66.8 138.8 2.8 9.2 15.2 45.4 64.4 137.0
+SCALE-VLPw/oSpatial 3.2 11.6 17.8 49.4 69.4 151.4 3.2 11.2 18.8 50.4 69.0 152.6
+SCALE-VLP 3.4 12.2 19.8 53.2 72.6 161.2 4.4 11.8 21.0 51.6 72.6 161.4
+CT-CLIPHamamcietal.(2024a) 0.3 1.0 2.0 7.8 15.1 26.2 0.4 1.0 1.8 7.8 14.9 25.9
+M3DBaietal.(2024) 0.2 0.8 1.4 8.2 15.1 25.7 0.4 1.7 2.7 10.6 19.4 34.8
+SigLIPZhaietal.(2023) 0.1 0.6 1.1 6.0 11.0 18.8 0.1 0.5 1.1 5.1 10.4 17.2
+MerlinBlankemeieretal.(2024) 1.2 3.1 5.1 19.1 33.6 62.1 0.9 2.7 4.5 20.0 34.5 62.6
+1000
+fVLMShuietal.(2025) 0.2 0.9 1.4 7.1 13.5 23.1 0.5 2.1 3.4 13.9 22.0 41.9
+SCALE-VLPw/oSpatial&Knowledge 1.5 5.0 8.5 28.3 46.0 89.3 1.3 5.5 9.2 26.9 44.6 87.5
+SCALE-VLPw/oSpatial 1.7 6.3 10.5 34.4 50.6 103.5 1.7 6.2 11.0 34.5 50.0 103.4
+SCALE-VLP 1.8 6.4 11.6 35.8 51.9 107.5 2.2 6.5 11.5 35.8 51.2 107.2
+CT-CLIPHamamcietal.(2024a) 0.2 0.6 1.3 5.7 9.9 17.7 0.2 0.6 1.2 5.0 9.5 16.5
+M3DBaietal.(2024) 0.1 0.6 0.9 4.7 10.1 16.4 0.3 1.0 1.7 7.0 12.9 22.9
+SigLIPZhaietal.(2023) 0.1 0.4 0.7 3.8 7.4 12.4 0.1 0.3 0.6 3.3 6.5 10.8
+MerlinBlankemeieretal.(2024) 0.6 1.7 2.7 12.2 23.0 40.2 0.3 1.3 2.9 13.4 24.6 42.5
+1564
+fVLMShuietal.(2025) 0.1 0.6 0.8 4.7 9.3 15.5 0.5 1.8 2.8 9.9 16.6 31.6
+SCALE-VLPw/oSpatial&Knowledge 1.0 3.7 6.1 20.5 33.1 64.4 1.0 3.6 6.0 20.4 32.0 63.0
+SCALE-VLPw/oSpatial 1.0 4.2 7.1 24.9 38.2 75.4 1.0 4.0 7.1 24.4 38.1 74.6
+SCALE-VLP 1.2 4.2 7.4 25.1 38.8 76.7 1.3 4.2 7.4 25.4 38.5 76.8
+Table1:CT-reportcross-modalretrievalresultsonCT-RATE.Illustrationofresultsacrossrecall
+levels,retrievaldirections,andpoolsizesN ∈{100,500,1000,1564}forallmodels.
+4.2.2 REPORTGENERATION
+Webeginwithapretrained3DViTencoderandBERTtextencoderoptimizedviaourSWCAob-
+jective. ThesefrozencomponentsencodeCT–reportpairsintosemanticallygroundedembeddings
+withspatialstructureandclinicalsemantics. Allsubsequentstagesbuildonthisfrozenbackbone:
+• Projectionadaptation. WedevelopalightweightprojectionmoduleP
+θ
+:Rdvis →Rdllm tomap
+visiontokensintothelatentspaceofaLLM(LLaMA-2-7B).OnlyP anditsinputembeddings
+θ
+areupdated,enablingvolumetricgroundingwithoutdisruptingtheLLM’sprior.
+• Low-rankadaptation. Togeneratefullradiologyreports,weinsertrank-16LoRAadaptersHu
+etal.(2022)intoeachdecoderlayerandfine-tunethemodelusingcross-entropylossoverreport
+sequences. Thevisionencoderandprojectorremainfrozenthroughout,andonlytheLoRAand
+projectionparametersareupdated. Bybuildingonpretrainedalignmentandrestrictingupdates
+to a minimal set of components, our approach enables efficient report generation with strong
+performanceandlowmemoryoverhead.
+Table2showsthatSCALE-VLPachievesconsistentimprovementsoverSOTAmethodsacrossall
+nine metrics. The most notable gain is on BLEU-4, which nearly doubles compared to CT-CLIP
+(∼2× improvement). Comparable relative gains are observed on semantically oriented metrics:
+ROUGE-L improves by 56%, METEOR by 50%, and CIDEr–D more than doubles. Against the
+strongerM3Dbaseline, SCALE-VLPstillyieldssizableadvantages, including+82%onBLEU-4,
++42%onROUGE-L,and+45%onMETEOR,withBERT-F1alsoincreasingto0.8934. Together,
+demonstratingthatSCALE-VLP’sembeddingcapturesrichsemanticinformation.
+4.2.3 CTABNORMALITYCLASSIFICATION
+Weevaluatethetransferabilityofthefrozenimageencodertosupervisedmulti-labelclassification
+across 13 thoracic findings from CT-RATE. A Multi-Task classification head is trained on top of
+projector. Tosupportinterpretability,wealsogroupfindingsintosixclinicalclusters(airway,alve-
+olar,interstitial,pleural,nodular,vascular)basedonanatomicalandpathophysiologicalcoherence.
+Globalandcluster-levelresultsareshowninTable3,withfullper-taskscoresinAppendixTable5.
+Despite fVLM being trained with organ segmentations and therefore benefiting from explicit bio-
+7
+Preprint. Underreview.
+Model BLEU-1 BLEU-2 BLEU-3 BLEU-4 ROUGE-1 ROUGE-L METEOR BERT-F1 CIDEr-D
+CT-CLIPHamamcietal.(2024a) 0.3681 0.2759 0.2179 0.1766 0.4257 0.2823 0.3140 0.8582 0.0837
+M3DBaietal.(2024) 0.3468 0.2620 0.2067 0.1695 0.4792 0.3107 0.3246 0.8711 0.1181
+MerlinBlankemeieretal.(2024) 0.4428 0.1864 0.1035 0.0548 0.1112 0.0854 0.0221 0.8211 0.0104
+SCALE-VLPw/oSpatial&Knowledge 0.4124 0.2572 0.2135 0.1833 0.4894 0.3237 0.3791 0.8696 0.1052
+SCALE-VLP w/oSpatial 0.4367 0.3479 0.2882 0.2454 0.5303 0.3690 0.3985 0.8784 0.1273
+SCALE-VLP 0.5210 0.4433 0.3886 0.3485 0.5984 0.4408 0.4709 0.8934 0.1684
+Table2: ReportgenerationresultsonCT-RATE.
+Model (A)SummaryMetrics (B)Cluster-averageAccuracy
+Accuracy F1 AUC Airway/Bronchi Alveolar/Airspace Interstitial Pleural/Extra-pulmonary Nodular/Mass Vascular/Cardiac
+CT-CLIPHamamcietal.(2024a) 0.41 0.53 0.52 0.31 0.46 0.29 0.38 0.38 0.51
+M3DBaietal.(2024) 0.48 0.58 0.48 0.89 0.43 0.29 0.11 0.61 0.47
+MerlinBlankemeieretal.(2024) 0.62 0.50 0.50 0.80 0.66 0.64 0.36 0.54 0.67
+fVLMShuietal.(2025) 0.69 0.58 0.51 0.89 0.77 0.71 0.46 0.43 0.79
+SCALE-VLPw/oSpatial&Knowledge 0.49 0.59 0.48 0.45 0.62 0.30 0.69 0.50 0.31
+SCALE-VLPw/oSpatial 0.53 0.59 0.50 0.77 0.47 0.53 0.50 0.43 0.50
+SCALE-VLP 0.72 0.59 0.52 0.87 0.71 0.51 0.76 0.56 0.78
+Table3: CTabnormalityclassificationresultsonCT-RATE.
+logical priors, SCALE-VLP achieves stronger overall accuracy (0.72), F1 (0.59) and AUC (0.52),
+outperformingfVLM(0.69/0.58/0.50). Attheclusterlevel,M3Dpeaksonairway(0.89),fVLM
+leadsinterstitial(0.71)andalveolar(0.77),whileSCALE-VLPisthemostbalanced,surpassing0.70
+infourclusters.
+4.3 CROSS-DOMAINGENERALIZATIONEVALUATION
+We evaluate zero-shot generalization on the external BimCV-R dataset under domain shift with
+all parameters frozen. As shown in Table 4, SCALE-VLP consistently matches or outperforms
+SOTAmethodsacrossbothretrievalandgenerationtasks. Incross-modalretrieval, ittiesthebest
+performanceatsmallK whileachievingcleargainsathighercutoffs,leadingtothehighestoverall
+SumR across both pool sizes (e.g., +6 points over Merlin at CT → Report, N=100 ). For report
+generation, SCALE-VLP achieves the best results across BLEU, ROUGE, METEOR, and BERT-
+F1. Together, the consistent improvements in both retrieval and report generation tasks highlight
+therobustnessofthelearnedvolumetricandsemanticrepresentations,enablingeffectivezero-shot
+transfertounseenscannersandpopulations.
+Retrieval(N=100) Retrieval(N=1000) ReportGeneration
+CT→Report Report→CT CT→Report Report→CT BLEU ROUGE METEORBERT-F1
+Model R@1 R@5R@10 sumR R@1 R@5R@10 sumR R@5 R@10R@50 R@100 SumR R@5 R@10R@50 R@100 SumR
+CT-CLIPHamamcietal.(2024a) 1.0 6.0 11.0 18.0 1.0 5.0 10.0 16.0 0.6 1.3 6.0 11.0 18.9 0.5 1.1 6.0 11.0 18.6 0.2022 0.1939 0.1047 0.8082
+M3DBaietal.(2024) 2.0 6.0 10.0 18.0 1.0 5.0 12.0 18.0 0.7 1.4 6.3 11.5 19.9 0.6 1.6 6.5 12.2 20.9 0.2044 0.1965 0.1078 0.8106
+MerlinBlankemeieretal.(2024) 4.0 8.0 11.0 23.0 2.0 5.0 13.0 20.0 0.9 1.6 7.0 13.0 22.5 1.2 1.7 7.2 13.0 23.1 0.2188 0.1309 0.0310 0.8125
+fVLMShuietal.(2025) 1.0 5.0 10.0 16.0 2.0 5.0 13.0 20.0 0.8 1.2 5.2 9.7 16.9 0.7 1.4 4.9 10.0 17.0 — — — —
+SCALE-VLP 4.0 10.0 15.0 29.0 2.0 7.0 14.0 23.0 0.8 2.1 7.7 13.3 23.9 1.2 2.0 7.5 13.9 24.6 0.2406 0.2231 0.1416 0.8220
+Table4: Zero-shotresultsonBimCV-R:retrieval(N=100,N=1000)andreportgeneration.
+4.4 ABLATIONSTUDY
+Weconductablationstudiestoevaluatethecontributionofindividualcomponentsinourframework,
+theeffectofthematvaryingtrainingdataratios,andthevalueofthemixingparameterα.
+4.4.1 SPATIALANDKNOWLEDGEALIGNMENT
+We study the contribution of spatial and knowledge cues through ablations. As shown in Table 1,
+removing spatial alignment reduces SumR by roughly 2–6% across pool sizes (IR and TR), while
+removing both spatial and knowledge cues yields a larger 14–18% drop. The pattern is consistent
+from N=100 to N=1564, indicating that spatial reasoning is the dominant contributor to cross-
+modalalignment,whilemedicalknowledgeprovidescomplementary,additivegains.
+For report generation (Table 2), removing spatial alignment lowers BLEU-4 by ∼30% and ME-
+TEORby∼15%,whiledroppingbothspatialandknowledgecuesreducesBLEU-4by∼47%and
+METEOR by ∼20%. These degradations highlight that spatial reasoning drives most of the im-
+8
+Preprint. Underreview.
+provement, with knowledge priors providing consistent semantic gains that enhance fluency and
+fidelityofgeneratedreports.
+For classification task, ablations in Table 3 show that removing spatial alignment or both spatial
+and knowledge alignment consistently reduces performance across clinical clusters. These results
+confirmthatbothcomponentsareessentialforrobustcross-tasktransfer,withspatialalignmentas
+the dominant factor and knowledge cues providing complementary benefits. By jointly modeling
+both, SCALE-VLP achieves SOTA performance across retrieval, report generation, and classifica-
+tion,establishingaunifiedframeworkforCT-RATE.
+4.4.2 ROLEOFSWCAINLARGE-BATCHSCALINGANDCONSISTENTGAINS
+0.5
+0.4
+0.3
+0.2
+0.1
+0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+Percentage of samples seen
+ycaruccA
+laveirteR
+Our SWCA replaces the softmax-based InfoNCE
+Base Model SCALE VLP w/o Spatial & Knowledge
+SCALE-VLP SCALE VLP w/o Spatial
+with a pairwise sigmoid formulation, which elimi-
+natestheneedtomaterializethefullB×Bsimilarity
+0.54 0.52 matrix and substantially reduces memory overhead. 0.50
+0.48
+This design keeps VRAM usage within budget and 00 .. 44 46
+0.42
+shortensalignmenttime,enablingthebasemodelto 00 .. 34 80
+0.36
+scale the per-device and effective batch size. Fig- 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+ure 2 compares the base model against our SWCA-
+onlyvariant,SCALE-VLPw/oSpatial&Knowledge
+alignment.TheresultshighlighttheeffectofSWCA,
+Figure2:Batchscalingeffect
+wheretrainingwithlargerbatchesandsoft-weighted
+similaritiesyieldsconsistentimprovementsacrossallsamplingfractionsrelativetothebasemodel.
+Furthermore,Figure2illustratesretrievalperformanceasafunctionoftrainingsamples.Whilebase
+modelretrievalperformancestagnatesthroughouttraining,ourSWCAvariantscontinuetoimprove
+astheyareexposedtomoredata. Addingtheknowledge-alignmenthead(SCALE-VLPw/oSpatial
+alignment) provides additional gains, and the full SCALE-VLP, with both knowledge and spatial
+heads,achievesthestrongestperformance,andshowsthehighestgrowthastrainingscales.
+4.4.3 MIXINGPARAMETERα.
+Across Tables 6 to 9, we study the effect of the mixing parameter α. Performance differences
+between α values (0.3–0.6) are modest but consistent, typically ranging from 0.2 to 1.5 points.
+Based on these results and the trends in Figures 5 and 6, we adopt α=0.5 as the default for all
+subsequentexperiments.
+4.5 QUALITATIVEVISUALIZATIONOFALIGNMENT
+We qualitatively assess alignment and cluster-
+(a) SCALE-VLP Accuracy Across Abnormality Clusters (b) SCALE-VLP Similarity Matrix(Sorted by k-means Clusters)
+ingpropertiesofSCALE-VLPontheCT-RATE
+validation set. Figure 3 summarizes both ac-
+curacy distribution across abnormality clusters
+andembeddingsimilaritypatterns. Panel(a)re-
+portsaccuracyacrossclinicallydefinedclusters
+(c) SCALE-VLP Similarity Matrix(Sorted by Abnormality Clusters)
+includingairway/bronchi,alveolar/airspace,in-
+terstitial, pleural, nodular, andvasculargroups,
+which are also used to organize the similarity
+matrices in panels (b) and (c). Panels (b) and
+(c)visualizepairwisecosinesimilaritybetween
+CTandreportembeddings. Whensortedbyun-
+Figure 3: Similarity Matrices by Model and Cluster.
+supervised k-means clusters (b), block diago-
+Panels (b–c) share axes: x = report embeddings; y =
+nalstructureemerges,reflectinglatentgrouping
+CTscanembeddings.
+without external supervision. When reordered
+by the predefined abnormality categories (c), coherent clusters corresponding to abnormality cat-
+egories become evident. Together, these results demonstrate that SCALE-VLP learns embedding
+spacesthatreflectpathologyawarestructures.
+9
+Preprint. Underreview.
+5 CONCLUSION
+SCALE-VLPpioneersaunifiedvision-languageframeworkfor3Dmedicalimagingbyintegrating
+spatialcoherenceandmedicalknowledgethroughsoft-weightedcontrastivelearning. Itovercomes
+critical limitations in volumetric data analysis: i) Data scarcity via continuous affinity modeling,
+iii) Spatial fragmentation through geometry-aware kernels, and ii) Medical knowledge neglect via
+domain-specificknowledgeembeddingfusion. ValidatedonCT-RATEandBimCV-Rbenchmarks,
+SCALE-VLP achieves SOTA performance on CT-report cross-modal retrieval, report generation,
+andabnormalityclassification,demonstratingSCALE-VLPpossessesstrongrobustnessandgener-
+alizationcapabilities.
+REPRODUCIBILITY STATEMENT
+Implementation details for SCALE-VLP appear in Section A.2; dataset curation and CT-
+RATE/BimCV-RpreprocessingareinSection4.1andSectionA.1,respectively. Thecode, check-
+points,andevaluationscriptswillbereleaseduponacceptance.
+REFERENCES
+Jean-Baptiste Alayrac, Jeff Donahue, Pauline Luc, Antoine Miech, Iain Barr, Yana Hasson, Karel
+Lenc,ArthurMensch,KatieMillican,MalcolmReynolds,RomanRing,ElizaRutherford,Serkan
+Cabi,TengdaHan,ZhitaoGong,SinaSamangooei,MarianneMonteiro,JacobMenick,Sebastian
+Borgeaud, AndrewBrock, AidaNematzadeh, SahandSharifzadeh, MikolajBinkowski, Ricardo
+Barreira,OriolVinyals,AndrewZisserman,andKarenSimonyan. Flamingo: avisuallanguage
+modelforfew-shotlearning,2022.
+Emily Alsentzer, John R Murphy, Willie Boag, Wei-Hung Weng, Di Jin, Tristan Naumann,
+and Matthew McDermott. Publicly available clinical bert embeddings. arXiv preprint
+arXiv:1904.03323,2019.
+Fan Bai, Yuxin Du, Tiejun Huang, Max Q-H Meng, and Bo Zhao. M3d: Advancing 3d medical
+imageanalysiswithmulti-modallargelanguagemodels. arXivpreprintarXiv:2404.00578,2024.
+Louis Blankemeier, Joseph Paul Cohen, Ashwin Kumar, Dave Van Veen, Syed Jamal Safdar
+Gardezi,MagdaliniPaschali,ZhihongChen,Jean-BenoitDelbrouck,EduardoReis,CesarTruyts,
+et al. Merlin: A vision language foundation model for 3d computed tomography. Research
+Square,pp.rs–3,2024.
+OlivierBodenreider. Theunifiedmedicallanguagesystem(umls): integratingbiomedicalterminol-
+ogy. Nucleicacidsresearch,32(suppl 1):D267–D270,2004.
+Benedikt Boecking, Naoto Usuyama, Shruthi Bannur, Daniel C Castro, Anton Schwaighofer,
+StephanieHyland,MariaWetscherek,TristanNaumann,AdityaNori,JavierAlvarez-Valle,etal.
+Makingthemostoftextsemanticstoimprovebiomedicalvision–languageprocessing. InEuro-
+peanconferenceoncomputervision,pp.1–21.Springer,2022.
+Junying Chen, Zhenyang Cai, Ke Ji, Xidong Wang, Wanlong Liu, Rongsheng Wang, Jianye Hou,
+andBenyouWang. Huatuogpt-o1,towardsmedicalcomplexreasoningwithllms. arXivpreprint
+arXiv:2412.18925,2024a.
+Yinda Chen, Che Liu, Xiaoyu Liu, Rossella Arcucci, and Zhiwei Xiong. Bimcv-r: A landmark
+datasetfor3dcttext-imageretrieval. InInternationalConferenceonMedicalImageComputing
+andComputer-AssistedIntervention,pp.124–134.Springer,2024b.
+Zeming Chen, Alejandro Herna´ndez-Cano, Angelika Romanou, Antoine Bonnet, Kyle Matoba,
+FrancescoSalvi,MatteoPagliardini,SiminFan,AndreasKo¨pf,AmirkeivanMohtashami,Alexan-
+dreSallinen, AlirezaSakhaeirad, VinitraSwamy, IgorKrawczuk, DenizBayazit, AxelMarmet,
+SyrielleMontariol,Mary-AnneHartley,MartinJaggi,andAntoineBosselut.Meditron-70b:Scal-
+ingmedicalpretrainingforlargelanguagemodels. arXivpreprintarXiv:2311.16079,2023.
+10
+Preprint. Underreview.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep
+bidirectionaltransformersforlanguageunderstanding. InProceedingsofthe2019conferenceof
+the North American chapter of the association for computational linguistics: human language
+technologies,volume1(longandshortpapers),pp.4171–4186,2019.
+AlexeyDosovitskiy,LucasBeyer,AlexanderKolesnikov,DirkWeissenborn,XiaohuaZhai,Thomas
+Unterthiner,MostafaDehghani,MatthiasMinderer,GeorgHeigold,SylvainGelly,JakobUszko-
+reit,andNeilHoulsby. Animageisworth16x16words: Transformersforimagerecognitionat
+scale. ICLR,2021.
+IbrahimEthemHamamci,SezginEr,andBjoernMenze. Ct2rep: Automatedradiologyreportgen-
+erationfor3dmedicalimaging. InInternationalConferenceonMedicalImageComputingand
+Computer-AssistedIntervention,pp.476–486.Springer,2024a.
+Ibrahim Ethem Hamamci, Sezgin Er, Chenyu Wang, Furkan Almas, Ayse Gulnihan Simsek, Sev-
+valNilEsirgun,IremDoga,OmerFarukDurugol,WeichengDai,MurongXu,etal. Developing
+generalist foundation models from a multimodal dataset for 3d computed tomography. arXiv
+preprintarXiv:2403.17834,2024b.
+EdwardJHu,YelongShen,PhillipWallis,ZeyuanAllen-Zhu,YuanzhiLi,SheanWang,LuWang,
+andWeizhuChen. Lora: Low-rankadaptationoflargelanguagemodels. ICLR,1(2):3,2022.
+Shih-Cheng Huang, Liyue Shen, Matthew P Lungren, and Serena Yeung. Gloria: A multimodal
+global-localrepresentationlearningframeworkforlabel-efficientmedicalimagerecognition. In
+ProceedingsoftheIEEE/CVFinternationalconferenceoncomputervision,pp.3942–3951,2021.
+SaahilJain, AshwinAgrawal, AdrielSaporta, StevenTruong, DuNguyenDuong, TanBui, Pierre
+Chambon,YuhaoZhang,MatthewPLungren,AndrewYNg,etal. Radgraph:Extractingclinical
+entities and relations from radiology reports. In Thirty-fifth Conference on Neural Information
+ProcessingSystemsDatasetsandBenchmarksTrack(Round1).
+BaoyuJing,ZeyaWang,andEricXing. Show,describeandconclude: Onexploitingthestructure
+informationofchestx-rayreports. arXivpreprintarXiv:2004.12274,2020.
+Yanis Labrak, Adrien Bazoge, Emmanuel Morin, Pierre-Antoine Gourraud, Mickael Rouvier, and
+Richard Dufour. Biomistral: A collection of open-source pretrained large language models for
+medicaldomains. arXivpreprintarXiv:2402.10373,2024.
+ChunyuanLi,CliffWong,ShengZhang,NaotoUsuyama,HaotianLiu,JianweiYang,TristanNau-
+mann, Hoifung Poon, and Jianfeng Gao. Llava-med: Training a large language-and-vision as-
+sistant for biomedicine in one day. Advances in Neural Information Processing Systems, 36:
+28541–28564,2023a.
+Junnan Li, Dongxu Li, Silvio Savarese, and Steven Hoi. Blip-2: Bootstrapping language-image
+pre-trainingwithfrozenimageencodersandlargelanguagemodels. InInternationalconference
+onmachinelearning,pp.19730–19742.PMLR,2023b.
+WenxuanLi,AlanYuille,andZongweiZhou.Howwelldosupervised3dmodelstransfertomedical
+imagingtasks? arXivpreprintarXiv:2501.11253,2025.
+JingyangLin,YingdaXia,JianpengZhang,KeYan,LeLu,JieboLuo,andLingZhang. Ct-glip: 3d
+groundedlanguage-imagepretrainingwithctscansandradiologyreportsforfull-bodyscenarios.
+arXivpreprintarXiv:2404.15272,2024.
+Che Liu, Cheng Ouyang, Yinda Chen, Cesar Ce´sar Quilodra´n-Casas, Lei Ma, Jie Fu, Yike Guo,
+AnandShah,WenjiaBai,andRossellaArcucci. T3d: Towards3dmedicalimageunderstanding
+throughvision-languagepre-training. arXivpreprintarXiv:2312.01529,2023.
+Che Liu, Zhongwei Wan, Yuqi Wang, Hui Shen, Haozhe Wang, Kangyu Zheng, Mi Zhang, and
+RossellaArcucci. Benchmarkingandboostingradiologyreportgenerationfor3dhigh-resolution
+medicalimages. arXive-prints,pp.arXiv–2406,2024.
+11
+Preprint. Underreview.
+XueyanMei,ZelongLiu,PhilipM.Robson,BrettMarinelli,MingqianHuang,AmishDoshi,Adam
+Jacobi, Chendi Cao, Katherine E. Link, Thomas Yang, Ying Wang, Hayit Greenspan, Timothy
+Deyer,ZahiA.Fayad,andYangYang. Radimagenet: anopenradiologicdeeplearningresearch
+datasetforeffectivetransferlearning. Radiology: ArtificialIntelligence,4(5):e210315,2022.
+Shehan Perera, Pouyan Navard, and Alper Yilmaz. Segformer3d: an efficient transformer for 3d
+medicalimagesegmentation. InProceedingsoftheIEEE/CVFConferenceonComputerVision
+andPatternRecognition,pp.4981–4988,2024.
+Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal,
+Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual
+modelsfromnaturallanguagesupervision. InInternationalconferenceonmachinelearning,pp.
+8748–8763.PmLR,2021.
+ZhongyiShui,JianpengZhang,WeiweiCao,SinuoWang,RuizheGuo,LeLu,LinYang,Xianghua
+Ye,TingboLiang,QiZhang,etal. Large-scaleandfine-grainedvision-languagepre-trainingfor
+enhancedctimageunderstanding. arXivpreprintarXiv:2501.14548,2025.
+RakshithSharmaSrinivasa,JaejinCho,ChouchangYang,YashasMalurSaidutta,Ching-HuaLee,
+YilinShen,andHongxiaJin. Cwcl:Cross-modaltransferwithcontinuouslyweightedcontrastive
+loss. AdvancesinNeuralInformationProcessingSystems,36,2023.
+SanjaySubramanian,EvonneNg,LeaMu¨ller,DanKlein,ShiryGinosar,andTrevorDarrell. Pose
+priors from language models. In Proceedings of the Computer Vision and Pattern Recognition
+Conference,pp.7125–7135,2025.
+Tim Tanida, Philip Mu¨ller, Georgios Kaissis, and Daniel Rueckert. Interactive and explainable
+region-guidedradiologyreportgeneration. InProceedingsoftheIEEE/CVFConferenceonCom-
+puterVisionandPatternRecognition,pp.7433–7442,2023.
+YuliWang,YuweiDai,CraigJones,HarisSair,JinglaiShen,NicolasLoizou,Wen-ChiHsu,Maliha
+Imami,ZhichengJiao,PaulZhang,etal.Enhancingvision-languagemodelsformedicalimaging:
+bridgingthe3dgapwithinnovativesliceselection. AdvancesinNeuralInformationProcessing
+Systems,37:99947–99964,2024.
+ChaoyiWu,XiaomanZhang,YaZhang,YanfengWang,andWeidiXie. Medklip: Medicalknowl-
+edgeenhancedlanguage-imagepre-trainingforx-raydiagnosis. InProceedingsoftheIEEE/CVF
+InternationalConferenceonComputerVision,pp.21372–21383,2023.
+Junde Wu, Rao Fu, Huihui Fang, Yu Zhang, Yehui Yang, Haoyi Xiong, Huiying Liu, and Yanwu
+Xu. Medsegdiff: Medical image segmentation with diffusion probabilistic model. In Medical
+ImagingwithDeepLearning,pp.1623–1639.PMLR,2024.
+XiaohuaZhai,BasilMustafa,AlexanderKolesnikov,andLucasBeyer. Sigmoidlossforlanguage
+imagepre-training.InProceedingsoftheIEEE/CVFinternationalconferenceoncomputervision,
+pp.11975–11986,2023.
+Xiaoman Zhang, Chaoyi Wu, Ya Zhang, Weidi Xie, and Yanfeng Wang. Knowledge-enhanced
+visual-language pre-training on chest radiology images. Nature Communications, 14(1):4542,
+2023.
+YuhaoZhang,HangJiang,YasuhideMiura,ChristopherDManning,andCurtisPLanglotz. Con-
+trastivelearningofmedicalvisualrepresentationsfrompairedimagesandtext.InMachinelearn-
+ingforhealthcareconference,pp.2–25.PMLR,2022.
+12
+Preprint. Underreview.
+Multi-Task Adaptation of Pretrained SCALE-VLP
+Report Generation CT Report Retrieval Abnormality Classification
+LLM with LORA
+<Question>: What is the diagnosis for this image? <Answer> : Trachea, both main bronchi are open. No occlusive pathology...
+redocnE
+noisiV
+D3
+daeH
+noisiV
+rotcejorP redocnE
+noisiV
+D3
+daeH
+noisiV
+redocnE
+noisiV
+D3
+daeH
+noisiV
+rotcejorP
+…..
+n ro ei ds oiV c nD E3..…
+n ro ei ds oiV c nD E3
+daeH noisiV
+daeH noisiV
+1.0
+7.0
+8.0
+4.0
+redocnE
+txeT
+…..
+redocnE txeT
+redocnE
+txeT
+Multi-Task Classification Head
+Task 1 Task 2 Task N
+Figure4: Frameworkofmulti-taskSCALE-VLPforclinicaldownstreamtasks: (1)reportgenera-
+tion,(2)CT–reportretrieval,and(3)CTabnormalityclassification.
+A APPENDIX
+A.1 PRE-PROCESSINGPIPELINE
+Priortotraining,allCTvolumesundergoadeterministicandreproduciblepre-processingpipeline:
+• Spatialnormalization. Eachscanisresampledtoafixedspatialresolutionof256×256×32
+voxelsusingtrilinearinterpolation, preservingthenativeaffinetransformationandaxialorien-
+tation.
+• Intensityquantization. Voxelintensitiesarecasttofloat16andlinearlyquantizedtosigned
+8-bitintegers. Thispreservesclinicallymeaningfulcontrastwhilereducingmemoryconsump-
+tionbyapproximately4×.
+• Storageandefficiency.VolumesaresavedincompressedNIfTIformattopreventpartialwrites.
+Parallelprocessingwitheightworkersreducestheaveragescansizeby6×.
+This pipeline is fully reproducible: repeated runs over the same dataset release produce identical
+outputhashes,ensuringconsistentandverifiableresults.
+A.2 IMPLEMENTATIONDETAILS
+AllexperimentsareconductedonaSlurm-managedclusterwithfourNVIDIAA40GPUs(48GB
+each),14CPUcores,and160GBRAM.WeutilizePyTorch2.3withHuggingFace ACCELERATE
+in bf16 mixed precision, and configure training using four processes. Experiment tracking and
+checkpoint management are handled via Weights & Biases. For contrastive pre-training, SCALE-
+VLP operates with 55 CT–report pairs per GPU, resulting in an effective batch size of 220. Data
+loadingemploystwoworkerthreadsandpinnedmemory. Nogradientaccumulationisusedduring
+training. We set the loss interpolation parameters to α = 0.5 based on retrieval performance ob-
+servedinSec.Tables6to9. WeemploytheAdamWoptimizerwithaweightdecayof0.1,cosine
+learningratescheduling, 3%linearwarm-up, andgradientclippingat0.5. Thelearningrateisset
+to 1×10−4 for pre-training and 5×10−5 for fine-tuning. Fine-tuning is performed using Deep-
+SpeedZeRO-3withaper-GPUbatchsizeof8,updatingonlytask-specificheadswhilekeepingthe
+encoders frozen. Pre-training for 10 epochs takes 3.8 hours for SCALE-VLP, whereas CT-CLIP,
+M3D, and Merlin require 5.3, 5.58, and 10 hours, respectively. We have trained M3D, CT-CLIP,
+and SigLIP under identical settings to ensure comparability. For fVLM, we have used the offi-
+cially released pre-trained weights on CT-RATE. Fine-tuning SCALE-VLP for report generation
+for4epochsrequiresanadditional3hoursonaverage. Astheweights,code,andconfigurationsof
+fVLM’sreportgenerationmodelarenotpubliclyavailable,werestrictourevaluationofthismodel
+toretrievalandabnormalityclassificationtasks.
+13
+Preprint. Underreview.
+Figure5: EffectofthemixingparameterαonCT→Reportretrieval.
+Figure6: EffectofthemixingparameterαonReport→CTretrieval.
+A.3 PER-TASKABNORMALITYCLASSIFICATIONONCT-RATE
+Table5reportsper-taskabnormalityclassificationaccuracyonCT-RATEforSCALE-VLP andall
+baselines. CT-CLIP and M3D models show unbalanced behavior as CT-CLIP performs relatively
+well on calcification-related tasks (e.g., arterial wall, coronary artery) but struggles with effusion
+andconsolidation,whereasM3Dachievesstrongresultsoncardiomegaly,peribronchialthickening,
+andbronchiectasisbutfailsonmosaicattenuation,pericardialeffusion,hiatalhernia,andcoronary
+arterywallcalc. Amongrecentbaselines,Merlinshowsstrongerperformanceonmosttasks,such
+as cardiomegaly (0.90), peribronchial thickening (0.89), coronary artery wall calc (0.70), consoli-
+dation(79),butremainsweakeronsometasks,suchaspericardialeffusion(0.08). fVLMistrained
+withadditionalorgansegmentationdataandthereforebenefitsfromexplicitbiologicalpriors, and
+14
+Preprint. Underreview.
+Table5: Per-taskaccuracyonCT-RATE.
+Task CT-CLIP M3D Merlin fVLM SCALE-VLPw/oSpatial&Knowledge SCALE-VLPw/oSpatial SCALE-VLP
+Arterialwallcalcification 0.72 0.28 0.40 0.72 0.29 0.66 0.70
+Cardiomegaly 0.45 0.90 0.90 0.90 0.42 0.10 0.90
+Pericardialeffusion 0.08 0.08 0.08 0.08 0.54 0.14 0.67
+Coronaryarterywallcalc. 0.37 0.24 0.70 0.76 0.24 0.74 0.75
+Hiatalhernia 0.68 0.15 0.65 0.85 0.84 0.85 0.85
+Lymphadenopathy 0.25 0.75 0.59 0.38 0.52 0.34 0.62
+Lungnodule 0.50 0.48 0.49 0.48 0.48 0.52 0.50
+Lungopacity 0.45 0.42 0.52 0.58 0.42 0.42 0.42
+Pulmonaryfibroticsequela 0.29 0.29 0.64 0.71 0.30 0.53 0.51
+Mosaicattenuationpattern 0.73 0.07 0.66 0.93 0.79 0.79 0.93
+Peribronchialthickening 0.33 0.89 0.89 0.89 0.62 0.64 0.89
+Consolidation 0.21 0.79 0.79 0.79 0.66 0.21 0.79
+Bronchiectasis 0.29 0.89 0.72 0.89 0.27 0.89 0.85
+Table6: RetrievalatpoolsizeN=100fordifferentαvalues.
+IR(CT→Report) TR(Report→CT)
+α
+R@1 R@5 R@10 R@50 R@1 R@5 R@10 R@50
+0.3 13.0 38.0 55.0 93.0 11.0 36.0 56.0 94.0
+0.4 12.0 39.0 55.0 95.0 14.0 40.0 56.0 93.0
+0.5 15.0 40.0 58.0 97.0 15.0 41.0 58.0 96.0
+0.6 12.0 37.0 56.0 95.0 12.0 38.0 56.0 94.0
+Table7: RetrievalatpoolsizeN=500fordifferentαvalues.
+IR(CT→Report) TR(Report→CT)
+α
+R@1 R@5 R@10 R@50 R@100 R@1 R@5 R@10 R@50 R@100
+0.3 2.8 10.6 19.0 52.2 70.4 3.2 9.8 17.0 50.8 69.4
+0.4 3.2 10.2 19.0 51.2 71.8 3.4 10.6 18.0 51.2 71.2
+0.5 3.4 12.0 19.0 55.2 72.4 4.8 12.6 20.4 52.4 71.2
+0.6 3.0 11.6 19.0 51.8 71.4 3.0 11.2 18.8 50.3 70.4
+thisimprovedfVLM’sperformancecomparedtootherbaselines. Incontrast,SCALE-VLP,without
+usinganyauxiliarydatasuchassegmentations,achievesconsistentlycompetitiveorsuperiorresults
+across categories. It matches or exceeds the best prior methods on high-prevalence findings such
+as hiatal hernia (0.85), mosaic attenuation (0.93), and peribronchial thickening (0.89), while also
+offeringimprovementsonmorechallengingcasessuchaspericardialeffusion(0.67). Theseresults
+combinedwiththeoverallperformanceshowninTable3indicatethatintegratingSWCA,andspa-
+tialandknowledgealignmentbalancesthestrengthsofpriormodelsandyieldsrobustperformance
+acrossdiverseclinicalabnormalities.
+A.4 ABLATIONONTHEMIXINGPARAMETERα
+AcrossTables6to9, weexaminehowthemixingparameterαinfluencesperformance. Although
+differences among values in the 0.3–0.6 range are relatively small, they are consistent, typically
+spanning0.2–1.5points.ConsideringtheseresultsalongsidethetrendsinFigures5and6,weselect
+α=0.5asabalancedchoiceanduseitasthedefaultinallsubsequentexperiments.
+A.5 QUALITATIVEEVALUATIONOFREPORTGENERATION
+To qualitatively assess report generation, we compare outputs from SCALE-VLP, M3D, and CT-
+CLIP against the ground truth for a representative patient case (Figure Figure 7). All models cor-
+rectly capture core thoracic findings such as bilateral pleural effusions, associated compressive or
+dependent atelectasis, interstitial or septal thickening, ground-glass opacities, and cardiomegaly.
+15
+Preprint. Underreview.
+Table8: RetrievalatpoolsizeN=1000fordifferentαvalues.
+IR(CT→Report) TR(Report→CT)
+α
+R@1 R@5 R@10 R@50 R@100 R@1 R@5 R@10 R@50 R@100
+0.3 1.9 6.0 11.2 34.1 51.3 1.6 6.3 10.3 34.0 50.0
+0.4 1.6 5.8 10.7 35.0 51.9 1.8 6.6 11.0 34.3 50.1
+0.5 2.1 6.9 11.6 35.7 53.1 1.9 7.4 11.6 35.1 51.2
+0.6 1.5 6.0 11.2 34.7 51.4 1.4 6.6 10.7 33.9 50.6
+Table9: RetrievalatpoolsizeN=1564fordifferentαvalues.
+IR(CT→Report) TR(Report→CT)
+α
+R@1 R@5 R@10 R@50 R@100 R@1 R@5 R@10 R@50 R@100
+0.3 1.2 4.3 7.4 24.4 37.9 1.1 4.3 7.2 24.1 37.2
+0.4 1.1 4.2 7.6 25.3 39.7 1.2 4.5 7.4 24.7 38.0
+0.5 1.5 4.6 7.7 26.3 40.0 1.2 4.7 8.1 25.8 38.8
+0.6 0.9 3.6 6.8 25.0 38.9 0.9 3.9 6.3 23.5 38.0
+However,SCALE-VLPmostcloselymirrorstheground-truthdescription,accuratelylocalizingef-
+fusions,identifyingtheportcathetertipwithintherightatrium,anddescribingdiffuselungpathol-
+ogy with high fidelity. In contrast, M3D and CT-CLIP omit certain device-related and anatomical
+details, with CT-CLIP notably failing to mention the catheter. None of the models capture more
+subtlefindingssuchasminimalpericardialeffusionoraorticcalcifications. WhileSCALE-VLPin-
+troducesaminorhallucinatedfinding(arenalcalculus),itstillachievesthehighestalignmentwith
+thereferencereportintermsofcontentcoverageandclinicalrelevance. Thisisreflectedinitssu-
+periorlanguagemetrics(BLEU-4: 0.373,ROUGE-1: 0.596,METEOR:0.475),indicatingstronger
+semanticandsyntacticcoherence.
+A.6 QUALITATIVEVISUALIZATIONOFEMBEDDINGS
+Wequalitativelyassessthet-SNEprojectionsontheCT-RATEvalidationset.InFigure8,weproject
+eachsample’svolumeembeddingsviat-SNE.SCALE-VLPformsdistinct, compactclusters(Fig-
+ure8.(c)),whereasCT-CLIP(Figure8.(a))producescoarsegroupingandM3D(Figure8.(b))shows
+unstructuredscatter. ConsideringthesimilaritymatrixvisualizationatFigure3andt-SNEplotto-
+gether,thesevisualizationsdemonstratethatSCALE-VLPachievessuperiorsemanticalignmentand
+clusteringcomparedtopriormodels.
+Wequalitativelyevaluaterepresentationqualityusingt-SNEprojectionsontheCT-RATEvalidation
+set. As shown in Figure 8, we embed each sample’s volume representation via t-SNE. SCALE-
+VLPformsdistinctandcompactclusters(Figure8.c),whereasCT-CLIP(Figure8.a)yieldscoarse
+groupingsandM3D(Figure8.b)producesscattered, unstructuredpoints. Whenviewedalongside
+thesimilaritymatricesinFigure3,thesevisualizationshighlightthatSCALE-VLPachievesstronger
+semanticalignmentandmorecoherentclusteringcomparedtopriormodels.
+B USE OF LARGE LANGUAGE MODELS
+WeusedaLargeLanguageModel(LLM)solelytoaidinpolishingthewritingofthispaper. Specif-
+ically,theLLMwasemployedtocorrectgrammar,fixtypographicalerrors,andimprovetheclarity
+ofexpression;theauthorsverifiedallcontent.
+16
+Preprint. Underreview.
+Sample
+Groundtruth:
+Findings:Bilateralpleuraleffusionisobserved,moreprominentontherightside,associatedwithsurroundingatelectasis.Interlobular
+septalthickeninganddiffuseground-glassopacitiesarenoted,moreprominentlyintheupperlobesofbothlungs.Mediastinalstructures
+cannotbeevaluatedoptimallybecausecontrastmaterialisnotgiven.Heartsizeisincreasedandminimalpericardialeffusionispresent.A
+portcathetertipprojectsovertherightatrium.Calcificplaquesareseenintheaorticwalls.Noobviousdestructivebonelesionsareseen
+withinthescannedarea.
+Impression:Bilateralpleuraleffusionwithcompressiveatelectasis;diffuseinterstitialthickeningandground-glassopacities.
+Cardiomegalywithminimalpericardialeffusion.
+SCALE-VLPprediction:
+Findings:Tracheaandbothmainbronchiarepatent.Noobstructivelesionisnoted.Diffuseinterstitialthickeningispresentwithpatchy
+ground-glassdensities.Dependentatelectasisisseenposteriorly.Amoderaterightandmildleftpleuraleffusionisidentified.Heartsizeis
+borderlineenlarged.Aright-sidedportcathetertipoverliestherightatrium.Nodefinitedestructivebonelesionisdemonstrated.Thereis
+asmallrenalcalculusinthemidrightkidney.
+Impression:Bilateralpleuraleffusionswithassociatedatelectasis;diffuseinterstitiallungdiseasepattern.
+M3Dprediction:
+Findings:Tracheaandbothmainbronchiarepatent.Diffuseseptalthickeningandscatteredground-glassopacitiesarenotedthroughout
+bothlungs.Amoderaterightpleuraleffusionandmildleftpleuraleffusionwithadjacentcompressiveatelectasisarepresent.
+Cardiomegalyisnoted;themediastinumisotherwiseunremarkable.Noaggressiveosseouslesionisseen.
+Impression:Bilateralpleuraleffusionswithcompressiveatelectasis;diffuseinterstitialchanges.
+CT-CLIPprediction:
+Findings:Tracheaandbothmainbronchiarepatent.Diffuseinterlobularseptalthickeningandareasofground-glassopacityareseenin
+bothlungs.Amoderaterightpleuraleffusionandmildleftpleuraleffusionarepresentwithassociatedatelectasis.Nodefinitefocal
+consolidationisseen.Heartsizeappearsenlarged.Nopathologicallyenlargedmediastinallymphnodesareidentified.Noaggressive
+osseouslesionisdemonstrated.
+Impression:Bilateralpleuraleffusionswithcompressiveatelectasis;diffuseinterstitialthickening.
+[BLEU-4—ROUGE-1—METEOR] SCALE-VLP:0.373—0.596—0.475 M3D:0.295—0.571—0.387
+CT-CLIP:0.304—0.570—0.391
+Figure7: QualitativecomparisonforSample.
+2
+noisnemiD
+(a) CT-CLIP (b) M3D (c) SCALE-VLP
+Dimension 1 Dimension 1 Dimension 1
+Figure8: t-SNEofvolume–reportsimilarity.
+17

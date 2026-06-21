@@ -1,0 +1,772 @@
+The Right Tool for the Job: Matching Model and Instance Complexities
+RoySchwartz♦♠ GabrielStanovsky♦♠ SwabhaSwayamdipta♦
+JesseDodge♣∗ NoahA.Smith♦♠
+♦AllenInstituteforArtificialIntelligence
+♠PaulG.AllenSchoolofComputerScience&Engineering,UniversityofWashington
+♣SchoolofComputerScience,CarnegieMellonUniversity
+{roys,gabis,swabhas,jessed,noah}@allenai.org
+Abstract
+Layer n Prediction
+As NLP models become larger, executing a Layer l No
+trained model requires significant computa- Yes Early exit
+Layer k Is confident?
+prediction
+tional resources incurring monetary and envi-
+ronmental costs. To better respect a given No
+Yes Early exit
+inference budget, we propose a modification Layer j Is confident?
+prediction
+tocontextualrepresentationfine-tuningwhich,
+during inference, allows for an early (and Layer i No
+fast) “exit” from neural network calculations Yes Early exit
+Layer 0 Is confident?
+for simple instances, and late (and accurate) prediction
+exit for hard instances. To achieve this, we Input
+addclassifierstodifferentlayersofBERTand
+Figure 1: An illustration of our approach. Some lay-
+usetheircalibratedconfidencescorestomake
+ersofaBERT-largemodelareattachedtooutputclas-
+early exit decisions. We test our proposed
+sifiers, which make their respective predictions. The
+modification on five different datasets in two
+confidence of each layer-wise prediction is computed.
+tasks:threetextclassificationdatasetsandtwo
+If high enough, the model takes an early exit, avoid-
+natural language inference benchmarks. Our
+ingthecomputationassociatedwithsuccessive(higher)
+method presents a favorable speed/accuracy
+layers(grayedout). Otherwise,themodelcontinuesto
+tradeoff in almost all cases, producing mod-
+thenextlayer/classifier.
+els which are up to five times faster than the
+state of the art, while preserving their accu-
+racy. Our method also requires almost no ad- significantly. Forinstance,Microsoftreportsthat
+ditional training resources (in either time or
+usingBERT(Devlinetal.,2019)toprocessBing
+parameters) compared to the baseline BERT
+queries requires more than 2,000 GPUs concur-
+model. Finally,ourmethodalleviatestheneed
+rently.2
+forcostlyretrainingofmultiplemodelsatdif-
+ferent levels of efficiency; we allow users to Wepresentamethodtoreducetheinferencecost
+control the inference speed/accuracy tradeoff oftoday’scommonmodelsinNLP:fine-tunedcon-
+using a single trained model, by setting a sin- textualwordrepresentations. Ourmethodexploits
+glevariableatinferencetime. Wepubliclyre- variationalongtwoaxes: modelsdifferinsizeand
+leaseourcode.1
+cost,andinstancesvaryindifficulty. Ourmethod
+assessesthecomplexityofeachtestinstanceand
+1 Introduction
+matches it with the most efficient model in our
+The large increase in the size of artificial intel- “toolbelt.”3 Asaresult,someinstances,whichwe
+ligence models often increases production costs refer to in this paper as “easy” or “simple,” can
+(Amodei and Hernandez, 2018; Schwartz et al., be solved by small models, leading to computa-
+2019),andcanalsolimitadoptiononreal-timede- tionalsavings,whileotherinstances(termed“hard”
+vices. Comparedtotraining,whichisaone-time or “difficult”) have access to larger models, thus
+large investment, inference costs are incurred for
+2https://tinyurl.com/tzhj3o8
+everyinstanceinproduction,andcanthusaddup 3Ourapproachshouldnotbeconfusedwithmodelensem-
+bles(KunchevaandWhitaker,2003),wherethepredictionof
+∗ResearchcompletedduringaninternshipatAI2. multiplemodelsiscombined,oneveryinstance,inorderto
+1github.com/allenai/sledgehammer improveaccuracy,attheexpenseofslowerinferencetime.
+retaininggoodperformance. publiclyreleaseourcode.5
+WeapplyourmethodtotheBERT-largemodel,
+2 Premise: ModelsVaryinSize,
+modifyingitsfine-tuningprocedurebyaddingmul-
+ExamplesVaryinComplexity
+tiple output layers to some of its original (cid:96) = 24
+layers.4 A classifier at the kth layer, is more ef- Ourgoalinthispaperistomakemodelinference
+ficient, though (presumably) less accurate than a moreefficient. Ourpremisereliesontwogeneral
+classifieratalater(cid:96)thlayer(where(cid:96) > k). Atinfer- observations: first,asNLPmodelsbecomebigger
+encetime,weruneachinstanceontheseclassifiers (e.g.,innumberofparameters),theybecomeboth
+inincreasingorderofdepth. Foreachclassification better(intermsofdownstreamtaskaccuracy),and
+decision, we use its confidence as an inference- slowertorun. Thistrendisconsistentlyobserved,
+stopping criterion, continuing to the next, larger mostnotablyinrecentcontextualrepresentations
+classifier only if the current classifier is not con- workthatcomparesdifferentvariantsofthesame
+fident enough in its prediction. Since confidence model (Devlin et al., 2019; Radford et al., 2019;
+scores play an important role, we use calibration Raffeletal.,2019,interalia).
+techniques to make them more reliable. Associ- Second,inputsarenotequallydifficult. Forex-
+ating classifiers with different layers of the same ample,instancesdifferinlengthandwealthoflin-
+network allows us to reuse the computation per- guistic phenomena, which affects the amount of
+formed by the simple classifiers for the complex processingrequiredtoanalyzethem. Considerthe
+ones. SeeFigure1foranillustration. examplesbelowforthetaskofsentimentanalysis:
+We experiment with three text classification
+(1) Themoviewasawesome.
+benchmarks and two natural language inference
+(NLI)benchmarks. Weconsidereachofourclas-
+(2) I can’t help but wonder whether the plot was
+sifiers with different BERT layers as individual
+written by a 12 year-old or by an award-
+baselines. We find that using our method leads
+winningwriter.
+toaconsistentlybetterspeed/accuracytradeoffin
+almost all cases. In particular, in some cases, we Sentence1isshortandsimpletoprocess. Incon-
+obtain similar performance while being as much trast,Sentence2islong,containsmisleadingpos-
+asfivetimesfasterthanourstrongestbaseline(the itive phrases (“award-winning writer”), and uses
+originalBERT-largemodewithasingleclassifica- figurative speech (“the plot was written by a 12
+tionlayerafterthelastlayer). year-old”). As a result, it is potentially harder to
+process.6
+Our approach, while allowing substantially
+Thisworkleveragesthesetwoobservationsby
+faster inference compared to the standard BERT-
+introducing a method to speed-up inference by
+largemodel,isneitherslowertofine-tunenorsig-
+matchingsimpleinstanceswithsmallmodels,and
+nificantlylargerintermsofparameters,requiring
+complexinstanceswithlargemodels.
+less than 0.005% additional parameters. More-
+over,ourmethodisquiteflexible: unlikeotherap-
+3 Approach: TheRightToolfortheJob
+proachesforinferencespeed-upsuchasmodeldis-
+tillationorpruning,whichrequiretrainingadiffer- Motivation Weassumeaseriesofntrainedmod-
+entmodelforeachpointalongthespeed/accuracy elsm ,...,m foragiventask,suchthatforeach
+1 n
+curve, our method only requires training a sin- 1 < i ≤ n, m is both more accurate than m
+i i−1
+gle model, and by setting a single variable at in- (asmeasuredbyaperformanceonvalidationdata)
+ferencetime—theconfidencethreshold—supports andmoreexpensivetoexecute. Currentpracticein
+each point along that curve. Finally, our method NLP,whichfavorsaccuracyratherthanefficiency
+is orthogonal to compression methods such as (Schwartz et al., 2019), would typically run m
+n
+model distillation (Hinton et al., 2014). Our ex- on each test instance, as it would likely lead to
+periments with a distilled version of BERT (Jiao the highest test score. However, many of the test
+etal.,2019)showthatourmethodfurtherimproves instances could be solved by simpler (and faster)
+thespeed/accuracycurveontopofthatmodel. We
+5github.com/allenai/sledgehammer
+6Notethatsimplicityistask-dependent. Forexample,in
+4For simplicity, we refer to these output layers as clas- topicclassification,modelsoftenaccumulatesignalacrossa
+sifiers, though our method can also be applied to non- document,andshorterinputs(withlesssignal)maybemore
+classificationtasks. difficultthanlongerones.SeeSection6.
+models;ifwehadanoraclethatidentifiesthesmall- givenasinputaweightedsumofallthelayersup
+est model that solves a given instance, we could toandincludingk,suchthattheweightislearned
+useittosubstantiallyspeedupinference. Ourgoal duringfine-tuning(Petersetal.,2018).7
+is to create an automatic measure which approxi-
+Calibration Classifiers’ confidence scores are
+matesthebehaviorofsuchanoracle,andidentify
+not always reliable (Jiang et al., 2018). One way
+thecheapestaccuratemodelforeachinstance.
+tomitigatethisconcernistousecalibration,which
+BERT-large To demonstrate our approach, we encourages the confidence level to correspond to
+consider the BERT-large model (Devlin et al., theprobabilitythatthemodeliscorrect(DeGroot
+2019), based on a transformer architecture andFienberg,1983). Inthispaperweusetemper-
+(Vaswani et al., 2017) with 24 layers. To apply aturecalibration,whichisasimpletechniquethat
+BERT-large to some downstream task, an output hasbeenshowntoworkwellinpractice(Guoetal.,
+layer is typically added to the final layer of the 2017), in particular for BERT fine-tuning (Desai
+model,andthemodelisfine-tunedontrainingdata and Durrett, 2020). The method learns a single
+forthattask. Tomakeapredictionusingtheclassi- parameter,denotedtemperatureorT,anddivides
+fieronthefinallayer,thecomputationgoesthrough each of the logits {z } by T before applying the
+i
+allthelayerssequentially,requiringmorecompu- softmaxfunction:
+tation than a shallower model with fewer layers,
+exp(z /T)
+whichwouldsufficeinsomecases. pred = arg max i
+(cid:80)
+exp(z /T)
+i j j
+Suiteofmodels OurapproachleveragesBERT’s
+multilayeredstructurebyaddinganoutputlayerto WeselectT tomaximizethelog-likelihoodofthe
+intermediate layers of the model. For k < (cid:96), the development dataset. Note that temperature cali-
+output layer after k BERT layers exits the model bration is monotonic and thus does not influence
+earlierthanadeeperoutputlayer(cid:96),andtherefore predictions. Itisonlyusedinourmodeltomake
+yields a more efficient (but potentially less accu- early-exitdecisions.
+rate)prediction.
+Discussion Our approach has several attractive
+Confidence scores for early exit decisions To properties. First,ifm isnotsufficientlyconfident
+i
+make early exit decisions, we calculate the layer- initsprediction,wereusethecomputationandcon-
+wise BERT representations sequentially. As we tinuetowardsm withoutrecomputingtheBERT
+i+1
+reachaclassificationlayer,weuseittomakepre- layersuptom . Second,whileourmodelislarger
+i
+dictions. We interpret the label scores output by in terms of parameters compared to the standard
+softmax as confidence scores. We use these con- approachduetotheadditionalclassificationlayers,
+fidence scores to decide whether to exit early or this difference is marginal compared to the total
+continue to the next (more expensive and more numberoftrainableparameters: ourexperiments
+accurate)classifier. SeeFigure1foranillustration. used4linearoutputlayersinsteadof1,whichre-
+sults in an increase of 6K (binary classification)
+Trainingdetails Totrainthemodel,weusethe
+to12K(4-wayclassification)parameters. Forthe
+standard way of applying BERT to downstream
+BERT-largemodelwith335Mtrainableparameters,
+tasks—fine-tuningthepre-trainedweights,while
+thisislessthan0.005%oftheparameters. Third,
+learning the weights of the randomly initialized
+asourexperimentsshow(Section5),whilepresent-
+classifier,whereherewelearnmultipleclassifiers
+ingamuchbetterinferencetime/accuracytradeoff,
+instead of one. As our loss function, we sum the
+fine-tuningourmodelisasfastasfine-tuningthe
+losses of all classification layers, such that lower
+standard model with a single output layer. More-
+layersaretrainedtobothbeusefulasfeaturegen-
+over,ourmodelallowsforcontrollingthistradeoff
+eratorsforthehigherlayers, andasinputtotheir
+by setting the confidence threshold at inference
+respective classifiers. This also means that every
+time,allowinguserstobetterutilizethemodelfor
+output layer is trained to perform well on all in-
+theirinferencebudget.
+stances. Importantly,wedonotperformearlyexits
+duringtraining,butonlyduringinference. 7Wealsoconsideredfeedingtheoutputofpreviousclas-
+sifiersasadditionalfeaturestosubsequentclassifiers,known
+To encourage monotonicity in performance of
+asstacking(Wolpert,1992).Preliminaryexperimentsdidnot
+thedifferentclassifiers,eachclassifieratlayerk is yieldanybenefits,sowedidnotfurtherpursuethisdirection.
+Name #labels Train Val. Test ourbaselinesisgivenasinputalearnedweighted
+sumofallBERTlayersuptothecurrentlayer.
+AG 4 115K 0.5K 7.6K
+Asanupperboundtoourapproach,weconsider
+IMDB 2 020K 0.5K .25K
+avariantofourmodelthatusestheexactamount
+SST 2 007K 0.9K 1.8K
+ofcomputationrequiredtosolveagiveninstance.
+SNLI 3 550K .10K .10K Itdoessobyreplacingtheconfidence-basedearly-
+MNLI 3 393K 9.8K 9.8K exitdecisionfunctionwithanoraclethatreturnsthe
+fastestclassifierthatisabletosolvethatinstance,
+Table 1: Number of labels and instances for the
+or the fastest classifier for instances that are not
+datasetsinourexperiments. Thetopsetaretextclassi-
+correctlysolvedbyanyoftheclassifiers.
+ficationdatasets,andthebottomsetareNLIdatasets.
+Experimentalsetup WeexperimentwithBERT-
+4 Experiments large-uncased (24 layers). We add output layers
+to four layers: 0, 4, 12 and 23.9 We use the first
+To test our approach, we experiment with three threelayerindicesforourefficientbaselines(the
+textclassificationandtwonaturallanguageinfer- lastonecorrespondstoourstandardbaseline). See
+ence (NLI) tasks in English. NLI is a pairwise AppendixAforimplementationdetails.
+sentence classification task, where the goal is to For training, we use the largest batch size that
+predictwhetherahypothesissentenceentails,con- fitsinourGPUmemoryforeachdataset,forboth
+tradictsorisneutraltoapremisesentence(Dagan ourbaselinesandourmodel. Ourapproachrelies
+etal.,2005). Belowwedescribeourdatasets,our on discrete early-exit decisions that might differ
+baselines,andourexperimentalsetup. betweeninstancesinabatch. Forthesakeofsim-
+plicity, we use a batch size of 1 during inference.
+Datasets For text classification, we experiment
+Thisisusefulforproductionsetupswhereinstances
+with the AG news topic identification dataset
+arriveonebyone. Largerbatchsizescanbeapplied
+(Zhang et al., 2015) and two sentiment analysis
+using methods such as budgeted batch classifica-
+datasets: IMDB (Maas et al., 2011) and the bi-
+tion(Huangetal.,2018),whichspecifyabudget
+nary Stanford sentiment treebank (SST; Socher
+for the batch and select a subset of the instances
+et al., 2013).8 For NLI, we experiment with the
+to fit that budget, while performing early exit for
+SNLI(Bowmanetal.,2015)andMultiNLI(MNLI;
+the rest of the instances. We defer the technical
+Williamsetal.,2018)datasets. Weusethestandard
+implementationofthisideatofuturework.
+train-development-testsplitsforalldatasetsexcept
+Tomeasureefficiency,wecomputetheaverage
+forMNLI,forwhichthereisnopublictestset. As
+runtime of a single instance, across the test set.
+MNLIcontainstwovalidationsets(matchedand
+Werepeateachvalidationandtestexperimentfive
+mismatched),weusethematchedvalidationsetas
+timesandreportthemeanandstandarddeviation.
+our validation set and the mismatched validation
+Atpredictiontime,ourmethodtakesasaninput
+setasourtestset. SeeTable1fordatasetstatistics.
+a threshold between 0 and 1, which is applied to
+each confidence score to decide whether to exit
+Baselines We use two types of baselines: run-
+early. Lowerthresholdsresultinearlierexits,with
+ningBERT-largeinthestandardway,withasingle
+0 implying the most efficient classifier is always
+outputlayerontopofthelastlayer,andthreeeffi-
+used. Athresholdof1alwaysusesthemostexpen-
+cientbaselinesofincreasingsize(Figure2). Each
+siveandaccurateclassifier.
+is a fine-tuned BERT model with a single output
+layer after some intermediate layer. Importantly,
+5 Results
+thesebaselinesofferaspeed/accuracytradeoff,but
+notwithinasinglemodellikeourapproach. A better speed/accuracy tradeoff. Figure 3
+Asallbaselineshaveasingleoutputlayer,they presents our test results.10 The blue line shows
+allhaveasinglelossterm,suchthatBERTlayers ourmodel,whereeachpointcorrespondstoanin-
+1,...,k onlyfocusonasingleclassificationlayer, creasinglylargeconfidencethreshold. Theleftmost
+rather than multiple ones as in our approach. As
+9Preliminary experiments with other configurations, in-
+withourmodel,thesingleoutputlayerineachof
+cludingoneswithmorelayers,ledtosimilarresults.
+10Forincreasedreproduciblity(Dodgeetal.,2019a),we
+8ForSST,weonlyusedfullsentences,notphrases. alsoreportvalidationresultsinAppendixB.
+Prediction
+Layer n Layer n Layer n Prediction
+Layer l Layer l Layer l No
+Yes Early exit
+Layer k Layer k Layer k Is confident? prediction
+No
+Prediction Yes Early exit
+Layer j Layer j Layer j Is confident?
+prediction
+Layer i Layer i Layer i No
+Yes Early exit
+Layer 0 Layer 0 Layer 0 Is confident?
+prediction
+Input Input Input
+(a) EfficientBaseline (b) StandardBaseline (c) Ourapproach
+Figure 2: Illustration of our baselines. (2a) Efficient baseline: adding a single output layer to an intermediate
+layer,whilenotprocessingtheremainingBERTlayers. (2b)Thestandardmodel: addingasingleoutputlayerto
+thefinalBERTlayer. (2c)Ourapproach: addingmultipleoutputlayerstointermediateBERTlayers;runningthe
+correspondingclassifierssequentially,whiletakingearlyexitsbasedontheirconfidencescores.
+(rightmost) point is threshold 0 (1), with x-value whichuseasinglelossterm. Fortheleftmostpoint
+showingthefractionofprocessingtimerelativeto inourgraphs—alwaysselectingthemostefficient
+thestandardbaseline. classifier—weobserveasubstantialdropinperfor-
+Our first observation is that our efficient base- mance compared to the corresponding most effi-
+lines constitute a fast alternative to the standard cientbaseline,especiallyfortheNLIdatasets. For
+BERT-largemodel. OnAG,aclassifiertrainedon ourrightmostpoint(alwaysselectingthemostac-
+layer 12 of BERT-large is 40% faster and within curateclassifier),weobserveasmallerdrop,mostly
+0.5%ofthestandardmodel. OnSNLIandIMDBa inSSTandMNLI,comparedtothecorresponding
+similarspeedupresultsin2%lossinperformance. baseline,butalsoslowerruntime,probablydueto
+Most notably, our approach presents a similar theoverheadofrunningtheearlierclassifiers.
+or better tradeoff in almost all cases. Our model Thesetrendsfurtherhighlightthepotentialofour
+iswithin0.5%ofthestandardmodelwhilebeing method,whichisabletooutperformthebaseline
+40%(IMDB)and80%(AG)faster. ForSST,our speed-accuracycurvesdespitetheweakerstarting
+curveisstrictlyabovetwooftheefficientbaselines, point. Italsosuggestswaystofurtherimproveour
+whilebeingbelowthestandardone. InthetwoNLI methodbystudyingmoresophisticatedmethodsto
+datasets,ourcurveisslightlyabovethecurvefor combinethelossfunctionsofourclassifiers, and
+themediumbudgets,andbelowitforlowerones. encourage them to be as precise as our baselines.
+Finally, the results of the oracle baseline indi- Wedeferthistofuturework.
+cate the further potential of our approach: in all
+Similar training time Fine-tuning BERT-large
+cases,theoracleoutperformstheoriginalbaseline
+withourapproachhasasimilarcosttofine-tuning
+by 1.8% (AG) to 6.9% (MNLI), while being 4–6
+thestandardBERT-largemodel,withasingleout-
+timesfaster. Theseresultsmotivatefurtherexplo-
+putlayer. Table2showsthefine-tuningtimeofour
+ration of better early-exit criteria (see Section 6).
+modelandthestandardBERT-largebaseline. Our
+They also highlight the diversity of the different
+modelisnotslowertofine-tuneinfouroutoffive
+classifiers. One might expect that the set of cor-
+cases,andisevenslightlyfasterinthreeofthem.11
+rect predictions by the smaller classifiers will be
+This property makes our approach appealing
+contained in the corresponding sets of the larger
+comparedtootherapproachesforreducingruntime
+classifiers. Thelargedifferencesbetweentheorig-
+such as pruning or model distillation (Section 7).
+inal baseline and our oracle indicate that this is
+Theserequire,inadditiontotrainingthefullmodel,
+notthecase,andmotivatefutureresearchoneffi-
+also training another model for each point along
+cientensemblemethodswhichreusemuchofthe
+the speed/accuracy curve, therefore substantially
+computationacrossdifferentmodels.
+increasingtheoveralltrainingtimerequiredtogen-
+Extremecaseanalysis Ourresultshintthatcom-
+11Wenotethatcomputingthecalibrationtemperaturere-
+bining the loss terms of each of our classifiers
+quiresadditionaltime,whichrangesbetween3minutes(SST)
+hurtstheirperformancecomparedtoourbaselines, to24minutes(MNLI).
+TrainingTime
+Dataset
+Ours Standard
+AG 052 053
+IMDB 056 057
+SST 004 004
+SNLI 289 300
+MNLI 852 835
+Table 2: Fine-tuning times (in minutes) of our model
+compared to the most accurate baseline: the standard
+BERT-largemodelwithasingleoutputlayer.
+erateafullspeed/accuracytradeoff. Incontrast,our
+singlemodelallowsforfullcontroloverthistrade-
+offbyadjustingtheconfidencethreshold,without
+increasingthetrainingtimecomparedtothestan-
+dard,mostaccuratemodel.
+Combination with model distillation A key
+propertyofourapproachisthatitcanbeappliedto
+anymulti-layermodel. Particularly,itcanbecom-
+binedwithothermethodsformakingmodelsmore
+efficient, such as model distillation. To demon-
+stratethis,werepeatourIMDBexperimentswith
+tinyBERT (Jiao et al., 2019), which is a distilled
+versionofBERT-base.12 Weexperimentwiththe
+tinyBERTv26-layer-768dimversion.13
+Figure 4 shows our IMDB results. Much like
+for BERT-large, our method works well for tiny-
+BERT,providingabetterspeed/accuracytradeoff
+comparedtothestandardtinyBERTbaselineand
+theefficienttinyBERTbaselines.
+Second, while tinyBERT is a distilled version
+of BERT-base, its speed-accuracy tradeoff is re-
+markablysimilartoourBERT-largeefficientbase-
+lines,whichhintsthatourefficientbaselinesarea
+simpler alternative to tinyBERT, and as effective
+for model compression. Finally, our method ap-
+pliedtoBERT-largeprovidesthebestoverallspeed-
+accuracytradeoff,especiallywithhigherbudgets.
+6 ACriterionfor“Difficulty”
+Our approach is motivated by the inherent vari-
+ance in the level of complexity of text instances,
+Figure3: Testaccuracyandprocessingtimeofourap-
+and leverages this variance to obtain a better
+proach (blue squares, each point representing a differ-
+ent confidence threshold), our standard baseline (std.,
+12WhileweexperimentedwithBERT-largeandnotBERT-
+greendiamond),efficientbaselines(eff.,reddots),and base,thepointofthisexperimentistoillustratethepotential
+oraclebaseline(orangestar). Leftandhigherisbetter. ofourmethodtobecombinedwithdistillation, andnotto
+Our method presents similar or better speed/accuracy directlycomparetoourmainresults.
+tradeoffinalmostallcases.
+13Jiaoetal.(2019)alsosuggestedatask-specificversionof
+tinyBERTwhichdistillsthemodelbasedonthedownstream
+task. ForconsistencywithourBERT-largeexperiments,we
+usethegeneralversion.
+ρcorrelationbetweentheconfidencelevelofour
+mostefficientclassifierandthedocument’slength.
+TheresultsinTable3showthatthecorrelations
+across all datasets are generally low (|ρ| < 0.2).
+Moreover, as expected, across four out of five
+datasets,the(weak)correlationbetweenconfidence
+and length is negative; our model is somewhat
+more confident in its prediction on shorter doc-
+uments. The fifth dataset (AG), shows the oppo-
+sitetrend: confidenceispositivelycorrelatedwith
+length. This discrepancy might be explained by
+Figure 4: Experiments with tinyBERT. Our method
+the nature of the tasks we consider. For instance,
+(light-bluepentagons)providesabetterspeed-accuracy
+IMDB and SST are sentiment analysis datasets,
+tradeoff compared to the standard (light-green dia-
+where longer texts might include conflicting evi-
+monds) and efficient (small light-red dots) baselines.
+Forcomparison,wealsoshowtheresultsofourmethod dence and thus be harder to classify. In contrast,
+(blue squares) and our efficient baselines (large red AGisanewstopicdetectiondataset,whereacon-
+dots) with BERT-large. Our method applied to BERT- flictbetweentopicsisuncommon,andlongerdocu-
+largeprovidestheoverallbesttradeoff.
+mentsprovidemoreopportunitiestofindthetopic.
+Dataset Length Consistency Consistency and difficulty Our next criterion
+for “difficulty” is the consistency of model pre-
+AG –0.13 0.37
+dictions. Toneva et al. (2019) proposed a notion
+IMDB –0.17 0.47
+of“unforgettable”traininginstances,whichonce
+SST –0.19 0.36
+themodelhaspredictedcorrectly,itneverpredicts
+SNLI –0.08 0.44
+incorrectlyfortheremainderoftrainingiterations.
+MNLI –0.13 0.39
+Suchinstancescanbethoughtofas“easy”ormem-
+Table3: Spearman’sρcorrelationbetweenconfidence orableexamples. Similarly,Sakaguchietal.(2019)
+levelsforourmostefficientclassifierandtwomeasures definedtestinstancesas“predictable”ifmultiple
+ofdifficulty: documentlengthandconsistency. Confi- simple models predict them correctly. Inspired
+denceiscorrelatedreasonablywithconsistencyacross bytheseworks, wedefinethecriterionofconsis-
+all datasets. For all datasets except AG, confidence is
+tency: whether all classifiers in our model agree
+(loosely) negatively correlated with document length.
+onthepredictionofagiveninstance,regardlessof
+For the AG topic classification dataset, confidence is
+whetheritiscorrectornot. Table3showsSpear-
+(loosely)positivelycorrelated.Resultsfortheotherlay-
+ersshowasimilartrend.
+man’sρcorrelationbetweentheconfidenceofthe
+most efficient classifier and this measure of con-
+sistency. Our analysis reveals a medium correla-
+speed/accuracytradeoffcomparedtoourbaselines. tionbetweenconfidenceandconsistencyacrossall
+Ourmethodalsoautomaticallyidentifiesinstances datasets (0.37 ≤ ρ ≤ 0.47), which indicates that
+on which smaller models are highly confident in the measure of confidence generally agrees with
+theirpredictions. Hereweanalyzeourdatausing themeasureofconsistency.
+otherdefinitionsofdifficulty. Perhapssurprisingly,
+wefindthatthevariousdefinitionsarenotstrongly Comparisonwithhypothesis-onlycriteria Gu-
+correlatedwithours. Theresultsweobservebelow, rurangan et al. (2018) and Poliak et al. (2018)
+combinedwiththeperformanceofouroraclebase- showed that some NLI instances can be solved
+line (Section 5), motivate further study on more byonlylookingatthehypothesis—thesewerearti-
+advanced methods for early exiting, which could factsoftheannotationprocess. Theyarguedthat
+potentiallyyieldevenlargercomputationalgains. suchinstancesare“easier”formachines,compared
+to those which required access to the full input,
+Shorter is easier? We first consider the length whichtheyconsidered“harder.” Table4showsthe
+of instances: is our model more confident in its correlationbetweentheconfidenceofeachofour
+decisionsonshortdocumentscomparedtolonger classifiersontheSNLIandMNLIdatasetwiththe
+ones? To address this we compute Spearman’s confidence of a hypothesis-only classifier. Simi-
+SNLI MNLI thegapsinconfidenceclose(e.g.,IMDBandSST),
+Layer
+Hyp.-Only IAC Hyp.-Only IAC althoughtherelativeorderinghardlyeverchanges.
+Two potential explanations come up when ob-
+0 0.39 0.14 0.37 0.08
+servingtheseresults;eithersomelabelsareeasier
+4 0.31 0.25 0.35 0.21
+topredictthanothers(andthusthemodelsaremore
+12 0.31 0.31 0.32 0.27
+confidentwhenpredictingthem),orthemodelsare
+23 0.28 0.32 0.30 0.32
+biased towards some classes compared to others.
+Table4: Spearman’sρcorrelationbetweenconfidence Tohelpdifferentiatebetweenthesetwohypotheses,
+levelsforourclassifiers(ofdifferentlayers)ontheval- weplotinFigure6theaverageconfidenceleveland
+idation sets of SNLI and MNLI, and two measures of theaverageF scoreofthemostefficientclassifier
+1
+difficulty: hypothesis-onlyclassifierpredictions(Hyp.-
+acrosslabelsanddatasets.
+Only)andinter-annotatorconsensus(IAC).
+Theplotindicatesthatbothhypothesesarecor-
+rect to some degree. Some labels, such as sports
+larlytotheconsistencyresults,weseethatthecon- forAGandpositiveforIMDB,arebothpredicted
+fidenceofourmostefficientclassifierisreasonably with high confidence, and solved with high accu-
+correlated with the predictions of the hypothesis- racy. Incontrast,ourmodelisoverconfidentinits
+onlyclassifier. Asexpected,aswemovetolarger, prediction of some labels (business for AG, posi-
+more accurate classifiers, which presumably are tiveforSST),andunderconfidentinothers(techfor
+able to make successful predictions on harder in- AG,entailmentforMNLI).Thesefindingsmight
+stances,thiscorrelationdecreases. indicate that while our method is designed to be
+globallycalibrated,itisnotnecessarilycalibrated
+Inter-annotator consensus Both NLI datasets foreachlabelindividually. Suchobservationsre-
+include labels from five different annotators. We latetoexistingconcernsregardingfairnesswhen
+treattheinter-annotatorconsensus(IAC)asanother usingcalibratedclassifiers(Pleissetal.,2017).
+measureofdifficulty: thehighertheconsensusis,
+theeasiertheinstance. WecomputeIACforeach 7 RelatedWork
+exampleasthefractionofannotatorswhoagreed
+Methodsformakinginferencemoreefficienthave
+on the majority label, hence this number ranges
+received considerable attention in NLP over the
+from0.6to1.0forfiveannotators. Table4shows
+years (Eisner and Satta, 1999; Goldberg and El-
+thecorrelationbetweentheconfidenceofourclas-
+hadad,2010,interalia). Asthefieldhasconverged
+sifierswiththeIACmeasureonSNLIandMNLI.
+ondeepneuralarchitecturesolutions,mostefforts
+Thecorrelationwithourmostefficientclassifiers
+focusonmakingmodelssmaller(intermsofmodel
+isratherweak,only0.08and0.14. Surprisingly,as
+parameters)inordertosavespaceaswellaspoten-
+wemovetolargermodels,thecorrelationincreases,
+tiallyspeedupinference.
+up to 0.32 for the most accurate classifiers. This
+indicatesthatthetwomeasuresperhapscapturea In model distillation (Hinton et al., 2014) a
+differentnotionofdifficulty. smallermodel(thestudent)istrainedtomimicthe
+behaviororstructureoftheoriginal,largermodel
+Confidence across labels Figure 5 shows the (theteacher). Theresultistypicallyastudentthat
+proportionofinstancesinourvalidationsetthatare isasaccurateastheteacher,butsmallerandfaster
+predicted with high confidence by our calibrated (KimandRush,2016;Jiaoetal.,2019;Tangetal.,
+model(90%threshold)foreachdataset,label,and 2019; Sanh et al., 2019). Pruning (LeCun et al.,
+model size. We first note that across all datasets, 1990)removessomeoftheweightsinthenetwork,
+andalmostallmodelsizes,differentlabelsarenot resulting in a smaller, potentially faster network.
+predictedwiththesamelevelofconfidence. Forin- The basic pruning approach removes individual
+stance,forAG,thelayer0modelpredictsthetech weights from the network (Swayamdipta et al.,
+label with 87.8% average confidence, compared 2018; Gale et al., 2019). More sophisticated ap-
+to96.8%forthesportslabel. Moreover,inaccor- proachesinducestructuredsparsity,whichremoves
+dancewiththeoverallperformance,acrossalmost fullblocks(Micheletal.,2019;Voitaetal.,2019;
+alldatasetsandmodelsizes,theconfidencelevels Dodgeetal.,2019b). Liuetal.(2018)andFanetal.
+increaseasthemodelsgetbiggerinsize. Finally, (2020)pruneddeepmodelsbyapplyingdropoutto
+insomecases,aswemovetowardslargermodels, differentlayers,whichallowsdynamiccontrolof
+Figure5: Instanceswithdifferentlabelsarepredictedwithdifferentdegreesofconfidence.
+Figure 6: Comparing confidence levels and F scores of our most efficient classifier across datasets and labels.
+1
+High confidence by the model is sometimes explained by “easy” classes that are predicted with high F (e.g.,
+1
+sports in AG). Other cases might stem from biases of the model which make it overconfident despite the label
+beingharderthanotherlabels(e.g.,positiveinSST).
+thespeed/accuracytradeoffofthemodelwithout troducedamethodfordynamicallyskippingconvo-
+retraining. Ourmethodalsoallowsforcontrolling lutionallayers. Bolukbasietal.(2017)andHuang
+thistradeoffwithasingletrainingpass,andyields et al. (2018) learned early exit policies for com-
+computationalsavingsinanorthogonalmanner: by puter vision architectures, observing substantial
+makingearlyexitdecisions. computationalgains.
+Quantization is another popular method to de-
+8 Conclusion
+crease model size, which reduces the numerical
+precision of the model’s weights, and therefore We presented a method that improves the
+bothspeedsupnumericaloperationsandreduces speed/accuracy tradeoff for inference using pre-
+modelsize(Wro´beletal.,2018;Shenetal.,2019; trainedlanguagemodels. Ourmethodmakesearly
+Zafriretal.,2019). exitsforsimpleinstancesthatrequirelessprocess-
+Some works introduced methods to allocate ing, and thereby avoids running many of the lay-
+fewerresourcestocertainpartsoftheinput(e.g., ers of the model. Experiments with BERT-large
+certainwords),therebypotentiallyreducingtrain- on five text classification and NLI datasets yield
+ingand/orinferencetime(Graves,2016;Seoetal., substantiallyfasterinferencecomparedtothestan-
+2018). Our method also puts less resources into dardapproach,upto80%fasterwhilemaintaining
+someoftheinput,butdoessoatthedocumentlevel similar performance. Our approach requires nei-
+ratherthanforindividualtokens. ther additional training time nor significant num-
+A few concurrent works have explored similar berofadditionalparameterscomparedtothestan-
+ideas for dynamic early exits in the transformer dard approach. It also allows for controlling the
+model. Elbayad et al. (2020) and Dabre et al. speed/accuracytradeoffusingasinglemodel,with-
+(2020)introducedearlystoppingforsequence-to- outretrainingitforanypointalongthecurve.
+sequencetasks(e.g.,machinetranslation). Bapna
+Acknowledgments
+et al. (2020) modify the transformer architecture
+with“controlsymbols”whichdeterminewhether
+The authors thank the members of Noah’s ARK
+components are short-circuited to optimize bud-
+at the University of Washington, the researchers
+get. Finally,Liuetal.(2020)investigatedseveral
+at the Allen Institute for AI, and the anonymous
+inference-timecostoptimizations(includingearly
+reviewersfortheirvaluablefeedback.
+stopping)inamultilingualsetting.
+Severalcomputervisionworksexploredsimilar
+ideastotheoneinthispaper. Wangetal.(2018)in-
+References Yoav Goldberg and Michael Elhadad. 2010. An effi-
+cientalgorithmforeasy-firstnon-directionaldepen-
+Dario Amodei and Danny Hernandez. 2018. AI and
+dencyparsing. InProc.ofNAACL.
+compute. Blogpost.
+AlexGraves.2016. Adaptivecomputationtimeforre-
+Ankur Bapna, Naveen Arivazhagan, and Orhan Firat.
+currentneuralnetworks. arXiv:1603.08983.
+2020. Controlling computation versus quality for
+neuralsequencemodels. arXiv:2002.07106. ChuanGuo,GeoffPleiss,YuSun,andKilianQ.Wein-
+berger. 2017. On calibration of modern neural net-
+Tolga Bolukbasi, Joseph Wang, Ofer Dekel, and
+works. InProc.ofICML.
+Venkatesh Saligrama. 2017. Adaptive neural net-
+worksforefficientinference. InProc.ofICML. Suchin Gururangan, Swabha Swayamdipta, Omer
+Levy,RoySchwartz,SamuelBowman,andNoahA.
+Samuel R. Bowman, Gabor Angeli, Christopher Potts,
+Smith. 2018. Annotation artifacts in natural lan-
+and Christopher D. Manning. 2015. A large anno-
+guageinferencedata. InProc.ofNAACL.
+tatedcorpusforlearningnaturallanguageinference.
+InProc.ofEMNLP.
+Geoffrey Hinton, Oriol Vinyals, and Jeff Dean. 2014.
+Distilling the knowledge in a neural network. In
+Raj Dabre, Raphael Rubino, and Atsushi Fujita. 2020.
+Proc.ofNeurIPSDeepLearningWorkshop.
+Balancingcostandbenefitwithtied-multitransform-
+ers. arXiv:2002.08614.
+GaoHuang,DanluChen,TianhongLi,FelixWu,Lau-
+rens van der Maaten, and Kilian Q. Weinberger.
+Ido Dagan, Oren Glickman, and Bernardo Magnini.
+2018. Multi-scale dense networks for resource ef-
+2005. ThePASCALrecognisingtextualentailment
+ficientimageclassification. InProc.ofICLR.
+challenge. InProc.ofMLCW.
+HeinrichJiang,BeenKim,MelodyY.Guan,andMaya
+Morris H. DeGroot and Stephen E. Fienberg. 1983.
+Gupta.2018. Totrustornottotrustaclassifier. In
+Thecomparisonandevaluationofforecasters. Jour-
+Proc.ofNeurIPS.
+nal of the Royal Statistical Society: Series D (The
+Statistician),32(1-2):12–22.
+Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang,
+Xiao Chen, Linlin Li, Fang Wang, and Qun Liu.
+Shrey Desai and Greg Durrett. 2020. Calibration of
+2019. TinyBERT: Distilling BERT for natural lan-
+pre-trainedtransformers. arXiv:2003.07892.
+guageunderstanding. arXiv:1909.10351.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of Yoon Kim and Alexander M. Rush. 2016. Sequence-
+deep bidirectional transformers for language under- levelknowledgedistillation. InProc.ofEMNLP.
+standing. InProc.ofNAACL.
+Ludmila I. Kuncheva and Christopher J. Whitaker.
+Jesse Dodge, Suchin Gururangan, Dallas Card, Roy 2003. Measuresofdiversityinclassifierensembles
+Schwartz, and Noah A. Smith. 2019a. Show your and their relationship with the ensemble accuracy.
+work: Improved reporting of experimental results. Machinelearning,51(2):181–207.
+InProc.ofEMNLP.
+YannLeCun,JohnS.Denker,andSaraA.Solla.1990.
+Jesse Dodge, Roy Schwartz, Hao Peng, and Noah A. Optimalbraindamage. InProc.ofNeurIPS.
+Smith. 2019b. RNN architecture learning with
+Liyuan Liu, Xiang Ren, Jingbo Shang, Xiaotao Gu,
+sparseregularization. InProc.ofEMNLP.
+JianPeng,andJiaweiHan.2018. Efficientcontextu-
+Jason Eisner and Giorgio Satta. 1999. Efficient pars- alized representation: Language model pruning for
+ingforbilexicalcontext-freegrammarsandheadau- sequencelabeling. InProc.ofEMNLP.
+tomatongrammars. InProc.ofACL.
+Weijie Liu, Peng Zhou, Zhe Zhao, Zhiruo Wang,
+Maha Elbayad, , Jiatao Gu, Edouard Grave, and Haotang Deng, and Qi Ju. 2020. FastBERT: a self-
+MichaelAuli.2020. Depth-adaptivetransformer. In distilling BERT with adaptive inference time. In
+Proc.ofICLR. Proc.ofACL.
+AngelaFan,EdouardGrave,andArmandJoulin.2020. Andrew L. Maas, Raymond E. Daly, Peter T. Pham,
+Reducing transformer depth on demand with struc- Dan Huang, Andrew Y. Ng, and Christopher Potts.
+tureddropout. InProc.ofICLR. 2011. Learningwordvectorsforsentimentanalysis.
+InProc.ofACL.
+Trevor Gale, Erich Elsen, and Sara Hooker. 2019.
+The state of sparsity in deep neural networks. Paul Michel, Omer Levy, and Graham Neubig. 2019.
+arXiv:1902.09574. Aresixteenheadsreallybetterthanone? InProc.of
+NeurIPS.
+Matt Gardner, Joel Grus, Mark Neumann, Oyvind
+Tafjord,PradeepDasigi,NelsonF.Liu,MatthewPe- Matthew Peters, Mark Neumann, Mohit Iyyer, Matt
+ters,MichaelSchmitz,andLukeZettlemoyer.2018. Gardner, Christopher Clark, Kenton Lee, and Luke
+AllenNLP: A deep semantic natural language pro- Zettlemoyer.2018. Deepcontextualizedwordrepre-
+cessingplatform. InProc.ofNLP-OSS. sentations. InProc.ofNAACL.
+Geoff Pleiss, Manish Raghavan, Felix Wu, Jon Klein- Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob
+berg, and Kilian Q. Weinberger. 2017. On fairness Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz
+andcalibration. InProc.ofNeurIPS. Kaiser, and Illia Polosukhin. 2017. Attention is all
+youneed. InProc.ofNeurIPS.
+Adam Poliak, Jason Naradowsky, Aparajita Haldar,
+Rachel Rudinger, and Benjamin Van Durme. 2018. Elena Voita, David Talbot, Fedor Moiseev, Rico Sen-
+HypothesisOnlyBaselinesinNaturalLanguageIn- nrich, and Ivan Titov. 2019. Analyzing multi-head
+ference. InProc.of∗SEM. self-attention: Specialized heads do the heavy lift-
+ing,therestcanbepruned. InProc.ofACL.
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan,
+Xin Wang, Fisher Yu, Zi-Yi Dou, Trevor Darrell, and
+DarioAmodei,andIlyaSutskever.2019. Language
+Joseph E. Gonzalez. 2018. SkipNet: Learning dy-
+models are unsupervised multitask learners. Ope-
+namic routing in convolutional networks. In Proc.
+nAIBlog.
+ofECCV.
+ColinRaffel,NoamShazeer,AdamRoberts,Katherine Adina Williams, Nikita Nangia, and Samuel R Bow-
+Lee, Sharan Narang, Michael Matena, Yanqi Zhou, man. 2018. A broad-coveragechallenge corpus for
+WeiLi,andPeterJ.Liu.2019. Exploringthelimits sentence understanding through inference. In Proc.
+of transfer learning with a unified text-to-text trans- ofNAACL.
+former. arXiv:1910.10683.
+DavidH.Wolpert.1992. Stackedgeneralization. Neu-
+Keisuke Sakaguchi, Ronan Le Bras, Chandra Bhaga- ralNetworks,5:241–259.
+vatula, and Yejin Choi. 2019. WinoGrande: An
+adversarial winograd schema challenge at scale. Krzysztof Wro´bel, Marcin Pietron´, Maciej Wielgosz,
+arXiv:1907.10641. Michał Karwatowski, and Kazimierz Wiatr. 2018.
+Convolutional neural network compression for nat-
+urallanguageprocessing. arXiv:1805.10796.
+Victor Sanh, Lysandre Debut, Julien Chaumond, and
+ThomasWolf.2019. DistilBERT,adistilledversion
+Ofir Zafrir, Guy Boudoukh, Peter Izsak, and Moshe
+of BERT: smaller, faster, cheaper and lighter. In
+Wasserblat. 2019. Q8BERT: Quantized 8bit BERT.
+Proc.ofEMC2.
+InProc.ofEMC2.
+RoySchwartz,JesseDodge,NoahA.Smith,andOren
+Xiang Zhang, Junbo Zhao, and Yann LeCun. 2015.
+Etzioni.2019. GreenAI. arXiv:1907.10597.
+Character-levelconvolutionalnetworksfortextclas-
+sification. InProc.ofNeurIPS.
+MinjoonSeo,SewonMin,AliFarhadi,andHannaneh
+Hajishirzi. 2018. Neural speed reading via skim-
+RNN. InProc.ofICLR.
+ShengShen,ZhenDong,JiayuYe,LinjianMa,Zhewei
+Yao,AmirGholami,MichaelW.Mahoney,andKurt
+Keutzer. 2019. Q-BERT: Hessian based ultra low
+precisionquantizationofBERT. arXiv:1909.05840.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang, ChristopherD.Manning, AndrewNg, and
+Christopher Potts. 2013. Recursive deep models
+forsemanticcompositionalityoverasentimenttree-
+bank. InProc.ofEMNLP.
+Swabha Swayamdipta, Ankur P. Parikh, and Tom
+Kwiatkowski. 2018. Multi-mention learning for
+reading comprehension with neural cascades. In
+Proc.ofICLR.
+Raphael Tang, Yao Lu, Linqing Liu, Lili Mou, Olga
+Vechtomova, andJimmyLin.2019. Distillingtask-
+specific knowledge from BERT into simple neural
+networks. arXiv:1903.12136.
+Mariya Toneva, Alessandro Sordoni, Remi Tachet des
+Combes,AdamTrischler,YoshuaBengio,andGeof-
+frey J. Gordon. 2019. An empirical study of exam-
+ple forgetting during deep neural network learning.
+InProc.ofICLR.
+A ImplementationDetails
+We fine-tune both our model and our baselines
+with dropout 0.1. We run all our experiments on
+a single Quadro RTX 8000 GPU. Our model is
+implement using the AllenNLP library (Gardner
+etal.,2018).14 Ourcalibrationcodereliesonthe
+implementationofGuoetal.(2017).15
+We fine-tune text classification models for 2
+epochsandNLImodelsfor4epochs. Werunten
+trials of random search on the validation set for
+bothourmodelandourbaselinestoselectbotha
+learningrateamong{0.00002,0.00003,0.00005}
+and a random seed. For our baselines, we select
+thehighestperformingmodelonthevalidationset
+amongthetenruns. Forourmodel,weselectthe
+onewiththehighestperformanceaveragedacross
+allthresholdsexplored(weuse0%and5%inter-
+vals in the range [55%, 100%]) on the validation
+set.
+B ValidationResults
+Figure7showsthevalidationresultsofourexperi-
+ments.
+Figure 7: Validation accuracy and processing time of
+ourapproach(blueline)andourstandardbaseline(std.,
+green diamond), our efficient baselines (eff., red dots)
+andouroracle(orangestar). Leftandhigherisbetter.
+14https://allennlp.org
+15https://github.com/gpleiss/
+temperature_scaling

@@ -1,0 +1,556 @@
+Improving BERT Fine-Tuning via Self-Ensemble and Self-Distillation
+YigeXu1, XipengQiu1, LigaoZhou2 and XuanjingHuang1
+1ShanghaiKeyLaboratoryofIntelligentInformationProcessing,FudanUniversity
+SchoolofComputerScience,FudanUniversity
+825ZhanghengRoad,Shanghai,China
+2HuaweiTechnologiesCo.,Ltd.
+{ygxu18,xpqiu,xjhuang}@fudan.edu.cn,zhouligao@huawei.com,
+Abstract thefine-tuningstrategyitselfhasyettobefullyexplored. Sun
+etal. [2019]investigateddifferentfine-tuningstrategiesand
+Fine-tuningpre-trainedlanguagemodelslikeBERT
+hyper-parametersofBERTfortextclassificationandshowed
+hasbecomeaneffectivewayinNLPandyieldsstate-
+the“further-pretraining”ontherelated-domaincorpuscanfur-
+of-the-artresultsonmanydownstreamtasks.Recent
+therimprovetheabilityofBERT.Liuetal. [2019a]fine-tuned
+studiesonadaptingBERTtonewtasksmainlyfocus
+BERTunderthemulti-tasklearningframework. Theperfor-
+onmodifyingthemodelstructure,re-designingthe
+mance of BERT on a task could benefit from other related
+pre-train tasks, and leveraging external data and tasks. Although these methods achieve better performance,
+knowledge. Thefine-tuningstrategyitselfhasyet
+theyusuallyneedtoleverageexternaldataorknowledge.
+tobefullyexplored. Inthispaper,weimprovethe
+Inthispaper,weinvestigatehowtomaximizetheutiliza-
+fine-tuningofBERTwithtwoeffectivemechanisms:
+tionofBERTbybetterfine-tuningstrategywithoututilizing
+self-ensembleandself-distillation. Theexperiments
+theexternaldataorknowledge. BERTisusuallyfine-tuned
+ontextclassificationandnaturallanguageinference
+byusingstochasticgradientdescent(SGD)method. Inprac-
+tasksshowourproposedmethodscansignificantly
+tice,theperformanceoffine-tuningBERTisoftensensitive
+improvetheadaptionofBERTwithoutanyexternal
+tothedifferentrandomseedsandordersoftrainingdata,es-
+dataorknowledge.
+peciallywhenthelasttrainingsampleisnoise. Toalleviate
+this,theensemblemethodiswidely-usedtocombineseveral
+1 Introduction fine-tuned based models since it can reduce the overfitting
+Thepre-trainedlanguagemodelsincludingBERT[Devlinet andimprovethemodelgeneralization. TheensembleBERT
+al., 2018] and its variants (XLNet [Yang et al., 2019] and usuallyachievessuperiorperformancethanthesingleBERT
+RoBERTa [Liu et al., 2019b]) have been proven beneficial model. However, the main disadvantages of the ensemble
+method are its model size and training cost. The ensemble
+for many natural language processing (NLP) tasks, such as
+textclassification,questionanswering[Rajpurkaretal.,2016] modelneedstokeepmultiplefine-tunedBERTsandhasalow
+andnaturallanguageinference[Bowmanetal.,2015]. These computationefficiencyandhighstoragecost.
+pre-trained models have learned general-purpose language Weimprovethefine-tuningstrategyofBERTbyintroducing
+representationsonalargeamountofunlabeleddata,therefore, twomechanisms: self-ensembleandself-distillation.
+adapting these models to the downstream tasks can bring a (1)Self-Ensemble. Motivatedthesuccessofwidely-used
+goodinitializationforandavoidtrainingfromscratch. There ensemble models, we propose a self-ensemble method, in
+aretwocommonwaystoutilizethesepre-trainedmodelson whichthebasemodelsaretheintermediateBERTmodelsat
+downstreamtasks: featureextraction(wherethepre-trained differenttimestepswithinasingletrainingprocess[Polyak
+parametersarefrozen),andfine-tuning(wherethepre-trained andJuditsky,1992]. Tofurtherreducethemodelcomplexity
+parametersareunfrozenandfine-tuned). Althoughboththese of the ensemble model, we use a more efficient ensemble
+twowayscansignificantlyimprovetheperformanceofmost method,whichcombinesseveralbasemodelswithparameter
+ofthedownstreamtasks,thefine-tuningwayusuallyachieves averagingratherthankeepingseveralbasemodels.
+betterresultsthanfeatureextractionway[Petersetal.,2019]. (2)Self-Distillation. Althoughtheself-ensemblecanim-
+Therefore, it is worth paying attention to find a good fine- provethemodelperformance,thetrainingofthebasemodel
+tuningstrategy. isthesameasthevanillafine-tuningstrategyandcannotbe
+As a widely-studied pre-trained language model, the po- affectedbytheensemblemodel.Wefurtheruseknowledgedis-
+tentialofBERTcanbefurtherboostedbymodifyingmodel tillation[Hintonetal.,2015]toimprovefine-tuningefficiency.
+structure[SticklandandMurray,2019;Houlsbyetal.,2019], Ateachtimestepintraining,thecurrentBERTmodel(called
+re-designing pre-training objectives [Dong et al., 2019; studentmodel)islearnedwithtwoteachers: thegoldlabels
+Yangetal.,2019;Liuetal.,2019b],dataaugmentation[Raffel andself-ensemblemodel(calledteachermodel). Theteacher
+etal.,2019]andoptimizingfine-tuningstrategieswithexter- modelisanaverageofstudentmodelsatprevioustimesteps.
+nalknowledge[Liuetal.,2019a;Sunetal.,2019]. However, Withthehelpoftheteachermodel,thestudentismorerobust
+0202
+beF
+42
+]LC.sc[
+1v54301.2002:viXra
+andaccurate. Moreover,abetterstudentmodelfurtherleads 2.2 KnowledgeDistillationforPre-trainedModels
+toabetterteachermodel. Asimilarideaisalsousedinsemi-
+Since the pre-trained language models usually have an ex-
+supervisedlearning,suchasTemporalEnsembling[Laineand
+tremelylargenumberofparameters,theyaredifficulttobe
+Aila,2016]andMeanTeacher [TarvainenandValpola,2017].
+deployedontheresource-restricteddevices. Severalprevious
+Different from them, our proposed self-distillation aims to
+worksleveragetheknowledgedistillation[Hintonetal.,2015]
+optimizethestudentmodelwithoutexternaldata.
+approachtoreducingmodelsizewhilemaintainingaccuracy,
+Theexperimentsontextclassificationandnaturallanguage
+suchasTinyBERT[Jiaoetal.,2019]andDistilBERT [Sanhet
+inference tasks show our proposed methods can reduce the
+al.,2019]. KnowledgeDistillationaimstotransfertheknowl-
+test error rate by more than 5.5% on the average on seven
+edge of a large teacher model to a small student model by
+widely-studieddatasets.
+trainingthestudentmodeltoreproducethebehaviorsofthe
+Thecontributionsofthispaperaresummarizedasfollows: teachermodel.
+• We show the potential of BERT can be further stimu- Theteachermodelusuallyiswell-trainedandfixedinthe
+latedbyabetterfine-tuningstrategywithoutleveraging processingknowledgedistillation. Unlikethecommonwayof
+externalknowledgeordata. knowledgedistillation,weperformknowledgedistillationin
+• Theself-ensemblemethodwithparameteraveragingcan onlinefashion. Theteachermodelisanensembleofseveral
+improveBERTwithoutsignificantlydecreasingthetrain- studentmodelsatprevioustimestepswithinthefine-tuning
+ingefficiency. stage.
+• Withself-distillation,thestudentandteachermodelscan
+benefitfromeachother. Thedistillationlosscanalsobe 3 Methodology
+regardedasaregularizationtoimprovethegeneralization
+abilityofthemodel. Thefine-tuningofBERTusuallyaimstominimizethecross-
+entropylossonaspecifictaskwithstochasticgradientdescent
+method. Duetothestochasticnature,theperformanceoffine-
+2 RelatedWork
+tuningisoftenaffectedbytherandomorderingsoftraining
+data,especiallywhenthelasttrainingsamplesisnoise.
+Webrieflyreviewtwokindsofrelatedwork: pre-trainedlan-
+Ourproposedfine-tuningstrategyismotivatedbytheen-
+guagemodelsandknowledgedistillation.
+semble method and knowledge distillation. There are two
+models in our fine-tuning strategy: a student model is the
+2.1 Pre-trainedLanguageModels
+fine-tuningBERTandateachermodelisaself-ensembleof
+Pre-traininglanguagemodelsonalargeamountofunlabeled severalstudentmodels. Ateachtimestep,wefurtherdistillate
+datathenfine-tuningindownstreamtaskshasbecomeanew theknowledgeoftheteachermodeltothestudentmodel.
+paradigm for NLP and made a breakthrough in many NLP
+tasks. Mostoftherecentpre-trainedlanguagemodels(e.g., 3.1 EnsembleBERT
+BERT[Devlinetal.,2018],XLNet[Yangetal.,2019]and
+Inpractice,theensemblemethodisusuallyadoptedtofurther
+RoBERTa[Liuetal.,2019b])arebuiltwithTransformerar-
+improvetheperformanceofBERT.
+chitecture[Vaswanietal.,2017].
+As a wide-used model, BERT is pre-trained on Masked Voted BERT The common ensemble method is voting-
+LanguageModelTaskandNextSentencePredictionTaskviaa based.Wefirstfine-tunemultipleBERTwithdifferentrandom
+largecross-domainunlabeledcorpus. BERThastwodifferent seeds. Foreachinput, weoutputthebestpredictionsmade
+modelsize: BERT witha12-layerTransformerencoder bythefine-tunedBERTalongwiththeprobabilityandsum
+BASE
+andBERT witha24-layerTransformerencoder. Both up the probability of predictions from each model together.
+LARGE
+of them take an input of a sequence of no more than 512 Theoutputoftheensemblemodelisthepredictionwiththe
+tokensandoutputstherepresentationofthesequence. The highestprobability.
+sequencehasonesegmentfortextclassificationtaskortwo Let BERT(x;θ k) (1 ≤ k ≤ K) are K BERT models
+fortextmatchingtask.Aspecialtoken[CLS]isaddedbefore fine-tunedonaspecifictaskwithdifferentrandomseeds,the
+segments,whichcontainthespecialclassificationembedding. ensemblemodelBERT VOTE(x;Θ)isdefinedas
+Anotherspecialtoken[SEP]isusedforseparatingsegments.
+K
+(cid:88)
+Fine-tuning BERTcandealwithdifferentnaturallanguage BERT (x;Θ)= BERT(x;θ ), (2)
+VOTE k
+taskswithtask-specificoutputlayers. Fortextclassification k=1
+ortextmatching,BERTtakesthefinalhiddenstatehofthe
+where θ denotes the parameters of the k-th model and Θ
+firsttoken[CLS]astherepresentationoftheinputsentence k
+denotestheparametersofalltheK models.
+orsentence-pair. Asimplesoftmaxclassifierisaddedtothe
+WecallthiskindofensemblemodelasvotedBERT.The
+topofBERTtopredicttheprobabilityoflabely:
+votedBERTcangreatlyboosttheperformanceofsingleBERT
+p(y|h)=softmax(Wh), (1) inmanytasks,suchasquestionanswering[Rajpurkaretal.,
+2016]. However,amajordisadvantageofthevotedBERTisit
+where W is the task-specific parameter matrix. The cross- needskeepingmultipledifferentBERTsanditsefficiencyis
+entropylossisusedtofine-tuneBERTaswellasW jointly. lowincomputingandstorage.
+(a)VotedBERT
+Figure2:Theproposedfine-tuningstrategyBERT .Theteacher
+SDA
+modelistheaverageofstudentmodelsoverrecentKtimesteps,and
+K =3here.(x,y)istheinputtrainingsample.yˆistheprobability
+oflabelypredictedbystudentmodel.oˆando˜arethelogitsoutput
+bystudentmodelandteachermodelreflectively.MSEandCEdenote
+themeansquareerrorandcross-entropyloss.
+(b)AveragedBERT
+vanillafine-tuningstrategyandcannotbeaffectedbytheen-
+Figure1:TwomethodstoensembleBERT.TheaveragedBERThas
+semblemodel. Wefurtheruseknowledgedistillation[Hinton
+bettercomputationalandmemoryefficiencythenvotedBERT.
+et al., 2015] to improve the base model. At each time step
+in training, the current BERT model (called student model)
+AveragedBERT Toreducethemodelcomplexityofensem- is learned from two teachers: the gold labels and the self-
+blemodel,weuseaparameter-averagingstrategytocombine ensemblemodel(calledteachermodel). Theteachermodel
+several BERTs into a single model, called averaged BERT. isanaverageofstudentmodelsatprevioustimesteps. With
+TheaveragedBERTisdefinedas thehelpoftheteachermodel,thestudentismorerobustand
+accurate.
+K
+BERT (x;θ¯)=BERT(x; 1 (cid:88) θ ), (3) Self-Distillation-Averaged (SDA) We first denote a fine-
+AVG K k tuning strategy BERT , in which the teacher model is
+k=1 SDA
+self-ensembleBERTwithparameteraveraging.
+whereθ¯istheaveragedparametersofK individualfine-tuned LetBERT(x,θ)denotethestudentBERT,theobjectiveof
+BERTs. BERT strategyis
+SDA
+Figure1illustratestwokindsofensembleBERTs. Since (cid:16) (cid:17)
+theaveragedBERTisindeedasinglemodelandhasbetter L θ(x,y)=CE BERT(x,θ),y
+computationalandmemoryefficiencythanthevotedBERT. (cid:16) (cid:17)
++λMSE BERT(x,θ),BERT(x,θ¯) , (5)
+3.2 Self-EnsembleBERT
+whereCEandMSEdenotethecross-entropylossandmean
+Although the ensemble BERT usually brings better perfor- squarederrorrespectively,andλbalancestheimportanceof
+mance,itneedstotrainmultipleBERTsanditscostisoften twolossfunctions. TheteachermodelBERT(x,θ¯)isaself-
+expensive. Toreducethetrainingcost,weuseaself-ensemble ensembleBERTwithrecenttimesteps. Attimestept,θ¯isthe
+modeltocombinetheintermediatemodelsatdifferenttime averagedparametersofrecentK timesteps:
+steps in a single training phase. We regard the BERT at
+K
+each time step as a base model and combine them into a θ¯= 1 (cid:88) θ , (6)
+self-ensemblemodel. K t−k
+Here we only describe the self-ensemble BERT with pa- k=1
+whereK isahyperparameterdenotingtheteachersize.
+rameteraveraging,sincethevotedversionofself-ensembleis
+Figure2showsthetrainingphaseofourproposedmethod.
+impracticabletokeepalltheintermediatemodels.
+Inthetrainingphase,wecancomputeθ¯efficientlybymoving
+Letθ denoteparameterswhenfine-tuningBERTattime
+t
+average.
+stept,theself-ensembleBERTisdefinedas
+Sincetheteachermodelaggregatesinformationofstudent
+T modelsaftereverytimestep,itisusuallymorerobust. More-
+BERT SE(x;θ¯)=BERT(x; T1 (cid:88) θ t), (4) over,abetterstudentmodelfurtherleadstobetterateacher
+τ=1 model.
+where θ¯is the averaged parameters of BERTs over T time Self-Distillation-Voted (SDV) As a comparison, we also
+proposeanalternativeself-distillationmethodbyreplacingthe
+steps.
+teachermodelwithself-votedBERT,calledBERT . The
+Averagingmodelweightsovertrainingstepstendstopro- SDV
+objectiveofBERT strategyis
+duceamoreaccuratemodelthanusingthefinalweightsdi- SDV
+rectly[PolyakandJuditsky,1992]. (cid:16) (cid:17)
+L (x,y)=CE BERT(x,θ),y
+θ
+3.3 Self-DistillationBERT K
+(cid:16) 1 (cid:88) (cid:17)
+Although the self-ensemble can improve the model perfor- +λMSE BERT(x,θ),
+K
+BERT(x,θ t−k) . (7)
+mance,thebasemodelistrainedinthesamemannertothe k=1
+Type Dataset NumofLabels Trainsamples Devsamples Testsamples
+IMDb 2 25,000 - 25,000
+AG’sNews 4 120,000 - 7,600
+TextClassification DBPedia 14 560,000 - 70,000
+YelpPolarity 2 560,000 - 38,000
+YelpFull 5 650,000 - 50,000
+SNLI 3 549,367 9,842 9,824
+NLI
+MNLI-(m/mm) 3 392,702 9,815/9,832 9,796/9,847
+Table1: Summarystatisticsofsevenwidely-studiedtextclassificationandnaturallanguageinference(NLI)datasets.
+ThetrainingefficiencyofBERT strategyislowerthan • MNLI Multi-Genre Natural Language Inference
+SDV
+BERT strategy since BERT needs to process the [Williams et al., 2018] corpus is a crowdsourced
+SDA SDV
+inputwithrecentK studentmodels. entailmentclassificationtaskwithabout433ksentence
+pairs. Thecorpushastwotestsets: matched(MNLI-m)
+4 Experiments andmismatched(MNLI-mm).
+Inthispaper,weimproveBERTfine-tuningviaself-ensemble 4.2 Hyperparameters
+andself-distillation. Thevanillafine-tuningmethodofBERT All the hyperparameters of our proposed methods are the
+isusedasourbaseline. Thenweevaluateourproposedfine- sameastheofficialBERT[Devlinetal., 2018]exceptself-
+tuningstrategiesonsevendatasetstodemonstratethefeasibil- distillation weight λ and teacher size K. We use AdamW
+ityofourself-distillationmodel. optimizerwiththewarm-upproportionof0.1,baselearning
+rateforBERTencoderof2e-5,baselearningrateforsoftmax
+4.1 Datasets
+layer of 1e-3, dropout probability of 0.1. For sequences of
+OurproposedmethodisevaluatedonfiveTextClassification morethan512tokens,wetruncatethemandchoosehead512
+datasetsandtwoNaturalLanguageInference(NLI)datasets. asmodelinput.
+ThestatisticsofdatasetsareshowninTable1. We fine-tune all models on one RTX 2080Ti GPU. For
+BERT ,thebatchsizeis4,andthegradientaccumulation
+TextClassification BASE
+steps is 4. For BERT , the batch size is 1, and the
+LARGE
+• IMDbIMDb[Maasetal.,2011]isabinarysentiment gradientaccumulationstepsis16.
+analysisdatasetfromtheInternetMovieDatabase. The ForensembleBERT(Seesection3.1),werunBERT
+BASE
+datasethas25,000trainingexamplesand25,000valida- with4differentrandomseedsandsavethecheckpoint.
+tionexamples. Thetaskistopredictwhetherthereview
+4.3 ModelSelection
+textispositiveornegative.
+• AG’sNewsAG’scorpus[Zhangetal.,2015]ofthenews Asshowninsection3.3,therearetwomainhyperparameters
+articlesonthewebcontains496,835categorizednewsar- inourfine-tuningmethods(BERT andBERT ): self-
+SDA SDV
+ticles. Thefourlargestclassesfromthiscorpuswithonly distillationweightλandteachersizeK.
+thetitleanddescriptionfieldswerechosentoconstruct
+Self-DistillationWeight Wefirstevaluateourmethodson
+theAG’sNewsdataset.
+IMDb dataset to investigate the effect of self-distillation
+• DBPedia DBPedia [Zhang et al., 2015] is a crowd-
+weightλ. Figure3showsthatλ∈[1.0,1.5]hasbetterresults.
+sourcedcommunityeffortthatincludesstructuredinfor-
+Thisobservationisthesameastheotherdatasets. Therefore,
+mation from Wikipedia. The DBPedia dataset is con-
+wesetλ=1inthefollowingexperiments.
+structed by picking 14 non-overlapping classes from
+DBPedia 2014 with only the title and abstract of each TeacherSize WechoosedifferentteachersizeK andevalu-
+Wikipediaarticle. ateourmodelsinthreedatasets. Table2showsthatteacher
+• YelpTheYelpdatasetisobtainedfromtheYelpDataset size is sensitive to datasets. Therefore, we select the best
+Challengein2015,builtbyZhangetal. [2015]. There teachersizeforeachdatasetinthefollowingexperiment.
+aretwoclassificationtasksinthisdataset: YelpFulland
+4.4 ModelAnalysis
+YelpPolarity. YelpFullpredictsthefullnumberofstars
+(1 to 5) which given by users, and the other predicts a Training Stability Generally, distinct random seeds can
+polaritylabelthatispositiveornegative. leadtosubstantiallydifferentresultswhenfine-tuningBERT
+evenwiththesamehyperparameters. Thus,weconductexper-
+NaturalLanguageInference
+imentstoexploretheeffectofdataorderonourmodels.
+• SNLITheStanfordNaturalLanguageInferenceCorpus Thisexperimentisconductedwithasetofdataorderseeds.
+[Bowman et al., 2015] is a collection of 570k human- One data order can be regarded as one sample from the set
+writtenEnglishsentencepairsmanuallylabeledforbal- ofpermutationsofthetrainingdata. 1,500labeledexamples
+ancedclassificationwiththelabelsentailment,contradic- fromSNLIdataset(500oneachclass)arerandomlyselected
+tion,orneutral. toconstructanewtrainingset. Withthesameinitialization
+6.4
+6.2
+6
+5.8
+5.6
+5.4
+5.2
+0.1 0.2 0.5 1.0 1.5 2.0 3.0 4.0 5.0
+λ
+)%(etarrorretseT
+BERTBASE
+BERTSDV(K=1)
+BERTSDV(K=5)
+BERTSDA(K=5)
+BERTSDA(K=T−1)
+Figure3: TesterroronIMDbdatasetoverdifferentsettingofself-
+distillationweightλ.T denotesthetotalnumberofiterations.
+AG’s
+Model K IMDb SNLI News
+1 5.39 5.38 91.2
+2 5.44 5.39 91.1 BERT
+SDV 3 5.40 5.50 91.2
+4 5.47 5.49 91.2
+5 5.35 5.55 91.1
+T −1 5.41 5.29 91.0
+2 5.46 5.49 91.2
+BERT SDA 3 5.48 5.55 91.1
+4 5.44 5.52 91.1
+5 5.29 5.41 91.1
+Table 2: Results on IMDb dataset over different teacher sizes.
+BERT (K = 1) is same as BERT (K = 1). For IMDb
+SDV SDA
+andAG’sNews,wereporttesterrorrate(%).ForSNLI,wereport
+accuracy(%).T denotesthetotalnumberofiterations.
+seedsbutdifferentdataorderseeds,werun10timesforeach
+fine-tuningstrategyandrecordtheresultasFigure4.
+Resultsshowthatourstrategieshavehigheraccuracyand
+smallervariancethanthevanillaBERT fine-tuning.This
+BASE
+provesthatthefine-tunedBERTwiththeself-distillationstrat-
+egyinheritsthepropertyoftheensemblemodelandisless
+sensitivetothedataorder.
+75
+74
+73
+BERTBA BS EE RTSDA(K BE= RT1) SDA(K BE= RT5) SDV(K = 5)
+)%(ycaruccA
+8
+7
+6
+1 2 3 4 5 6
+Epoch
+Figure4:Boxplotfortrainingstability.Only1,500labeledexample
+inSNLItrainingsetareusedfortraining.HereBERT (K =1) SDA
+issameasBERT (K =1).
+SDV
+)%(etarrorretseT
+BERTBASE
+BERTSDV(K=5)
+BERTSDA(K=5)
+BERTSDA(K=T−1)
+Figure 5: Test error rates(%) on IMDb dataset durning different
+epoch.T denotesthetotalnumberofiterations.
+0.6
+0.4
+0.2
+0
+0.5k 5k 10k 15k 20k 25k 30k 37.5k
+Trainingsteps
+ssoL
+CE-Loss
+MSE-Loss
+Figure6:LosscurveofBERT (K =1)onIMDbdataset.
+SDA
+Convergence Curves To understand the effects of using
+self-distillation,werecordtheconvergecurvewhiletraining.
+ThetrainingcurvesonIMDbdatasetareshowninFigure5.
+Fine-tuningBERT cannotgetsignificantimprovement
+BASE
+in the last 3 epochs (from 6.00% to 5.80%). But with self-
+distillationmechanisms,thetesterrorratecanfurtherdecrease
+to5.35%(forBERT )and5.29%(forBERT ).
+SDV SDA
+Tofurtheranalyzethereasonforthisobservation,wealso
+record the loss curve of cross-entropy (CE) loss and mean-
+squared-error(MSE)loss,asshowninFigure6.Whentraining
+begins,theCElossdominatestheoptimizationobjective. In
+thelastphaseoftraining,thecross-entropylossbecomessmall,
+andalargeproportionofgainalsocomesfromself-distillation.
+Therefore,althoughoptimizingtheCElossattheendofthe
+trainingphasecannotcontinueimprovingtheperformanceof
+BERT, self-distillation with ensemble BERT as the teacher
+willcontinuouslyenhancethegeneralizationandrobustness
+ofBERT.
+4.5 ModelPerformance
+Inthissection,weevaluateourproposedfine-tuningstrategies
+fortheBERT-baseandBERT-largemodelsontextclassifica-
+tionandNLItasks.
+EffectsonFine-tuningBERT-Base Table3showsthere-
+sultsoffine-tuningtheBERT-basemodelonfivetextclassi-
+ficationdatasetsandtwoNLIdatasets. ForensembleBERT,
+both the voted BERT (BERT ) and averaged BERT VOTE
+(BERT )outperformthesingleBERT(BERT ). The
+AVG BASE
+averageimprovementofBERT is5.44%(fortextclas-
+VOTE
+AG’s MNLI
+IMDb DBPedia YelpP. YelpF. SNLI
+Model News Avg.∆ (m/mm) Avg.∆
+TestErrorRate(%) Accuracy(%)
+ULMFiT[HowardandRuder,2018] 4.60 5.01 0.80 2.16 29.98 / / / /
+BERT [Sunetal.,2019]* 5.40 5.25 0.71 2.28 30.06 / / / /
+BASE
+BERT 5.80 5.71 0.71 2.25 30.37 - 90.7 84.6/83.3 -
+BASE
+BERT (K =4) 5.60 5.41 0.67 2.03 29.44 5.44% 91.2 85.3/84.4 5.50%
+VOTE
+BERT (K =4) 5.68 5.53 0.68 2.03 30.03 4.07% 90.8 85.1/84.2 3.24%
+AVG
+BERT (ours) 5.82 5.59 0.65 2.19 30.48 2.50% 90.8 84.2/83.3 -0.51%
+SE
+BERT (ours) 5.35 5.38 0.68 2.05 29.88 5.65% 91.2 85.3/84.3 5.30%
+SDV
+BERT (ours) 5.29 5.29 0.68 2.04 29.88 6.26% 91.2 85.0/84.3 4.65%
+SDA
+Table3: Effectsonfine-tuningtheBERT-basemodel(BERT ).‘*’indicatesusingextrafine-tuningstrategiesanddatapreprocessing.‘/’
+BASE
+meansnoavailablereportedresult.Weimplementeda“BERT ”withoutanyextrafine-tuningstrategyasourbaseline.“BERT ”
+BASE VOTE
+and“BERT ”meansensembleBERT(Seesection3.1). “BERT ”meansself-ensembleBERT(Seesection3.2). “BERT ”and
+AVG SE SDV
+“BERT ”meansself-distillationBERT(Seesection3.3).‘Avg.∆’meanstheaverageofrelativechange,respectively.Weboldthebetter
+SDA
+self-distillationresults.
+sification) and 5.50% (for NLI), while BERT follows andevaluatestrategyBERT ,namelyself-distillationwith
+AVG SDA
+closely with 4.07% and 3.24%. BERT outperforms averagedBERTasateacher.Wesettwodifferentteachersizes
+VOTE
+BERT onalltasks,whichadherestoourintuitionsince for comparison. As shown in Table 4, self-distillation also
+AVG
+BERT ismorecomplicated. getsasignificantgainwhilefine-tuningtheBERT-largemodel.
+VOTE
+Theself-ensembleBERT(BERT )hasaslightimprove- Ontwotextclassificationtasks, BERT-L (K = T −1)
+SE SDA
+mentinclassificationtasksof2.50%,butitdoesnotworkon gives better results and the average improvement is 7.02%.
+NLItasks. Thisisalsoareasonwhyweneedself-distillation ForNLItask, BERT-L (K = 1)givesbetterresultand
+SDA
+toimprovethebasemodels. theimprovementis6.59%.
+Overall,self-distillationmodelhassignificantimprovement Moreover,althoughourself-distillationfine-tuningstrategy
+on both classification and NLI tasks. Table 3 shows that doesnotleveragetheexternaldataorknowledge,italsogives
+BERT and BERT outperform BERT on all a comparable performance of MT-DNN [Liu et al., 2019a],
+SDA SDV BASE
+datasets. Generallyspeaking,BERT performsbetterthan whichfine-tunesBERTwithaspecificprojectionlayerunder
+SDA
+BERT ontextclassificationtaskswiththeimprovement themulti-tasklearningframework.
+SDV
+of 6.26% vs. 5.65%, but the latter performs better on NLI
+Discussion In general, BERT has a similar phe-
+tasks(BERT vs. BERT is4.65%vs. 5.30%). SDA
+SDA SDV nomenon compared to BERT , while having better
+SDV
+Ourproposedfine-tuningstrategiesalsooutperformthepre-
+computational and memory efficiency. Considering that
+viousmethodin[Sunetal.,2019]ontextclassificationtasks,
+BERT-L (K =1)issameasBERT-L (K =1),and
+SDA SDV
+whichmakesextensiveeffortstofindsophisticatedhyperpa-
+itperformsbetterthanBERT-L (K =T −1). TheSDA
+SDA
+rameters.
+modelsaregenerallyworsethanSDVmodelsonNLItasks.
+Alltheaboveillustratesthatparameteraveragingisworsethan
+logits voting when dealing with difficult tasks such as NLI,
+AG’s
+Model IMDb News Avg.∆ SNLI ∆ butbetteronsimpletaskssuchastextclassification.
+MT-DNN[Liuetal.,2019a] / / / 91.6 /
+5 Conclusion
+BERT-L
+4.98 5.45 - 90.9 -
+(ourimplementation)
+Inthispaper,weproposesimplebuteffectivefine-tuningstrate-
+BERT-L (K =1) 4.66 5.21 5.62% 91.5 6.59% giesforBERTwithoutexternalknowledgeordata. Specifi-
+SDA
+BERT-L SDA(K =T −1) 4.58 5.15 7.02% 91.4 5.49% cally,weintroducetwomechanisms: self-ensembleandself-
+distillation. The self-ensemble method with parameter av-
+Table4: Effectsonfine-tuningtheBERT-largemodel(BERT-L). eragingcanimproveBERTwithoutsignificantlydecreasing
+ForIMDbandAG’sNews,wereporttesterrorrate(%).ForSNLI, thetrainingefficiency. Withself-distillation,thestudentand
+wereportaccuracy(%).MT-DNNfine-tunesBERTwithmulti-task teacher models can benefit from each other. Our proposed
+learning.
+strategiesareorthogonaltotheapproacheswithexternaldata
+andknowledge. Therefore,webelievethatourstrategiescan
+Effects on Fine-tuning BERT-Large We also investigate befurtherboostedbymoresophisticatedhyperparametersand
+whether self-distillation has similar findings for the BERT- dataaugmentation.
+largemodel(BERT-L),whichcontains24Transformerlayers. Infuture,wewillinvestigateabetterfine-tuningstrategy
+Duetothelimitationofourdevices,weonlyconductanexper- byintegratingourproposedmethodintoanoptimizationalgo-
+imentontwotextclassificationdatasetsandoneNLIdatasets rithm.
+References ing.SIAMJournalonControlandOptimization,30(4):838–
+855,1992.
+[Bowmanetal.,2015] Samuel R. Bowman, Gabor Angeli,
+ChristopherPotts,andChristopherD.Manning. Alarge [Raffeletal.,2019] Colin Raffel, Noam Shazeer, Adam
+annotatedcorpusforlearningnaturallanguageinference. Roberts,KatherineLee,SharanNarang,MichaelMatena,
+InProceedingsoftheConferenceonEmpiricalMethodsin YanqiZhou,WeiLi,andPeterJ.Liu. Exploringthelimits
+NaturalLanguageProcessing,2015. oftransferlearningwithaunifiedtext-to-texttransformer.
+arXive-prints,2019.
+[Devlinetal.,2018] Jacob Devlin, Ming-Wei Chang, Ken-
+tonLee, andKristinaToutanova. BERT:Pre-trainingof [Rajpurkaretal.,2016] PranavRajpurkar,JianZhang,Kon-
+deepbidirectionaltransformersforlanguageunderstanding. stantinLopyrev,andPercyLiang. Squad: 100,000+ques-
+arXivpreprintarXiv:1810.04805,2018. tionsformachinecomprehensionoftext. arXivpreprint
+arXiv:1606.05250,2016.
+[Dongetal.,2019] LiDong,NanYang,WenhuiWang,Furu
+Wei,XiaodongLiu,YuWang,JianfengGao,MingZhou, [Sanhetal.,2019] VictorSanh,LysandreDebut,JulienChau-
+andHsiao-WuenHon. Unifiedlanguagemodelpre-training mond,andThomasWolf. DistilBERT,adistilledversionof
+fornaturallanguageunderstandingandgeneration. arXiv BERT:smaller,faster,cheaperandlighter. arXivpreprint
+preprintarXiv:1905.03197,2019. arXiv:1910.01108,2019.
+[Hintonetal.,2015] GeoffreyHinton,OriolVinyals,andJeff [SticklandandMurray,2019] AsaCooperSticklandandIain
+Dean. Distillingtheknowledgeinaneuralnetwork. arXiv Murray. BERTandPALs: Projectedattentionlayersfor
+preprintarXiv:1503.02531,2015. efficientadaptationinmulti-tasklearning. arXivpreprint
+arXiv:1902.02671,2019.
+[Houlsbyetal.,2019] NeilHoulsby,AndreiGiurgiu,Stanis-
+law Jastrzebski, Bruna Morrone, Quentin De Larous- [Sunetal.,2019] ChiSun,XipengQiu,YigeXu,andXuan-
+silhe, Andrea Gesmundo, Mona Attariyan, and Sylvain jingHuang. Howtofine-tuneBERTfortextclassification?
+Gelly. Parameter-efficienttransferlearningforNLP. arXiv arXivpreprintarXiv:1905.05583,2019.
+preprintarXiv:1902.00751,2019. [TarvainenandValpola,2017] Antti Tarvainen and Harri
+[HowardandRuder,2018] Jeremy Howard and Sebastian Valpola. Mean teachers are better role models: Weight-
+Ruder. Universallanguagemodelfine-tuningfortextclas- averagedconsistencytargetsimprovesemi-superviseddeep
+sification. arXivpreprintarXiv:1801.06146,2018. learning results. In Advances in neural information pro-
+cessingsystems,pages1195–1204,2017.
+[Jiaoetal.,2019] Xiaoqi Jiao, Yichun Yin, Lifeng Shang,
+[Vaswanietal.,2017] AshishVaswani,NoamShazeer,Niki
+Xin Jiang, Xiao Chen, Linlin Li, Fang Wang, and Qun
+Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez,
+Liu. TinyBERT:DistillingBERTfornaturallanguageun-
+derstanding. arXivpreprintarXiv:1909.10351,2019. ŁukaszKaiser,andIlliaPolosukhin. Attentionisallyou
+need. InAdvancesinNeuralInformationProcessingSys-
+[LaineandAila,2016] SamuliLaineandTimoAila. Tempo-
+tems,pages5998–6008,2017.
+ralensemblingforsemi-supervisedlearning.arXivpreprint
+[Williamsetal.,2018] AdinaWilliams,NikitaNangia,and
+arXiv:1610.02242,2016.
+SamuelBowman. Abroad-coveragechallengecorpusfor
+[Liuetal.,2019a] Xiaodong Liu, Pengcheng He, Weizhu sentenceunderstandingthroughinference. InProceedings
+Chen, and Jianfeng Gao. Multi-task deep neural net- oftheConferenceoftheNorthAmericanChapteroftheAs-
+worksfornaturallanguageunderstanding. arXivpreprint sociationforComputationalLinguistics:HumanLanguage
+arXiv:1901.11504,2019.
+Technologies,pages1112–1122,2018.
+[Liuetal.,2019b] Yinhan Liu, Myle Ott, Naman Goyal, [Yangetal.,2019] Zhilin Yang, Zihang Dai, Yiming Yang,
+JingfeiDu,MandarJoshi,DanqiChen,OmerLevy,Mike JaimeCarbonell,RussRSalakhutdinov,andQuocVLe.
+Lewis,LukeZettlemoyer,andVeselinStoyanov.RoBERTa: XLNet: Generalized autoregressive pretraining for lan-
+ArobustlyoptimizedBERTpretrainingapproach. arXiv guageunderstanding. InAdvancesinNeuralInformation
+preprintarXiv:1907.11692,2019. ProcessingSystems32,pages5754–5764,2019.
+[Maasetal.,2011] Andrew L Maas, Raymond E Daly, Pe- [Zhangetal.,2015] XiangZhang,JunboZhao,andYannLe-
+terTPham,DanHuang,AndrewYNg,andChristopher Cun. Character-levelconvolutionalnetworksfortextclas-
+Potts. Learning word vectors for sentiment analysis. In sification. InAdvancesinneuralinformationprocessing
+Proceedingsoftheannualmeetingoftheassociationfor systems,pages649–657,2015.
+computationallinguistics: Humanlanguagetechnologies,
+pages142–150,2011.
+[Petersetal.,2019] Matthew Peters, Sebastian Ruder, and
+Noah A Smith. To tune or not to tune? adapting pre-
+trained representations to diverse tasks. arXiv preprint
+arXiv:1903.05987,2019.
+[PolyakandJuditsky,1992] BorisTPolyakandAnatoliBJu-
+ditsky. Accelerationofstochasticapproximationbyaverag-

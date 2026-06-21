@@ -1,0 +1,369 @@
+BIBERT-Pipe on Biomedical Nested Named Entity Linking
+at BioASQ 2025⋆
+NotebookfortheMSMLabatCLEF2025
+ChunyuLi1,*,†, XindiZheng1,† and SiqiLiu1,†
+1IndividualResearcher
+Abstract
+Entitylinking(EL)forbiomedicaltextistypicallybenchmarkedonEnglish-onlycorporawithflatmentions,
+leavingthemorerealisticscenarioofnested andmultilingual mentionslargelyunexplored. Wepresentour
+systemfortheBioNNE2025MultilingualBiomedicalNestedNamedEntityLinkingsharedtask(English
+&Russian),closingthisgapwithalightweightpipelinethatkeepstheoriginalELmodelintactandmodifies
+onlythreetask-alignedcomponents:Two-stageretrieval-ranking.Weleveragethesamebaseencodermodel
+inbothstages:theretrievalstageusestheoriginalpre-trainedmodel,whiletherankingstageappliesdomain-
+specificfine-tuning.Boundarycues.Intherankingstage,wewrapeachmentionwithlearnable [Ms]/
+[Me]
+tags,providingtheencoderwithanexplicit,language-agnosticspanbeforerobustnesstooverlapandnesting.
+Datasetaugmentation.Wealsoautomaticallyexpandtherankingtrainingcorpuswiththreecomplementary
+datasources, enhancingcoveragewithoutextramanualannotation. OntheBioNNE2025leaderboard, our
+two stage system, bilingual bert (BIBERT-Pipe), ranks third in the multilingual track, demonstrating the
+effectivenessandcompetitivenessoftheseminimalyetprincipledmodifications.Codearepubliclyavailableat
+https://github.com/Kaggle-Competitions-Code/BioNNE-L.
+Keywords
+Biomedicalentitylinking,Bilingual
+1. Introduction
+Biomedical entity linking (BEL) – also known as named entity normalization or grounding – is the
+taskofmappingentitymentionsinthetexttoentriesinareferenceknowledgebase. Inthebiomedical
+domain,ELplaysavitalroleintextminingbystandardizingmentionsofdiseases,genes,drugs,and
+otherentitiestocanonicalidentifiers[1]. Thisnormalizationresolvessynonymyandambiguity: for
+example,theabbreviation“WSS”couldrefertoWrinklySkinSyndromeorWeaver-SmithSyndrome,
+andlinkingittothecorrectconceptIDdisambiguatestheintendedmeaning[2]. Bygroundingmentions
+toKBconcepts(e.g.,UMLSorWikidataentries),ELenableseffectiveinformationintegration,improves
+literature search (e.g., concept-based PubMed indexing), and facilitates downstream tasks such as
+relationextractionandquestionanswering.
+While early BEL research has made significant progress in English-only settings with flat (non-
+overlapping)mentions,real-worldbiomedicaldocumentsoftenexhibitnestedentities andappearin
+multiplelanguages—posingpersistentchallengesthatremainunder-addressed.
+Nestedmentions—whereoneentityisembeddedwithinoroverlapsanother—areprevalentinbiomed-
+icalliterature. Forexample,in“EGFRexon19deletionmutation”,theterms“EGFR” and“exon19deletion”
+refer to distinct concepts, both requiring normalization. Ignoring nested structures can lead to in-
+completeorincorrectlinking. Meanwhile,theincreasingvolumeofbiomedicaltextinnon-English
+CLEF2025WorkingNotes,9–12September2025,Madrid,Spain
+⋆Youcanusethisdocumentasthetemplateforpreparingyourpublication.Werecommendusingthelatestversionofthe
+ceurartstyle.
+*Correspondingauthor.
+†Theseauthorscontributedequally.
+$li.chunyu0412@gmail.com(C.Li);xindizhe@gmail.com(X.Zheng);liusiqisq0412@163.com(S.Liu)
+(cid:128)https://eeyorelee.github.io/(C.Li);https://github.com/momoxia(X.Zheng);https://github.com/cmwls(S.Liu)
+(cid:26)0009-0000-3036-0275(C.Li);0009-0007-0974-788X(X.Zheng);0009-0001-0372-7155(S.Liu)
+©2025Copyrightforthispaperbyitsauthors.UsepermittedunderCreativeCommonsLicenseAttribution4.0International(CCBY4.0).
+languageshighlightstheimportanceofmultilingualBEL.Studieshaveshownthatmodelstrainedin
+EnglishexhibitsignificantperformancedropswhenappliedtolanguageslikeSpanishorRussian[3,4].
+Severaltechnicalbarriersexacerbatethesechallenges: (i)thelackofannotatedmultilingualdata,
+especiallyinlow-resourcebiomedicallanguages;(ii)inconsistenciesinconceptcoverageacrosslan-
+guagesinknowledgebases;and(iii)theinherentambiguityandgranularityofbiomedicalterminology.
+ExistingELpipelinesaretypicallynotequippedtohandlethesecomplexitiessimultaneously.
+Inthispaper,weproposealightweight,encoder-agnosticpipelineformultilingual,nestedbiomedical
+EL.Ourmethodintroducesthreekeyenhancements: (i)atwo-stageretrieval-rankingstrategythat
+leveragesthesamebaseencodermodel,wheretheretrievalstageutilizestheoriginalpre-trainedmodel
+and the ranking stage benefits from contrastive learning training; (ii) boundary cue tagging, using
+learnabletokens( / )toexplicitlyencodespanboundaries,enablingrobustmodelingofnested
+[Ms] [Me]
+mentions; and (iii) dataset augmentation by incorporating additional complementary data sources,
+enrichingtrainingcoveragewithoutrequiringmanualannotation. Ourapproachmaintainstheoriginal
+ELmodelarchitecturewhilesignificantlyimprovingrobustnessacrosslanguagesandnestedspans. It
+canbeseamlesslyintegratedwithseveralbiomedicalencoders(e.g.,BioLinkBERT[5],SapBERT[6])
+andadaptedtomultilingualscenarioswithminimaloverhead.
+OursystemachievedthirdplaceintheBioNNE-L2025multilingualtrack[7],demonstratingthatour
+proposedtechniques—two-stageretrievalranking,boundarycuetagging,anddataaugmentation—are
+notonlylightweightandeffectivebutalsohighlygeneralizable. Theycanbeseamlesslyappliedtoa
+varietyofbaseencodersandreadilyintegratedintomultilingualbiomedicalELsystems. Thishighlights
+thepracticalvalueofourapproachforbuildingrobust,scalablesolutionstocross-lingualentitylinking
+tasks.
+2. Task Overview
+Tofurtheradvanceresearchinbiomedicalentitylinking,BioASQ2025[8]holdsatask,BioNNE-L[7]:
+NestedNERinRussianandEnglish. TheBioNNE-LsharedtaskfocusesonNLPchallengesinentity
+linking,alsoknownasmedicalconceptnormalization(MCN),forEnglishandRussianlanguages. The
+goalistomapbiomedicalentitymentionstoacomprehensivesetofmedicalconceptnamesandtheir
+conceptuniqueidentifiers(Cuis)fromtheUMLS.Thetrain,dev,andtestdatasetsincludementionsof
+disorders,anatomicalstructures,andchemicals,allmappedtoconceptsfromtheUMLS.TheBioNNE-L
+taskutilizestheMCNannotationoftheNEREL-BIOdataset[9],whichprovidesannotatedmentionsof
+disorders,anatomicalstructures,chemicals,diagnosticprocedures,andbiologicalfunctions.
+Figure1: ExampleofnestednamedentitiesinNEREL-BIO.TheEnglishphrase“isolatedbronchusresection
+forcentralcancer” isannotatedwithoverlappingspans: theouterspan(magenta)isadiagnosticprocedure
+(medproc);insideit,thetokenbronchusisananatomicalstructure(yellow,anatomy),whileresectionisagaina
+procedure(magenta,medproc).Aseparateright-handbranchshowsthephrasecentralcancer,whereboththe
+fullspanandthenestedcorecancer arelabelledasadisease(cyan,diso).Thisillustratesthetwochallengesof
+thetask:nesting(entitiescontainedwithinentities)andfine-grained,type-specificnormalisation.
+3. Related Work
+MultilingualBiomedicalEntityLinking. MultilingualBELisanincreasinglyimportantresearch
+direction due to the global nature of biomedical literature. Traditional approaches often rely on
+translation to English prior to linking, but this can introduce noise and domain mismatch [4]. To
+overcometheselimitations,recentworkhasfocusedoncross-lingualencodersandalignmenttechniques.
+SapBERT [6] uses self-alignment pretraining with UMLS synonym pairs across languages to learn
+language-agnosticbiomedicalembeddings. GuvenandLamurias[3]studybi-encodermodelsonEnglish
+andSpanishcorporaandhighlightpersistentperformancegapsonnon-Englishdatasets.
+Nested Mention Normalization. Nested named entities are a known challenge for EL systems.
+StandardELmodelsoftenassumeflatmentionboundariesandcannotresolveoverlappingentities. The
+MCNdataset[9]extendsentitylinkingtonestedmentionsinbothEnglishandRussian,providingavalu-
+ablebenchmark. However,fewELsystemsexplicitlymodelnestedmentions. Somerecentwork,suchas
+Con2GEN[10]addressesmultilingualbiomedicalentitylinkingusingageneration-basedapproachwith
+predefinedprompts,effectivelycapturingdependenciesbetweenmentionsandconcepts. However,such
+generativemethodsmayinvolveincreasedmodelcomplexityandcomputationalresourcescompared
+todiscriminativeapproaches.
+ContrastiveandGraph-BasedLearning. Contrastivelearninghasproveneffectiveforbiomedical
+EL,particularlyinbi-encoderarchitectures. GEBERT[11]combinesaTransformerwithagraphneural
+encoderovertheUMLSknowledgegraph. Italignsgraphnodeembeddingswithtextualdescriptions
+throughnode-textcontrastivelearning. BERGAMOT[12]extendsthiswithmultiplecontrastivelosses
+andmultilingualpretraining,improvinggeneralizationacrosslanguagesanddomains. SapBERT[6]
+trainswithanInfoNCElosstoalignmentionandconceptrepresentations.BERGAMOT[12]extendsthis
+withmultilingualgraph-basedcontrastivelearning,incorporatingontologystructure. Con2GEN[10]
+instead adoptsa controllablegeneration strategy tobridge mention-conceptalignment usingcross-
+lingualtemplates. Whilethesemethodsdemonstratestrongresults,theyoftenrequirecomplextraining
+setupsorextensivegraphpreprocessing.
+LargeLanguageModels. LLMslikeChatGPTandGPT-4havebeentestedonbiomedicalentity
+linktasks[13]. Whileflexible,theyoftenunderperformdomain-specificfine-tunedmodelsincomplex
+scenarios [14]. Instructiontuningandpromptengineeringhavebeenexploredtoclosethisgap[15],
+butperformanceisstilllimitedwithouttask-specificadaptation.
+OurContribution. Incontrasttopriorwork,ourmethodisefficientandexplicitlydesignedforboth
+multilingualityandnesting. Itrequiresnoarchitecturalchangetotheencoderandiscompatiblewith
+anytransformer-basedbiomedicalmodel. Ouruseofspanboundarycuesprovidesstrongsupervision
+fornestedandcross-linguallinking,whiledatasetaugmentationfurtherimprovesaccuracy.
+4. Method
+Ourapproachfollowsatwo-stageparadigm:(i)denseretrievaltoobtainasmallsetofplausibleconcepts
+for each mention, and (ii) cross–encoder ranking to pick the best concept. Although the backbone
+encodermayvary,thesurroundingpipelineremainsunchangedandisillustratedinFigure2.
+4.1. FormalDefinition
+Let𝒦 = {𝑐 ,...,𝑐 }beabiomedicalknowledgebasewhoseentriesarerepresentedbycanonical
+1 |𝒦|
+namesandconceptuniqueidentifiers(Cuis). Givenadocument𝐷 writteninlanguageℓ∈{en,ru}
+thatcontainsasetof(possiblynested)entitiesmentionedinℳ(𝐷) = {𝑚 ,...,𝑚 },Thegoalisto
+1 𝑁
+findamapping
+Φ : (𝑚 ,𝐷,ℓ) −→ 𝑐⋆ ∈ 𝒦, 1 ≤ 𝑖 ≤ 𝑁,
+𝑖
+where𝑐⋆ denotestheconceptthatissemanticallyequivalent tothesurfaceformof𝑚 initscontext.
+𝑖
+WefactorΦintotwocomponents:
+Retrieval: 𝑓ret(𝑚 𝑖,𝐷,ℓ) −→ 𝐶
+𝑖
+= ⟨︀ 𝑐1 𝑖,...,𝑐𝑘 𝑖⟩︀ , (1)
+Rank: 𝑓rank(︀ 𝑚 𝑖,𝐷,𝐶 𝑖,ℓ)︀ −→ 𝑐ˆ
+𝑖
+∈ 𝐶 𝑖, (2)
+where𝑘≪|𝒦|(weuse𝑘 = 10). Let𝑐⋆ bethegoldconceptformention𝑚 . Wereport:
+𝑖 𝑖
+𝑁 𝑁
+Acc@1 = 1 ∑︁ 1[︀ 𝑐ˆ = 𝑐⋆]︀ , Acc@𝑘 = 1 ∑︁ 1[︀ 𝑐⋆ ∈ Top-𝑘(𝜋ˆ )]︀ , 𝑘 ∈ {5,10},
+𝑁 𝑖 𝑖 𝑁 𝑖 𝑖
+𝑖=1 𝑖=1
+where𝜋ˆ istheranker–sortedlistofthe𝑘 retrievalcandidatesforthe𝑖-thmention. Thus,therank
+𝑖
+stagesimplyre-ordersthe10candidatesreturnedbytheretrievalstage,andweevaluatewhetherthe
+goldconceptappearswithinthefirst𝑘 positions.
+4.2. Framework
+Retrievalstage. Weexperimentwithfivepubliclyavailablebiomedicalencoders,includingBioLink-
+BERT [5] and BiomedBERT [16]( abstract/fulltext, bert-base-uncased). For every mention, we
+wrap its span with our boundary cues and , encode the sequence, and compute a cosine
+[Ms] [Me]
+similaritytoallconceptrepresentationsin𝒦.1
+Figure2: Pipelineofourrankstage. (a)Listwise–the𝑘 candidatesreturnedbytheretrievalstageare
+concatenated afterthe [SEP]token( [ST0]... [ST𝑘−1]),soasingleforwardpassoftheencoderproduces𝑘
+logits,oneforeachcandidate.(b)ContrastiveLearning–eachcandidateispairedwiththementioncontext
+inanindependentinputsequence;theencoderisapplied𝑘timesandoutputsabinarylogitforeverycandidate
+individually.
+1Conceptvectorsarepre-computedonceperencoder.
+Rankstage. Aftertheretrievalstage,weneedtoranktheCuis. Inparticular,webuildourranking
+modelwithoutextramodelmodification. Itisefficienttotraintherankmodelwiththeretrievalmodel.
+Weusetwotypesofarchitecturetofeedkcandidatesfromtheretrievalstage:
+1. Listwise(LTR)(Figure2a): the𝑘 candidates⟨𝑐1...𝑐𝑘⟩areconcatenatedafterthe [SEP]token;
+𝑖 𝑖
+Oneforwardpassyields𝑘 logitsz∈R𝑘 trainedwithalistwisesoftmarginloss.
+2. ContrastiveLearning(CL) (Figure2b): Eachcandidateispairedwiththementioncontextand
+processedindependently;everypassproducesabinaryscore𝑧∈Roptimizedbycross-entropy.
+SincetheLTRschemeprocessesall𝑘candidatesinasingleforwardpass,whiletheCLschemehandles
+only one candidate per pass, the CL scheme inherently requires 𝑘 times more computation during
+both training and inference. Despite costing 𝑘 times more computation, the CL scheme eliminates
+cross-candidateinterference. Obviously, eachforwardpassevaluatesasinglecandidateagainstthe
+mentioncontext, reducingtheproblemtoanindependentbinarydecisionthatthemodelcanlearn
+moreeasily.
+4.3. DataAugmentation.
+Considering the limit of the training set, we also add additional dataset for the RU and BI tracks,
+includingMedMentions[17],amanuallyannotatedresourcefortherecognitionofEnglishbiomedical
+concepts,andMCN[9],anoveldatasetfornestedentitylinkinginRussian. Wereformatthesetwo
+datasetstosuitthecompetitionandonlykeepthethreeentitytypes: (i)Disease(DISO),(ii)Chemical
+(CHEM),(iii)Anatomy(ANATOMY).
+5. Experiment
+Datasets. Wefollowtheofficial BioNNE 2025split: thetrainsetwithextradatasetisfortrainingthe
+model,thedevelopmentset isusedformodelselection;theevaluationset iskeptblindforfinalranking.
+Wesettheretrievalnumbersto𝑘 = 10. ThebasedatasetofthistaskisNEREL-BIO [18].
+Metrics. ForretrievalwereportAcc@𝑘;forrankingweusethecross-validatedAcc@1(CVAcc)on
+thedevelopmentfolds. Finalleaderboardnumbersaretheorganisers’Acc@1onthehiddenevaluation
+set.
+5.1. RetrieveStage
+Table1comparessixoff-the-shelfbiomedicalencodersinthreetracks. OntheEnglishtrack,SapBERT–
+PubMedBERT (fulltext) gives the strongest Acc@1 = 0.6115, while its mean-token pooling vari-
+ant slightly improves the recall (Acc@10 = 0.8184). Russian retrieval is notably harder: even Sap-
+BERT–XLMR–large reaches only 0.5103 Acc@1. The bilingual runs averages those behaviours,
+yielding0.5389Acc@1atbest. Thesenumbersindicatethattheretrievalmodulealreadyplacesthe
+gold concept within the top-10 for more than 80%(EN) and more than 75%(BI) of mentions, leaving
+amplehead-roomforaranker.
+5.2. RankStage
+Fortherankingphasewekeepthebestretrieverforeachtrack: SapBERT–PubMedBERT(mean-
+token)forEnglish,andSapBERT–UMLS–XLMR(large)forboththeRussianandBilingualtracks.
+Table2analysestwocross-encoderarchitecturesontheEnglishdevset. TheListwise, although
+computationallycheap(oneforwardpass),plateausat0.5918CVAcc. SwitchingtotheCLdesign—i.e.
+anindependentbinarydecisionpercandidate—raisesaccuracyto0.6604whenadditionalMedMentions
+are used. Weattribute thegain totwo factors: (i)candidates no longercompete insidethe softmax,
+Table1
+Retrieval accuracy (Acc@k) of base encoders on the development sets for English (EN), Russian (RU), and
+Bilingual(BI).
+Model Acc@1 Acc@5 Acc@10
+English(EN)devset
+GEBERT 0.5898 0.7654 0.7979
+BioLinkBERT-large 0.4270 0.6030 0.6210
+BioLinkBERT-base 0.4720 0.6530 0.6710
+SapBERT–PubMedBERT(fulltext) 0.6115 0.7698 0.8043
+SapBERT–PubMedBERT(mean-token) 0.6038 0.7723 0.8184
+Russian(RU)devset
+SapBERT-UMLS-XLMR(base) 0.4914 0.5497 0.5686
+SapBERT-UMLS-XLMR(large) 0.5103 0.5613 0.5763
+Bilingual(BI)devset
+SapBERT-UMLS-XLMR(base) 0.5197 0.7021 0.7331
+SapBERT-UMLS-XLMR(large) 0.5389 0.7171 0.7500
+thusreducinginterference,and(ii)thebinaryobjectiveissimpler,allowingthemodeltospecialiseon
+fine-grainedlexicalcues.
+BilingualresultsinTable3confirmthetrend. IncorporatingMedMentionsandtheMCNdatasetadds
+afurther0.7–2.4pponRussianandbilingualtracks,butEnglishstillbenefitsthemost(+6.9pp).
+Table2
+RankresultsontheEnglish(EN)track.Thecandidatesetproducedbytheretrievalstageisidentical
+forallsystems(Acc@1=0.6115,Acc@5=0.7698,Acc@10=0.8043);wethereforereportonlythe
+cross-validatedaccuracy(CVAcc)ofeachranker.“Listwise”vs.“CL”denotestwodifferentarchitectures.
+Foralloftheexperimentsinthistable,theposttrainingepochforrankingis5,andthelearningrateis
+chosenfrom7e-6or1e-5.
+BaseModel CVAcc Approach TrainingData/𝑘
+BioLinkBERT-base 0.5871 LTR train,𝑘=5
+BioLinkBERT-large 0.5699 LTR train,𝑘=5
+BERT-base-uncased 0.5683 LTR train,𝑘=5
+BiomedBERT-abstract 0.5871 LTR train,𝑘=5
+BiomedBERT-abstract 0.5918 CL train,𝑘=5
+BiomedBERT-abstract 0.6604 CL MedMentions+train,𝑘=5
+KRISSBERT 0.6576 CL MedMentions+train,𝑘=5
+BiomedBERT-fulltext 0.6536 CL MedMentions+train,𝑘=5
+BiomedBERT-fulltext 0.6532 CL MedMentions+train,𝑘=10
+Table3
+RankstageresultsonEnglish(EN),Russian(RU),andBilingual(BI)tracks.Detailsincludethetraining
+datasetfortherankstage.Forallofexperimentsofthistable,thefurthertrainingepochforrankingis5
+andthelearningrateischosenfrom7e-6or1e-5.
+BaseModel Lang CV(Acc) Approach Details
+BiomedNLP-BiomedBERT-base-uncased-abstract EN 0.5918 CL train
+BiomedNLP-BiomedBERT-base-uncased-abstract EN 0.6604 CL train+MedMentions
+SapBERT-XLMR-large RU 0.6131 CL train
+SapBERT-XLMR-large RU 0.6204 CL train+MedMentions+MCN,
+SapBERT-XLMR-large BI 0.6083 CL train
+SapBERT-XLMR-large BI 0.6319 CL train+MedMentions+MCN
+5.3. Finalresult
+Table4summarisesleaderboardscores. OurbestsubmissionsSapBERT-XLMR-large+MedMentions
++MCNforRU/BI,andBiomedBERT-abstract+MedMentionsforENachieve0.6497,0.6370and
+0.6370Acc@1onRU,BIandEN,respectively,rankingthirdoverallinthebilingualtrack.
+Table4
+FinalresultsonEnglish(EN),Russian(RU),andBilingual(BI)tracksonevaluationdataset.Forallof
+experimentofthistable,thefurthertraininglearningrateischosenfrom7e-6or1e-5.
+BaseModel Lang Acc Approach Details
+BiomedBERT-abstract EN 0.6197 CL MedMentions+train,epoch=2
+BiomedBERT-abstract EN 0.6273 CL MedMentions+train+dev,epoch=2
+SapBERT-XLMR-large EN 0.6370 CL train+MedMentions+dev,epoch=1
+SapBERT-XLMR-large RU 0.6452 CL train,epoch=5
+SapBERT-XLMR-large RU 0.6497 CL train+MedMentions+MCN+dev,epoch=5
+SapBERT-XLMR-large BI 0.6229 CL train,epoch=1
+SapBERT-XLMR-large BI 0.6342 CL train+MedMentions+MCN+dev,epoch=1
+6. Ablation Study
+6.1. BoundaryCues
+Toassessthecontributionofboundarycues,wealsoperformanablationstudyTable5onboundary
+cues,knownasspecialtokens[Ms]and[Me],whichindicatethestartandendofthetargetentity. The
+improvementismostpronouncedontheRussian(RU)track,wheretheAcc@1increasesby6.60%. We
+attributethistotherichermorphologyofRussian: theexplicit / markershelpthemodelto
+[Ms] [Me]
+delineateentityspansthatmayotherwisebeobscuredbyinflectionalendings. FortheEnglish(EN)and
+theBilingual(BI)setting,thegainsaremoremodest1.20%and1.24%,respectively-butstillpositive,
+confirmingthatboundaryinformationremainsbeneficialeveninlanguageswitharelativelysimpler
+morphology.
+Table5
+AblationstudyontheeffectofboundarycuesfortheEnglish(EN),Russian(RU),andBilingual(BI)
+tracks of the evaluation set. All experiments are conduct with the same hyper-parameters on the
+SapBERT-XLMR-largebasemodel;theonlydifferenceiswhethertheboundary-cuetokensareincluded.
+PerformanceisreportedusingAcc@1,consistentwithourearlierexperiments.
+Lang w/[Ms]and[Me] w/o[Ms]and[Me] Gain
+EN 0.6370 0.6292 0.0078(1.24%)
+RU 0.6497 0.6095 0.0402(6.60%)
+BI 0.6342 0.6267 0.0075(1.20%)
+7. Conclusion
+We present a simple yet effective two–stage pipeline for the BioNNE 2025 Bilingual Nested Entity
+Linkingtask. Keepingthebaseencoderuntouched,weobtainedcompetitiveperformancebyaddressing
+threetask-specificbottlenecks: (i)explicitmentionboundarycues( )indicatingtheposition
+[Ms]/[Me]
+ofmention,(ii)efficientrankarchitecturedesignforrankingmentionand(iii)dataaugmentationwith
+MedMentions/MCNboostingthefinalresult. Ontheofficialleaderboardoursystemranks3rd inBI
+track,withAcc@1of0.637(BI),whiletrainingonasingleNvidia3090.
+8. Declaration on Generative AI
+During the preparation of this work, the authors used ChatGPT and Grammarly, to: Grammar and
+spellingcheck,paraphrase,andminortranslation. Afterusingthesetools,theauthorsreviewedand
+editedthecontentasneededandassumefullresponsibilityforthecontentofthepublication.
+References
+[1] E.French,B.T.McInnes, Anoverviewofbiomedicalentitylinkingthroughouttheyears, Journal
+ofbiomedicalinformatics137(2023)104252.
+[2] S.Garda,U.Leser, Belhd: Improvingbiomedicalentitylinkingwithhomonymdisambiguation,
+Bioinformatics39(2023)btad698.doi: .
+10.1093/bioinformatics/btad698
+[3] Z.A.Guven,A.Lamurias, Multilingualbi-encodermodelsforbiomedicalentitylinking, Expert
+Systems40(2023)e13388.
+[4] F.Liu,I.Vulić,A.Korhonen,N.Collier, Learningdomain-specialisedrepresentationsforcross-
+lingualbiomedicalentitylinking, arXivpreprintarXiv:2105.14398(2021).
+[5] M.Yasunaga,J.Leskovec,P.Liang, Linkbert: Pretraininglanguagemodelswithdocumentlinks,
+in: AssociationforComputationalLinguistics(ACL),2022.
+[6] F.Liu,E.Shareghi,Z.Meng,M.Basaldella,N.Collier, Self-alignmentpretrainingforbiomedical
+entityrepresentations, in: Proceedingsofthe2021ConferenceoftheNorthAmericanChapterof
+theAssociationforComputationalLinguistics: HumanLanguageTechnologies,2021,pp.4228–
+4238.URL:https://aclanthology.org/2021.naacl-main.334/.
+[7] A. Sakhovskiy, N. Loukachevitch, E. Tutubalina, Overview of the BioASQ BioNNE-L Task on
+BiomedicalNestedEntityLinkinginCLEF2025, in: G.Faggioli,N.Ferro,P.Rosso,D.Spina(Eds.),
+CLEF2025WorkingNotes,2025.
+[8] A.Nentidis,G.Katsimpras,A.Krithara,M.Krallinger,M.Rodríguez-Ortega,E.Rodriguez-López,
+N.Loukachevitch,A.Sakhovskiy,E.Tutubalina,D.Dimitriadis,G.Tsoumakas,G.Giannakoulas,
+A. Bekiaridou, A. Samaras, G. M. Di Nunzio, N. Ferro, S. Marchesin, M. Martinelli, G. Silvello,
+G.Paliouras,OverviewofBioASQ2025:ThethirteenthBioASQchallengeonlarge-scalebiomedical
+semantic indexing and question answering, in: J. Carrillo-de Albornoz, J. Gonzalo, L. Plaza,
+A. García Seco de Herrera, J. Mothe, F. Piroi, P. Rosso, D. Spina, G. Faggioli, N. Ferro (Eds.),
+ExperimentalIRMeetsMultilinguality,Multimodality,andInteraction.ProceedingsoftheSixteenth
+InternationalConferenceoftheCLEFAssociation(CLEF2025),2025.
+[9] N.Loukachevitch,S.Manandhar,E.Baral,I.Rozhkov,P.Braslavski,V.Ivanov,T.Batura,E.Tu-
+tubalina, NEREL-BIO:ADatasetofBiomedicalAbstractsAnnotatedwithNestedNamedEntities,
+Bioinformatics(2023).doi: ,btad161.
+10.1093/bioinformatics/btad161
+[10] T.Zhu,Y.Qin,Q.Chen,X.Mu,C.Yu,Y.Xiang, Controllablecontrastivegenerationformultilingual
+biomedicalentitylinking, in:Proceedingsofthe2023ConferenceonEmpiricalMethodsinNatural
+LanguageProcessing,2023,pp.5742–5753.
+[11] A.Sakhovskiy,N.Semenova,A.Kadurin,E.Tutubalina, Graph-enrichedbiomedicalentityrepre-
+sentationtransformer, in: InternationalConferenceoftheCross-LanguageEvaluationForumfor
+EuropeanLanguages,Springer,2023,pp.109–120.
+[12] A.Sakhovskiy,N.Semenova,A.Kadurin,E.Tutubalina, Biomedicalentityrepresentationwith
+graph-augmentedmulti-objectivetransformer, in: FindingsoftheAssociationforComputational
+Linguistics: NAACL2024,2024,pp.4626–4643.
+[13] I.Jahan,M.T.R.Laskar,C.Peng,J.Huang,EvaluationofChatGPTonbiomedicaltasks:Azero-shot
+comparison with fine-tuned generative transformers, in: D. Demner-Fushman, S. Ananiadou,
+K.Cohen(Eds.),Proceedingsofthe22ndWorkshoponBiomedicalNaturalLanguageProcessing
+andBioNLPSharedTasks,AssociationforComputationalLinguistics,Toronto,Canada,2023,pp.
+326–336.URL:https://aclanthology.org/2023.bionlp-1.30/.doi:
+10.18653/v1/2023.bionlp-1.
+.
+30
+[14] Q.Chen,Y.Hu,X.Peng,Q.Xie,Q.Jin,A.Gilson,M.B.Singer,X.Ai,P.-T.Lai,Z.Wang,V.K.Keloth,
+K.Raja,J.Huang,H.He,F.Lin,J.Du,R.Zhang,W.J.Zheng,R.A.Adelman,Z.Lu,H.Xu, Bench-
+markinglargelanguagemodelsforbiomedicalnaturallanguageprocessingapplicationsandrec-
+ommendations, NatureCommunications16(2025)3280.doi: .
+10.1038/s41467-025-56989-2
+[15] Y. Ding, Q. Zeng, T. Weninger, ChatEL: Entity linking with chatbots, in: Proceedings of the
+2024 Joint International Conference on Computational Linguistics, Language Resources and
+Evaluation (LREC-COLING 2024), ELRA and ICCL, Torino, Italia, 2024, pp. 3086–3097. URL:
+https://aclanthology.org/2024.lrec-main.275/.
+[16] Y. Gu, R. Tinn, H. Cheng, M. Lucas, N. Usuyama, X. Liu, T. Naumann, J. Gao, H. Poon,
+Domain-specificlanguagemodelpretrainingforbiomedicalnaturallanguageprocessing,2020.
+.
+arXiv:arXiv:2007.15779
+[17] S.Mohan,D.Li,Medmentions: Alargebiomedicalcorpusannotatedwithumlsconcepts,2019.
+URL:https://arxiv.org/abs/1902.09476. .
+arXiv:1902.09476
+[18] N.Loukachevitch,A.Sakhovskiy,E.Tutubalina, Biomedicalconceptnormalizationovernested
+entitieswithpartialUMLSterminologyinRussian, in: Proceedingsofthe2024JointInternational
+ConferenceonComputationalLinguistics,LanguageResourcesandEvaluation(LREC-COLING
+2024), ELRA and ICCL, Torino, Italia, 2024, pp. 2383–2389. URL: https://aclanthology.org/2024.
+lrec-main.213/.

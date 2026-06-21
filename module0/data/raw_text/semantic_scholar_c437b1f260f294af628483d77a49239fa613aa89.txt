@@ -1,0 +1,381 @@
+PnG BERT: Augmented BERT on Phonemes and Graphemes for Neural TTS
+YeJia, HeigaZen, JonathanShen, YuZhang, YonghuiWu
+GoogleResearch
+{jiaye,heigazen,jonathanasdf,ngyuzh,yonghui}@google.com
+Abstract it may not fully exploit phoneme-grapheme relationships be-
+causeofthesimplearchitectureoftheattentionmechanism.
+This paper introduces PnG BERT, a new encoder model for Self-supervised pre-training on large text corpora, using
+neuralTTS.ThismodelisaugmentedfromtheoriginalBERT languagemodel(LM)ormasked-languagemodel(MLM)ob-
+model,bytakingbothphonemeandgraphemerepresentations jectives, has proven to be successful in natural language pro-
+of text as input, as well as the word-level alignment between cessinginthepastdecade. Suchpre-traininghasbeenapplied
+them. It can be pre-trained on a large text corpus in a self- to TTS for improving the performance both in low-resource
+supervisedmanner,andfine-tunedinaTTStask. Experimen- scenarios [19] and high-resource scenarios [20–22], by us-
+tal results show that a neural TTS model using a pre-trained ing embeddings at subword-level [20,21], word-level [19], or
+PnG BERT as its encoder yields more natural prosody and sentence-level [21,22]. Among the model architectures used
+moreaccuratepronunciationthanabaselinemodelusingonly forpre-training,BERTisoneofthemostsuccessfulones,and
+phoneme input with no pre-training. Subjective side-by-side isoftenadoptedforrelatedworksinTTS,suchasin[20–23].
+preferenceevaluationsshowthatratershavenostatisticallysig- However,intheseworks,thepre-trainingisonlyperformedon
+nificantpreferencebetweenthespeechsynthesizedusingaPnG graphemes;nophoneme-graphemerelationshipislearneddur-
+BERTandgroundtruthrecordingsfromprofessionalspeakers. ingthepre-training.
+IndexTerms:neuralTTS,self-supervisedpre-training,BERT
+This paper introduces PnG BERT, an augmented BERT
+modelthatcanbeusedasadrop-inreplacementfortheencoder
+1. Introduction in typical neural TTS models, including attention-based and
+duration-basedones.PnGBERTcanbenefitneuralTTSmodels
+The advances of neural network-based text-to-speech (TTS)
+bytakingadvantagesofbothphonemeandgraphemerepresen-
+synthesisinthepastafewyearshaveclosedthegapbetween
+tation, as well as by self-supervised pre-training on large text
+synthesizedspeechandprofessionalhumanrecordingsinterms
+corporatobetterunderstandnaturallanguageinitsinput. Ex-
+of naturalness [1,2]. Such neural networks typically consist
+perimentalresultsshowthattheuseofapre-trainedPnGBERT
+ofanencoderwhichencodestheinputtextrepresentationinto
+modelcansignificantlyimprovethenaturalnessofsynthesized
+hiddenstates,adecoderwhichdecodesspectrogramframesor
+speech,especiallyintermsofprosodyandpronunciations.Sub-
+waveformsamplesfromthehiddenstates,andanattentionora
+jectiveside-by-sidepreferenceevaluationsshowthatratershave
+duration-basedupsamplerconnectingthetwotogether[1–13].
+no statistically significant preference between the speech syn-
+Manyearlysuchworkstakecharactersoftextasinput,to
+thesized using PnG BERT and ground truth recordings from
+demonstrate their capability of being an “end-to-end” model professionalspeakers.Audiosamplesareavailableonline1.
+(i.e., text-analysis-free)[1,3,8]. Morerecentworksoftenuse
+phonemes as input, to achieve better stability and generalize
+2. PnGBERT
+betterbeyondtheirtrainingsets[2,9–16]. However,phoneme-
+basedmodelsmaysufferfromtheambiguityoftherepresenta-
+ThePnGBERTmodelisillustratedinFigure1. Ittakesboth
+tion, such as on homophones. For example, the sentence “To
+phonemesandgraphemesasinput,andcanbeuseddirectlyas
+cancelthepayment,pressone;ortocontinue,two.”isapattern
+aninputencoderinatypicalneuralTTSmodel. Itfollowsthe
+thatusedfrequentlybyconversationalAIagentsforcallcenters.
+originalBERTarchitecture[24],exceptfordifferencesinthein-
+In the phoneme representation, the trailing “..., two.” can be
+putandtheoutput,andpre-trainingandfine-tuningprocedures.
+easilyconfusedwith“...,too.”,whichisusedmorefrequently
+ItalsobearssomesimilaritytoXLM[25],across-linguallan-
+inEnglish.However,innaturalspeech,differentprosodyisex-
+guagemodel.
+pectedatthecommapositionsinthesetwopatterns–theformer
+expectsamoderatepauseatthecomma,whilehavingnopause
+2.1. Background:BERT
+soundsmorenaturalforthelatter.
+Phoneme and grapheme representations have been com- TheoriginalBERTmodel[24]isessentiallyaTransformeren-
+binedbeforeinTTS[17–20],mostcommonlybyconcatenating coder[26],pre-trainedusingamaskedlanguagemodel(MLM)
+grapheme-basedembeddingstophonemeembeddings[18–20]. objectiveonatextcorpus. Itcantakeinputscomposedofmul-
+However, such approaches face challenges on handling align- tiple sentences, identified with a segment ID. A special token
+mentbetweenphonemesandgrapheme-basedtokens,oftenre- CLSisprependedtothefirstsegment,whichcanbeusedinan
+quireusingword-levelembeddings(thusalargevocabularybut extraclassificationobjectiveinadditiontotheMLMobjective.
+stillwithout-of-vocabularycases)[18,19],ordiscardingapor- AnotherspecialtokenSEPisappendedtoeachsegment,indi-
+tion of tokens when subword embeddings are used [20]. An- catingsegmentboundaries. TheinputtoBERTisrepresented
+otherapproachistouseamulti-sourceattention[19],attending asthesumofatokenembedding,asegmentembeddinganda
+tobothphonemesequenceandgraphemesequence. However, positionembedding.
+thisapproachisrestrictedtoattention-basedmodelsonly,mak-
+ingitinapplicabletoduration-basedmodels.Moreimportantly, 1https://google.github.io/tacotron/publications/pngbert/
+1202
+nuJ
+7
+]LC.sc[
+3v06051.3012:viXra
+classification MLM spectrogram or waveform
+objective objective
+Attention or
+Decoder
+Duration-based upsampler
+Transformer
+Masking Transformer
+tokens P1 P2 Pn G1 G2 Gn P1 P2 Pn G1 G2 Gn
++
+segments A B A B
++
+word positions 0 1 2 3 1 2 3 0 1 2 3 1 2 3
++
+token positions 0 1 2 3 4 5 6 7 8 0 1 2 3 4 5 6 7 8
+(a) PnG BERT and pre-training objectives. (b) Using PnG BERT as the encoder for a neural TTS model.
+Figure1:Thepre-trainingandfine-tuningofPnGBERTforneuralTTS.Phonemesaredisplayedinyellow,graphemesinpink.
+2.2. Inputrepresentation sistentlymaskingoutphonemeandgraphemetokensbelonging
+tothesameword.
+TheinputtoPnGBERTiscomposedoftwosegments(i.e.sub-
+Weusethesamemaskingcategoriesandratiosusedduring
+sequences),whicharetwodifferentrepresentationsofthesame
+theoriginalBERTpre-trainingprocess:boththephonemesand
+content. Thefirstsegmentisaphonemesequence,containing
+graphemesfor12%randomwordsarereplacedbyMSKtokens;
+individual IPAphonemes as tokens. Thesecond segment isa
+both the phonemes and graphemes for another 1.5% random
+graphemesequence,containingsubwordunitsfromtextasto-
+words are replaced by random phonemes and graphemes, re-
+kens2. ThespecialtokensCLSandSEPareaddedinthesame
+spectively;boththephonemesandgraphemesforanother1.5%
+wayasintheoriginalBERT.AlltokenssharethesameIDspace
+randomwordsarekeptunchanged.TheMLMlossiscomputed
+forembeddinglookupandMLMclassification.
+onlyontokenscorrespondingtothese15%words.
+In addition to the token, segment and position embed-
+Alternativestrategiesmaybeused.InSection3.1weexper-
+dings the original BERT uses, a fourth word-position embed-
+imentedwithincreasingthemaskingratiosoftheoriginalran-
+ding is used by PnG BERT, providing word-level alignment
+dommasking.Anotherchoiceistoapplymaskinginphoneme-
+betweenphonemesandgraphemes. Thisembeddingisimple-
+to-grapheme(P2G)andG2P-likemanners,i.e.,maskingoutall
+mentedwiththesamesinusoidalfunctionsastheregularposi-
+tokensinonesegmentandkeepingalltokensintheother.
+tionembedding,butusingtheindexofthewordeachphoneme
+or grapheme belongs to as the input position. An additional
+2.4. Fine-tuning
+learnedlinearprojectionisappliedtothesinusoidalsignalsin
+ordertoavoidconfusionwiththeregularpositionembedding. ThePnGBERTmodelcanbeusedasaninputencoderfortyp-
+Allfourembeddingsaresummedtogether. ical neural TTS models. Its weights can be initialized from a
+Figure1showsavisualizedexampleofsuchconstruction pre-trainedmodel,andfurtherfine-tunedduringTTStraining.
+oftheinput. WefreezetheweightsoftheembeddingsandthelowerTrans-
+formerlayers, andonlyfine-tunethehigherlayers, toprevent
+2.3. Pre-training degradationduetothesmallerTTStrainingsetandtohelpthe
+generalizationabilityofthetrainedTTSmodel. TheMLMob-
+Similar to the original BERT model, PnG BERT can be pre-
+jectiveisnotusedduringTTSfine-tuning.
+trained on a plain text corpus in a self-supervised manner.
+OnlythehiddenstatesfromthefinalTransformerlayeron
+Phonemesareobtainedusinganexternalgrapheme-to-phoneme
+thephonemetokenpositionsarepassedtothedownstreamTTS
+(G2P)conversionsystem, whilegraphemescanbecharacters,
+components (e.g., the attention or the duration-based upsam-
+bytes,orobtainedusingasubwordtexttokenizer,suchasWord-
+pler),asillustratedinFigure1. Despitethesehiddenstatesare
+Piece [27], SentencePiece [28], or byte-pair encoding (BPE)
+only from the phoneme positions, they can carry information
+[29].OnlytheMLMobjectiveisusedduringpre-training.
+fromthegraphemesbecauseoftheself-attentionmachanismin
+thePnGBERTmodelitself.
+2.3.1. Maskingstrategy
+Intheexperimentsinthenextsection,weuseaNATTTS
+TheinputtoPnGBERTconsistsoftwodistinctsequencesrep- model [2], and replace the original RNN-based encoder with
+resentingessentiallythesamecontent. Ifrandommaskingwas PnG BERT. We anticipate that the PnG BERT model can be
+applied as in the original BERT model, the counterpart of a appliedtootherneuralTTSmodelarchitectures,too.
+token masked in one sequence could present in the other se-
+quence. This would make the MLM prediction significantly 3. Experiments
+easierandwouldreducetheeffectivenessofthepre-training.To
+avoidthisissue,weapplyrandommaskingatword-level,con- To evaluate the performance of PnG BERT, we conducted
+experiments on a monolingual multi-speaker TTS task.
+2The terms “grapheme” and “subword unit” are considered to be PnGBERTisusedtoreplacetheoriginalRNN-basedencoder
+equivalentinthecurrentcontext,andareusedinterchangeablyinthe in NAT [2], a duration-based neural TTS model. It produces
+remainderofthispaper. mel-spectrogramswhichareconvertedintothefinalwaveforms
+Table 1: Pre-training performance of PnG BERT, measured Table 2: Performance of the TTS models, measured with 10
+bytokenpredictionaccuracyusing3differentevaluation-time speakers(5maleand5female)on3evaluationsets.
+masking. (MLM:samerandommaskingastrainingtime;G2P
+/P2G:maskingoutallphonemes/graphemes,respectively.)
+MOS SxS(vsBaseline)
+Model
+Genericlines Hardlines Questions
+Model MLM G2P P2G
+NAT(Baseline) 4.41±0.05 - -
+PnGBERT 67.9 50.9 33.2
+w/oconsistentmasking 96.8 99.1 95.2 NATw/PnGBERT 4.47±0.05 0.28±0.05 0.15±0.06
+w/owordalignment 94.9 41.3 39.5 w/oconsistentmasking 4.44±0.05 0.14±0.06 0.10±0.06
+w/owordalignment 4.45±0.05 0.15±0.06 0.12±0.06
+w/opre-training 4.30±0.06 0.12±0.05 0.06±0.05
+usingaWaveRNN-basedneuralvocoder[30].
+Inalltheexperiments,thePnGBERTmodelused6Trans- Table3:PerformanceoftheTTSmodelsonrecordingsheld-out
+formerlayerswithhiddensize512and8attentionheads,pre- fromtraining,measuredwiththesame10speakers(5maleand
+trainedusingtheSM3optimizer[31]withabatchsizeof24K 5female)asinTable2,eachwith100samples.
+for 1M steps and a maximum sequence length of 480 tokens.
+The remainder of the TTS models used the same architecture Model MOS SxS(vsGroundtruth)
+andhyperparametersasin[2],exceptthatwetrainedthemwith
+NAT(Baseline) 4.45±0.05 −0.11±0.09
+alargerbatchsizeof512for450Ksteps(sameforthestandard
+NATw/PnGBERT 4.47±0.05 0.02±0.10
+NATmodelusedasabaseline). Thetop2Transformerlayers
+inPnGBERTwerefine-tuned,withtherestpartfrozen. Groundtruth 4.47±0.05 -
+The performance of the TTS models were evaluated
+throughsubjectivelisteningtestsonthenaturalness,including
+5-scalemeanopinionscore(MOS)testsand7-scale(−3to3)
+3.2. TTSperformance
+side-by-side(SxS)preferencetests.IntheSxSpreferencetests,
+loudnessnormalization3 isappliedconsistentlyontheallsam- Wetrainedmulti-speakerTTSmodelsonaproprietarydataset
+plesinbothside. Allsubjectivetestswereconductedusingat consistingof243hoursofAmericanEnglishspeech,recorded
+least 1,000 samples. Each rater was allowed to rate no more by 31 professional speakers, downsampled to 24 kHz. The
+than6samplesinonetest. amountofrecordingperspeakervariesfrom3to47hours.
+3.1. Pre-trainingperformance 3.2.1. Ablationstudies
+We pre-trained the PnG BERT model on a plain text corpus Weconductedablationstudiesusingthreeevaluationtextsets
+minedfromWikipedia,containing131MEnglishsentences. A slightly modified from [20]: a “generic lines” set with 1,000
+proprietarytextnormalizationengine[32]wasusedtoconvert genericlines(thesamesetasin[2]),includinglonginputs(cor-
+thetextintothecorrespondingphonemesequences. ASenten- responding to up to more than 20 seconds of audio); a “hard
+cePiecemodel[28]withavocabularyof8,192tokenswasused lines”setwith286lines4,containing,e.g.,titlesandlongnoun
+fortokenizingtextintosubwords(i.e.,graphemes). compounds,expectedtobehard;anda“questions”setwith300
+We compared multiple pre-training strategies for PnG questions, as questions are prosodically different from state-
+BERT (Sec. 2.3.1). For word-level consistent masking, the ments.Theselinesweresynthesizedusing10speakers(5male
+samemaskingratios(15%intotal)astheoriginalBERTwere and 5 female), in a round-robin fashion for the generic lines
+used; otherwise, we doubled the masking ratios (to 30% in set(resultingin1,000utterances),andacross-joinfashionfor
+total) since the objective was easier. As Table 1 shows, the thehardlinesandquestionssets(resultingin2,860and3,000
+word-levelconsistentmaskingmakestheMLMpredictionsig- utterances,respectively).
+nificantlyharderthansimplydoublingtherandommaskingra- TheresultsarereportedinTable2.Itcanbeseenthatusing
+tios;italsomakesthetrainedmodelperformworseintheG2P pre-trainedPnGBERTsignificantlyimprovedtheperformance
+andP2Gevaluations. Providingword-levelalignmentbetween ofNAT.Thebestresultwasachievedbyusingword-levelcon-
+phonemesandgraphemes(i.e.,wordpositionembedding)sig- sistent masking, providing the word-level phoneme-grapheme
+nificantly helped the MLM prediction and brought G2P and alignment,andpre-trainingonalargetextcorpus. WhenPnG
+P2Gaccuracytoaveryhighlevel. However, asshowninthe BERT was not pre-trained, the TTS model performed worse
+followingsubsections,thesemetricsdidnotforetelltheperfor- thanthebaselineonthegenericlineset.Furthercheckrevealed
+manceonthedownstreamTTStasks. that it was due to the trained model not generalizing well to
+Figure 2 shows plots of the self-attention probabilities inputs longer than what was seen during training, which is a
+acrossPnGBERTlayers, withoutprovidingword-levelalign- knownlimitationofTransformer[33,34]. Nevertheless,itout-
+ment. Thetrident-shapeddistributioninthehigherlayersindi- performedthebaselineonshorterevaluationsets,possiblyfrom
+cates that the model learns the alignment between phonemes thebenefitofusingbothphonemeandgraphemeasinput.
+and graphemes, and effectively combines information from ItisinterestingtonotethatthePnGBERTmodelwiththe
+both. Such trident-shaped distribution emerges starting from highest G2P and P2G accuracy during pre-training performed
+thebottomlayerwhenword-levelalignmentisprovided, sug- worsethantheoneswithsignificantlylowerG2PandP2Gac-
+gestingthatthePnGBERTlearnsmoreeffectivelyinsuchcase, curacy. Thiscouldbebecauseithadtheeasiestobjectivedur-
+whichisconsistentwiththeotherexperimentresults. ingpre-training(reflectedbythehighestMLMaccuracy)and,
+3LoudnessnormalizationiscriticalinSxSpreferencetests,asraters 4Available at https://google.github.io/chive-prosody/chive-bert/
+tendtobebiasedtowardsloudersamples. dataset
+60
+40
+20
+0
+6
+reyaL
+Head 1 Head 2 Head 3 Head 4 Head 5 Head 6 Head 7 Head 8
+60
+40
+20
+0
+5
+reyaL
+60
+40
+20
+0
+4
+reyaL
+60
+40
+20
+0
+3
+reyaL
+60
+40
+20
+0
+2
+reyaL
+60
+40
+20
+0
+0 25 50
+1
+reyaL
+0 25 50 0 25 50 0 25 50 0 25 50 0 25 50 0 25 50 0 25 50
+Figure2: Self-attentionprobabilitiesofeachlayerandheadinaPnGBERTwithoutusingword-levelalignment. Theinputtextis
+“Tocancelthepayment,pressone;ortocontinue,two.”,whichisconvertedintoaninputsequencecomposedofafirstsegmentof42
+phonemesand2specialtokens,andasecondsegmentof18graphemesand1specialtoken. Thetrident-shapeddistributionsinthe
+higherlayersindicatethatthemodellearnsthealignmentbetweenphonemesandgraphemes,andencodesinformationacrossthetwo
+segments.Whenword-levelalignmentisprovided,suchtrident-shapeddistributionsemergestartingfromthebottomlayer.
+asaresult,didnotlearnasmuchasthemodelswithotherpre- icantpreferencebetweenthegroundtruthrecordingsfrompro-
+trainingstrategiesdid. Thisfindingsuggeststhatthebenefitof fessionalspeakersandthespeechsynthesizedusingPnGBERT.
+PnGBERTprimarilyliesinbetternaturallanguageunderstand-
+ing,ratherthanpotentialimprovementsonG2Pconversion. 4. Conclusions
+WeproposedPnGBERT,anaugmentedBERTmodelthattakes
+3.2.2. Subjectiveratercomments
+bothphonemeandgraphemerepresentationsoftextasitsinput.
+In the SxS tests, on positive examples, raters comments of- Wealsodescribedastrategyforeffectivelypre-trainingitona
+ten mentioned better “prosody”, “tone”, “stress”, “inflection”, largetextcorpusinaself-supervisedmanner.PnGBERTcanbe
+or “pronunciation”; on negative examples, the comments of- directlyusedasaninputencoderfortypicalneuralTTSmodels.
+tenmentionedworse“inflection”,“stress”,or“unnaturaldistor- ExperimentalresultsshowedthatPnGBERTcansignificantly
+tion”. Thesecommentsareconsistentwiththeforegoinganal- improvetheperformanceofNAT,astate-of-the-artneuralTTS
+ysis,confirmingthattheimprovementareprimarilyfrombetter model, byproducingmorenaturalprosodyandmoreaccurate
+naturallanguageunderstandingandthusimprovedprosodyin pronunciation. Subjective side-by-side preference evaluation
+thesynthesizedspeech. showedthatratershadnostatisticallysignificantpreferencebe-
+tweenthespeechsynthesizedusingPnGBERTandtheground
+3.2.3. Comparisontogroundtruthrecordings truthrecordingsfromprofessionalspeakers.
+Lastly, we conducted subjective SxS preference tests against 5. Acknowledgements
+groundtruth recordings heldoutfromtraining. Werandomly
+sampled 100 utterances of each of the 10 speakers, and com- TheauthorswouldliketothanktheGoogleTTSResearchteam,
+paredthesynthesizedaudioswiththegroundtruthrecordings. inparticularTomKenterforhissupportontheevaluationand
+TheresultsinTable3showthatratershadnostatisticallysignif- comprehensivesuggestionsonthewriting.
+6. References
+[20] T.Kenter,M.K.Sharma,andR.Clark,“Improvingprosodyof
+RNN-based english text-to-speech synthesis by incorporating a
+[1] J.Shen, R.Pang, R.J.Weiss, M.Schuster, N.Jaitly, Z.Yang,
+BERTmodel,”inProc.Interspeech,2020.
+Z. Chen, Y. Zhang, Y. Wang, R. Skerrv-Ryan, R. A. Saurous,
+Y. Agiomyrgiannakis, and Y. Wu, “Natural TTS synthesis by [21] T.Hayashi,S.Watanabe,T.Toda,K.Takeda,S.Toshniwal,and
+conditioningWaveNetonMelspectrogrampredictions,”inProc. K. Livescu, “Pre-trained text embeddings for enhanced text-to-
+ICASSP,2018. speechsynthesis.”inProc.Interspeech,2019.
+[2] J.Shen,Y.Jia,M.Chrzanowski,Y.Zhang,I.Elias,H.Zen,and [22] G.Xu,W.Song,Z.Zhang,C.Zhang,X.He,andB.Zhou,“Im-
+Y.Wu,“Non-AttentiveTacotron:Robustandcontrollableneural proving prosody modelling with cross-utterance BERT embed-
+TTSsynthesisincludingunsuperviseddurationmodeling,”arXiv dingsforend-to-endspeechsynthesis,”inProc.ICASSP,2021.
+preprintarXiv:2010.04301,2020. [23] Y. Zhang, L. Deng, and Y. Wang, “Unified Mandarin TTS
+[3] J. Sotelo, S. Mehri, K. Kumar, J. F. Santos, K. Kastner, A. C. front-end based on distilled BERT model,” arXiv preprint
+Courville, andY.Bengio, “Char2Wav: End-to-endspeechsyn- arXiv:2012.15404,2020.
+thesis,”inICLRworkshop,2017. [24] J.Devlin,M.-W.Chang,K.Lee,andK.Toutanova,“BERT:Pre-
+[4] A.vandenOord,S.Dieleman,H.Zen,K.Simonyan,O.Vinyals, training of deep bidirectional transformers for language under-
+A. Graves, N. Kalchbrenner, A. Senior, and K. Kavukcuoglu, standing,”inProc.NAACL,2019.
+“WaveNet: A generative model for raw audio,” arXiv preprint [25] G.LampleandA.Conneau,“Cross-linguallanguagemodelpre-
+arXiv:1609.03499,2016. training,”inProc.NeurIPS,2019.
+[5] S.O¨.Arık,M.Chrzanowski,A.Coates,G.Diamos,A.Gibiansky, [26] A.Vaswani,N.Shazeer,N.Parmar,J.Uszkoreit,L.Jones,A.N.
+Y.Kang,X.Li,J.Miller,A.Ng,J.Raimanetal.,“DeepVoice: Gomez,L.Kaiser,andI.Polosukhin,“Attentionisallyouneed,”
+Real-timeneuraltext-to-speech,”inProc.ICML,2017. inProc.NeurIPS,2017.
+[6] A.Gibiansky,S.Arik,G.Diamos,J.Miller,K.Peng,W.Ping, [27] M. Schuster and K. Nakajima, “Japanese and Korean voice
+J. Raiman, and Y. Zhou, “Deep Voice 2: Multi-speaker neural search,”inProc.ICASSP,2012.
+text-to-speech,”inProc.NeurIPS,2017.
+[28] T.KudoandJ.Richardson, “SentencePiece: Asimpleandlan-
+[7] W. Ping, K. Peng, A. Gibiansky, S. O. Arik, A. Kannan, guageindependentsubwordtokenizeranddetokenizerforneural
+S.Narang,J.Raiman,andJ.Miller,“DeepVoice3:Scalingtext- textprocessing,”inProc.EMNLP,2018.
+to-speechwithconvolutionalsequencelearning,”inProc.ICLR,
+[29] R.Sennrich,B.Haddow,andA.Birch,“Neuralmachinetransla-
+2018.
+tionofrarewordswithsubwordunits,”inProc.ACL,2016.
+[8] Y. Wang, R. Skerry-Ryan, D. Stanton, Y. Wu, R. J. Weiss,
+[30] N. Kalchbrenner, E. Elsen, K. Simonyan, S. Noury,
+N. Jaitly, Z. Yang, Y. Xiao, Z. Chen, S. Bengio, Q. Le,
+N. Casagrande, E. Lockhart, F. Stimberg, A. van den Oord,
+Y.Agiomyrgiannakis,R.Clark,andR.Saurous,“Tacotron: To-
+S. Dieleman, and K. Kavukcuoglu, “Efficient neural audio
+wardsend-to-endspeechsynthesis,”inProc.Interspeech,2017.
+synthesis,”inProc.ICML,2018.
+[9] I.Elias,H.Zen,J.Shen,Y.Zhang,Y.Jia,R.Weiss,andY.Wu,
+[31] R. Anil, V. Gupta, T. Koren, and Y. Singer, “Memory-efficient
+“ParallelTacotron:Non-autoregressiveandcontrollableTTS,”in
+adaptiveoptimization,”inProc.NeurIPS,2019.
+Proc.ICASSP,2021.
+[32] P.EbdenandR.Sproat,“TheKestrelTTStextnormalizationsys-
+[10] N.Li,S.Liu,Y.Liu,S.Zhao,andM.Liu,“Neuralspeechsynthe-
+tem,”NaturalLanguageEngineering,vol.21,no.3,p.333,2015.
+siswithTransformernetwork,”inProc.AAAI,2019.
+[33] M.Dehghani,S.Gouws,O.Vinyals,J.Uszkoreit,andŁ.Kaiser,
+[11] Y. Ren, Y. Ruan, X. Tan, T. Qin, S. Zhao, Z. Zhao, and T.-Y.
+“UniversalTransformers,”inProc.ICLR,2019.
+Liu,“FastSpeech:Fast,robustandcontrollabletexttospeech,”in
+Proc.NeurIPS,2019. [34] M.Hahn,“Theoreticallimitationsofself-attentioninneuralse-
+quence models,” Transactions of the Association for Computa-
+[12] Y.Ren, C.Hu, T.Qin, S.Zhao, Z.Zhao, andT.-Y.Liu, “Fast-
+tionalLinguistics,vol.8,pp.156–171,2020.
+Speech 2: Fast and high-quality end-to-end text-to-speech,” in
+Proc.ICLR,2021.
+[13] R.J.Weiss,R.Skerry-Ryan,E.Battenberg,S.Mariooryad,and
+D. P. Kingma, “Wave-Tacotron: Spectrogram-free end-to-end
+text-to-speechsynthesis,”inProc.ICASSP,2021.
+[14] Y.Wang,D.Stanton,Y.Zhang,R.-S.Ryan,E.Battenberg,J.Shor,
+Y.Xiao,Y.Jia,F.Ren,andR.A.Saurous,“StyleTokens:Unsu-
+pervisedstylemodeling,controlandtransferinend-to-endspeech
+synthesis,”inProc.ICML,2018.
+[15] R. Skerry-Ryan, E. Battenberg, Y. Xiao, Y. Wang, D. Stanton,
+J.Shor,R.Weiss,R.Clark,andR.A.Saurous,“Towardsend-to-
+endprosodytransferforexpressivespeechsynthesiswithTaco-
+tron,”inProc.ICML,2018.
+[16] Y.Jia,Y.Zhang,R.J.Weiss,Q.Wang,J.Shen,F.Ren,Z.Chen,
+P.Nguyen,R.Pang,I.Lopez-Moreno,andY.Wu,“Transferlearn-
+ingfromspeakerverificationtomultispeakertext-to-speechsyn-
+thesis,”inProc.NeurIPS,2018.
+[17] K.Kastner,J.F.Santos,Y.Bengio,andA.Courville,“Represen-
+tationMixingforTTSSynthesis,”inProc.ICASSP,2019.
+[18] H.Ming,L.He,H.Guo,andF.K.Soong,“Featurereinforcement
+with word embedding and parsing information in neural TTS,”
+arXivpreprintarXiv:1901.00707,2019.
+[19] Y.-A.Chung,Y.Wang,W.-N.Hsu,Y.Zhang,andR.Skerry-Ryan,
+“Semi-supervisedtrainingforimprovingdataefficiencyinend-to-
+endspeechsynthesis,”inProc.ICASSP,2019.

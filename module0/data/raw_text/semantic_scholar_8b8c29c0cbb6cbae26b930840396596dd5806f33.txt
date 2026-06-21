@@ -1,0 +1,481 @@
+Common Sense or World Knowledge? Investigating Adapter-Based
+Knowledge Injection into Pretrained Transformers
+AnneLauscher♣ OlgaMajewska♠ LeonardoF.R.Ribeiro♦
+IrynaGurevych♦ NikolaiRozanov♠ GoranGlavasˇ♣
+♣DataandWebScienceGroup,UniversityofMannheim,Germany
+♠Wluper,London,UnitedKingdom
+♦UbiquitousKnowledgeProcessing(UKP)Lab,TUDarmstadt,Germany
+{anne,goran}@informatik.uni-mannheim.de
+{olga,nikolai}@wluper.com
+www.ukp.tu-darmstadt.de
+Abstract thedistributionalinformationfromlargecorpora.
+Yet,anumberofstructuredknowledgesourcesex-
+Following the major success of neural lan-
+ist–knowledgebases(KBs)(Suchaneketal.,2007;
+guagemodels(LMs)suchasBERTorGPT-2
+on a variety of language understanding tasks, Auer et al., 2007) and lexico-semantic networks
+recent work focused on injecting (structured) (Miller, 1995; Liu and Singh, 2004; Navigli and
+knowledge from external resources into these Ponzetto,2010)–encodingmanytypesofknowl-
+models. While on the one hand, joint pre-
+edgethatareunderrepresentedintextcorpora.
+training(i.e.,trainingfromscratch,addingob-
+Starting from this observation, most recent ef-
+jectivesbasedonexternalknowledgetothepri-
+forts focused on injecting factual (Zhang et al.,
+maryLMobjective)maybeprohibitivelycom-
+2019; Liu et al., 2019a; Peters et al., 2019) and
+putationally expensive, post-hoc fine-tuning
+on external knowledge, on the other hand, linguisticknowledge(Lauscheretal.,2019;Peters
+may lead to the catastrophic forgetting of dis- etal.,2019)intopretrainedLMsanddemonstrated
+tributional knowledge. In this work, we in- theusefulnessofsuchknowledgeinlanguageun-
+vestigate models for complementing the dis- derstandingtasks(Wangetal.,2018,2019). Joint
+tributional knowledge of BERT with concep-
+pretrainingmodels,ontheonehand,augmentdis-
+tualknowledgefromConceptNetanditscorre-
+tributional LM objectives with additional objec-
+spondingOpenMindCommonSense(OMCS)
+tivesbasedonexternalresources(YuandDredze,
+corpus, respectively, using adapter training.
+WhileoverallresultsontheGLUEbenchmark 2014;Nguyenetal.,2016;Lauscheretal.,2019)
+paint an inconclusive picture, a deeper analy- and train the extended model from scratch. For
+sis reveals that our adapter-based models sub- models like BERT, this implies computationally
+stantially outperform BERT (up to 15-20 per- expensiveretrainingfromscratchoftheencoding
+formance points) on inference tasks that re-
+transformer network. Post-hoc fine-tuning mod-
+quire the type of conceptual knowledge ex-
+els (Zhang et al., 2019; Liu et al., 2019a; Peters
+plicitlypresentinConceptNetandOMCS.We
+etal.,2019),ontheotherhand,usetheobjectives
+also open source all our experiments and rel-
+based on external resources to fine-tune the en-
+evant code under: https://github.com/
+wluper/retrograph. coder’s parameters, pretrained via distributional
+LM objectives. If the amount of fine-tuning data
+1 Introduction
+issubstantial,however,thisapproachmayleadto
+Self-supervisedneuralmodelslikeELMo(Peters catastrophicforgettingofdistributionalknowledge
+etal.,2018),BERT(Devlinetal.,2019;Liuetal., obtained in pretraining (Goodfellow et al., 2014;
+2019b),GPT(Radfordetal.,2018,2019),orXL- Kirkpatricketal.,2017).
+Net (Yang et al., 2019) have rendered language Inthiswork, similartotheconcurrentworkof
+modelingaverysuitablepretrainingtaskforlearn- Wang et al. (2020), we turn to the recently pro-
+ing language representations that are useful for a posed adapter-based fine-tuning paradigm (Re-
+widerangeoflanguageunderstandingtasks(Wang buffi et al., 2018; Houlsby et al., 2019), which
+etal.,2018,2019). Althoughshownversatilew.r.t. remedies the shortcomings of both joint pretrain-
+thetypesofknowledge(Rogersetal.,2020)they ing and standard post-hoc fine-tuning. Adapter-
+encode,muchliketheirpredecessors–staticword based training injects additional parameters into
+embeddingmodels(Mikolovetal.,2013;Penning- the encoder and only tunes their values: origi-
+tonetal.,2014)–neuralLMsstillonly“consume” nal transformer parameters are kept fixed. Be-
+cause of this, adapter training preserves the dis- injecttheexternalinformationintoadapterparam-
+tributionalinformationobtainedinLMpretraining, eters of the adapter-augmented BERT (Houlsby
+withouttheneedforanydistributional(re-)training. etal.,2019)viaBERT’snaturalobjective–masked
+While(Wangetal.,2020)injectfactualknowledge languagemodelling(MLM).OMCS,alreadyacor-
+fromWikidata(Vrandecˇic´andKro¨tzsch,2014)into pusinnaturallanguage,isdirectlysubjectableto
+BERT,inthiswork,weinvestigatetworesources MLM training – we filtered out non-English sen-
+that are commonly assumed to contain general- tences. To subject ConceptNet to MLM training,
+purposeandcommonsenseknowledge:1 Concept- weneedtotransformitintoasyntheticcorpus.
+Net(LiuandSingh,2004;Speeretal.,2017)and
+Unwrapping ConceptNet. Following estab-
+the Open Mind Common Sense (OMCS) corpus
+lishedpreviouswork(Perozzietal.,2014;Ristoski
+(Singh et al., 2002), from which the ConceptNet
+andPaulheim,2016),weinduceasyntheticcorpus
+graphwas(semi-)automaticallyextracted. Forour
+fromConceptNetbyrandomlytraversingitsgraph.
+firstmodel,dubbed CN-ADAPT,wefirstcreatea
+We convert relation strings into NL phrases (e.g.,
+syntheticcorpusbyrandomlytraversingtheCon-
+synonymstoisasynonymof)andduplicatethe
+ceptNet graph and then learn adapter parameters
+object node of a triple, using it as the subject for
+withmaskedlanguagemodelling(MLM)training
+the next sentence. For example, from the path
+(Devlinetal.,2019)onthatsyntheticcorpus. For
+causes hasContext
+oursecondmodel,named OM-ADAPT,welearn “alcoholism−−−−→ stigma −−−−−−→ christianity
+theadapterparametersviaMLMtrainingdirectly −p −ar −tO →f religion” we create the text “alcoholism
+ontheOMCScorpus. causes stigma. stigma is used in the context of
+We evaluate both models on the GLUE bench- christianity. christianity is part of religion.”. We
+mark, where we observe limited improvements set the walk lengths to 30 relations and sample
+over BERT on a subset of GLUE tasks. How- the startingand neighboringnodes from uniform
+ever, a more detailed inspection reveals large im- distributions. In total, we performed 2,268,485
+provementsoverthebaseBERTmodel(upto20 walks, resulting with the corpus of 34,560,307
+Matthewscorrelationpoints)onlanguageinference syntheticsentences.
+(NLI) subsets labeled as requiring World Knowl-
+edge or knowledge about Named Entities. Inves- Adapter-Based Training. We follow Houlsby
+tigating further, we relate this result to the fact et al. (2019) and adopt the adapter-based archi-
+that ConceptNet and OMCS contain much more tecture for which they report solid performance
+of what in downstream is considered to be fac- acrosstheboard. Weinjectbottleneckadaptersinto
+tualworldknowledgethanwhatisjudgedascom- BERT’s transformer layers. In each transformer
+monsense knowledge. Our findingspinpoint the layer, we insert two bottleneck adapters: one af-
+need for more detailed analyses of compatibility terthemulti-headattentionsub-layerandanother
+between(1)thetypesofknowledgecontainedby afterthefeed-forwardsub-layer. LetX ∈ RT×H
+externalresources;and(2)thetypesofknowledge bethesequenceofcontextualizedvectors(ofsize
+thatbenefitconcretedownstreamtasks;withinthe H)fortheinputofT tokensinsometransformer
+emerging body of work on injecting knowledge layer,inputtoabottleneckadapter. Thebottleneck
+intopretrainedtransformers. adapter,consistingoftwofeed-forwardlayersand
+aresidualconnection,yieldsthefollowingoutput:
+2 KnowledgeInjectionModels
+Adapter(X) = X+f(XW +b )W +b
+Inthiswork,weareprimarilysettoinvestigateif d d u u
+injectingspecifictypesofknowledge(giveninthe
+where W (with bias b ) and W (with bias
+d d u
+externalresource)benefitsdownstreaminference
+b ) are adapter’s parameters, that is, the weights
+u
+that clearly requires those exact types of knowl-
+of the linear down-projection and up-projection
+edge. Because of this, we use the arguably most
+sub-layersandf isthenon-linearactivationfunc-
+straightforwardmechanismsforinjectingtheCon-
+tion. Matrix W ∈ RH×m compresses vectors
+d
+ceptNet and OMCS information into BERT, and
+in X to the adapter size m < H, and the ma-
+leavetheexplorationofpotentiallymoreeffective
+trix W ∈ Rm×H projects the activated down-
+u
+knowledgeinjectionobjectivesforfuturework. We
+projections back to transformer’s hidden size H.
+1Ourresultsin§3.2scrutinizethisassumption. TheratioH/mdetermineshowmanytimesfewer
+parametersweoptimizewithadapter-basedtrain- adapteractivationf. Wetraintheadapterparam-
+ing compared to standard fine-tuning of all trans- eters with the Adam algorithm (Kingma and Ba,
+former’sparameters. 2015)(initiallearningratesetto1e−4,with10000
+warm-upstepsandtheweightdecayfactorof0.01).
+3 Evaluation
+Indownstreamfine-tuning,wetraininbatchesof
+size16andlimittheinputsequencestoT = 128
+Wefirstbrieflydescribethedownstreamtasksand
+wordpiece tokens. For each task, we find the op-
+trainingdetails,andthenproceedwiththediscus-
+timal hyperparameter configuration from the fol-
+sionofresultsobtainedwithouradaptermodels.
+lowinggrid: learningratel ∈ {2·10−5,3·10−5},
+3.1 ExperimentalSetup. epochsinn ∈ {3,4}.
+DownstreamTasks. WeevaluateBERTandour
+3.2 ResultsandAnalysis
+twoadapter-basedmodels,CN-ADAPTandOM-
+ADAPT,withinjectedknowledgefromConceptNet GLUEResults. Table1revealstheperformance
+and OMCS, respectively, on the tasks from the of CN-ADAPT and OM-ADAPT in comparison
+GLUEbenchmark(Wangetal.,2018): with BERT Base on GLUE evaluation tasks. We
+CoLA (Warstadt et al., 2018): Binary sentence showtheresultsfortwosnapshotsofOM-ADAPT,
+classification,predictinggrammaticalacceptability after25Kand100Kupdatesteps,andfortwosnap-
+ofsentencesfromlinguisticpublications; shots of CN-ADAPT, after 50K and 100K steps
+of adapter training. Overall, none of our adapter-
+SST-2(Socheretal.,2013): Binarysentenceclas-
+based models with injected external knowledge
+sification,predictingbinarysentiment(positiveor
+fromConceptNetorOMCSyieldssignificantim-
+negative)formoviereviewsentences;
+provementsoverBERTBaseonGLUE.However,
+MRPC (Dolan and Brockett, 2005): Binary
+weobservesubstantialimprovements(ofaround3
+sentence-pairclassification,recognizingsentences
+points)onRTEandontheDiagnosticsNLIdataset
+whicharearemutualparaphrases;
+(Diag),whichencompassesinferenceinstancesthat
+STS-B(Ceretal.,2017): Sentence-pairregression requireaspecifictypeofknowledge.
+task, predicting the degree of semantic similarity Since our adapter models draw specifically on
+foragivenpairofsentences; theconceptualknowledgeencodedinConceptNet
+QQP(Chenetal.,2018): Binaryclassificationtask, and OMCS, we expect the positive impact of in-
+recognizingquestionparaphrases; jected external knowledge – assuming effective
+injection–tobemostobservableontestinstances
+MNLI(Williamsetal.,2018): Ternarynaturallan-
+thattargetthesametypesofconceptualknowledge.
+guage inference (NLI) classification of sentence
+Toinvestigatethisfurther,wemeasurethemodel
+pairs. Two testsetsare given: amatchedversion
+performanceacrossdifferentcategoriesoftheDi-
+(MNLI-m) in which the test domains match the
+agnosticNLIdataset. Thisallowsustoteaseapart
+domainsfromtrainingdata,andamismatchedver-
+inferenceinstanceswhichtrulytesttheefficacyof
+sion(MNLI-mm)withdifferenttestdomains;
+our knowledge injection methods. We show the
+QNLI:AbinaryclassificationversionoftheStan-
+resultsobtainedondifferentcategoriesoftheDiag-
+fordQ&Adataset(Rajpurkaretal.,2016);
+nosticNLIdatasetinTable2. Theimprovements
+RTE(Bentivoglietal.,2009): AnotherNLIdataset, ofouradapter-basedmodelsoverBERTBaseon
+ternaryentailmentclassificationforsentencepairs; thesephenomenon-specificsubsectionsoftheDi-
+agnostics NLI dataset are generally much more
+Diag(Wangetal.,2018): AmanuallycuratedNLI
+pronounced: e.g.,OM-ADAPT(25K)yieldsa7%
+dataset,withexampleslabeledwithspecifictypes
+improvementoninferencethatrequiresfactualor
+ofknowledgeneededforentailmentdecisions.
+common sense knowledge (KNO), whereas CN-
+Training Details. We inject our adapters into a ADAPT(100K)yieldsa6%boostforinferencethat
+BERTBasemodel(12transformerlayerswith12 dependsonlexico-semanticknowledge(LS).These
+attentionheadseach;H = 768)pretrainedonlow- resultssuggestthat(1)ConceptNetandOMCSdo
+ercasedcorpora. Following(Houlsbyetal.,2019), containthespecifictypesofknowledgerequiredfor
+we set the size of all adapters to m = 64 and theseinferencecategoriesandthat(2)wemanaged
+useGELU(HendrycksandGimpel,2016)asthe to inject that knowledge into BERT by training
+Model CoLA SST-2 MRPC STS-B QQP MNLI-m MNLI-mm QNLI RTE Diag Avg
+MCC Acc F1 Spear F1 Acc Acc Acc Acc MCC –
+BERTBase 52.1 93.5 88.9 85.8 71.2 84.6 83.4 90.5 66.4 34.2 75.1
+OM-ADAPT(25K) 49.5 93.5 88.8 85.1 71.4 84.4 83.5 90.9 67.5 35.7 75.0
+OM-ADAPT(100K) 53.5 93.4 87.9 85.9 71.1 84.2 83.7 90.6 68.2 34.8 75.3
+CN-ADAPT(50K) 49.8 93.9 88.9 85.8 71.6 84.2 83.3 90.6 69.7 37.0 75.5
+CN-ADAPT(100K) 48.8 92.8 87.1 85.7 71.5 83.9 83.2 90.8 64.1 37.8 74.6
+Table 1: Results on test portionsof GLUE benchmark tasks. Numbers in bracketsnext to adapter-based models
+(25K,50K,100K)indicatethenumberofupdatestepsofadaptertrainingonthesyntheticConceptNetcorpus(for
+CN-ADAPT)orontheoriginalOMCScorpus(forOM-ADAPT). Bold: thebestscoreineachcolumn.
+Model LS KNO LOG PAS All knowledge. Thisinitiallycameasasurprise,given
+thecommonbeliefthatOMCSandConcepNetcon-
+BERTBase 38.5 20.2 26.7 39.6 34.2
+taintheso-calledcommonsenseknowledge. Man-
+OM-ADAPT(25K) 39.1 27.1 26.1 39.5 35.7
+OM-ADAPT(100K) 37.5 21.2 27.4 41.0 34.8 ual scrutiny of the diagnostic test instances from
+both CS and World categories uncovers a notice-
+CN-ADAPT(50K) 40.2 24.3 30.1 42.7 37.0
+CN-ADAPT(100K) 44.2 25.2 30.4 41.9 37.8 ablemismatchbetweenthekindofinformationthat
+isconsideredcommonsenseinKBslikeConcept-
+Table 2: Breakdown of Diagnostics NLI performance
+Netandwhatisconsideredcommonsenseknowl-
+(Matthews correlation), according to information type
+edge in the downstream. In fact, the majority of
+neededforinference(coarse-grainedcategories): Lexi-
+informationpresentinConceptNetandOMCSfalls
+calSemantics(LS),Knowledge(KNO),Logic(LOG),
+undertheWorldKnowledgedefinitionoftheDiag-
+andPredicateArgumentStructure(PAS).
+nosticNLIdataset,includingfactualgeographicin-
+formation(stockholm [partOf] sweden),
+Model CS World NE
+domain knowledge (roadster [isA] car)
+BERTBase 29.0 10.3 15.1
+and specialized terminology (indigenous
+OM-ADAPT(25K) 28.5 25.3 31.4
+[synonymOf] aboriginal).
+OM-ADAPT(100K) 24.5 17.3 22.3
+Incontrast,manyoftheCSinferenceinstances
+CN-ADAPT(50K) 25.6 21.1 26.0
+CN-ADAPT(100K) 24.4 25.6 36.5 requirecomplex,high-levelreasoning,understand-
+ingmetaphoricalandidiomaticmeaning,andmak-
+Table 3: Results (Matthews correlation) on Common ingfar-reachingconnections. WedisplayNLIDig-
+Sense(CS),WorldKnowledge(World),andNamedEn-
+nosticsexamplesfromtheWorldKnowledgeand
+tities(NE)categoriesoftheDiagnosticNLIdataset.
+Common Sense categories in Table 4. In such
+cases,explicitconceptuallinksoftendonotsuffice
+for a correct inference and much of the required
+adaptersontheseresources.
+knowledge is not explicitly encoded in the exter-
+Fine-Grained Knowledge Type Analysis. In nal resources. Consider, e.g., the following CS
+ourfinalanalysis,we“zoomin”ourmodels’per- NLI instance: [premise: My jokes fully reveal
+formancesonthreefine-grainedcategoriesofthe my character ; hypothesis: If everyone be-
+DiagnosticsNLIdataset–inferenceinstancesthat lieved my jokes, they’d know exactly who I was
+require Common Sense Knowledge (CS), World ; entailment]. WhileConceptNetandOMCS
+Knowledge(World),andknowledgeaboutNamed mayassociatecharacterwithpersonalityorperson-
+Entities (NE), respectively. The results for these alitywithidentity, theknowledge thatthe phrase
+fine-grainedcategoriesaregiveninTable3. These who I was may refer to identity is beyond the ex-
+results show an interesting pattern: our adapter- plicitknowledgepresentintheseresources. This
+basedknowledge-injectionmodelsmassivelyout- sheds light on the results in Table 3: when the
+performBERTBase(upto15and21MCCpoints, knowledge required to tackle the inference prob-
+respectively) for NLI instances labeled as requir- lem at hand is available in the external resource,
+ingWorldKnowledgeorknowledgeaboutNamed ouradapter-basedknowledge-injectedmodelssig-
+Entities. Incontrast,weseedropsinperformance nificantlyoutperformthebaselinetransformer;oth-
+on instances labeled as requiring common sense erwise,thebenefitsofknowledgeinjectionareneg-
+Knowledge Premise Hypothesis ConceptNet?
+World Thesidescametoanagree- Thesidescametoanagree- stockholm [partOf]
+ment after their meeting in ment after their meeting in sweden
+Stockholm. Sweden.
+Muskdecidedtoofferuphis Muskdecidedtoofferuphis roadster [isA] car
+personalTeslaroadster. personalcar.
+The Sydney area has been The Sydney area has been indigenous [synonymOf]
+inhabited by indigenous inhabited by Aboriginal aboriginal
+Australians for at least people for at least 30,000
+30,000years. years.
+CommonSense My jokes fully reveal my If everyone believed my
+character. jokes, they’d know exactly
+whoIwas.
+The systems thus produced The systems thus produced
+areincremental: dialogues supportthecapabilitytoin-
+are processed word-by- terruptaninterlocutormid-
+word, shown previously sentence.
+to be essential in support-
+ing natural, spontaneous
+dialogue.
+He deceitfully proclaimed: Hewassatisfied.
+“This is all I ever really
+wanted.”
+Table4: Premise-hypothesisexamplesfromthediagnosticNLIdatasettaggedforcommonsenseandworldknowl-
+edge,andrelevantConceptNetrelations,whereavailable.
+ligible or non-existent. The promising results on pare(a)thetypesofknowledgefoundinexternal
+world knowledge and named entities portions of resources being injected against (b) the types of
+the Diagnostics dataset suggest that our methods knowledgethataconcretedownstreamreasoning
+doessuccessfullyinjectexternalinformationinto tasks requires. We hope this work motivates fur-
+thepretrainedtransformerandthatthepresenceof therresearcheffortinthedirectionoffine-grained
+therequiredknowledgeforthetaskintheexternal knowledgetyping,bothofexplicitknowledgeinex-
+resourcesisanobviousprerequisite. ternalresourcesandtheimplicitknowledgestored
+inpretrainedtransformers.
+4 Conclusion
+Acknowledgments
+We presented two simple strategies for injecting
+externalknowledgefromConceptNetandOMCS Anne Lauscher and Goran Glavasˇ are supported
+corpus, respectively, into BERT via bottleneck bytheEliteprogrammoftheBaden-Wu¨rttemberg
+adapters. Additionaladapterparametersstorethe Stiftung(AGREEgrant). LeonardoF.R.Ribeiro
+externalknowledgeandallowforthepreservation hasbeensupportedbytheGermanResearchFoun-
+of the rich distributional knowledge acquired in dation as part of the Research Training Group
+BERT’spretrainingintheoriginaltransformerpa- AIPHES under the grant No. GRK 1994/1. This
+rameters. We demonstrated the effectiveness of workhasbeensupportedbytheGermanResearch
+these models in language understanding settings Foundation within the project “Open Argument
+that require precisely the type of knowledge that Mining” (GU 798/25-1), associated with the Pri-
+onefindsinConceptNetandOMCS,inwhichour ority Program “Robust Argumentation Machines
+adapter-basedmodelsoutperformBERTbyupto (RATIO)”(SPP-1999). TheworkofOlgaMajew-
+20 performance points. Our findings stress the skawasconductedundertheresearchlabofWluper
+importance of having detailed analyses that com- Ltd. (UK/10195181).
+References Anne Lauscher, Ivan Vulic´, Edoardo Maria Ponti,
+Anna Korhonen, and Goran Glavasˇ. 2019. Inform-
+So¨ren Auer, Christian Bizer, Georgi Kobilarov, Jens ingunsupervisedpretrainingwithexternallinguistic
+Lehmann, Richard Cyganiak, and Zachary Ives. knowledge. arXivpreprintarXiv:1909.02339.
+2007. Dbpedia: A nucleus for a web of open data.
+InThesemanticweb,pages722–735.Springer. HugoLiuandPushSingh.2004. Conceptnet—apracti-
+calcommonsensereasoningtool-kit. BTtechnology
+Luisa Bentivogli, Peter Clark, Ido Dagan, and Danilo journal,22(4):211–226.
+Giampiccolo.2009. Thefifthpascalrecognizingtex-
+tualentailmentchallenge. InTAC. WeijieLiu,PengZhou,ZheZhao,ZhiruoWang,QiJu,
+Haotang Deng, and Ping Wang. 2019a. K-bert:
+Daniel Cer, Mona Diab, Eneko Agirre, In˜igo Lopez- Enabling language representation with knowledge
+Gazpio, and Lucia Specia. 2017. SemEval-2017 graph. arXivpreprintarXiv:1909.07606.
+task1: Semantictextualsimilaritymultilingualand
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+crosslingual focused evaluation. In Proceedings
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+of the 11th International Workshop on Semantic
+Luke Zettlemoyer, and Veselin Stoyanov. 2019b.
+Evaluation(SemEval-2017),pages1–14,Vancouver,
+RoBERTa:Arobustlyoptimizedbertpretrainingap-
+Canada.AssociationforComputationalLinguistics.
+proach. arXivpreprintarXiv:1907.11692.
+Zihan Chen, Hongbo Zhang, Xiaoji Zhang, and Leqi
+TomasMikolov,IlyaSutskever,KaiChen,GregSCor-
+Zhao.2018. Quoraquestionpairs.
+rado, and Jeff Dean. 2013. Distributed representa-
+tionsofwordsandphrasesandtheircompositional-
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+ity. In Advances in neural information processing
+Kristina Toutanova. 2019. Bert: Pre-training of
+systems,pages3111–3119.
+deep bidirectional transformers for language under-
+standing. InProceedingsofthe2019Conferenceof GeorgeAMiller.1995. Wordnet:alexicaldatabasefor
+the North American Chapter of the Association for english. Communications of the ACM, 38(11):39–
+ComputationalLinguistics: HumanLanguageTech- 41.
+nologies, Volume1(LongandShortPapers), pages
+4171–4186. RobertoNavigliandSimonePaoloPonzetto.2010. Ba-
+belnet: Building a very large multilingual semantic
+WilliamBDolanandChrisBrockett.2005. Automati- network. In Proceedings of the 48th annual meet-
+callyconstructingacorpusofsententialparaphrases. ingoftheassociationforcomputationallinguistics,
+InProceedingsoftheThirdInternationalWorkshop pages216–225.AssociationforComputationalLin-
+onParaphrasing(IWP2005). guistics.
+Ian J Goodfellow, Mehdi Mirza, Aaron Courville Kim Anh Nguyen, Sabine Schulte im Walde, and
+Da Xiao, and Yoshua Bengio. 2014. An empirical Ngoc Thang Vu. 2016. Integrating distributional
+investigation of catastrophic forgeting in gradient- lexicalcontrastintowordembeddingsforantonym-
+based neural networks. In In Proceedings of Inter- synonymdistinction. InProceedingsofACL,pages
+national Conference on Learning Representations 454–459.
+(ICLR.Citeseer.
+Jeffrey Pennington, Richard Socher, and Christopher
+Manning.2014. Glove:Globalvectorsforwordrep-
+DanHendrycksandKevinGimpel.2016. Gaussianer-
+resentation. In Proceedings of the 2014 conference
+rorlinearunits(gelus).
+on empirical methods in natural language process-
+ing(EMNLP),pages1532–1543.
+Neil Houlsby, Andrei Giurgiu, Stanislaw Jastrzebski,
+Bruna Morrone, Quentin De Laroussilhe, Andrea
+Bryan Perozzi, Rami Al-Rfou, and Steven Skiena.
+Gesmundo, Mona Attariyan, and Sylvain Gelly.
+2014. Deepwalk:Onlinelearningofsocialrepresen-
+2019. Parameter-efficient transfer learning for nlp.
+tations. In Proceedings of the 20th ACM SIGKDD
+In International Conference on Machine Learning,
+International Conference on Knowledge Discovery
+pages2790–2799.
+and Data Mining, KDD ’14, page 701–710, New
+York,NY,USA.AssociationforComputingMachin-
+Diederik P Kingma and Jimmy Ba. 2015. Adam: A
+ery.
+methodforstochasticoptimization. InProceedings
+ofICLR. MatthewEPeters, MarkNeumann, MohitIyyer, Matt
+Gardner, Christopher Clark, Kenton Lee, and Luke
+James Kirkpatrick, Razvan Pascanu, Neil Rabinowitz, Zettlemoyer. 2018. Deep contextualized word rep-
+JoelVeness,GuillaumeDesjardins,AndreiARusu, resentations. InProceedingsofNAACL-HLT,pages
+Kieran Milan, John Quan, Tiago Ramalho, Ag- 2227–2237.
+nieszka Grabska-Barwinska, et al. 2017. Over-
+coming catastrophic forgetting in neural networks. MatthewE.Peters,MarkNeumann,RobertLogan,Roy
+Proceedings of the national academy of sciences, Schwartz, Vidur Joshi, Sameer Singh, and Noah A.
+114(13):3521–3526. Smith.2019. Knowledgeenhancedcontextualword
+representations. In Proceedings of the 2019 Con- Alex Wang, Yada Pruksachatkun, Nikita Nangia,
+ferenceonEmpiricalMethodsinNaturalLanguage AmanpreetSingh, JulianMichael, FelixHill, Omer
+Processing and the 9th International Joint Confer- Levy, and Samuel Bowman. 2019. Superglue: A
+ence on Natural Language Processing (EMNLP- stickierbenchmarkforgeneral-purposelanguageun-
+IJCNLP),pages43–54. derstanding systems. In Advances in Neural Infor-
+mationProcessingSystems,pages3261–3275.
+AlecRadford,KarthikNarasimhan,TimSalimans,and
+Ilya Sutskever. 2018. Improving language under- Alex Wang, Amanpreet Singh, Julian Michael, Fe-
+standing by generative pre-training. OpenAI Tech- lix Hill, Omer Levy, and Samuel Bowman. 2018.
+nicalReport. GLUE: A multi-task benchmark and analysis plat-
+form for natural language understanding. In Pro-
+Alec Radford, Jeffrey Wu, Rewon Child, David Luan, ceedingsoftheBlacboxNLPWorkshop,pages353–
+DarioAmodei,andIlyaSutskever.2019. Language 355.
+modelsareunsupervisedmultitasklearners. OpenAI
+Ruize Wang, Duyu Tang, Nan Duan, Zhongyu Wei,
+Blog,1(8).
+Xuanjing Huang, Cuihong Cao, Daxin Jiang, Ming
+Zhou, et al. 2020. K-adapter: Infusing knowl-
+PranavRajpurkar,JianZhang,KonstantinLopyrev,and
+edge into pre-trained models with adapters. arXiv
+PercyLiang.2016. SQuAD:100,000+questionsfor
+preprintarXiv:2002.01808.
+machine comprehension of text. In Proceedings of
+the2016ConferenceonEmpiricalMethodsinNatu-
+AlexWarstadt,AmanpreetSingh,andSamuelRBow-
+ralLanguageProcessing,pages2383–2392,Austin,
+man.2018. Neuralnetworkacceptabilityjudgments.
+Texas.AssociationforComputationalLinguistics.
+arXivpreprintarXiv:1805.12471.
+Sylvestre-Alvise Rebuffi, Hakan Bilen, and Andrea
+Adina Williams, Nikita Nangia, and Samuel Bowman.
+Vedaldi. 2018. Efficient parametrization of multi-
+2018. A broad-coverage challenge corpus for sen-
+domaindeepneuralnetworks. InCVPR.
+tenceunderstandingthroughinference. InProceed-
+ingsofthe2018ConferenceoftheNorthAmerican
+Petar Ristoski and Heiko Paulheim. 2016. Rdf2vec:
+Chapter of the Association for Computational Lin-
+Rdf graph embeddings for data mining. In Inter-
+guistics: Human Language Technologies, Volume 1
+nationalSemanticWebConference,pages498–514.
+(LongPapers),pages1112–1122.
+Springer.
+Zhilin Yang, Zihang Dai, Yiming Yang, Jaime Car-
+Anna Rogers, Olga Kovaleva, and Anna Rumshisky. bonell, Ruslan Salakhutdinov, and Quoc V Le.
+2020. Aprimerinbertology: Whatweknowabout 2019. Xlnet: Generalized autoregressive pretrain-
+howbertworks. arXivpreprintarXiv:2002.12327. ing for language understanding. arXiv preprint
+arXiv:1906.08237.
+Push Singh, Thomas Lin, Erik T Mueller, Grace Lim,
+TravellPerkins,andWanLiZhu.2002. Openmind MoYuandMarkDredze.2014. Improvinglexicalem-
+common sense: Knowledge acquisition from the beddingswithsemanticknowledge. InProceedings
+generalpublic. InOTMConfederatedInternational ofACL,pages545–550.
+Conferences” On the Move to Meaningful Internet
+Systems”,pages1223–1237.Springer. Zhengyan Zhang, Xu Han, Zhiyuan Liu, Xin Jiang,
+Maosong Sun, and Qun Liu. 2019. ERNIE: En-
+Richard Socher, Alex Perelygin, Jean Wu, Jason hancedlanguagerepresentationwithinformativeen-
+Chuang, Christopher D Manning, Andrew Ng, and tities. In Proceedings of the 57th Annual Meet-
+Christopher Potts. 2013. Recursive deep models ingoftheAssociationforComputationalLinguistics,
+forsemanticcompositionalityoverasentimenttree- pages1441–1451.
+bank. In Proceedings of the 2013 conference on
+empirical methods in natural language processing,
+pages1631–1642.
+RobertSpeer,JoshuaChin,andCatherineHavasi.2017.
+Conceptnet5.5: Anopenmultilingualgraphofgen-
+eralknowledge. InThirty-FirstAAAIConferenceon
+ArtificialIntelligence.
+Fabian M Suchanek, Gjergji Kasneci, and Gerhard
+Weikum.2007. Yago:acoreofsemanticknowledge.
+InProceedingsofthe16thinternationalconference
+onWorldWideWeb,pages697–706.ACM.
+Denny Vrandecˇic´ and Markus Kro¨tzsch. 2014. Wiki-
+data: a free collaborative knowledgebase. Commu-
+nicationsoftheACM,57(10):78–85.

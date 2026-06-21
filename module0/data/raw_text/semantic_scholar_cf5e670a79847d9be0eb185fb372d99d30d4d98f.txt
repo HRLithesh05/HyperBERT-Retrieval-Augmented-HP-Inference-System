@@ -1,0 +1,701 @@
+Adapt-and-Distill: Developing Small, Fast and Effective
+Pretrained Language Models for Domains
+YunzhiYao†,∗ShaohanHuang‡,WenhuiWang‡,LiDong‡,FuruWei‡
+†ShandongUniversity,Jinan,China
+‡MicrosoftResearch,Beijing,China
+yyz@mail.sdu.edu.cn
+{shaohanh,wenhui.wang,lidong1,fuwei}@microsoft.com
+Abstract
+Large pretrained models have achieved great
+success in many natural language processing
+tasks. However,whentheyareappliedinspe-
+cific domains, these models suffer from do-
+mainshiftandbringchallengesinfine-tuning
+and online serving for latency and capacity
+constraints. In this paper, we present a gen-
+eral approach to developing small, fast and
+effective pretrained models for specific do-
+mains. This is achieved by adapting the off-
+the-shelf general pretrained models and per-
+Figure 1: The four alternatives when distilling BERT
+forming task-agnostic knowledge distillation
+intospecificdomains. Allstrategiesaretask-agnostic.
+in target domains. Specifically, we propose
+domain-specific vocabulary expansion in the
+adaptation stage and employ corpus level oc- todeployonresource-limitededgedevicessuchas
+currence probability to choose the size of in- mobilephone. Second,directlyfine-tuningagen-
+crementalvocabularyautomatically. Thenwe
+eral pre-trained model on a domain-specific task
+systematically explore different strategies to
+maynotbeoptimalwhenthetargetdomainvaries
+compress the large pretrained models for spe-
+substantially from the general domain. Thirdly,
+cific domains. We conduct our experiments
+in the biomedical and computer science do- manyspecializeddomainscontaintheirownspe-
+main. The experimental results demonstrate cificterms, whicharenotincludedinpre-trained
+thatourapproachachievesbetterperformance languagemodelvocabulary.
+over the BERT BASE model in domain-specific Inthispaper,weintroduceAdaLM,aframework
+tasks while 3.3× smaller and 5.1× faster than
+thataimstodevelopsmall, fastandeffectivepre-
+BERT . The code and pretrained models
+BASE trainedlanguagemodelsforspecificdomains. To
+areavailableathttps://aka.ms/adalm.
+addressdomainshiftproblem,recentstudies(Lee
+1 Introduction etal.,2020;Gururanganetal.,2020)conductcon-
+tinualpre-trainingtoadaptageneraldomainpre-
+Pre-trained language models, such as GPT (Rad-
+trainedmodeltospecificdomains. However,spe-
+ford et al., 2018), BERT (Devlin et al., 2019),
+cific domains contain many common in-domain
+RoBERTa (Liu et al., 2019) and UniLM (Dong
+terms,whichmaybedividedintobite-sizedpieces
+et al., 2019) have achieved impressive success in
+(e.g., lymphoma is tokenized into [l, ##ym, ##ph,
+many natural language processing tasks. These
+##oma]). Gu et al.(2020) mentions that domain-
+modelsusuallyhavehundredsofmillionsofparam-
+specific vocabularies play a vital role in domain
+eters. Theyarepre-trainedonalargecorpusofgen-
+adaptationofpre-trainedmodels. Specifically,we
+eraldomainandfine-tunedontargetdomaintasks.
+propose a domain-specific vocabulary expansion
+However,itisnotoptimaltodeploythesemodels
+intheadaptationstage,whichaugmentsin-domain
+directlytoedgedevicesinspecificdomains. First,
+terms or subword units automatically given in-
+heavymodelsizeandhighlatencymakesitdifficult
+domaintext. Also,itiscriticaltodecidethesizeof
+∗ContributionduringinternshipatMicrosoftResearch. incrementalvocabulary. Motivatedbysubwordreg-
+ularization(Kudo,2018),AdaLMintroducesacor- unseenwords.
+pusoccurrenceprobabilityasametrictooptimize
+Task-agnosticknowledgedistillation Inrecent
+thesizeofincrementalvocabularyautomatically.
+years, tremendous progress has been made in
+We systematically explore different strategies
+modelcompression(Chenget al.,2017). Knowl-
+tocompressgeneralBERTmodelstospecificdo-
+edgedistillationhasproventobeapromisingway
+mains (Figure 1): (a) From scratch: pre-training
+to compress large models while maintaining ac-
+domain-specificsmallmodelfromscratchwithdo-
+curacy (Sanh et al., 2019; Jiao et al., 2020; Sun
+main corpus; (b) Distill-then-Adapt: first distill-
+etal.,2020;Wangetal.,2020). Inthispaper,we
+inglargemodelintosmallmodel,thenadaptingit
+focus on task-agnostic knowledge distillation ap-
+intoaspecificdomain;(c)Adapt-then-Distill: first
+proaches,whereadistilledsmallpre-trainedmodel
+adaptingBERTintoaspecificdomain,thendistill-
+can be directly fine-tuned on downstream tasks.
+ing model into small size; (d) Adapt-and-Distill:
+DistilBERT (Sanh et al., 2019) employs the soft
+adaptingboththelargeandsmallmodels,thendis-
+labelandembeddingoutputstosupervisethestu-
+tillingwiththesetwomodelsinitializingtheteacher
+dent. TinyBERT (Jiao et al., 2020) and Mobile-
+andstudentmodelsrespectively.
+BERT (Sun et al., 2020) introduce self-attention
+Weconductexperimentsinbothbiomedicaland
+distributionsandhiddenstatestotrainthestudent
+computersciencedomainandfine-tunethedomain-
+model. MiniLM(Wangetal.,2020)avoidsrestric-
+specific small models on different downstream
+tionsonthenumberofstudentlayersandemploys
+tasks. Experiments demonstrate that Adapt-and-
+the self-attention distributions and value relation
+Distillachievesstate-of-the-artresultsfordomain-
+oftheteacher’slasttransformerlayertosupervise
+specific tasks. Specifically, the 6-layer model of
+the student model. Because this method is more
+384hiddendimensionsoutperformstheBERT
+BASE
+flexible,weimplementMiniLMtocompresslarge
+model while 3.3× smaller and 5.1× faster than
+models in this work. No previous work system-
+BERT .
+BASE
+aticallyexploresdifferentstrategiestoachievean
+effective and efficient smaller model in specific
+2 RelatedWork
+domains.
+Domain adaptation of pre-trained model
+3 Methods
+Most previous work on the domain-adaptation
+of pre-trained models targets large models. Lee
+3.1 Overview
+et al. (2020) conduct continual pre-training to
+We systematically explore different strategies to
+adapttheBERTmodeltothebiomedicaldomain
+achieve an effective and efficient small model in
+usingthePubMedabstractsandthePMCfulltext.
+specific domains. We summarize them into four
+Gururangan et al. (2020) also employ continual
+strategies: fromscratch,distill-then-adapt,adapt-
+pre-training to adapt pre-trained models into
+then-distillandadapt-and-distill.
+differentdomainsincludingbiomedical,computer
+science and news. However, many specialized
+Pretrain-from-scratch Domain-specific
+domains contain their own specific words that
+pretraining from scratch employs a random
+are not included in pre-trained language model
+initializationofapretrainedmodelandpretrainsa
+vocabulary. Guetal.(2020)proposeabiomedical
+small model directly on domain-specific corpus.
+pre-trained model PubMedBERT, where the
+Inthiswork,weconductpretrainingfromscratch
+vocabulary was created from scratch and the
+ondifferentvocabulariesincludingBERToriginal
+modelispre-trainedfromscratch. Furthermore,in
+vocabulary,fromscratchvocabulary,andexpanded
+manyspecializeddomains, largeenoughcorpora
+vocabulary.
+may not be available to support pre-training
+from scratch. Zhang et al. (2020) and Tai et al. Distill-then-adapt Theseapproachesfirstdistill
+(2020) extend the open-domain vocabulary with thelargegeneralpretrainedmodelwhichpretrained
+top frequent in-domain words to resolve this onWikipediaandBookCorpus. Thenitcontinues
+out-of-vocabulary issue. This approach ignores thepretrainingprocessusingadomain-specificcor-
+domain-specific sub-word units (e.g., blasto-, pus. Inthiswork,wefirstdistilltheBERTmodel
+germin- in biomedical domain). These subword intoasmallmodelusingtask-agnosticknowledge
+unitshelpgeneralizedomainknowledgeandavoid distillationinMiniLM(Wangetal.,2020). Then
+weinitializethesmallmodelwithitandconduct
+continualtrainingwithboththeBERToriginalvo-
+cabularyandtheexpandedvocabulary.
+Adapt-then-distill Inthiswork,weselectdiffer-
+entlargemodelsasteachermodelssuchasBERT
+andlargemodelswithdifferentvocabularies. We
+firstadaptthesemodelsintodomain-specificmod-
+elsandthenimplementMiniLMtocompressthem
+tosmallmodels.
+Adapt-and-distill Inthepreviouspart,whendo-
+ing knowledge distill, we initialized the student
+modelrandomly. In ordertoget abetterdomain-
+specificsmallmodel,wetrytoexploretheimpact
+of the initialization of the student model. In this
+part, we adapt large and small models into spe-
+cificdomainsseparately,thenusethesetwomodels
+toinitializetheteacherandstudentmodelrespec-
+tively.
+3.2 DomainAdaptation
+AdaLM contains a simple yet effective domain
+adaptation framework for a pretrained language Figure2: Thepipelineofdomainadaptation. Herewe
+model. AsshowninFigure2,ittakesageneralpre- adapttheBERTmodelintothebiomedicaldomainwith
+trainedlanguagemodel,originalvocabularyanda PubMeddataset.
+domainspecificcorpusasinput. Throughvocabu-
+laryexpansionandcontinualpretraining,AdaLM
+vectorof‘lymphoma’isinitializedbytheav-
+adaptsgeneralmodelsintospecificdomains.
+erageembeddingvectorof‘lym’,‘##pho’and
+Thecorepipelineofdomainadaptationconsists
+‘##ma’.
+ofthethreestepsdescribedbelow:
+3. After model initialization and data prepro-
+1. Given original vocabulary and a domain-
+cessing, we continually pretrain our model
+specific corpus, the vocabulary expansion
+with domain-specific corpus using masked
+moduleaimstoaugmentoriginalvocabulary
+language model loss. Following BERT, we
+withdomain-specificsubwordunitsorterms.
+randomlyreplace15%oftokensbyaspecial
+Weaugmentdomain-specificvocabularyfrom
+token (e.g., [MASK]) and ask the language
+thetargetdomain,whilekeepingtheoriginal
+model to predict them in continual pretrain-
+BERT vocabulary unchanged. We describe
+ing.
+theminmoredetailinSection3.3.
+3.3 VocabularyExpansion
+2. Due to the size of the vocabulary having
+changed,wecannotinitializeourmodelwith Vocabulary expansion is the core module of
+BERTdirectly. AsillustratedinFigure3,we AdaLM.Itaugmentsdomain-specifictermsorsub-
+initialize the original embedding and Trans- word units to leverage domain knowledge. The
+formerencoderwithweightsfromBERT(the sizeoftheincrementalvocabularyisavitalparam-
+greenpartinFigure3). Forincrementalvocab- eter for vocabulary expansion. Considering that
+ulary, wefirsttokenizethemintosub-words unigramlanguagemodeling (Kudo,2018)aligns
+withtheoriginalvocabularyandthenusean more closely with morphology and avoids prob-
+averagepoolingoftheirownsub-wordsem- lems stemming from BPE’s greedy construction
+bedding to initialize. As shown in Figure 3, procedure, as proposed in (Bostrom and Durrett,
+theword‘lymphoma’isnotincludedinBERT 2020),wefollowedKudo(2018)andintroduceda
+vocabulary. We tokenize it into three sub- corpusoccurrenceprobabilityasametrictoopti-
+words (lym, ##pho, ##ma). The embedding mizethesizeofincrementalvocabularyautomati-
+× ×
+Figure 4: The P(D) of different vocab sizes under
+biomedicaldomain. WeusetheBERT’svocabularyas
+Figure 3: Concatenate original embedding with ex- the30kvocabularywithoutvocabularyexpanding.The
+pandedembedding. PubMedBERTvocabularyisalso30k.
+cally. Weassumethateachsubwordoccursinde-
+Weproposeasimplemethodtodecidethesizeof
+pendently and we assign to each subword in the
+theincrementalvocabulary. Assumetheprobability
+corpus a probability equal to its frequency in the
+at the time step i−1 is P (D) and at the time
+i−1
+corpus.
+stepiisP (D). Iftherise
+Pi(D)−Pi−1(D)
+islower
+i Pi−1(D)
+(cid:88) thanathresholdδ, weregardthevocabularysize
+∀i x ∈ V, p(x ) = 1, (1)
+i i
+atthetimestepiasthefinalsize.
+xi∈V
+whereV isapre-determinedvocabulary. Theprob-
+Algorithm1:VocabularyExpansion
+ability of a subword sequence x = (x ,...,x )
+1 M Input: Originalvocabularyraw vocab,
+can be computed by the product of the subword
+domaincorporaD,thresholdδ and
+appearance probabilities p(x ). We convert it to
+i vocabularysizestepV
+∆
+logarithmicform:
+Output: vocab
+final
+token count ←whitespacesplitfromD;
+M
+(cid:88)
+P(x) = log(p(x i)), (2) P 0 ←computedfromraw vocab;
+i=1
+V
+0
+← |raw vocab|;
+do
+Given a domain-specific corpus D, the occur-
+vocabularysizeV ← V +V ;
+renceprobabilityofcorpusD isformulatedas: i i−1 ∆
+sub count ←splittokentosubwords;
+|D| Sortsub countbyfrequency;
+(cid:88)
+P(D) = log(P(x)), (3) incr vocab ←keep(V −V )subwords;
+i 0
+x vocab i ←raw vocab+incr vocab;
+P ←computedfromvocab
+where x represents tokenized sentence in corpus i i
+while
+Pi−Pi−1
+> δ;
+D. Pi−1
+Wesample550ksentencesfromthePubMedcor- returnvocab final ← vocab i ;
+pusandcomputetheoccurrenceprobabilityP(D)
+with different vocabulary sizes. The results are
+Weexpandthedomain-specificvocabularywith
+shown in Figure 4. We compare the occurrence
+theprocessshowninAlgorithm1. Weimplement
+probabilitywithBERTandPubMedBERTvocabu-
+our vocabulary expansion algorithm referring to
+laries. WeobservethatP(D)revealsalogarithmic
+SubwordTextBuilderintensor2tensor1. Inexperi-
+trend with substantial increases at the beginning
+ments,wesetthethresholdδas1%andvocabulary
+andlittleinfluenceaftervocabularysizeof70kin
+size step V as 10k. Finally, we obtain the ex-
+∆
+thebiomedicaldomain. ThePubMedBERTvocab-
+pandedvocabularysizeofbiomedicalas60kand
+ularyperformssimilarlytothe40ksizevocabulary.
+computersciencedomainas50k.
+Wepresenttheoccurrenceprobabilityofdifferent
+vocabularysizesinAppendixA. 1https://github.com/tensorflow/tensor2tensor
+4 ExperimentDetails Dataset Train Dev Test
+JNLPBA 46,750 4551 8,662
+We conduct our experiments in two domains:
+EBMPICO 339,167 85321 16,364
+biomedicalandcomputerscience.
+ChemProt 18,035 11268 15,745
+4.1 Datasets
+Table 1: Biomedical dataset used in our experiment.
+Domaincorpus: Forthebiomedicaldomain,we AllselectedfromBLURB4
+collecta16GBcorpusfromPubMed2 abstractsto
+adaptourmodel. Weusethelatestcollectionand Dataset Train Task Test Classes
+pre-processthecorporawiththesameprocessas ACL-ARC 1,688 114 139 6
+PubMedBERT (we omit any abstracts with less SCIERC 3,219 455 974 7
+than128wordstoreducenoise.).
+For the computer science domain, we use the Table 2: Computer science dataset used in our exper-
+abstractstextfromthearXiv3 Dataset. Weselect iment. We use the same train, development, and test
+abstractsincomputersciencecategories,collecting splitsasGururanganetal.(2020)
+300Mentriesforthecorpus.
+Toadaptthelargemodel,wesetthebatchsize
+Fine-tuning tasks: For the biomedical domain,
+at8192andthetrainingstepat30,000. Thepeak
+we choose three tasks: named entity recognition
+learning rate was set to 6e-4. To adapt the small
+(NER), evidence-based medical information ex-
+model,wesetthebatchsizeas256andthetraining
+traction(PICO),andrelationextraction(RE).We
+step as 200,000. The learning rate is set to 1e-4.
+perform entity-level F1 in NER task and word-
+The maximum length of the input sequence was
+level macro-F1 in the PICO task. The RE task
+512 and the token masking probability was 15%
+uses the micro-F1 of positive classes evaluation.
+forboththelargemodelandthesmallmodel.
+JNLPBA(CollierandKim,2004)NERdatasetcon-
+WeimplementMiniLMtocompresslargemod-
+tains 6,892 disease mentions, which are mapped
+els and follow the setting of MiniLM, where the
+to790uniquediseaseconceptswithBIOtagging
+batchsizewassetto256andpeaklearningrateas
+(RamshawandMarcus,1995). EBMPICO(Nye
+4e-4. Wesetthetrainingstepas200,000.
+et al., 2018) datasets annotates text spans with
+For biomedical tasks, we follow the setting of
+four tags: Participants, Intervention, Comparator
+PubMedBERT(Guetal.,2020)tofine-tunethese
+andOutcome. ChemProt(Krallingeretal.,2017)
+three tasks. For computer science tasks, we use
+datasetconsistsoffiveinteractionsbetweenchem-
+thesamesettingasGururanganetal.(2020). The
+ical and protein entities. We list the statistics of
+concreteparametersareshowninAppendixB.
+thosetasksinTable1.
+Wefine-tunetwodownstreamtasksinthecom-
+5 Results
+putersciencedomain. Theyarebothclassification
+tasks. TheACL-ARC(Jurgensetal.,2018)dataset The results of the tasks are shown in the Table 3
+mainlyfocusesonanalyzinghowscientificworks and 4. We structure our evaluation by stepping
+frame their contributions through different types througheachofourthreefindings:
+of citations. SCIERC (Luan et al., 2018) dataset (1)Domain-specificvocabularyplaysasignifi-
+includesannotationsforscientificentities,theirre- cant role in domain-specific tasks and expanding
+lations,andcoreferenceclusters. Thestatisticsare vocabulary with the general vocabulary is better
+availableinTable2. thanjustusingdomain-specificvocabulary.
+Weobserveimprovedresultsviatheexpanded
+4.2 Implementation
+vocabulary with both the large and small models.
+WeusetheuncasedversionofBERT (12lay- Forlargemodel,AdaLMachievesthebestresults
+BASE
+ers, 768 hidden size) as the large model and the under each domain, where 77.74 on biomedical
+MiniLM (6 layers, 384 hidden size) as the small domaintasks,beatingBioBERTandPubMedBERT
+model. and77.76onthecomputersciencedomaintasks.
+For small models, in the biomedical domain,
+2https://pubmed.ncbi.nlm.nih.gov/
+3https://www.kaggle.com/Cornell-University/arxiv whetherwetrainfromscratchordistill-then-adapt
+4https://microsoft.github.io/BLURB/ with small models, incremental vocabulary mod-
+Config Type Model Teacher JNLPBA PICO Chemprot Average
+BERT† - 78.63 72.34 71.86 74.28
+BioBERT† - 79.35 73.18 76.14 76.22
+L=12;d=786 Largemodel
+PubMedBERT† - 80.06 73.38 77.24 76.89
+AdaLM♦ - 79.46 75.47 78.41 77.74
+Smallmodel MiniLM - 77.44 71.69 68.08 72.40
+BERTvocab(a) - 77.89 72.97 70.21 73.69
+Fromscratch PubMedvocab(b) - 77.82 73.82 70.32 73.99
+AdaLMvocab(c) - 77.80 73.39 70.86 74.02
+L=6;d=384 BERTvocab(d) - 78.63 74.00 72.28 74.97
+Distill-then-Adapt PubMedvocab(e) - 78.36 73.91 71.33 74.53
+AdaLMvocab(f) - 78.77 74.23 72.29 75.10
+Randominitial(g) BERT 77.98 72.38 68.86 73.07
+Adapt-then-Distill Randominitial(h) PubMedBERT 78.78 74.20 70.89 74.62
+Randominitial(i) AdaLM♦ 78.98 74.78 71.51 75.09
+Adapt-and-Distill Model(f)initial(j) AdaLM♦ 79.04 74.91 72.06 75.34
+Table 3: Comparison between different strategies on biomedical tasks. The AdaLM♦ means we just adapt the
+largemodelwithoutdistillation. Scoresofthemethodsmarkedwith†aretakenfrom(Guetal.,2020). Underlined
+datamarksthesmallmodelswhoseperformancessurpasstheBERTmodel’sperformance. Landdindicatethe
+numberoflayersandthehiddendimensionofthemodel.
+elsalwaysperformbetterthanthegeneralvocabu- generallanguagemodelsisbetterthanpretraining
+laryorjustthedomain-specificvocabulary. (When from scratch. For AdaLM vocabulary, the model
+distill-then-adaptwiththePubMedvocabulary,we (f)gets75.10,outperformingthemodel(c)trained
+initializethewordembeddinginthesamewayas fromscratchwiththesamevocabularyby1.08. On
+mentionedinSection3.2). Inaddition,withdistill- theotherhand,fordomainsthatdonothaveenor-
+then-adapt, the model (f) (75.10) can surpass the mousunlabeledtextssuchasthecomputerscience
+BERTmodel(74.28). domaininourexperiments,continualpretraining
+In the computer science domain, distill-then- alsoshowedbetterresults. Withcontinualpretrain-
+adapt models with incremental vocabulary also ing, model (d) achieves higher results exceeding
+show great performance. Model (d) achieves a both model (b) (+5.66 F1) and model (c) (+0.47
+comparable result of 72.91 as BERT and outper- F1).
+formsBERTintheACL-ARCdatasetswith65.93 (3)Adapt-and-Distillisthebeststrategytode-
+(+1.01 F1). We also observe that when training velop a task-agnostic domain-specific small pre-
+from scratch, the results of Model (b) with incre- trainedmodel.
+mentalvocabularyarelower(1.45lower)thanthat IntheAdapt-then-Distillpart,ourfindingssup-
+of model (a). This may be because after vocabu- portsevidencefrompreviousobservations(Wang
+laryexpansion,afrom-scratchmodelneedstobe etal.,2020)thatabetterteachermodelleadstoa
+pretrainedwithmoreunlabeleddata. better student model. Using AdaLM which per-
+(2) Continual pretraining on domain-specific forms best among large models as the teacher
+textsfromgenerallanguagemodelsisbetterthan modelcanyieldgoodresults: 75.09inthebiomed-
+pretrainingfromscratch. ical domain and 71.62 in the computer science,
+Guetal.(2020)findsthatfordomainswithabun- betterthanotherdomain-specificlargemodels. Fur-
+dantunlabeledtexts,pretraininglanguagemodels thermore, we find that a better student model for
+fromscratchoutperformscontinualpretrainingof initialization can also help to get a better small
+general-domainlanguagemodels. However,inour model. In the Adapt-and-Distill part, we adapt
+experiments,wefindthatgeneral-domainsmodel largeandsmallmodelsintospecificdomainssepa-
+canhelpourmodeltolearnthetargetdomainbetter. ratelyandthencompresstheadaptedlargemodel
+Inthebiomedicaldomain,weuseMiniLMmodel astheteacherwiththeadaptedsmallmodelasini-
+toinitializethemodel(d),(e)and(f)indistill-then- tialization. In the biomedical domain, the model
+adaptsetting. Nomatterwhichvocabularyisused, (j), initialized from model (i), achieves the best
+continualpretrainingondomain-specifictextsfrom result of 75.34 among the small models. It also
+Config Type Model Teacher ACL-ARC SCIERC Average
+BERT - 64.92 81.14 73.03
+L=12;d=786 Largemodel
+AdaLM♦ - 73.61 81.91 77.76
+Smallmodel MiniLM - 61.5 72.88 67.19
+BERTvocab(a) - 62.48 74.93 68.70
+Fromscratch
+AdaLMvocab(b) - 59.57 74.93 67.25
+L=6;d=384
+BERTvocab(c) - 65.75 79.13 72.44
+Distill-then-Adapt
+AdaLMvocab(d) - 65.93 79.88 72.91
+Randominitial(e) BERT 63.12 77.89 70.50
+Adapt-then-Distill
+Randominitial(f) AdaLM♦ 66.21 77.04 71.62
+Adapt-and-Distill Model(d)initial(g) AdaLM♦ 68.74 78.88 73.81
+Table 4: Comparison between different strategies on computer science tasks. The AdaLM♦ is the adapted large
+modelwithoutcompressing. Wereportaveragesacrossfiverandomseeds. Datamarkedwithunderlinesarethe
+resultsofsmallmodelswhichoutperformtheBERTmodel’s.Landdindicatethenumberoflayersandthehidden
+dimensionofthemodel.
+outperforms the BERT model (+1.06 F1). In the load. Welistthechangeofthesequencelengthof
+computersciencedomain,model(g),initializedby thedownstreamtasksinAppendixC.Meanwhile,
+model(d),istheonlysmallmodelthatoutperforms in the embedding layers, the model just needs to
+BERT(+0.78F1). map the sub-words’ id to their dense representa-
+tions, which is little affected by the parameters’
+6 Analysis
+size. Thesmallmodelshowsthesametrend.
+Inaddition,thesmallmodelAdaLMshowsgreat
+6.1 InferenceSpeed
+potential. Compared with the 12-layer model of
+WecompareAdaLM’sparameters’sizeandinfer-
+768hiddendimensions,the6-layermodelof384
+encespeedwiththeBERTmodelinthebiomedical
+hiddendimensionsis3.3xsmallerand5.1xfaster
+domaininTable5.
+inthemodelefficiency,whileperformingsimilarly
+toorevenbetterthanBERT .
+Type Model #Params Speedup BASE
+BERT 109M ×1.0
+6.2 ImpactofTrainingTime
+Large PubMedBERT 109M ×1.0
+Pre-trainingoftendemandslotsoftime. Inthissec-
+AdaLMvocab 132M ×1.07
+tion,weexaminetheadaptedmodel’sperformance
+BERTvocab 22M ×5.0
+Small as a function of training time. Here we use the
+AdaLM 34M ×5.1
+biomedical domain since its unlabelled texts are
+abundant and compare the large domain-specific
+Table5:Comparisonofmodel’sparametersizeandthe
+inference speed. The inference speedup is computed adaptedmodelwithBioBERT.Forevery24hrsof
+bytheclassificationtaskChemProtandevaluatedona continual pre-training, we fine-tuned the adapted
+singleNVIDIAP100GPU. modelonthedownstreamtasks. Forcomparison,
+we convert the training time of BioBERT to the
+Firstwecanfindthatthevocabularyexpansion timeitmaytakewiththesamecomputingresource
+yields marginal improvements on the model’s in- ofthiswork(16V100GPUs).
+ference speed. We added about 20M parameters WelisttheresultsinTable6,wedenotethelarge
+in the embedding weights in the large model us- adaptedmodelasAdaLMinthetable. AdaLMat0
+ing AdaLM vocabulary, but its inference speed hrsmeansthatwefine-tunetheinitializedmodeldi-
+is slightly faster than BERT and PubMedBERT. rectlywithoutanycontinualpre-training. Wefind
+Sincemostdomain-specifictermsareshatteredinto thatBERTisslightlybetterthan0hrAdaLMand
+fragmented subwords, the length of the token se- after24hrs,AdaLMoutperformsBioBERT,which
+quencewegetbyusingtheincrementalvocabulary demonstrates that domain-specific vocabulary is
+isshorterthanthelengthofthesequencegotbythe very critical for domain adaption of pre-trained
+originalvocabulary,whichreducesthecomputation model. Ourexperimentsdemonstratepromisingre-
+Model TrainingTime Average problem.
+0hrs 74.25
+6.4 VocabularyVisualization
+24hrs 76.80
+AdaLM
+48hrs 77.36 The main motivation for using an the expanded
+72hrs 77.74 vocabulary set is to leverage domain knowledge
+BERT 0hrs 74.28 better. ComparedtoPubMedBERTwhichjustuses
+BioBERT 120hrs 76.22 thedomain-specificvocabularyandinitializesthe
+modelrandomly,thekeepofthegeneralvocabulary
+Table 6: Results with different pre-training time. In andthegenerallanguagemodel’sweightsmayhelp
+the table, AdaLM is the adapted large model without us make good use of the existing knowledge and
+compressing. wordembedding.
+To assess the importance of the expanded vo-
+cabulary, we compute the L2-distance of the em-
+sultsinthebiomedicaldomain. Underconstrained
+bedding weights before and after pre-training in
+computation,AdaLMachievesbetterperformance
+our AdaLM model in the biomedical domain in
+comparedtoBioBERT.Moredetailscanbefound
+Figure5.
+inAppendixD
+6.3 ImpactofVocabularySize
+To understand the impact of the vocabulary size,
+weconductsomeexperimentswithdifferentvocab-
+ulary sizes in the biomedical domain. We select
+thebiomedicallargeAdaLMmodelandtoreduce
+Figure5:TheL2-distanceoftheembeddinglayer.The
+thecomputationload,wesetthebatchsizeas256 deeperthecolor,thefartherthedistance.
+andstepas250Kinourablationstudies. Weshow
+performance of the model with different sizes in Weobservethatthedomain-specificvocabulary
+Table7. part changes a lot during the pre-training time,
+whichindicatesthatourmodellearnsmuchinfor-
+40k 50k 60k 70k 80k
+mationaboutthesedomain-specificterms. Wealso
+JNLPBA 78.84 79.02 78.91 78.94 79.01
+observethatthereislittlechangeinmanyoriginal
+PICO 75.09 74.81 74.99 74.58 75.00
+sub-words’ embedding weights, which indicates
+ChemProt 76.10 76.80 77.21 76.40 76.85
+thatmanygeneralvocabulariescanbeuseddirectly
+Average 76.67 76.87 77.03 76.64 76.95
+incontinualtraining.
+Table7: Theperformanceofdifferentvocabularysizes
+7 Conclusion
+Weobservethatthemodelof60kachievesthe In this paper, we investigate several variations to
+best results in our ablation studies. The result is compress general BERT models to specific do-
+a bit surprising. Despite having a larger vocab- mains. Ourexperimentsrevealthatthebeststrat-
+ulary, the 70k and 80k model does not show a egytoobtainatask-agnosticdomain-specificpre-
+strongerperformance. Apossibleexplanationfor trained model is to adapt large and small models
+these results may be that a larger vocabulary set intospecificdomainsseparatelyandthencompress
+maycontainsomemorecomplicatedbutlessfre- the adapted large model with the adapted small
+quentwords,whichcannotbelearntwellthrough modelasinitialization. Weshowthattheadapted6-
+continualpre-training. Forexample,thewordfer- layermodelof384hiddendimensionsoutperforms
+rocytochrome exists in 70k and 80k vocabularies theBERT modelwhile3.3×smallerand5.0×
+BASE
+but is split into (‘ferrocy’, ‘##tochrom’, ‘##e’) in faster than BERT . Our findings suggest that
+BASE
+the 60k vocabulary. In our sampled data (about domain-specific vocabulary and general-domain
+550k sentences), ‘ferrocytochrome’ appears less languagemodelplayvitalrolesindomainadapta-
+than100times,whilethesubword‘##tochrom’ap- tion of a pretrained model. In the future, we will
+pears more than 10k times and ‘ferrocy’ appears investigatemoredirectionsindomainadaptation,
+morethan200times. Therepresentationofthose suchasdataselectionandefficientadaptation.
+rarewordscannotbelearntwellduetothesparsity
+References David Jurgens, Srijan Kumar, Raine Hoover, Dan Mc-
+Farland,andDanJurafsky.2018. Measuringtheevo-
+KajBostromandGregDurrett.2020. Bytepairencod- lution of a scientific field through citation frames.
+ingissuboptimalforlanguagemodelpretraining. In Transactions of the Association for Computational
+Findings of the Association for Computational Lin- Linguistics,6:391–406.
+guistics: EMNLP 2020, pages 4617–4624, Online.
+AssociationforComputationalLinguistics.
+Martin Krallinger, Obdulia Rabal, Saber A
+Akhondi, Martın Pe´rez Pe´rez, Jesu´s Santamar´ıa,
+Yu Cheng, Duo Wang, Pan Zhou, and Tao Zhang. GP Rodr´ıguez, et al. 2017. Overview of the
+2017. A survey of model compression and accel- biocreative vi chemical-protein interaction track.
+eration for deep neural networks. arXiv preprint In Proceedings of the sixth BioCreative challenge
+arXiv:1710.09282. evaluationworkshop,volume1,pages141–146.
+Nigel Collier and Jin-Dong Kim. 2004. Introduc- TakuKudo.2018. Subwordregularization: Improving
+tion to the bio-entity recognition task at JNLPBA. neuralnetworktranslationmodelswithmultiplesub-
+In Proceedings of theInternational Joint Workshop wordcandidates. InProceedingsofthe56thAnnual
+on Natural Language Processing in Biomedicine Meeting of the Association for Computational Lin-
+anditsApplications(NLPBA/BioNLP),pages73–78, guistics(Volume1:LongPapers),pages66–75,Mel-
+Geneva,Switzerland.COLING. bourne, Australia. Association for Computational
+Linguistics.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Kristina Toutanova. 2019. BERT: Pre-training of Jinhyuk Lee, Wonjin Yoon, Sungdong Kim,
+deep bidirectional transformers for language under- Donghyeon Kim, Sunkyu Kim, Chan Ho So, and
+standing. In Proceedings of the 2019 Conference JaewooKang.2020. Biobert: apre-trainedbiomed-
+of the North American Chapter of the Association ical language representation model for biomedical
+for Computational Linguistics: Human Language textmining. Bioinformatics,36(4):1234–1240.
+Technologies, Volume 1 (Long and Short Papers),
+pages4171–4186,Minneapolis,Minnesota.Associ- YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man-
+ationforComputationalLinguistics. dar Joshi, Danqi Chen, Omer Levy, Mike Lewis,
+Luke Zettlemoyer, and Veselin Stoyanov. 2019.
+Li Dong, Nan Yang, Wenhui Wang, Furu Wei, Xi- Roberta: A robustly optimized bert pretraining ap-
+aodong Liu, Yu Wang, Jianfeng Gao, Ming Zhou, proach. arXivpreprintarXiv:1907.11692.
+and Hsiao-Wuen Hon. 2019. Unified language
+modelpre-trainingfornaturallanguageunderstand- Yi Luan, Luheng He, Mari Ostendorf, and Hannaneh
+ing and generation. In Advances in Neural Infor- Hajishirzi. 2018. Multi-task identification of enti-
+mation Processing Systems 32: Annual Conference ties, relations, and coreference for scientific knowl-
+on Neural Information Processing Systems 2019, edgegraphconstruction. InProceedingsofthe2018
+NeurIPS 2019, December 8-14, 2019, Vancouver, Conference on Empirical Methods in Natural Lan-
+BC,Canada,pages13042–13054. guageProcessing, pages3219–3232, Brussels, Bel-
+gium.AssociationforComputationalLinguistics.
+Yu Gu, Robert Tinn, Hao Cheng, Michael Lucas,
+Naoto Usuyama, Xiaodong Liu, Tristan Naumann, Benjamin Nye, Junyi Jessy Li, Roma Patel, Yinfei
+Jianfeng Gao, and Hoifung Poon. 2020. Domain- Yang, Iain Marshall, Ani Nenkova, and Byron Wal-
+specific language model pretraining for biomedi- lace. 2018. A corpus with multi-level annotations
+cal natural language processing. arXiv preprint of patients, interventions and outcomes to support
+arXiv:2007.15779. language processing for medical literature. In Pro-
+ceedingsofthe56thAnnualMeetingoftheAssocia-
+Suchin Gururangan, Ana Marasovic´, Swabha tionforComputationalLinguistics(Volume1: Long
+Swayamdipta, Kyle Lo, Iz Beltagy, Doug Downey, Papers), pages 197–207, Melbourne, Australia. As-
+and Noah A. Smith. 2020. Don’t stop pretraining: sociationforComputationalLinguistics.
+Adapt language models to domains and tasks. In
+Proceedings of the 58th Annual Meeting of the AlecRadford,KarthikNarasimhan,TimSalimans,and
+Association for Computational Linguistics, pages Ilya Sutskever. 2018. Improving language under-
+8342–8360, Online. Association for Computational standingbygenerativepre-training.
+Linguistics.
+LanceRamshawandMitchMarcus.1995. Textchunk-
+Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang, ing using transformation-based learning. In Third
+Xiao Chen, Linlin Li, Fang Wang, and Qun Liu. WorkshoponVeryLargeCorpora.
+2020. TinyBERT: Distilling BERT for natural lan-
+guageunderstanding. InFindingsoftheAssociation Victor Sanh, Lysandre Debut, Julien Chaumond, and
+forComputationalLinguistics:EMNLP2020,pages Thomas Wolf. 2019. Distilbert, a distilled version
+4163–4174, Online. Association for Computational of bert: smaller, faster, cheaper and lighter. arXiv
+Linguistics. preprintarXiv:1910.01108.
+ZhiqingSun,HongkunYu,XiaodanSong,RenjieLiu,
+YimingYang,andDennyZhou.2020. MobileBERT:
+acompacttask-agnosticBERTforresource-limited
+devices. In Proceedings of the 58th Annual Meet-
+ingoftheAssociationforComputationalLinguistics,
+pages2158–2170,Online.AssociationforComputa-
+tionalLinguistics.
+WenTai, HTKung, XinLunaDong, MarcusComiter,
+and Chang-Fu Kuo. 2020. exbert: Extending pre-
+trainedmodelswithdomain-specificvocabularyun-
+der constrained training resources. In Proceed-
+ings of the 2020 Conference on Empirical Methods
+in Natural Language Processing: Findings, pages
+1433–1439.
+Wenhui Wang, Furu Wei, Li Dong, Hangbo Bao, Nan
+Yang, and Ming Zhou. 2020. Minilm: Deep self-
+attention distillation for task-agnostic compression
+of pre-trained transformers. In Advances in Neural
+Information Processing Systems 33: Annual Con-
+ference on Neural Information Processing Systems
+2020,NeurIPS2020,December6-12,2020,virtual.
+Rong Zhang, Revanth Gangi Reddy, Md Arafat Sul-
+tan, Vittorio Castelli, Anthony Ferritto, Radu Flo-
+rian, Efsun Sarioglu Kayi, Salim Roukos, Avi Sil,
+and Todd Ward. 2020. Multi-stage pre-training for
+low-resourcedomainadaptation. InProceedingsof
+the 2020 Conference on Empirical Methods in Nat-
+ural Language Processing (EMNLP), pages 5461–
+5468, Online. Association for Computational Lin-
+guistics.
+A Occurrenceprobabilityofdifferent Hyperameter Assignment
+vocabularysizes ACL-ARC SCIERC
+Batchsize 16
+Learningrate 2e-5
+Vocabulary P(D)
+Epoch 20
+BERT -255.92
+Dropout 0.1
+PubMed -218.49
+40kvocab -220.06 Table 11: Hyparameters we used to finetune on com-
+50kvocab -214.40 putersciencetasks.
+60kvocab -211.88
+70kvocab -210.44 Dataset OriginalVocab Incr. Vocab
+80kvocab -209.57
+ChemProt 66 53
+90kvocab -208.86
+EBMPICO 36 31
+100kvocab -208.42
+JNLPBA 41 32
+Table 8: The P(D) of different vocabulary under ACL-ARC 53 50
+biomedicaldomain. SCIERC 45 42
+Table 12: The sequence length tokenized by the origi-
+Vocabulary P(D) nalvocabularyandexpandedvocabulary.
+BERT -211.14
+40kvocab -194.08
+D Resultsofdifferenttrainingtime
+50kvocab -192.56
+60kvocab -191.87 We list the biomedical tasks’ results of each pre-
+70kvocab -191.45 trainingtimeinthefollowingtable.
+80kvocab -191.09
+0h 24h 48h 72h
+90kvocab -190.76
+100kvocab -190.53 JNLPBA 77.56 79.14 79.11 79.46
+PICO 73.29 74.22 75.28 75.36
+Table9: TheP(D)ofdifferentvocabularyundercom- ChemProt 71.91 77.06 77.69 78.42
+putersciencedomain.
+Average 74.25 76.80 77.36 77.74
+Table 13: The performance of models with different
+B Fine-tuninghyperparametersfor pretrainingtime
+downstreamtasks
+Hyperameter Assignment
+NER PICO RE
+Batchsize 32 {16,32} 32
+Learningrate {1e-5,3e-5,5e-5}
+Epoch {30-40} {10,15} {40-50}
+Dropout 0.1
+Table10:Hyparametersweusedtofinetuneonbiomed-
+icaltasks.
+C SequenceLength
+Afterthevocabularyexpansion,thelengthofthe
+tokensequencemaygetshorter. Wecomputethe
+averagesentencelengthofthedownstreamtasks.
+WelisttheresultsinTable12

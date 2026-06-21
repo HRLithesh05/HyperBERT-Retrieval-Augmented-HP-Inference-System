@@ -1,0 +1,1024 @@
+Intermediate-Task Transfer Learning with Pretrained Models for Natural
+Language Understanding: When and Why Does It Work?
+YadaPruksachatkun1∗ JasonPhang1∗ HaokunLiu1∗ PhuMonHtut1∗
+XiaoyiZhang1 RichardYuanzhePang1 ClaraVania1 KatharinaKann2
+SamuelR.Bowman1
+1NewYorkUniversity
+2UniversityofColoradoBoulder
+{yp913,bowman}@nyu.edu
+Abstract
+While pretrained models such as BERT have
+shownlargegainsacrossnaturallanguageun-
+derstanding tasks, their performance can be
+improved by further training the model on a
+data-richintermediatetask,beforefine-tuning
+it on a target task. However, it is still poorly
+understood when and why intermediate-task
+Figure1: Ourexperimentalpipelinewithintermediate-
+trainingisbeneficialforagiventargettask. To
+tasktransferlearningandsubsequentfine-tuningontar-
+investigatethis,weperformalarge-scalestudy
+getandprobingtasks.
+on the pretrained RoBERTa model with 110
+intermediate–target task combinations. We
+further evaluate all trained models with 25 STILTs. However,thisapproachdoesnotalways
+probing tasks meant to reveal the specific improvetargettaskperformance,anditisunclear
+skills that drive transfer. We observe that
+underwhatconditionsitdoes.
+intermediate tasks requiring high-level infer-
+This paper offers a large-scale empirical study
+enceandreasoningabilitiestendtoworkbest.
+aimed at addressing this open question. We per-
+We also observe that target task performance
+formabroadsurveyofintermediateandtargettask
+is strongly correlated with higher-level abil-
+ities such as coreference resolution. How- pairs,followinganexperimentalpipelinesimilarto
+ever, we fail to observe more granular corre- Phangetal.(2018)andWangetal.(2019a). This
+lations between probing and target task per- differsfrompreviousworkinthatweusealarger
+formance, highlighting the need for further
+and more diverse set of intermediate and target
+work on broad-coverage probing benchmarks.
+tasks,introduceadditionalanalysis-orientedprob-
+We also observe evidence that the forgetting
+ingtasks,anduseabetter-performingbasemodel
+of knowledge learned during pretraining may
+RoBERTa (Liu et al., 2019b). We aim to answer
+limit our analysis, highlighting the need for
+further work on transfer learning methods in thefollowingspecificquestions:
+thesesettings.
+• What kind of tasks tend to make good inter-
+1 Introduction mediatetasksacrossawidevarietyoftarget
+tasks?
+Unsupervised pretraining—e.g., BERT (Devlin
+etal.,2019)orRoBERTa(Liuetal.,2019b)—has • Which linguistic skills does a model learn
+recently pushed the state of the art on many nat- fromintermediate-tasktraining?
+ural language understanding tasks. One method
+• Whichskillslearnedfromintermediatetasks
+of further improving pretrained models that has
+helpthemodelsucceedonwhichtargettasks?
+been shown to be broadly helpful is to first fine-
+tune a pretrained model on an intermediate task,
+The first question is the most straightforward: it
+beforefine-tuningagainonthetargettaskofinter-
+canbeansweredbyasufficientlyexhaustivesearch
+est(Phangetal.,2018;Wangetal.,2019a;Clark
+over possible intermediate–target task pairs. The
+etal.,2019a;Sapetal.,2019),alsoreferredtoas
+secondandthirdquestionsaddressthewhyrather
+∗Equalcontribution. than the when, and differ in a crucial detail: A
+model might learn skills by training on an inter- oneachtargetandprobingtaskindividually. Target
+mediate task, but those skills might not help it to tasks are tasks of interest to the general commu-
+succeedonatargettask. nity, spanning various facets of natural language,
+Oursearchforintermediatetasksfocusesonnat- domains,andsources. Probingtasks,whilepoten-
+ural language understanding tasks in English. In tiallysimilarindatasourcetotargettaskssuchas
+particular,werunourexperimentson11interme- with CoLA, are designed to isolate the presence
+diate tasks and 10 target tasks, which results in a of particular linguistic capabilities or skills. For
+totalof110intermediate–targettaskpairs. Weuse instance,solvingthetargettaskBoolQ(Clarketal.,
+25probingtasks—tasksthateachtargetanarrowly 2019a)mayrequirevariousskillsincludingcoref-
+definedmodelbehaviororlinguisticphenomenon— erence and commonsense reasoning, while prob-
+toshedlightonwhichskillsarelearnedfromeach ingtasksliketheSentEvalprobingsuite(Conneau
+intermediatetask. etal.,2018)targetspecificsyntacticandmetadata-
+Ourfindingsincludethefollowing: (i)Natural levelphenomenasuchassubject-verbagreement
+languageinferencetasksaswellasQAtaskswhich andsentencelengthdetection.
+involvecommonsensereasoningaregenerallyuse-
+2.2 Tasks
+fulasintermediatetasks. (ii)SocialIQAandQQP
+asintermediatetasksarenothelpfulasameansto Table 1 presents an overview of the intermediate
+teachtheskillscapturedbyourprobingtasks,while andtargettasks.
+finetuningfirstonMNLIandCosmosQAresultin
+2.2.1 IntermediateTasks
+anincreaseinallskills. (iii)Whileamodel’sabil-
+Wecurateadiversesetoftasksthateitherrepresent
+itytolearnskillsrelatingtoinput-noisingcorrelate
+an especially large annotation effort or that have
+withtargettaskperformance,low-levelskillssuch
+beenshowntoyieldpositivetransferinpriorwork.
+as knowledge of a sentence’s raw content preser-
+The resulting set of tasks cover question answer-
+vationskillsandabilitytodetectvariousattributes
+ing,commonsensereasoning,andnaturallanguage
+ofinputsentencessuchastenseofmainverband
+inference.
+sentencelengtharelesscorrelatedwithtargettask
+performance. This suggests that a model’s abil- QAMR TheQuestion–AnswerMeaningRepre-
+itytodowellonthemaskedlanguagemodelling sentationsdataset(Michaeletal.,2018)isacrowd-
+(MLM) task is important for downstream perfor- sourced QA task consisting of question–answer
+mance. Furthermore,weconjecturethataportion pairs that correspond to predicate–argument re-
+ofouranalysisisaffectedbycatastrophicforgetting lationships. It is derived from Wikinews and
+ofknowledgelearnedduringpretraining. Wikipediasentences. Forexample,ifthesentence
+is“AdaLovelacewasacomputerscientist.”,apo-
+2 Methods
+tentialquestionis“WhatisAda’slastname?”,with
+2.1 ExperimentalPipeline theanswerbeing“Lovelace.”
+Our experimental pipeline (Figure 1) consists CommonsenseQA CommonsenseQA (Talmor
+of two steps, starting with a pretrained model: etal.,2019)isamultiple-choiceQAtaskderived
+intermediate-task training, and fine-tuning on a fromConceptNet(Speeretal.,2017)withthehelp
+targetorprobingtask. ofcrowdworkers,thatisdesignedtotestarangeof
+commonsenseknowledge.
+Intermediate Task Training We fine-tune
+RoBERTaoneachintermediatetask. Thetraining SciTail SciTail(Khotetal.,2018)isatextualen-
+procedure follows the standard procedure of tailment task built from multiple-choice science
+fine-tuningapretrainedmodelonatargettask,as questions from 4th grade and 8th grade exams,
+describedinDevlinetal.(2019). Weoptforsingle as well as crowdsourced questions (Welbl et al.,
+intermediate-tasktrainingasopposedtomulti-task 2017). Thetaskistodeterminewhetherahypothe-
+training(cf.Liuetal.,2019a)toisolatetheeffect sis, whichisconstructedfromasciencequestion
+of skills learned from individual intermediate and its corresponding answer, is entailed or not
+tasks. (neutral)bythepremise.
+Target and Probing Task Fine-Tuning After Cosmos QA Cosmos QA is a task for a
+intermediate-tasktraining,wefine-tuneourmodels commonsense-basedreadingcomprehensiontask
+Name |Train| |Dev| task metrics genre/source
+CommonsenseQA 9,741 1,221 questionanswering acc. ConceptNet
+SciTail 23,596 1,304 naturallanguageinference acc. scienceexams
+CosmosQA 25,588 3,000 questionanswering acc. blogs
+SocialIQA 33,410 1,954 questionanswering acc. crowdsourcing
+CCG 38,015 5,484 tagging acc. WallStreetJournal
+HellaSwag 39,905 10,042 sentencecompletion acc. videocaptions&Wikihow
+QA-SRL 44,837 7,895 questionanswering F1/EM Wikipedia
+SST-2 67,349 872 sentimentclassification acc. moviereviews
+QAMR 73,561 27,535 questionanswering F1/EM Wikipedia
+sksaTetaidemretnI
+QQP 363,846 40,430 paraphrasedetection acc./F1 Quoraquestions
+MNLI 392,702 20,000 naturallanguageinference acc. fiction,letters,telephonespeech
+CB 250 57 naturallanguageinference acc./F1 WallStreetJournal,fiction,dialogue
+COPA 400 100 questionanswering acc. blogs,photographyencyclopedia
+WSC 554 104 coreferenceresolution acc. hand-crafted
+RTE 2,490 278 naturallanguageinference acc. news,Wikipedia
+MultiRC 5,100 953 questionanswering F1 /EM crowd-sourced
+α
+WiC 5,428 638 wordsensedisambiguation acc. WordNet,VerbNet,Wiktionary
+BoolQ 9,427 3,270 questionanswering acc. Googlequeries,Wikipedia
+sksaTtegraT
+CommonsenseQA 9,741 1,221 questionanswering acc. ConceptNet
+CosmosQA 25,588 3,000 questionanswering acc. blogs
+ReCoRD 100,730 10,000 questionanswering F1/EM news(CNN,DailyMail)
+Table 1: Overview of the intermediate tasks (top) and target tasks (bottom) in our experiments. EM is short for
+ExactMatch. TheF1metricsforMultiRCiscalculatedoverallanswer-options.
+formulated as multiple-choice questions (Huang QA-SRL Thequestion-answerdrivensemantic
+et al., 2019). The questions concern the causes role labeling dataset (QA-SRL; He et al., 2015)
+oreffectsofeventsthatrequirereasoningnotonly foraQAtaskthatisderivedfromasemanticrole
+basedontheexacttextspansinthecontext,butalso labeling task. Each example, which consists of
+wide-rangeabstractivecommonsensereasoning. It a set of questions and answers, corresponds to a
+differs from CommonsenseQA in that it focuses predicate-argumentrelationshipinthesentenceit
+oncausalanddeductivecommensensereasoning isderivedfrom. UnlikeQAMR,whichfocuseson
+andthatitrequiresreadingcomprehensionoveran allwordsinthesentence,QA-SRLisspecifically
+auxiliarypassage,ratherthansimplyansweringa focusedonverbs.
+freestandingquestion.
+SST-2 TheStanfordsentimenttreebank(Socher
+etal.,2013)isasentimentclassificationtaskbased
+SocialIQA SocialIQA(Sapetal.,2019)isatask
+on movie reviews. We use the binary sentence
+formultiplechoiceQA.Ittestsforreasoningsur-
+classificationversionofthetask.
+rounding emotional and social intelligence in ev-
+erydaysituations. QQP TheQuoraQuestionPairsdataset1 iscon-
+structedbasedonquestionspostedonthecommu-
+CCG CCGbank (Hockenmaier and Steedman, nityquestion-answeringwebsiteQuora. Thetask
+is to determine if two questions are semantically
+2007) is a task that is a translation of the Penn
+equivalent.
+TreebankintoacorpusofCombinatoryCategorial
+Grammar(CCG)derivations. WeusetheCCGsu-
+MNLI The Multi-Genre Natural Language In-
+pertaggingtask,whichisthetaskofassigningtags
+ferencedataset(Williamsetal.,2018)isacrowd-
+toindividualwordtokensthatjointlydeterminethe
+sourced collection of sentence pairs with textual
+parseofthesentence.
+entailmentannotationsacrossavarietyofgenres.
+2.2.2 TargetTasks
+HellaSwag HellaSwag(Zellersetal.,2019)isa
+commonsensereasoningtaskthattestsamodel’s Weusetentargettasks,eightofwhicharedrawn
+abilitytochoosethemostplausiblecontinuationof from the SuperGLUE benchmark (Wang et al.,
+astory. Itisbuiltusingadversarialfiltering(Zellers 2019b). ThetasksintheSuperGLUEbenchmark
+etal.,2018)withBERTtocreatechallengingnega-
+1http://data.quora.com/First-Quora-DatasetRelease-
+tiveexamples. Question-Pairs
+coverquestionanswering,entailment,wordsense themaskedentityoutofthelist.
+disambiguation, and coreference resolution and Additionally, we use CommonsenseQA and
+have been shown to be easy for humans but dif- Cosmos QA as target tasks, due to their unique
+ficultformodelslikeBERT.Althoughweoffera combinationofsmalldatasetsizeandhighlevelof
+briefdescriptionofthetasksbelow,wereferread- difficulty for high-performing models like BERT
+ers to the SuperGLUE paper for a more detailed fromoursetofintermediatetasks.
+descriptionofthetasks.
+2.2.3 ProbingTasks
+CommitmentBank (CB; de Marneffe et al., We use well-established datasets for our probing
+2019) is a three-class entailment task that con- tasks,includingtheedge-probingsuitefromTen-
+sists of texts and an embedded clause that ap- ney et al. (2019b), function word oriented tasks
+pearsineachtext,inwhichmodelsmustdetermine fromKimetal.(2019),andsentence-levelprobing
+whether that embedded clause is entailed by the datasets(SentEval;Conneauetal.,2018).
+text. Choice of Plausible Alternatives (COPA;
+Acceptability Judgment Tasks This set of bi-
+Roemmeleetal.,2011)isaclassificationtaskthat
+nary classifications tasks was designed to inves-
+consistsofpremisesandaquestionthatasksforthe
+tigate if a model can judge the grammatical ac-
+causeoreffectofeachpremise,inwhichmodels
+ceptability of a sentence. We use the following
+mustcorrectlypickbetweentwopossiblechoices.
+five datasets: AJ-CoLA is a task that tests for
+Winograd Schema Challenge (WSC; Levesque
+a model’s understanding of general grammatical-
+etal.,2012)isasentence-levelcommonsenserea-
+ity using the Corpus of Linguistic Acceptability
+soningtaskthatconsistsoftexts,apronounfrom
+(CoLA) (Warstadt et al., 2019b), which is drawn
+eachtext,andalistofpossiblenounphrasesfrom
+from 22 theoretical linguistics publications. The
+eachtext. Thedatasethasbeendesignedsuchthat
+othertasksconcernthebehaviorsofspecificclasses
+world knowledge is required to determine which
+offunctionwords,usingthedatasetbyKimetal.
+ofthepossiblenounphrasesisthecorrectreferent
+(2019): AJ-WH is a task that tests a model’s
+to the pronoun. We use the SuperGLUE binary
+ability to detect if a wh-word in a sentence has
+classificationcastofthetask,whereeachexample
+beenswappedwithanotherwh-word,whichtests
+consists of a text, a pronoun, and a noun phrase
+amodel’sabilitytoidentifytheantecedentassoci-
+fromthetext,whichmodelsmustclassifyasbeing
+atedwiththewh-word. AJ-Defisataskthattests
+coreferenttothepronounornot. RecognizingTex-
+amodel’sabilitytodetectifthedefinite/indefinite
+tualEntailment(RTE;Daganetal.,2005,etseq)
+articlesinagivensentencehavebeenswapped. AJ-
+isatextualentailmenttask. Multi-SentenceRead-
+Coordisataskthattestsamodel’sabilitytodetect
+ing Comprehension (MultiRC; Khashabi et al.,
+if a coordinating conjunction has been swapped,
+2018)isamulti-hopQAtaskthatconsistsofpara-
+which tests a model’s ability to understand how
+graphs, a question on each paragraph, and a list
+ideas in the various clauses relate to each other.
+ofpossibleanswers,inwhichmodelsmustdistin-
+AJ-EOS is a task that tests a model’s ability to
+guish which of the possible answers are true and
+identifygrammaticalsentenceswithoutindicators
+whicharefalse. Word-in-Context(WiC;Pilehvar
+suchaspunctuationmarksandcapitalization,and
+andCamacho-Collados,2019)isabinaryclassifi-
+consists of grammatical text that are removed of
+cationwordsensedisambiguationtask. Examples
+punctuation.
+consist of two text snippets, with a polysemous
+wordthatappearsinboth. Modelsmustdetermine Edge-Probing Tasks The edge probing (EP)
+whetherthesamesenseofthewordisusedinboth tasksareasetofcoreNLPlabelingtasks,collected
+contexts. BoolQ(Clarketal.,2019a)isaQAtask by Tenney et al. (2019b) and cast into Boolean
+thatconsistsofpassagesandayes/noquestionas- classification. These tasks focus on the syntactic
+sociatedwitheachpassage. ReadingComprehen- andsemanticrelationsbetweenspansinasentence.
+sion with Commonsense Reasoning (ReCoRD; ThefirstfivetasksusetheOntoNotescorpus(Hovy
+Zhang et al., 2018) is a multiple-choice QA task et al., 2006): Part-of-Speech tagging (EP-POS)
+thatconsistsofnewsarticles. Foreacharticle,mod- isataskthattestsamodel’sabilitytopredictthe
+elsaregivenaquestionabouteacharticlewithone syntacticcategory(noun,verb,adjective,etc.) for
+entity masked out and a list of possible entities each word in the sentence. Named entity recog-
+fromthearticle,andthegoalistocorrectlyidentify nition(EP-NER)istaskthattestsamodel’sabil-
+ity to predict the category of an entity in a given tests a model’s ability to classify if two consec-
+span. SemanticRoleLabeling(EP-SRL)isatask utive tokens in the same sentence have been re-
+that tests a model’s ability to assign a label to a ordered. CoordinationInversion(SE-CoordInv)
+givenspanofwordsthatindicatesitssemanticrole is a task that tests a model’s ability to identify if
+(agent, goal, etc.) in the sentence. Coreference twocoordinatingclausalconjointsareswapped(ex:
+(EP-Coref)isataskthattestsamodel’sabilityto “he knew it, and he deserved no answer.”). Past-
+classify if two spans of tokens refer to the same Present (SE-Tense) is a task that tests a model’s
+entity/event. abilitytoclassifythetenseofthemainverbofthe
+Theotherdatasetscanbebrokendownintoboth sentence. Subject Number (SE-SubjNum) and
+syntacticandsemanticprobingtasks. Constituent ObjectNumber(SE-ObjNum)aretasksthattest
+labeling(EP-Const)isataskthattestsamodel’s amodel’sabilitytoclassifywhetherthesubjector
+ability to classify a non-terminal label for a span directobjectofthemainclauseissingularorplural.
+oftokens(e.g.,nounphrase,verbphrase,etc.). De- Odd-Man-Out(SE-SOMO)isataskthatteststhe
+pendency labeling (EP-UD) is a task that tests a model’s ability to predict whether a sentence has
+modelonthefunctionalrelationshipofonetoken had one of its content words randomly replaced
+relativetoanother. WeusetheEnglishWebTree- withanotherwordofthesamepartofspeech.
+bankportionofUniversalDependencies2.2release
+(Silveiraetal.,2014)forthistask. SemanticProto- 3 Experiments
+Rolelabelingisataskthattestsamodel’sability
+Training and Optimization We use the large-
+topredictthefine-grainednon-exclusivesemantic
+scalepretrainedmodelRoBERTa inallexperi-
+attributesofagivenspan. Edgeprobingusestwo Large
+ments. Foreachintermediate,target,andprobing
+datasetsforSPR:SPR1(EP-SPR1)(Teichertetal.,
+task,weperformahyperparametersweep,varying
+2017),derivedfromthePennTreebank,andSPR2
+thepeaklearningrate∈ {2×10−5,1×10−5,5×
+(EP-SPR2)(Rudingeretal.,2018),derivedfrom
+10−6,3×10−6}andthedropoutrate∈ {0.2,0.1}.
+the English Web Treebank. Relation classifica-
+Afterchoosingthebestlearningrateanddropout
+tion(EP-Rel)isataskthattestsamodel’sability
+rate,weapplythebestconfigurationforeachtask
+to predict the relation between two entities. We
+for all runs. For each task, we use the batch size
+usetheSemEval2010Task8dataset(Hendrickx
+that maximizes GPU usage, and use a maximum
+etal.,2009)forthistask. Forexample,therelation
+sequencelengthof256. Asidefromthesedetails,
+between“Yeri”and“Korea”in“YeriisfromKo-
+wefollowtheRoBERTapaperforallothertraining
+rea”isENTITY-ORIGIN.TheDefinitePronoun
+hyperparameters. WeuseNVIDIAP40GPUsfor
+Resolution dataset (Rahman and Ng, 2012) (EP-
+ourexperiments.
+DPR)isataskthattestsamodel’sabilitytohandle
+Acompletepipelinewithoneintermediatetask
+coreference,anddiffersfromOntoNotesinthatit
+worksasfollows: First,wefine-tuneRoBERTaon
+focusesondifficultcasesofdefinitepronouns.
+theintermediatetask. Wethenfine-tunecopiesof
+SentEvalTasks TheSentEvalprobingtasks(SE) the resulting model separately on each of the 10
+(Conneau et al., 2018) are cast in the form of targettasksand25probingtasksandtestontheir
+single-sentence classification. Sentence Length respectivevalidationsets. Werunthesamepipeline
+(SE-SentLen)isataskthattestsamodel’sability threetimesforthe11intermediatetasks,plusaset
+to classify the length of a sentence. Word Con- ofbaselinerunswithoutintermediatetraining. This
+tent (SE-WC) is a task that tests a model’s abil- givesus35×12×3=1260observations.
+ity to identify which of a set of 1,000 potential WetrainourmodelsusingtheAdamoptimizer
+wordsappearinagivensentence. TreeDepth(SE- (KingmaandBa,2015)withlineardecayandearly
+TreeDepth)isataskthattestsamodel’sabilityto stopping. We run training for a maximum of 10
+estimate the maximum depth of the constituency epochs when more than 1,500 training examples
+parsetreeofthesentence. TopConstituents(SE- are available, and 40 epochs otherwise to ensure
+TopConst)isataskthattestsamodel’sabilityto models are sufficiently trained on small datasets.
+identify the high-level syntactic structure of the We use the jiant (Wang et al., 2019c) NLP
+sentence by choosing among 20 constituent se- toolkit, based on PyTorch (Paszke et al., 2019),
+quences(the19mostcommon,plusanother cat- Hugging Face Transformers (Wolf et al., 2019),
+egory). Bigram Shift (SE-BShift) is a task that andAllenNLP(Gardneretal.,2017),forallofour
+QAMR CSenseQA SciTail CosmosQASocialIQA CCG HellaSwag QA-SRL SST-2 QQP MNLI
+CB -4.0 -0.4 -6.2 -0.4 -21.7 -12.2 -3.1 -7.2 -1.2 -31.0 -0.4
+COPA -4.0 8.7 4.3 6.0 -3.7 -20.7 6.7 -3.7 -2.0 0.7 -0.7
+WSC -0.3 0.0 1.3 2.9 -4.8 -3.2 3.6 4.8 2.6 -3.8 0.3
+RTE 0.6 3.4 3.4 5.1 -4.3 -18.2 4.8 1.1 2.6 -2.4 3.1
+MultiRC 2.4 7.9 2.6 10.1 -10.6 -8.1 6.8 2.6 1.1 -4.2 6.5
+WiC -1.3 0.1 2.5 1.7 -2.0 -1.1 0.1 2.1 -6.4 1.4 0.9
+BoolQ -0.1 0.9 0.1 1.1 -2.8 -10.6 0.7 0.0 0.9 -4.2 1.4
+CSenseQA -4.7 -1.6 -2.6 0.1 -7.8 -12.0 0.4 -5.1 -0.9 -7.6 -2.6
+CosmosQA -2.5 -0.1 -2.1 -0.4 -9.1 -6.9 -0.0 -3.0 -0.0 -8.4 -0.5
+ReCoRD -4.0 -0.0 -1.5 -0.1 -12.4 -6.1 0.2 -4.7 -0.5 -11.9 -1.6
+Avg. Target -1.8 1.9 0.2 2.6 -7.9 -9.9 2.0 -1.3 -0.4 -7.1 0.7
+EP-POS 0.0 0.0 -0.0 -0.1 -0.1 -0.0 0.0 -0.0 0.1 -97.4 0.0
+EP-NER -0.1 0.0 -0.1 -0.1 -21.5 -0.2 0.0 -0.2 0.0 -64.9 -0.3
+EP-SRL 12.2 0.1 30.7 12.4 -61.7 31.2 30.9 31.1 31.9 -61.9 31.3
+EP-Coref 0.0 0.0 0.0 0.1 -0.6 -0.3 0.1 0.0 -0.1 -13.4 0.1
+EP-Const -0.0 -0.1 -0.1 0.0 -0.0 -0.2 -0.1 0.0 -0.9 -0.2 -0.1
+EP-SPR1 -0.2 0.1 0.1 0.2 -1.7 -0.4 0.2 0.1 0.3 -21.9 0.2
+EP-SPR2 -0.2 -0.0 -0.1 0.1 -3.9 -0.4 -0.1 -0.3 -0.1 -8.2 -0.1
+EP-DPR 7.5 7.9 7.3 8.6 -15.6 3.5 8.3 8.2 7.9 -14.7 6.6
+EP-Rel 0.1 -25.0 0.4 0.1 -55.1 0.2 0.4 -28.8 0.8 -85.4 0.1
+EP-UD -0.2 0.0 0.0 0.1 -62.0 -0.2 0.0 -0.1 0.1 -89.7 -0.0
+SE-SentLen -0.0 -0.2 -0.1 -0.3 -0.4 0.5 -0.1 0.1 0.1 -0.9 -0.2
+SE-WC -0.1 -0.0 -0.0 -0.0 -33.3 -0.0 0.0 -0.0 -0.0 -33.8 -0.0
+SE-TreeDepth 0.1 -0.1 -0.1 -0.1 -1.1 0.3 -0.5 -0.1 -0.1 -1.4 -0.6
+SE-TopConst -0.2 -0.3 -0.3 -0.1 -0.4 -0.2 -0.2 -0.2 -0.2 -0.4 -0.3
+SE-BShift -0.1 0.2 0.1 0.0 -0.4 -0.2 0.2 0.0 0.1 -0.1 0.1
+SE-Tense -1.1 -0.4 -0.5 -0.0 -0.3 -1.3 0.0 -0.8 -0.2 -1.5 -1.2
+SE-SubjNum 0.3 0.5 0.4 0.9 -0.1 0.8 0.8 0.2 0.5 -0.1 0.4
+SE-ObjNum -0.6 -0.1 -0.1 0.0 -0.5 0.2 -0.3 0.2 -0.4 0.2 -0.1
+SE-SOMO -2.2 0.4 -1.1 0.1 -4.1 -3.6 0.2 -1.8 -1.0 -2.5 -1.2
+SE-CoordInv -0.7 -0.1 -0.4 -0.2 -1.3 -1.0 -0.0 -0.3 -0.2 -3.0 -0.1
+AJ-CoLA -2.6 -0.7 -1.9 -1.6 -10.3 -6.9 -0.7 -3.7 -0.6 -5.5 -1.1
+AJ-Wh 13.4 26.8 3.4 14.5 14.2 26.8 14.5 28.4 28.4 3.8 11.8
+AJ-Def 23.1 46.0 11.1 0.0 18.0 46.4 32.4 22.5 14.0 11.1 23.7
+AJ-Coord 25.2 17.7 11.1 20.2 22.3 32.6 11.1 22.2 17.4 11.1 11.1
+AJ-EOS 11.9 13.2 13.9 13.2 -21.3 8.5 5.0 11.8 -4.5 -13.9 6.0
+tegraT
+gniborP
+Baseline
+Performance
+99.1
+86.0
+67.3
+83.5
+47.4
+70.5
+86.6
+74.0
+81.9
+86.0
+78.2
+98.1
+97.0
+61.9
+97.1
+88.8
+87.2
+83.8
+81.4
+85.4
+95.8
+46.4
+99.8
+76.1
+93.5
+97.7
+91.1
+93.3
+95.7
+77.2
+88.3
+68.1
+69.9
+47.2
+47.2
+84.7
+Figure 2: Transfer learning results between intermediate and target/probing tasks. Baselines (rightmost column)
+are models fine-tuned without intermediate-task training. Each cell shows the difference in performance (delta)
+betweenthebaselineandmodelwithintermediate-tasktraining. Weusethemacro-averageofeachtask’smetrics
+asthereportedperformance. RefertoTable1fortargettaskmetrics.
+experiments. Weinvestigatetheroleofdatasetsizeintheinter-
+mediatetaskswithdownstreamtaskperformance
+4 ResultsandAnalysis
+by additionally running a set of experiments on
+varyingamountsofdataonfiveintermediatetasks,
+4.1 InvestigatingTransferPerformance
+which is shown in the Appendix. We do not find
+Figure2showsthedifferencesintargetandprobing
+differencesinintermediate-taskdatasetsizetohave
+taskperformances(deltas)betweenthebaselines
+anysubstantialconsistentimpactondownstream
+andmodelstrainedwithintermediate-tasktraining,
+targettaskperformance.
+eachaveragedacrossthreerestarts. Apositivedelta
+Inaddition,wefindthatsmallertargettaskssuch
+indicatessuccessfultransfer.
+asRTE,BoolQ,MultiRC,WiC,WSCbenefitthe
+TargetTaskPerformance Wedefinegoodinter- most from intermediate-task training.2 There are
+mediate tasks as ones that lead to positive trans- no instances of positive transfer to Commitment-
+fer in target task performance. We observe that Bank,sinceourbaselinemodelachieves100%ac-
+tasksthatrequirecomplexreasoningandinference curacy.
+tend to make good intermediate tasks. These in-
+Probing Task Performance Looking at
+cludeMNLIandcommonsense-orientedtaskssuch
+the probing task performance, we find that
+as CommonsenseQA, HellaSWAG, and Cosmos
+intermediate-task training affects performance
+QA (with our poor performance with the similar
+SocialIQA serving as a suprising exception). So- 2Thedeltasforexperimentswiththesameintermediate
+cialIQA,CCG,andQQPasintermediatetaskslead andtargettasksarenot0asmaybeexpected.Thisisbecause
+weperformbothintermediateandtargettrainingphasesin
+tonegativetransferonalltargettasksandthema-
+thesecases,withresetoptimizerstatesandstoppingcriteriain
+jorityofprobingtasks. betweenintermediateandtargettraining.
+on low-level syntactic probing tasks uniformly Weuseprobingtaskperformanceasanindica-
+across intermediate tasks; we observe little to no toroftheacquisitionofparticularlanguageskills.
+improvement for the SentEval probing tasks and We compute the Spearman correlation between
+higher improvement for acceptability judgment probing-taskandtarget-taskperformancesacross
+probing tasks, except for AJ-CoLA. This is also training on different intermediate tasks and mul-
+consistent with Phang et al. (2018), who find tiple restarts, as shown in Figure 3. We test for
+negativetransferwithCoLAintheirexperiments. statisticalsignificanceatp = 0.05andapplyHolm-
+Bonferronicorrectionformultipletesting. Weomit
+Variation across Intermediate Tasks There is
+correlationsthatarenotstatisticallysignificant. We
+variableperformanceacrosshigher-levelsyntactic
+optforSpearmanandnotPearsoncorrelationbe-
+or semantic tasks such as the Edge-Probing and
+cause of the wide variety of metrics used for the
+SentEval tasks. SocialIQA and QQP have nega- differenttasks.3
+tive transfer for most of the Edge-Probing tasks,
+Wefindthatacceptabilityjudgmentprobingtask
+while CosmosQA and QA-SRL see drops in per-
+performanceisgenerallyuncorrelatedwiththetar-
+formance only for EP-Rel. While we do see that
+gettaskperformance,exceptforAJ-CoLA.Simi-
+intermediate-task trained models improve perfor-
+larly,manyoftheSentEvaltasksdonotcorrelate
+manceonEP-SRLandEP-DPRacrosstheboard,
+withthetargettasks,exceptforBigramShift(SE-
+thereislittletonogaininSentEvalprobingtasks
+BShift), Odd-Man-Out (SE-SOMO) and Coordi-
+from any intermediate tasks. Additionally, tasks
+nationInversion(SE-CoordInv). Thesethreetasks
+that increase performance in the most number of
+areinputnoisingtasks—taskswhereamodelhasto
+probingtasksperformwellasintermediatetasks.
+predictifagiveninputsentencehasbeenrandomly
+modified—whichare,byfar,themostsimilartasks
+Degenerate Runs We find that the model may
+we study to the masked language modeling task
+not exceed chance performance in some training
+that is used for training RoBERTa. This may ex-
+runs. Thismostlyaffectsthebaseline(nointerme-
+plainthestrongcorrelationwiththeperformance
+diatetraining)runsontheacceptabilityjudgment
+ofthetargettasks.
+probingtasks,excludingAJ-CoLA,whichallhave
+We also find that some of these strong correla-
+verysmalltrainingsets. Weincludethesedegener-
+tions, such as with SE-SOMO and SE-CoordInv,
+aterunsinouranalysistoreflectthisphenomenon.
+are almost entirely driven by variation in the de-
+Consistent with Phang et al. (2018), we find that
+greeofnegativetransfer, ratherthananypositive
+intermediate-task training reduces the likelihood
+transfer. Intuitively, fine-tuning RoBERTa on an
+ofdegenerateruns,leadingtoostensiblypositive
+intermediate task can cause the model to forget
+transfer results on those four acceptability judg-
+someofitsabilitytoperformtheMLMtask. Thus,
+ment tasks across most intermediate tasks. On
+a future direction for potential improvement for
+the other hand, extremely negative transfer from
+intermediate-task training may be integrating the
+intermediate-tasktrainingcanalsoresultinahigher
+MLMobjectiveintointermediate-tasktrainingor
+frequencyofdegeneraterunsindownstreamtasks,
+bounding network parameter changes to reduce
+as we observe in the cases of using QQP and So-
+catastrophic forgetting (Kirkpatrick et al., 2016;
+cialIQA as intermediate tasks. We also observe
+Chenetal.,2019).
+anumberofdegeneraterunsontheEP-SRLtask
+Interestingly, while intermediate tasks such as
+aswellastheEP-Reltask. Thesedegenerateruns
+SocialIQA,CCGandQQP,whichshownegative
+decrease positive transfer in probing tasks, such
+transferontargettasks,tendtohavenegativetrans-
+aswithSocialIQAandQQPprobingperformance,
+fer on these three probing tasks, the intermedi-
+andalsodecreasetheaverageamountofpositive
+atetaskswithpositivetransfer,suchasCommon-
+transferweseeintargettaskperformance.
+senseQA tasks and MNLI, do not appear to ad-
+versely affect the performance on these probing
+4.2 CorrelationBetweenProbingandTarget
+tasks. Thisasymmetricimpactmayindicatethat,
+TaskPerformance
+beyond the similarity of intermediate and target
+Next,weinvestigatetherelationshipbetweentarget tasks,avoidingcatastrophicforgettingofpretrain-
+andprobingtasksinanattempttounderstandwhy
+3Fullcorrelationtablesacrossalltargetandprobingtasks
+certainintermediate-taskmodelsperformbetteron
+withbothSpearmanandPearsoncorrelationscanbefoundin
+certaintargettasks. theAppendix.
+BC
+APOC
+CSW ETR
+CRitluM
+CiW
+QlooB AQesneSC AQsomsoC DRoCeR SOP-PE REN-PE LRS-PE feroC-PE tsnoC-PE 1RPS-PE 2RPS-PE RPD-PE leR-PE DU-PE neLtneS-ES CW-ES
+htpeDeerT-ES
+tsnoCpoT-ES tfihSB-ES esneT-ES muNjbuS-ES muNjbO-ES OMOS-ES vnIdrooC-ES ALoC-JA hW-JA feD-JA drooC-JA SOE-JA
+Target Probing
+CB 1 .73 .74.72.82.69 .71 .70.72.66 .74 .63 .75.64.71
+COPA 1 .67 .66 .74
+WSC 1 .63
+RTE .67 1 .86 .83.85.68.67 .71 .66 .71 .74.80.71
+MultiRC.73 .86 1 .79.76.67.66 .78 .74 .71 .73.79
+WiC 1
+BoolQ.74 .83.79 1 .79.80.76 .74 .70.69 .76 .68 .75.82.78
+CSenseQA.72.66 .85.76 .79 1 .85.83 .61 .74 .77.68.69 .80 .72 .88.76.76
+CosmosQA.82 .68.67 .80.85 1 .86 .63 .70 .76.66.74 .81 .84 .87.80.83
+ReCoRD.69 .67.66 .76.83.86 1 .66 .71 .77.69.73 .84 .76 .83.79.71
+Figure3: Correlationsbetweenprobingandtargettaskperformances. EachcellcontainstheSpearmancorrelation
+between probing-task and target-task performances across training on different intermediate tasks and random
+restarts. Wetestforstatisticalsignificanceatp=0.05withHolm-Bonferronicorrection,andomitthecorrelations
+thatarenotstatisticallysignificant.
+ingiscriticaltosuccessfulintermediate-tasktrans- themostbeneficialtasksforimprovingtarget-task
+fer. performance. TalmorandBerant(2019)performa
+TheremainingSentEvalprobingtaskshavesim- similarcross-tasktransferstudyonreadingcompre-
+ilar delta values (Figure 2), which may indicate hensiondatasets,findingsimilarpositivetransferin
+that there is insufficient variation among trans- mostcases,withthebiggestgainsstemmingfrom
+ferperformancetoderivesignificantcorrelations. acombinationofmultipleQAdatasets. Ourwork
+Amongtheedge-probingtasks,themoresemantic consists of a larger, more diverse, set of interme-
+taskssuchascoreference(EP-CorefandEP-DPR), diate task–target task pairs. We also use probing
+semantic proto-role labeling (EP-SPR1 and EP- taskstoshedlightontheskillslearnedbytheinter-
+SPR2), and dependency labeling (EP-Rel) show mediatetasks.
+the highest correlations with our target tasks. As Amongthepriorworkonpredictingtransferper-
+oursetoftargettasksisalsoorientedtowardsse- formance,BingelandSøgaard(2017)isthemost
+manticsandreasoning,thisistobeexpected. similartoours. Theydoaregressionanalysisthat
+On the other hand, among the target tasks, predictstarget-taskperformanceonthebasisofvar-
+we find that ReCoRD, CommonsenseQA and iousfeaturesofthesourceandtargettasksandtask
+Cosmos QA—all commonsense-oriented tasks— pairs. Theyfocusonamulti-tasktrainingsetting
+exhibit both high correlations with each other as withoutself-supervisedpretraining,asopposedto
+wellasasimilarsetofcorrelationswiththeprob- oursingle-intermediatetask,three-stepprocedure.
+ing tasks. Similarly, BoolQ, MultiRC, and RTE
+Similarwork(Linetal.,2019b)hasbeendone
+correlatestronglywitheachotherandhavesimilar
+oncross-lingualtransfer—theanalogouschallenge
+patternsofprobing-taskperformance.
+of transferring learned knowledge from a high-
+resourcetoalow-resourcelanguage.
+5 RelatedWork
+Manyrecentworkshaveattemptedtounderstand
+Within the paradigm of training large pre- the knowledge and linguistic skills BERT learns,
+trainedTransformerlanguagerepresentationsvia for instance by analyzing the language model
+intermediate-stage training before fine-tuning on surprisal for subject–verb agreements (Goldberg,
+a target task, positive transfer has been shown in 2018),identifyingspecificknowledgeorphenom-
+both sequential task-to-task (Phang et al., 2018) enaencapsulatedintherepresentationslearnedby
+and multi-task-to-task (Liu et al., 2019a; Raffel BERTusingprobingtasks(Tenneyetal.,2019b,a;
+etal.,2019)formats. Wangetal.(2019a)perform Warstadtetal.,2019a;Linetal.,2019a;Hewittand
+an extensive study on transfer with BERT, find- Manning, 2019; Jawahar et al., 2019), analyzing
+inglanguagemodelingandNLItaskstobeamong theattentionheadsofBERT(Clarketal.,2019b;
+Coenenetal.,2019;Linetal.,2019a;Htutetal., References
+2019),andtestingthelinguisticgeneralizationsof
+Joachim Bingel and Anders Søgaard. 2017. Identify-
+BERT across runs (McCoy et al., 2019). How- ing beneficial task relations for multi-task learning
+ever,relativelylittleworkhasbeendonetoanalyze indeepneuralnetworks. InProceedingsofthe15th
+fine-tunedBERT-stylemodels(Wangetal.,2019a; ConferenceoftheEuropeanChapteroftheAssocia-
+tionforComputationalLinguistics: Volume2,Short
+Warstadtetal.,2019a).
+Papers, pages 164–169, Valencia, Spain. Associa-
+tionforComputationalLinguistics.
+6 ConclusionandFutureWork
+XinyangChen, SinanWang, BoFu, MingshengLong,
+This paper presents a large-scale study on when and Jianmin Wang. 2019. Catastrophic forgetting
+and why intermediate-task training works with meetsnegativetransfer:Batchspectralshrinkagefor
+pretrained models. We perform experiments on safetransferlearning. InH.Wallach,H.Larochelle,
+A.Beygelzimer,F.d’Alche´-Buc,E.Fox,andR.Gar-
+RoBERTa with a total of 110 pairs of intermedi-
+nett, editors, Advances in Neural Information Pro-
+ateandtargettasks,andperformananalysisusing cessingSystems32,pages1906–1916.CurranAsso-
+25probingtasks,coveringdifferentsemanticand ciates,Inc.
+syntactic phenomena. Most directly, we observe
+Christopher Clark, Kenton Lee, Ming-Wei Chang,
+thattaskslikeCosmosQAandHellaSwag,which
+Tom Kwiatkowski, Michael Collins, and Kristina
+requirecomplexreasoningandinference,tendto Toutanova.2019a. BoolQ:Exploringthesurprising
+workbestasintermediatetasks. difficulty of natural yes/no questions. In Proceed-
+ingsofthe2019ConferenceoftheNorthAmerican
+Looking to our probing analysis, intermediate
+Chapter of the Association for Computational Lin-
+tasksthathelpRoBERTaimproveacrosstheboard
+guistics: Human Language Technologies, Volume 1
+show the most positive transfer in downstream (Long and Short Papers), pages 2924–2936, Min-
+tasks. However,itisdifficulttodrawdefinitecon- neapolis,Minnesota.AssociationforComputational
+clusionsaboutthespecificskillsthatdrivepositive Linguistics.
+transfer. Intermediate-task training may help im-
+Kevin Clark, Urvashi Khandelwal, Omer Levy, and
+provethehandlingofsyntax,butthereislittletono Christopher D. Manning. 2019b. What does BERT
+correlation between target-task and probing-task look at? an analysis of BERT’s attention. In Pro-
+ceedings of the 2019 ACL Workshop BlackboxNLP:
+performance for these skills. Probes for higher-
+Analyzing and Interpreting Neural Networks for
+levelsemanticabilitiestendtohaveahighercorre-
+NLP, pages 276–286, Florence, Italy. Association
+lationwiththetarget-taskperformance,butthese forComputationalLinguistics.
+results are too diffuse to yield more specific con-
+Andy Coenen, Emily Reif, Ann Yuan, Been Kim,
+clusions. Future work in this area would benefit
+AdamPearce,FernandaB.Vie´gas,andMartinWat-
+greatlyfromimprovementstoboththebreadthand
+tenberg.2019. Visualizingandmeasuringthegeom-
+depthofavailableprobingtasks. etryofBERT. Unpublishedmanuscriptavailableon
+We also observe a worryingly high correlation arXiv.
+betweentarget-taskperformanceandthetwoprob-
+AlexisConneau,GermanKruszewski,GuillaumeLam-
+ingtaskswhichmostcloselyresembleRoBERTa’s
+ple, Lo¨ıc Barrault, and Marco Baroni. 2018. What
+masked language modeling pretraining objective. you can cram into a single $&!#* vector: Probing
+Thus,theresultsofourintermediate-tasktraining sentence embeddings for linguistic properties. In
+Proceedings of the 56th Annual Meeting of the As-
+analysis may be driven in part by forgetting of
+sociation for Computational Linguistics (Volume 1:
+knowledge acquired during pretraining. Our re-
+Long Papers), pages 2126–2136, Melbourne, Aus-
+sultsthereforesuggestaneedforfurtherworkon tralia.AssociationforComputationalLinguistics.
+efficienttransferlearningmechanisms.
+Ido Dagan, Oren Glickman, and Bernardo Magnini.
+2005. The pascal recognising textual entailment
+Acknowledgments
+challenge. In Machine Learning Challenges Work-
+shop,pages177–190.Springer.
+This project has benefited from support to SB by
+EricandWendySchmidt(madebyrecommenda- Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+tionoftheSchmidtFuturesprogram),bySamsung Kristina Toutanova. 2019. BERT: Pre-training of
+Research(undertheprojectImprovingDeepLearn- deep bidirectional transformers for language under-
+standing. In Proceedings of the 2019 Conference
+ingusingLatentStructure),byIntuit,Inc.,andby
+of the North American Chapter of the Association
+NVIDIACorporation(withthedonationofaTitan
+for Computational Linguistics: Human Language
+VGPU). Technologies, Volume 1 (Long and Short Papers),
+pages4171–4186,Minneapolis,Minnesota.Associ- andthe9thInternationalJointConferenceonNatu-
+ationforComputationalLinguistics. ralLanguageProcessing(EMNLP-IJCNLP),pages
+2391–2401, Hong Kong, China. Association for
+Matt Gardner, Joel Grus, Mark Neumann, Oyvind ComputationalLinguistics.
+Tafjord, Pradeep Dasigi, Nelson F. Liu, Matthew
+Peters, Michael Schmitz, and Luke S. Zettlemoyer. Ganesh Jawahar, Benoˆıt Sagot, and Djame´ Seddah.
+2017. Allennlp: A deep semantic natural language 2019. What does BERT learn about the structure
+processingplatform. Unpublishedmanuscriptavail- of language? In Proceedings of the 57th Annual
+ableonarXiv. Meeting of the Association for Computational Lin-
+guistics,pages3651–3657,Florence,Italy.Associa-
+Yoav Goldberg. 2018. Assessing BERT’s syntac- tionforComputationalLinguistics.
+tic abilities. Unpublished manuscript available on
+Daniel Khashabi, Snigdha Chaturvedi, Michael Roth,
+arXiv.
+ShyamUpadhyay,andDanRoth.2018. Lookingbe-
+LuhengHe,MikeLewis,andLukeZettlemoyer.2015. yond the surface: A challenge set for reading com-
+Question-answer driven semantic role labeling: Us- prehensionovermultiplesentences. InProceedings
+ing natural language to annotate natural language. ofthe2018ConferenceoftheNorthAmericanChap-
+In Proceedings of the 2015 Conference on Empiri- teroftheAssociationforComputationalLinguistics:
+calMethodsinNaturalLanguageProcessing,pages HumanLanguageTechnologies,Volume1(LongPa-
+643–653,Lisbon,Portugal.AssociationforCompu- pers), pages252–262, NewOrleans, Louisiana.As-
+tationalLinguistics. sociationforComputationalLinguistics.
+TusharKhot,AshishSabharwal,andPeterClark.2018.
+Iris Hendrickx, Su Nam Kim, Zornitsa Kozareva,
+Preslav Nakov, Diarmuid O´ Se´aghdha, Sebastian Scitail: A textual entailment dataset from science
+questionanswering. InThirty-SecondAAAIConfer-
+Pado´, Marco Pennacchiotti, Lorenza Romano, and
+enceonArtificialIntelligence.
+Stan Szpakowicz. 2009. SemEval-2010 task 8:
+Multi-way classification of semantic relations be-
+Najoung Kim, Roma Patel, Adam Poliak, Patrick Xia,
+tween pairs of nominals. In Proceedings of the
+Alex Wang, Tom McCoy, Ian Tenney, Alexis Ross,
+WorkshoponSemanticEvaluations:RecentAchieve-
+Tal Linzen, Benjamin Van Durme, Samuel R. Bow-
+mentsandFutureDirections(SEW-2009),pages94–
+man, and Ellie Pavlick. 2019. Probing what dif-
+99, Boulder, Colorado. Association for Computa-
+ferent NLP tasks teach machines about function
+tionalLinguistics.
+wordcomprehension. InProceedingsoftheEighth
+JointConferenceonLexicalandComputationalSe-
+John Hewitt and Christopher D. Manning. 2019. A
+mantics(*SEM2019),pages235–249,Minneapolis,
+structural probe for finding syntax in word repre-
+Minnesota. Association for Computational Linguis-
+sentations. In Proceedings of the 2019 Conference
+tics.
+of the North American Chapter of the Association
+for Computational Linguistics: Human Language
+Diederik P. Kingma and Jimmy Ba. 2015. Adam: A
+Technologies, Volume 1 (Long and Short Papers),
+method for stochastic optimization. In 3rd Inter-
+pages4129–4138,Minneapolis,Minnesota.Associ-
+national Conference on Learning Representations,
+ationforComputationalLinguistics.
+ICLR 2015, San Diego, CA, USA, May 7-9, 2015,
+ConferenceTrackProceedings.
+Julia Hockenmaier and Mark Steedman. 2007. CCG-
+bank: AcorpusofCCGderivationsanddependency James Kirkpatrick, Razvan Pascanu, Neil C. Rabi-
+structures extracted from the Penn treebank. Com- nowitz, Joel Veness, Guillaume Desjardins, An-
+putationalLinguistics,33(3):355–396. drei A. Rusu, Kieran Milan, John Quan, Tiago Ra-
+malho,AgnieszkaGrabska-Barwinska,DemisHass-
+EduardHovy,MitchellMarcus,MarthaPalmer,Lance
+abis,ClaudiaClopath,DharshanKumaran,andRaia
+Ramshaw,andRalphWeischedel.2006. OntoNotes:
+Hadsell. 2016. Overcoming catastrophic forgetting
+The 90% solution. In Proceedings of the Human in neural networks. In Proceedings of the national
+Language Technology Conference of the NAACL,
+academyofsciences(PNAS).
+Companion Volume: Short Papers, pages 57–60,
+New York City, USA. Association for Computa- Hector J. Levesque, Ernest Davis, and Leora Morgen-
+tionalLinguistics. stern. 2012. The winograd schema challenge. In
+Proceedings of the Thirteenth International Con-
+Phu Mon Htut, Jason Phang, Shikha Bordia, and ference on Principles of Knowledge Representa-
+Samuel R. Bowman. 2019. Do attention heads in tionandReasoning, KR’12, pages552–561.AAAI
+bert track syntactic dependencies? Unpublished Press.
+manuscriptavailableonarXiv.
+Yongjie Lin, Yi Chern Tan, and Robert Frank. 2019a.
+LifuHuang,RonanLeBras,ChandraBhagavatula,and Open sesame: Getting inside BERT’s linguistic
+Yejin Choi. 2019. Cosmos QA: Machine reading knowledge. In Proceedings of the 2019 ACL Work-
+comprehension with contextual commonsense rea- shopBlackboxNLP:AnalyzingandInterpretingNeu-
+soning. In Proceedings of the 2019 Conference on ral Networks for NLP, pages 241–253, Florence,
+EmpiricalMethodsinNaturalLanguageProcessing Italy.AssociationforComputationalLinguistics.
+Yu-Hsiang Lin, Chian-Yu Chen, Jean Lee, Zirui Li, Mohammad Taher Pilehvar and Jose Camacho-
+Yuyan Zhang, Mengzhou Xia, Shruti Rijhwani, Collados. 2019. WiC: the word-in-context dataset
+Junxian He, Zhisong Zhang, Xuezhe Ma, Antonios for evaluating context-sensitive meaning represen-
+Anastasopoulos, Patrick Littell, and Graham Neu- tations. In Proceedings of the 2019 Conference
+big. 2019b. Choosing transfer languages for cross- of the North American Chapter of the Association
+linguallearning. InProceedingsofthe57thAnnual for Computational Linguistics: Human Language
+Meeting of the Association for Computational Lin- Technologies, Volume 1 (Long and Short Papers),
+guistics,pages3125–3135,Florence,Italy.Associa- pages1267–1273,Minneapolis,Minnesota.Associ-
+tionforComputationalLinguistics. ationforComputationalLinguistics.
+XiaodongLiu,PengchengHe,WeizhuChen,andJian- ColinRaffel,NoamShazeer,AdamRoberts,Katherine
+feng Gao. 2019a. Multi-task deep neural networks Lee, Sharan Narang, Michael Matena, Yanqi Zhou,
+fornaturallanguageunderstanding. InProceedings WeiLi,andPeterJ.Liu.2019. Exploringthelimits
+of the 57th Annual Meeting of the Association for of transfer learning with a unified text-to-text trans-
+Computational Linguistics, pages 4487–4496, Flo- former. UnpublishedmanuscriptavailableonarXiv.
+rence,Italy.AssociationforComputationalLinguis-
+tics. AltafRahmanandVincentNg.2012. Resolvingcom-
+plex cases of definite pronouns: The Winograd
+YinhanLiu,MyleOtt,NamanGoyal,JingfeiDu,Man- schemachallenge. InProceedingsofthe2012Joint
+dar Joshi, Danqi Chen, Omer Levy, Mike Lewis, Conference on Empirical Methods in Natural Lan-
+Luke Zettlemoyer, and Veselin Stoyanov. 2019b. guage Processing and Computational Natural Lan-
+RoBERTa: Arobustlyoptimizedbertpretrainingap- guageLearning,pages777–789,JejuIsland,Korea.
+proach. UnpublishedmanuscriptavailableonarXiv. AssociationforComputationalLinguistics.
+Marie-Catherine de Marneffe, Mandy Simons, and Melissa Roemmele, Cosmin Adrian Bejan, and An-
+Judith Tonhauser. 2019. The CommitmentBank: drew S Gordon. 2011. Choice of plausible alterna-
+Investigating projection in naturally occurring dis- tives: Anevaluationofcommonsensecausalreason-
+course. InproceedingsofSinnundBedeutung, vol- ing. In2011AAAISpringSymposiumSeries.
+ume23,pages107–124.
+RachelRudinger,AdamTeichert,RyanCulkin,Sheng
+R. Thomas McCoy, Junghyun Min, and Tal Linzen. Zhang, and Benjamin Van Durme. 2018. Neural-
+2019. BERTs of a feather do not generalize to- Davidsonian Semantic Proto-role Labeling. In Pro-
+gether: Large variability in generalization across ceedingsofthe2018ConferenceonEmpiricalMeth-
+models with similar test set performance. Unpub- ods in Natural Language Processing, pages 944–
+lishedmanuscriptavailableonarXiv. 955, Brussels, Belgium. Association for Computa-
+tionalLinguistics.
+JulianMichael,GabrielStanovsky,LuhengHe,IdoDa-
+gan, and Luke Zettlemoyer. 2018. Crowdsourcing Maarten Sap, Hannah Rashkin, Derek Chen, Ronan
+question-answer meaning representations. In Pro- Le Bras, and Yejin Choi. 2019. Social IQa: Com-
+ceedingsofthe2018ConferenceoftheNorthAmer- monsense reasoning about social interactions. In
+ican Chapter of the Association for Computational Proceedings of the 2019 Conference on Empirical
+Linguistics: Human Language Technologies, Vol- Methods in Natural Language Processing and the
+ume2(ShortPapers),pages560–568,NewOrleans, 9th International Joint Conference on Natural Lan-
+Louisiana. Association for Computational Linguis- guage Processing (EMNLP-IJCNLP), pages 4453–
+tics. 4463,HongKong,China.AssociationforComputa-
+tionalLinguistics.
+Adam Paszke, Sam Gross, Francisco Massa, Adam
+Lerer, James Bradbury, Gregory Chanan, Trevor Natalia Silveira, Timothy Dozat, Marie-Catherine
+Killeen, Zeming Lin, Natalia Gimelshein, Luca de Marneffe, Samuel Bowman, Miriam Connor,
+Antiga, Alban Desmaison, Andreas Kopf, Edward John Bauer, and Chris Manning. 2014. A Gold
+Yang, ZacharyDeVito, MartinRaison, AlykhanTe- Standard Dependency Corpus for English. In Pro-
+jani,SasankChilamkurthy,BenoitSteiner,LuFang, ceedings of the Ninth International Conference on
+Junjie Bai, and Soumith Chintala. 2019. Py- Language Resources and Evaluation (LREC’14),
+torch: An imperative style, high-performance deep pages 2897–2904, Reykjavik, Iceland. European
+learning library. In H. Wallach, H. Larochelle, LanguageResourcesAssociation(ELRA).
+A.Beygelzimer,F.d’Alche´-Buc,E.Fox,andR.Gar-
+nett, editors, Advances in Neural Information Pro- Richard Socher, Alex Perelygin, Jean Wu, Jason
+cessingSystems32,pages8024–8035.CurranAsso- Chuang, ChristopherD.Manning, AndrewNg, and
+ciates,Inc. ChristopherPotts.2013. RecursiveDeepModelsfor
+Semantic Compositionality Over a Sentiment Tree-
+JasonPhang,ThibaultFe´vry,andSamuelR.Bowman. bank. In Proceedings of the 2013 Conference on
+2018. Sentence Encoders on STILTs: Supplemen- EmpiricalMethodsinNaturalLanguageProcessing,
+tary Training on Intermediate Labeled-data Tasks. pages1631–1642,Seattle,Washington,USA.Asso-
+UnpublishedmanuscriptavailableonarXiv. ciationforComputationalLinguistics.
+RobertSpeer,JoshuaChin,andCatherineHavasi.2017. Alex Wang, Ian F. Tenney, Yada Pruksachatkun,
+Conceptnet5.5: Anopenmultilingualgraphofgen- Katherin Yu, Jan Hula, Patrick Xia, Raghu Pappa-
+eralknowledge. InThirty-FirstAAAIConferenceon gari, Shuning Jin, R. Thomas McCoy, Roma Pa-
+ArtificialIntelligence. tel, Yinghui Huang, Jason Phang, Edouard Grave,
+HaokunLiu,NajoungKim,PhuMonHtut,Thibault
+AlonTalmorandJonathanBerant.2019. MultiQA:An Fe´vry, Berlin Chen, Nikita Nangia, Anhad Mo-
+empirical investigation of generalization and trans- hananey, Katharina Kann, Shikha Bordia, Nicolas
+ferinreadingcomprehension. InProceedingsofthe Patry, David Benton, Ellie Pavlick, and Samuel R.
+57th Annual Meeting of the Association for Com- Bowman. 2019c. jiant 1.2: A software toolkit
+putational Linguistics, pages 4911–4921, Florence, for research on general-purpose text understanding
+Italy.AssociationforComputationalLinguistics. models.
+Alex Warstadt, Yu Cao, Ioana Grosu, Wei Peng, Ha-
+Alon Talmor, Jonathan Herzig, Nicholas Lourie, and
+gen Blix, Yining Nie, Anna Alsop, Shikha Bordia,
+Jonathan Berant. 2019. CommonsenseQA: A ques-
+HaokunLiu, AliciaParrish, Sheng-FuWang, Jason
+tion answering challenge targeting commonsense
+Phang, Anhad Mohananey, Phu Mon Htut, Paloma
+knowledge. InProceedingsofthe2019Conference
+Jeretic, and Samuel R. Bowman. 2019a. Investi-
+of the North American Chapter of the Association
+gating BERT’s knowledge of language: Five anal-
+for Computational Linguistics: Human Language
+ysis methods with NPIs. In Proceedings of the
+Technologies, Volume 1 (Long and Short Papers),
+2019 Conference on Empirical Methods in Natu-
+pages4149–4158,Minneapolis,Minnesota.Associ-
+ral Language Processing and the 9th International
+ationforComputationalLinguistics.
+Joint Conference on Natural Language Processing
+(EMNLP-IJCNLP), pages 2870–2880, Hong Kong,
+Adam Teichert, Adam Poliak, Benjamin Van Durme,
+China.AssociationforComputationalLinguistics.
+andMatthewRGormley.2017. Semanticproto-role
+labeling. InThirty-FirstAAAIConferenceonArtifi-
+AlexWarstadt,AmanpreetSingh,andSamuelR.Bow-
+cialIntelligence.
+man. 2019b. Neural network acceptability judg-
+ments. Transactions of the Association for Compu-
+Ian Tenney, Dipanjan Das, and Ellie Pavlick. 2019a. tationalLinguistics(TACL),7:625–641.
+BERT rediscovers the classical NLP pipeline. In
+Proceedingsofthe57thAnnualMeetingoftheAsso- JohannesWelbl,NelsonF.Liu,andMattGardner.2017.
+ciation for Computational Linguistics, pages 4593– Crowdsourcing multiple choice science questions.
+4601,Florence,Italy.AssociationforComputational InProceedingsofthe3rdWorkshoponNoisyUser-
+Linguistics. generated Text, pages 94–106, Copenhagen, Den-
+mark.AssociationforComputationalLinguistics.
+Ian Tenney, Patrick Xia, Berlin Chen, Alex Wang,
+Adam Poliak, R Thomas McCoy, Najoung Kim, Adina Williams, Nikita Nangia, and Samuel Bowman.
+BenjaminVanDurme,SamBowman,DipanjanDas, 2018. A broad-coverage challenge corpus for sen-
+and Ellie Pavlick. 2019b. What do you learn from tenceunderstandingthroughinference. InProceed-
+ingsofthe2018ConferenceoftheNorthAmerican
+context? probingforsentencestructureincontextu-
+alized word representations. In International Con- Chapter of the Association for Computational Lin-
+ferenceonLearningRepresentations. guistics: Human Language Technologies, Volume
+1(LongPapers), pages1112–1122.Associationfor
+ComputationalLinguistics.
+Alex Wang, Jan Hula, Patrick Xia, Raghavendra Pap-
+pagari, R. Thomas McCoy, Roma Patel, Najoung
+Thomas Wolf, Lysandre Debut, Victor Sanh, Julien
+Kim, Ian Tenney, Yinghui Huang, Katherin Yu,
+Chaumond, ClementDelangue, AnthonyMoi, Pier-
+Shuning Jin, Berlin Chen, Benjamin Van Durme,
+ricCistac,TimRault,R’emiLouf,MorganFuntow-
+Edouard Grave, Ellie Pavlick, and Samuel R. Bow-
+icz, and Jamie Brew. 2019. Huggingface’s trans-
+man.2019a. Canyoutellmehowtogetpastsesame
+formers: State-of-the-art natural language process-
+street? sentence-level pretraining beyond language
+ing. UnpublishedmanuscriptavailableonarXiv.
+modeling. InProceedingsofthe57thAnnualMeet-
+ingoftheAssociationforComputationalLinguistics,
+Rowan Zellers, Yonatan Bisk, Roy Schwartz, and
+pages 4465–4476, Florence, Italy. Association for
+Yejin Choi. 2018. SWAG: A large-scale adversar-
+ComputationalLinguistics.
+ialdatasetforgroundedcommonsenseinference. In
+Proceedings of the 2018 Conference on Empirical
+Alex Wang, Yada Pruksachatkun, Nikita Nangia, MethodsinNaturalLanguageProcessing,pages93–
+AmanpreetSingh, JulianMichael, FelixHill, Omer 104, Brussels, Belgium. Association for Computa-
+Levy,andSamuelR.Bowman.2019b. SuperGLUE: tionalLinguistics.
+A multi-task benchmark and analysis platform for
+natural language understanding. In H. Wallach, Rowan Zellers, Ari Holtzman, Yonatan Bisk, Ali
+H. Larochelle, A. Beygelzimer, F. d’ Alche´-Buc, Farhadi, and Yejin Choi. 2019. HellaSwag: Can
+E. Fox, and R. Garnett, editors, Advances in Neu- a machine really finish your sentence? In Pro-
+ralInformationProcessingSystems32,pages3261– ceedings of the 57th Annual Meeting of the Asso-
+3275.CurranAssociates,Inc. ciation for Computational Linguistics, pages 4791–
+4800,Florence,Italy.AssociationforComputational
+Linguistics.
+Sheng Zhang, Xiaodong Liu, Jingjing Liu, Jianfeng
+Gao, Kevin Duh, and Benjamin Van Durme. 2018.
+Record: Bridging the gap between human and ma-
+chine commonsense reading comprehension. Un-
+publishedmanuscriptavailableonarXiv.
+A CorrelationBetweenProbingand
+TargetTaskPerformance
+Figure4showsthecorrelationmatrixusingSpear-
+man correlation and Figure 5 shows the matrix
+usingPearsoncorrelation.
+B EffectofIntermediateTaskSizeon
+TargetTaskPerformance
+Figure6showstheeffectofdatasetsizeoninterme-
+diatetasktrainingondownstreamtargettaskper-
+formanceforfiveintermediatetasks,whichwere
+pickedtomaximizethevarietyoforiginalinterme-
+diatetasksizesandeffectivenessintransferlearn-
+ingabilities.
+BC
+APOC CSW ETR CRitluM CiW QlooB AQesneSC AQsomsoC DRoCeR SOP-PE REN-PE LRS-PE feroC-PE tsnoC-PE 1RPS-PE 2RPS-PE RPD-PE leR-PE DU-PE neLtneS-ES CW-ES
+htpeDeerT-ES
+tsnoCpoT-ES tfihSB-ES esneT-ES muNjbuS-ES muNjbO-ES OMOS-ES vnIdrooC-ES ALoC-JA hW-JA feD-JA drooC-JA SOE-JA
+CB 1 .31 .37 .58 .73-.04.74 .72 .82 .69 .59 .50 .55 .71 .08 .70 .72 .66 .39 .74 .02 .49 .29 .12 .63 .24 .38-.12.75 .64 .71 .12 .03-.04.55
+COPA .31 1 .25 .67 .57 .17 .52 .66 .55 .59 .02 .42-.10.46 .13 .31 .41 .40 .22 .53-.26.15-.08.05 .58 .36 .25 .07 .74 .48 .55 .03-.13-.34.38
+WSC .37 .25 1 .36 .37 .16 .40 .45 .39 .42 .40 .38 .26 .44 .01 .49 .51 .63 .34 .52 .03 .34 .19 .31 .54 .47 .42 .21 .45 .44 .43 .16-.26.03 .35
+RTE .58 .67 .36 1 .86 .27 .83 .85 .68 .67 .31 .60 .34 .71 .25 .58 .66 .51 .32 .71 .09 .40 .01 .14 .59 .29 .25-.04.74 .80 .71 .15-.14-.22.38
+MultiRC .73 .57 .37 .86 1 .16 .79 .76 .67 .66 .27 .51 .40 .78 .40 .55 .74 .57 .28 .71 .07 .46 .10 .11 .56 .23 .26-.02.73 .79 .59 .01-.07-.15.48
+WiC-.04.17 .16 .27 .16 1 .05 .10-.05.01-.29-.00-.04.02 .18 .04 .04 .14-.09.11-.03.05-.10.10 .15-.21-.09.35 .15 .06 .03-.07-.31-.11.26
+BoolQ .74 .52 .40 .83 .79 .05 1 .79 .80 .76 .47 .59 .46 .74 .17 .70 .69 .58 .29 .76 .04 .41 .05 .11 .68 .37 .28-.13.75 .82 .78 .15-.05-.16.35
+CSenseQA .72 .66 .45 .85 .76 .10 .79 1 .85 .83 .40 .61 .36 .74 .06 .77 .68 .69 .41 .80 .06 .48 .07 .27 .72 .47 .39-.15.88 .76 .76 .20-.18-.19.40
+CosmosQA .82 .55 .39 .68 .67-.05.80 .85 1 .86 .59 .63 .51 .70-.03.76 .66 .74 .45 .81 .01 .54 .14 .24 .84 .33 .36-.15.87 .80 .83 .27 .06-.18.52
+ReCoRD .69 .59 .42 .67 .66 .01 .76 .83 .86 1 .44 .66 .43 .71 .08 .77 .69 .73 .45 .84 .09 .46 .21 .31 .76 .39 .42-.11.83 .79 .71 .21-.10-.15.50
+EP-POS .59 .02 .40 .31 .27-.29.47 .40 .59 .44 1 .67 .56 .45-.28.55 .48 .43 .47 .50 .35 .48 .45 .20 .42 .28 .34-.35.40 .39 .57 .40 .24 .06 .22
+EP-NER .50 .42 .38 .60 .51-.00.59 .61 .63 .66 .67 1 .58 .63 .05 .52 .49 .51 .51 .61 .34 .46 .47 .24 .47 .28 .37-.20.57 .57 .60 .35 .03 .02 .29
+EP-SRL .55-.10.26 .34 .40-.04.46 .36 .51 .43 .56 .58 1 .45 .13 .39 .49 .48 .36 .53 .41 .51 .39 .25 .36-.13.06-.11.28 .53 .36 .25 .13 .04 .19
+EP-Coref .71 .46 .44 .71 .78 .02 .74 .74 .70 .71 .45 .63 .45 1 .35 .70 .69 .66 .33 .59 .19 .57 .29 .27 .59 .37 .37-.16.70 .72 .54 .15-.10-.04.57
+EP-Const .08 .13 .01 .25 .40 .18 .17 .06-.03.08-.28.05 .13 .35 1 -.06.10 .18-.15.03-.18.10-.11-.12.01-.11-.09-.01-.01.25-.20-.21-.18-.02.17
+EP-SPR1 .70 .31 .49 .58 .55 .04 .70 .77 .76 .77 .55 .52 .39 .70-.06 1 .61 .68 .44 .75 .17 .52 .27 .41 .61 .55 .54-.16.74 .70 .61 .43-.16-.04.48
+EP-SPR2 .72 .41 .51 .66 .74 .04 .69 .68 .66 .69 .48 .49 .49 .69 .10 .61 1 .74 .45 .80 .21 .48 .27 .31 .62 .38 .30 .01 .69 .71 .56 .08 .01 .04 .41
+EP-DPR .66 .40 .63 .51 .57 .14 .58 .69 .74 .73 .43 .51 .48 .66 .18 .68 .74 1 .29 .70-.01.44 .20 .53 .76 .29 .30 .06 .74 .68 .53 .25-.17.04 .55
+EP-Rel .39 .22 .34 .32 .28-.09.29 .41 .45 .45 .47 .51 .36 .33-.15.44 .45 .29 1 .62 .36 .53 .48 .32 .35 .40 .65-.26.32 .41 .46 .32 .27 .14 .21
+EP-UD .74 .53 .52 .71 .71 .11 .76 .80 .81 .84 .50 .61 .53 .59 .03 .75 .80 .70 .62 1 .11 .54 .27 .33 .74 .43 .45-.07.79 .75 .74 .23-.07-.15.45
+SE-SentLen .02-.26.03 .09 .07-.03.04 .06 .01 .09 .35 .34 .41 .19-.18.17 .21-.01.36 .11 1 .44 .58 .26-.03-.05.04-.09-.03.21 .06 .39 .37 .15-.08
+SE-WC .49 .15 .34 .40 .46 .05 .41 .48 .54 .46 .48 .46 .51 .57 .10 .52 .48 .44 .53 .54 .44 1 .38 .19 .49 .28 .41-.22.48 .51 .40 .42 .28 .02 .41
+SE-TreeDepth .29-.08.19 .01 .10-.10.05 .07 .14 .21 .45 .47 .39 .29-.11.27 .27 .20 .48 .27 .58 .38 1 .39 .06 .02 .34 .08 .13 .07 .22 .43 .26 .24 .31
+SE-TopConst .12 .05 .31 .14 .11 .10 .11 .27 .24 .31 .20 .24 .25 .27-.12.41 .31 .53 .32 .33 .26 .19 .39 1 .18 .12 .20 .05 .20 .21 .13 .34-.17.13 .22
+SE-BShift .63 .58 .54 .59 .56 .15 .68 .72 .84 .76 .42 .47 .36 .59 .01 .61 .62 .76 .35 .74-.03.49 .06 .18 1 .29 .26-.01.84 .74 .78 .28 .00-.22.59
+SE-Tense .24 .36 .47 .29 .23-.21.37 .47 .33 .39 .28 .28-.13.37-.11.55 .38 .29 .40 .43-.05.28 .02 .12 .29 1 .66-.18.43 .28 .25 .16-.11.12 .02
+SE-SubjNum .38 .25 .42 .25 .26-.09.28 .39 .36 .42 .34 .37 .06 .37-.09.54 .30 .30 .65 .45 .04 .41 .34 .20 .26 .66 1 -.04.44 .33 .34 .39 .06 .18 .18
+SE-ObjNum-.12.07 .21-.04-.02.35-.13-.15-.15-.11-.35-.20-.11-.16-.01-.16.01 .06-.26-.07-.09-.22.08 .05-.01-.18-.04 1 .05 .01-.04.01-.12-.01.15
+SE-SOMO .75 .74 .45 .74 .73 .15 .75 .88 .87 .83 .40 .57 .28 .70-.01.74 .69 .74 .32 .79-.03.48 .13 .20 .84 .43 .44 .05 1 .74 .77 .26-.06-.20.57
+SE-CoordInv .64 .48 .44 .80 .79 .06 .82 .76 .80 .79 .39 .57 .53 .72 .25 .70 .71 .68 .41 .75 .21 .51 .07 .21 .74 .28 .33 .01 .74 1 .68 .32 .04-.18.43
+AJ-CoLA .71 .55 .43 .71 .59 .03 .78 .76 .83 .71 .57 .60 .36 .54-.20.61 .56 .53 .46 .74 .06 .40 .22 .13 .78 .25 .34-.04.77 .68 1 .34 .02-.27.42
+AJ-Wh .12 .03 .16 .15 .01-.07.15 .20 .27 .21 .40 .35 .25 .15-.21.43 .08 .25 .32 .23 .39 .42 .43 .34 .28 .16 .39 .01 .26 .32 .34 1 .22 .23 .19
+AJ-Def .03-.13-.26-.14-.07-.31-.05-.18.06-.10.24 .03 .13-.10-.18-.16.01-.17.27-.07.37 .28 .26-.17.00-.11.06-.12-.06.04 .02 .22 1 .28-.03
+AJ-Coord-.04-.34.03-.22-.15-.11-.16-.19-.18-.15.06 .02 .04-.04-.02-.04.04 .04 .14-.15.15 .02 .24 .13-.22.12 .18-.01-.20-.18-.27.23 .28 1 .00
+AJ-EOS .55 .38 .35 .38 .48 .26 .35 .40 .52 .50 .22 .29 .19 .57 .17 .48 .41 .55 .21 .45-.08.41 .31 .22 .59 .02 .18 .15 .57 .43 .42 .19-.03.00 1
+Figure4: Correlationsbetweenprobingandtargettaskperformances. EachcellcontainstheSpearmancorrelation
+betweenprobingandtargettasksperformancesacrosstrainingondifferentintermediatetasksandrandomrestarts.
+BC
+APOC CSW ETR CRitluM CiW QlooB AQesneSC AQsomsoC DRoCeR SOP-PE REN-PE LRS-PE feroC-PE tsnoC-PE 1RPS-PE 2RPS-PE RPD-PE leR-PE DU-PE neLtneS-ES CW-ES
+htpeDeerT-ES
+tsnoCpoT-ES tfihSB-ES esneT-ES muNjbuS-ES muNjbO-ES OMOS-ES vnIdrooC-ES ALoC-JA hW-JA feD-JA drooC-JA SOE-JA
+CB 1 .31 .37 .58 .73-.04.74 .72 .82 .69 .59 .50 .55 .71 .08 .70 .72 .66 .39 .74 .02 .49 .29 .12 .63 .24 .38-.12.75 .64 .71 .12 .03-.04.55
+COPA .31 1 .25 .67 .57 .17 .52 .66 .55 .59 .02 .42-.10.46 .13 .31 .41 .40 .22 .53-.26.15-.08.05 .58 .36 .25 .07 .74 .48 .55 .03-.13-.34.38
+WSC .37 .25 1 .36 .37 .16 .40 .45 .39 .42 .40 .38 .26 .44 .01 .49 .51 .63 .34 .52 .03 .34 .19 .31 .54 .47 .42 .21 .45 .44 .43 .16-.26.03 .35
+RTE .58 .67 .36 1 .86 .27 .83 .85 .68 .67 .31 .60 .34 .71 .25 .58 .66 .51 .32 .71 .09 .40 .01 .14 .59 .29 .25-.04.74 .80 .71 .15-.14-.22.38
+MultiRC .73 .57 .37 .86 1 .16 .79 .76 .67 .66 .27 .51 .40 .78 .40 .55 .74 .57 .28 .71 .07 .46 .10 .11 .56 .23 .26-.02.73 .79 .59 .01-.07-.15.48
+WiC-.04.17 .16 .27 .16 1 .05 .10-.05.01-.29-.00-.04.02 .18 .04 .04 .14-.09.11-.03.05-.10.10 .15-.21-.09.35 .15 .06 .03-.07-.31-.11.26
+BoolQ .74 .52 .40 .83 .79 .05 1 .79 .80 .76 .47 .59 .46 .74 .17 .70 .69 .58 .29 .76 .04 .41 .05 .11 .68 .37 .28-.13.75 .82 .78 .15-.05-.16.35
+CSenseQA .72 .66 .45 .85 .76 .10 .79 1 .85 .83 .40 .61 .36 .74 .06 .77 .68 .69 .41 .80 .06 .48 .07 .27 .72 .47 .39-.15.88 .76 .76 .20-.18-.19.40
+CosmosQA .82 .55 .39 .68 .67-.05.80 .85 1 .86 .59 .63 .51 .70-.03.76 .66 .74 .45 .81 .01 .54 .14 .24 .84 .33 .36-.15.87 .80 .83 .27 .06-.18.52
+ReCoRD .69 .59 .42 .67 .66 .01 .76 .83 .86 1 .44 .66 .43 .71 .08 .77 .69 .73 .45 .84 .09 .46 .21 .31 .76 .39 .42-.11.83 .79 .71 .21-.10-.15.50
+EP-POS .59 .02 .40 .31 .27-.29.47 .40 .59 .44 1 .67 .56 .45-.28.55 .48 .43 .47 .50 .35 .48 .45 .20 .42 .28 .34-.35.40 .39 .57 .40 .24 .06 .22
+EP-NER .50 .42 .38 .60 .51-.00.59 .61 .63 .66 .67 1 .58 .63 .05 .52 .49 .51 .51 .61 .34 .46 .47 .24 .47 .28 .37-.20.57 .57 .60 .35 .03 .02 .29
+EP-SRL .55-.10.26 .34 .40-.04.46 .36 .51 .43 .56 .58 1 .45 .13 .39 .49 .48 .36 .53 .41 .51 .39 .25 .36-.13.06-.11.28 .53 .36 .25 .13 .04 .19
+EP-Coref .71 .46 .44 .71 .78 .02 .74 .74 .70 .71 .45 .63 .45 1 .35 .70 .69 .66 .33 .59 .19 .57 .29 .27 .59 .37 .37-.16.70 .72 .54 .15-.10-.04.57
+EP-Const .08 .13 .01 .25 .40 .18 .17 .06-.03.08-.28.05 .13 .35 1 -.06.10 .18-.15.03-.18.10-.11-.12.01-.11-.09-.01-.01.25-.20-.21-.18-.02.17
+EP-SPR1 .70 .31 .49 .58 .55 .04 .70 .77 .76 .77 .55 .52 .39 .70-.06 1 .61 .68 .44 .75 .17 .52 .27 .41 .61 .55 .54-.16.74 .70 .61 .43-.16-.04.48
+EP-SPR2 .72 .41 .51 .66 .74 .04 .69 .68 .66 .69 .48 .49 .49 .69 .10 .61 1 .74 .45 .80 .21 .48 .27 .31 .62 .38 .30 .01 .69 .71 .56 .08 .01 .04 .41
+EP-DPR .66 .40 .63 .51 .57 .14 .58 .69 .74 .73 .43 .51 .48 .66 .18 .68 .74 1 .29 .70-.01.44 .20 .53 .76 .29 .30 .06 .74 .68 .53 .25-.17.04 .55
+EP-Rel .39 .22 .34 .32 .28-.09.29 .41 .45 .45 .47 .51 .36 .33-.15.44 .45 .29 1 .62 .36 .53 .48 .32 .35 .40 .65-.26.32 .41 .46 .32 .27 .14 .21
+EP-UD .74 .53 .52 .71 .71 .11 .76 .80 .81 .84 .50 .61 .53 .59 .03 .75 .80 .70 .62 1 .11 .54 .27 .33 .74 .43 .45-.07.79 .75 .74 .23-.07-.15.45
+SE-SentLen .02-.26.03 .09 .07-.03.04 .06 .01 .09 .35 .34 .41 .19-.18.17 .21-.01.36 .11 1 .44 .58 .26-.03-.05.04-.09-.03.21 .06 .39 .37 .15-.08
+SE-WC .49 .15 .34 .40 .46 .05 .41 .48 .54 .46 .48 .46 .51 .57 .10 .52 .48 .44 .53 .54 .44 1 .38 .19 .49 .28 .41-.22.48 .51 .40 .42 .28 .02 .41
+SE-TreeDepth .29-.08.19 .01 .10-.10.05 .07 .14 .21 .45 .47 .39 .29-.11.27 .27 .20 .48 .27 .58 .38 1 .39 .06 .02 .34 .08 .13 .07 .22 .43 .26 .24 .31
+SE-TopConst .12 .05 .31 .14 .11 .10 .11 .27 .24 .31 .20 .24 .25 .27-.12.41 .31 .53 .32 .33 .26 .19 .39 1 .18 .12 .20 .05 .20 .21 .13 .34-.17.13 .22
+SE-BShift .63 .58 .54 .59 .56 .15 .68 .72 .84 .76 .42 .47 .36 .59 .01 .61 .62 .76 .35 .74-.03.49 .06 .18 1 .29 .26-.01.84 .74 .78 .28 .00-.22.59
+SE-Tense .24 .36 .47 .29 .23-.21.37 .47 .33 .39 .28 .28-.13.37-.11.55 .38 .29 .40 .43-.05.28 .02 .12 .29 1 .66-.18.43 .28 .25 .16-.11.12 .02
+SE-SubjNum .38 .25 .42 .25 .26-.09.28 .39 .36 .42 .34 .37 .06 .37-.09.54 .30 .30 .65 .45 .04 .41 .34 .20 .26 .66 1 -.04.44 .33 .34 .39 .06 .18 .18
+SE-ObjNum-.12.07 .21-.04-.02.35-.13-.15-.15-.11-.35-.20-.11-.16-.01-.16.01 .06-.26-.07-.09-.22.08 .05-.01-.18-.04 1 .05 .01-.04.01-.12-.01.15
+SE-SOMO .75 .74 .45 .74 .73 .15 .75 .88 .87 .83 .40 .57 .28 .70-.01.74 .69 .74 .32 .79-.03.48 .13 .20 .84 .43 .44 .05 1 .74 .77 .26-.06-.20.57
+SE-CoordInv .64 .48 .44 .80 .79 .06 .82 .76 .80 .79 .39 .57 .53 .72 .25 .70 .71 .68 .41 .75 .21 .51 .07 .21 .74 .28 .33 .01 .74 1 .68 .32 .04-.18.43
+AJ-CoLA .71 .55 .43 .71 .59 .03 .78 .76 .83 .71 .57 .60 .36 .54-.20.61 .56 .53 .46 .74 .06 .40 .22 .13 .78 .25 .34-.04.77 .68 1 .34 .02-.27.42
+AJ-Wh .12 .03 .16 .15 .01-.07.15 .20 .27 .21 .40 .35 .25 .15-.21.43 .08 .25 .32 .23 .39 .42 .43 .34 .28 .16 .39 .01 .26 .32 .34 1 .22 .23 .19
+AJ-Def .03-.13-.26-.14-.07-.31-.05-.18.06-.10.24 .03 .13-.10-.18-.16.01-.17.27-.07.37 .28 .26-.17.00-.11.06-.12-.06.04 .02 .22 1 .28-.03
+AJ-Coord-.04-.34.03-.22-.15-.11-.16-.19-.18-.15.06 .02 .04-.04-.02-.04.04 .04 .14-.15.15 .02 .24 .13-.22.12 .18-.01-.20-.18-.27.23 .28 1 .00
+AJ-EOS .55 .38 .35 .38 .48 .26 .35 .40 .52 .50 .22 .29 .19 .57 .17 .48 .41 .55 .21 .45-.08.41 .31 .22 .59 .02 .18 .15 .57 .43 .42 .19-.03.00 1
+Figure5: Correlationsbetweenprobingandtargettaskperformances. EachcellcontainsthePearsoncorrelation
+betweenprobingandtargettasksperformancesacrosstrainingondifferentintermediatetasksandrandomrestarts.
+Figure6: Resultsofexperimentsonimpactofintermediatetaskdatasizeondownstreamtargettaskperformance.
+Foreachsubfigure,wefinetuneRoBERTaoveravarietyofdatasetsize(sampledrandomlyfromthedataset). We
+reportthemacro-averageofeachtargettask’sperformancemetricsafterfinetuningoneachdatasetsizesplit.

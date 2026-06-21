@@ -1,0 +1,1932 @@
+UAT-LITE: Inference-Time Uncertainty-Aware Attention for Pretrained
+Transformers
+EliasHossain1*,ShubhashisRoyDipta2,SubashNeupane3,RajibRana4,
+RavidShwartz-Ziv5,IvanGaribay1,NiloofarYousefi1
+1UniversityofCentralFlorida 2UniversityofMaryland,BaltimoreCounty
+3MeharryMedicalCollege 4UniversityofSouthernQueensland 5NewYorkUniversity
+mdelias.hossain@ucf.edu
+Abstract Deterministic Inference Inference-Time Uncertainty UAT-Lite
+(Standard transformer) (With MC Dropout) (With MC Dropout +
+Uncertainty-Aware Attention)
+Neural NLP models are often miscalibrated Input sentence Input sentence Stochastic forward passes
+andoverconfident,assigninghighconfidence Single forward pass Re fp oe ra wte ad rd s t po ac sh sa es stic (InM feC re D ncro ep -To iu mt e)
+toincorrectpredictionsandfailingtoexpress
+uncertaintyduringinternalevidenceaggrega- Transformer Transformer Layer- aw tti rs ie b uu tn ioce nrtainty
+tion. Thisunderminesselectivepredictionand No dropout Dropout on Weights frozen Unce ar tt ta ei nn tt iy o- naware
+high-stakesdeployment. Post-hoccalibration Single prediction Multiple prediction Calibrated prediction
+methodsadjustoutputprobabilitiesbutleavein-
+ternalcomputationunchanged,whileensemble Deterministic attention No retraining Uncertainty-aware reasoning
+No uncertainty signal No new parameters Uncertainty is below threshold
+andBayesianapproachesimproveuncertainty
+atsubstantialtrainingorstoragecost. Wepro- Figure 1: Left, A: Standard inference: deterministic
+poseUAT-LITE,aninference-timeframework forwardpasswithoutuncertainty. Center,B:Output-
+thatmakesself-attentionuncertainty-awarevia leveluncertaintyestimationviastochasticinferenceor
+MonteCarlodropoutinpretrainedtransformer post-hoccalibration. Right,C:UAT-LITE: uncertainty-
+classifiers. Unlikeoutput-levelcalibration(e.g., awareinferenceinwhichepistemicuncertaintymodu-
+TS),UAT-LITEinjectsepistemicuncertainty latesattentionwithdiagnosticinsight.
+directly into attention, enabling uncertainty-
+aware routing during contextualization and
+to clinical decision support (Devlin et al., 2019;
+token-level diagnostic signals beyond global
+Brownetal.,2020). Despitetheseadvances,mod-
+logit rescaling. Token-level epistemic uncer-
+ern transformers exhibit systematic miscalibra-
+tainty is estimated from stochastic forward
+tion,oftenassigninghighconfidencetoincorrect
+passesandusedtomodulateself-attentiondur-
+ingcontextualization,withoutmodifyingpre- predictions (Desai and Durrett, 2020). This mis-
+trainedweightsortrainingobjectives. Weaddi- matchbetweenconfidenceandcorrectnessispar-
+tionallyintroducealayer-wisevariancedecom- ticularly problematic for selective prediction and
+positiontodiagnosehowpredictiveuncertainty otherhigh-stakessettings.
+accumulatesacrosstransformerdepth. Across
+Fig.1summarizescommonapproachestouncer-
+SQuAD2.0answerability,MNLI,andSST-2,
+taintyestimation. Standardtransformerinference
+UAT-LITEachievesanaveragerelativeECEre-
+ductionofapproximately20%comparedwith isdeterministicanddoesnotrepresentuncertainty
+afine-tunedBERT-basebaselinewhilepreserv- ininternalcomputation(Fig.1A).Post-hoccalibra-
+ingaccuracy,andyieldsmoreinformativeun- tion methods, such as temperature scaling (TS),
+certaintybehaviorforselectivepredictionun-
+adjust confidence only after representations are
+derdistributionshift.
+formed, leaving internal computation unchanged
+1
+(Fig.1B;Guoetal.,2017). Stochasticapproaches,
+including Monte Carlo (MC) dropout and deep
+1 Introduction
+ensembles(GalandGhahramani,2016;Lakshmi-
+Pretrained transformer-based language models narayananetal.,2017), improveuncertaintyesti-
+achievestate-of-the-artperformanceacrossawide matesbuttypicallytreatuncertaintyasanoutput-
+range of NLP tasks, from question answering levelsignalwithoutinfluencingattention.
+This gap reflects a broader issue: transform-
+*Correspondingauthor:mdelias.hossain@ucf.edu
+1github.com/eliashossain001/uq_decomposition ers are trained to optimize predictive accuracy
+6202
+raM
+01
+]IA.sc[
+2v25920.2062:viXra
+ratherthanconfidencereliability(Guoetal.,2017). using a controllable Monte Carlo budget (e.g.,
+While post-hoc methods are lightweight and ef- M ∈ {3,5,10}) to trade compute for reliability.
+fectivein-domain,theydonotaltertokeninterac- UAT-LITE isnotintendedtoreplacelightweight
+tions. Bayesian approaches integrate uncertainty output-levelcalibratorssuchas TS,whichisopti-
+moredeeplybutoftenrequirearchitecturalchanges mized on development logits and often performs
+orspecializedtraining,whichlimitscompatibility bestin-domain. While TS rescalesfinallogitsaf-
+with pretrained models. This motivates a central ter representations are formed, UAT-LITE mod-
+question: canepistemicuncertaintyshapeatrans- ulates internal evidence aggregation by making
+former’sattentionatinferencetimewithoutretrain- attention uncertainty-aware. Concretely, UAT-
+ingormodifyingpretrainedweights? LITE provides (i) token-level epistemic signals,
+We argue that effective uncertainty quantifica- (ii) uncertainty-aware routing via attention mod-
+tionshouldallowuncertaintytoshapeattention, ulation, and (iii) layer-wise diagnostic attribu-
+notmerelyannotatefinalpredictions. Forambigu- tion; TS provides only output probability rescal-
+ousinputs,areliablemodelshouldmodulateevi- ing. Becausethetwomechanismsactatdifferent
+denceaggregationratherthanpropagateearlyatten- stages,theyarecomplementaryandcanbestacked
+tiondecisionsdeterministically. Existingstochastic (UAT-LITE+TS)whencalibratedprobabilitiesare
+inferencemethodsexposeuncertaintymainlyatthe needed. Overall, the framework trades a control-
+outputlevelanddonotuseittomodulateinternal lable inference-time cost for improved reliability
+attentionpatterns(Fig.1C).Althoughtemperature whileavoidingthetrainingandstorageoverheadof
+scalingishighlyeffectiveforoutputcalibration,it ensemble-basedalternatives. Ourstudyfocuseson
+onlyrescaleslogitsandcannotprovidetoken-level encoder-basedtransformers;extendinguncertainty-
+epistemicsignalsoruncertainty-awareroutingin- awareattentiontodecoder-onlygenerativemodels
+sidethemodel. isleftforfuturework.
+Motivated by these observations, we propose
+UAT-LITE, an inference-time framework for
+encoder-based pretrained transformer classifiers. 2 RelatedWork
+UAT-LITEestimatestoken-levelepistemicuncer-
+taintyviaMCdropoutandusesittodownweight
+attentioncontributionsfromunstabletokensduring Uncertaintyestimationandcalibrationforneural
+contextualization, without modifying pretrained networkshavebeenstudiedextensively. Post-hoc
+weights or training objectives. Our main contri- methodssuchastemperaturescalingandPlattscal-
+butionsareasfollows: ing (Guo et al., 2017; Platt et al., 1999) provide
+simple and effective confidence correction with-
+• Uncertainty-Weighted Attention. An
+outalteringmodelinternals. Ensemble-basedap-
+inference-time mechanism that injects token-
+proaches, including Deep Ensembles (Lakshmi-
+level epistemic uncertainty, estimated via MC
+narayanan et al., 2017), often yield strong cali-
+dropout, into self-attention, downweighting
+brationperformancebutincursubstantialtraining
+unstabletokencontributionsduringcontextual-
+andstorageoverhead. Bayesianneuralnetworks,
+ization.
+stochasticinferencemethods,andrecentBayesian
+• Layer-WiseUncertaintyAttribution. Avari- transformervariants(Blundelletal.,2015;Galand
+ancedecompositionthatattributespredictiveun- Ghahramani, 2016; Ritter et al., 2018; Fan et al.,
+certaintyacrosstransformerdepth,enablingdi- 2020; Zhang et al., 2021; Chen and Li, 2023) of-
+agnosticanalysisofwhereuncertaintyamplifies ferprincipledapproachestouncertaintymodeling,
+duringinference. but they typically require architectural modifica-
+tions,variationaltraining,ortask-specificretrain-
+• Comprehensive Evaluation. Experiments on
+ing. Bycontrast, UAT-LITE integratesepistemic
+SQuAD 2.0 answerability, MNLI, and SST-2
+uncertaintydirectlyintoself-attentionatinference
+thatshowimprovedcalibrationandselectivepre-
+time, preserving pretrained weights and standard
+diction, along with robustness analyses under
+trainingpipelineswhileenablinguncertainty-aware
+distributionshift.
+internalcomputation. Amorecomprehensivedis-
+UAT-LITEintroducesnoadditionaltrainablepa- cussionofrelatedworkanddetailedcomparisons
+rameters and operates strictly at inference time, isprovidedin§G.
+3 Preliminaries Bayesian Embedding Layer-Wise Variance
+Calibration Decomposition
+Token Uncertainty
+We briefly review the uncertainty concepts and S1 S2 S3
+Mean:E[z|x]
+Std: √Var[z|x]
+stochasticinferenceprotocolusedthroughoutthe Z₁ Z₂ Zₘ Ux=Var (Z₁,.....,Zₘ) Aleatoric Epistemic
+paper. Bayesianperspectivesdistinguishepistemic II nn pp uu tt T IDex st MC Sampling Epis (te Tm okic e nU Ln ec ver et la )inty Critical Layer Analysis
+Attention Mask
+uncertainty,whicharisesfromlimiteddataordis-
+Pretrained Transformer
+MC Dropout-Based Uncertainty Estimation
+tribution shift, fromaleatoricuncertainty, which Encoder
+MC Dropout Classifier
+reflects irreducible observation noise. In our set- Uncertainty Weighted Attention Logit Samples UE np ci es rte tam inic ty Logit Variance
+ting, epistemic effects dominate under semantic
+ambiguityanddistributionshift,wheretransform- L Layers Confidence Guided Decision Module
+Confidence Guided Decision
+erscanbeconfidentlywrong. WeuseMCdropout
+High Confidence: Predict Low confidence: Abstain
+Sequence-Level Uncertainty Summary
+as a lightweight approximate Bayesian inference
+Final Output
+method. Specifically, dropout is retained at test
+time, andwerunM stochasticforwardpassesto Figure 2: Overview of UAT-LITE. Token-level epis-
+temic uncertainty is estimated via MC dropout at the
+obtainapredictivedistributionwhosemeanisused
+embeddinglayerandusedtomodulateself-attentionin
+for prediction and whose variability serves as an
+apretrainedtransformerencoder. Alayer-wisevariance
+estimate of epistemic uncertainty. Standard MC
+decompositionprovidesdiagnosticattributionofpredic-
+dropout treats uncertainty as an output-level sig-
+tiveuncertaintyacrossdepth.
+nal and does not influence internal computation.
+Becausetransformerinferenceisorganizedaround putyieldsthesamepredictionforfixedparameters.
+tokenrepresentationsandattentioninteractions,we Whileeffectiveforaccuracy,thissettingprovides
+usetoken-leveluncertaintyderivedfromstochastic no mechanism for representing epistemic uncer-
+embeddings as a proxy for unstable token contri- taintyduringinternalcomputation. Ourgoalisto
+butions. Thismotivatesmodulatingattentionwith introduce controlled inference-time stochasticity
+tokenuncertaintyatinferencetime,withoutretrain- anduseittomodulateattentionwithoutretraining
+ingorchangingpretrainedweights. orparameterupdates.
+4 UAT-LITE 4.2 EstimatingUncertaintyviaMCSampling
+We estimate predictive uncertainty using MC
+UAT-LITE is an inference-time extension of pre-
+dropout,alightweightapproximationtoBayesian
+trainedtransformerclassifiersthatinjectsepistemic
+inference. Dropout is retained at test time, and
+uncertainty into self-attention to improve confi-
+weperformM stochasticforwardpasses,eachin-
+dencereliabilitywithoutmodifyingthemodelar-
+duced by a different dropout mask. Aggregating
+chitecture,trainingobjectives,orlearnedparame-
+theresultinglogitsyieldsapredictivemeanandan
+ters. TheframeworkusesMCdropouttoestimate
+estimateofepistemicvariabilityacrosspasses.
+token-level variability and to modulate attention
+duringcontextualization. UAT-LITE alsoprovides Uncertainty type. Following Kendall and Gal
+a diagnostic layer-wise variance decomposition (2017), predictive uncertainty decomposes into
+thatcharacterizeshowpredictiveuncertaintyaccu- aleatoricandepistemiccomponents. MCdropout
+mulatesacrosstransformerdepthwithoutaffecting primarily captures epistemic uncertainty through
+theforwardpass. Finalpredictionsareproducedby approximateposteriorsamplingatinferencetime.
+aggregatingstochasticlogits,andoptionalTScan
+Component-specificdropout. Tobalancevari-
+beappliedtotheMC-meanlogitswhencalibrated
+ability and stability, we use component-specific
+probabilitiesarerequired.
+dropoutratesduringinference: 0.1forembeddings,
+4.1 ProblemSetupandNotation 0.2 for attention layers, and 0.3 for feed-forward
+layers. Theseratesarefixedacrosstasks,andcal-
+We consider an encoder-based pretrained trans-
+ibrationtrendsremainstableundermoderaterate
+formerforclassification. Givenaninputsequence
+variations.
+x = (x ,...,x ), the model maps x through L
+1 T
+layerstocontextualrepresentationsh(L),whichare Single-passsamplingprotocol. Weuseasingle-
+converted to a predictive distribution yˆby a task- passMCprocedureinwhichthesameM stochastic
+specifichead. Instandardevaluation,inferenceis forwardpassesareusedto(i)estimatetoken-level
+deterministic: dropoutisdisabled,andthesamein- embeddinguncertaintyand(ii)computethefinal
+MCpredictivedistribution. Concretely,duringpass Attentionmodulation. LetQ,K,andV denote
+mwesampledropoutmasksandcomputeembed- the query, key, and value projections. Standard
+dings z(m), then update running uncertainty esti- scaleddot-productattentionlogitsare
+matesUˆ(m)(x )fromtheembeddingsamplesob-
+j
+Q K⊤
+servedsofar. Toavoidcirculardependencewithin i j
+a = √ . (2)
+ij
+apass,wemodulateattentioninpassmusingthe d
+k
+lagged estimate Uˆ(m−1)(x ), with Uˆ(0)(x ) = 0,
+j j
+Wedefineuncertainty-awarelogitsbyattenuating
+as summarized in Algorithm 1. After M passes,
+thefinaltokenuncertaintyisU(x ) = Uˆ(M)(x ), thepre-softmaxscores:
+j j
+and predictions are obtained by aggregating log-
+a˜ = a exp(−λu ), (3)
+its {ℓ(m)}M . This design avoids a separate ij ij ij
+m=1
+embedding-only stage and ensures that overhead
+whereλ > 0isafixedpenaltyparameterandu
+ij
+scaleslinearlyinM.
+specifiestheprojectionvariant.
+Positioning vs. TS. UAT-LITE does not replace
+4.3 Uncertainty-WeightedSelf-Attention
+TS: TS rescales final logits post hoc, whereas
+We incorporate epistemic uncertainty into self- UAT-LITE modulatespre-softmaxattentionlogits
+attention by modulating attention logits using usingtoken-levelepistemicuncertainty,enabling
+token-leveluncertaintyestimatedattheembedding uncertainty-awareroutingandtoken-leveldiagnos-
+layer. ticsbeyondoutputrescaling. Weanalyzesensitivity
+to(λ,M)andcomparepenaltyforms(exponential
+Token-level uncertainty estimation. For each vs.linearvs.reciprocal)in§D.6.
+tokenx ,weobtainM stochasticembeddingsam-
+j
+ples{z(m) }M viaMCdropout. Wedefinetoken Projection variants (Q/K/V). Using U(·), we
+j m=1 instantiateu asfollows:
+uncertaintyas ij
+
+U(x ) (Q-only)
+U(x j) =
+d1 (cid:88)d
+StdM
+m=1(cid:16)
+z j( ,m
+k)(cid:17)
+, (1) u ij =
+ 
+U(x
+ji
+) (K-only;evidencegating)
+k=1 U(x )+U(x ) (QK)
+i j
+(4)
+where d is the embedding dimension. We treat
+Wethenobtainattentionprobabilitiesviathesoft-
+U(x ) as an embedding-level proxy for the epis-
+j max:
+temic uncertainty induced by dropout and use it exp(a˜ )
+ij
+α = . (5)
+asacontrolsignalforuncertainty-awareattention ij (cid:80) exp(a˜ )
+k ik
+routing.
+WeadditionallyconsiderV-onlyandQKVbyap-
+Single-pass / online estimation. To avoid a
+plying the same factor to the value path, V˜ =
+separateembedding-onlysamplingstage,weesti- V exp(−λU(x )), and using (cid:80) α V˜ as thj e at-
+mate U(x ) online during the same M stochas- j j j ij j
+j
+tentionoutput.
+tic passes used for prediction. Specifically, af-
+ter completing pass m−1, we maintain a run- Relationtopriorwork. Prioruncertainty-aware
+ning estimate Uˆ(m−1)(x j) (e.g., via Welford up- attention methods typically require architectural
+dates),andweuseUˆ(m−1)(x j)tomodulateatten- modificationorvariationaltraining(ChenandLi,
+tioninpassm. AfterM passes,thefinalestimate 2023;Zhangetal.,2021),whereasourapproachop-
+U(x j) = Uˆ(M)(x j) aggregates variability across eratesentirelyatinferencetime. Unlessotherwise
+allsamples. DuringtheMCrun,eachpassusesthe stated,wedefaulttoQ-only,whichempiricallypro-
+laggedestimateUˆ(m−1)(x j)consistentlyacrossall videsafavorablecalibration–accuracytrade-offin
+layersandheads. ourexperimentsinSection6.5.
+Scale/geometry diagnostics. We test whether
+4.4 Layer-WiseUncertaintyAttribution
+U(x ) is a trivial artifact of embedding scale or
+j
+geometrythroughembedding-rescalinginvariance, Weanalyzehowpredictiveuncertaintypropagates
+correlationswithoutput-spaceepistemicmeasures across transformer depth under inference-time
+(entropy/MI),anduncertainty-definitionablations stochasticity. This analysis is purely diagnostic
+(§D.8). anddoesnotaltermodelbehavior.
+Layer-wisevariancedecomposition. Usingthe 5.2 Baselines,Metrics,andTrainingOverview
+law of total variance, we decompose the predic-
+WecompareourapproachagainstBERT-base,MC
+tivevarianceunderMCdropoutintolayer-indexed
+Dropout, TS,DeepEnsembles,andrepresentative
+contributions(§A).
+Bayesian last-layer methods. All models share
+Proposition 1 (Diagnostic Layer-Wise Variance thesamepretrainedbackbone,fine-tuningrecipe,
+Decomposition). Under the stochastic inference andevaluationprotocol; detailedbaselineconfig-
+procedureusedinthiswork,predictivevariancead- urations are provided in §C. Calibration is evalu-
+mitsarecursivedecompositionacrosstransformer ated using Expected Calibration Error (ECE), to-
+depthviarepeatedapplicationofthelawoftotal getherwithrobustnessunderdistributionshiftand
+variance. selectivepredictionmetrics. Resultsarereported
+as mean ± standard deviation over five random
+Scopeandinterpretation. Thisdecomposition
+seeds,whiledeterministicbaselinesexhibitnegli-
+followsfromstandardvarianceidentitiesandisnot
+gible variance. The proposed method introduces
+claimedtobeanoveltheoreticalresult. Itspurpose
+noadditionaltrainableparametersandoperatesen-
+is to diagnose where uncertainty concentrates or
+tirelyatinferencetime.
+amplifiesacrossdepth. Theresultingcontributions
+shouldthereforebeinterpretedasapproximatedi- Negation diagnostic. We include a controlled
+agnosticsignalsratherthancausalattributions. negationperturbationasadiagnosticofuncertainty
+responsivenessundersemanticdestabilization. Be-
+4.5 Confidence-AwareDecisionShaping
+cause negation may alter the true label, we em-
+MC dropout yields logits {ℓ(m)}M from M phasizelabel-freestabilitysignals(e.g.,∆Margin
+m=1
+stochasticpasses. WecomputetheMC-meanlogits and∆Entropy)ratherthantreatingthissettingas
+asℓ¯= 1 (cid:80)M ℓ(m)andderivethepredictivedis- a robustness test of correctness. Full details and
+M m=1
+tributionfromℓ¯
+. Whenused,post-hoctemperature examplesareprovidedin§D.9.
+scalingisfitonthevalidationsetandappliedtoℓ¯
+Uncertainty penalty. Unless otherwise stated,
+attesttime.
+we use a single uncertainty penalty λ, which is
+Selectiveprediction. Weperformabstentionby selectedonceondevelopmentdataandthenheld
+thresholdingconfidenceonthevalidationsplitand fixed across all tasks and datasets. §D.11 shows
+applying the same thresholds at test time for all thatcalibrationperformanceremainsstableacross
+methods. abroadrangeofλvaluesandMonteCarlobudgets
+M, indicating that the method does not rely on
+5 ExperimentalSetup
+sensitivehyperparametertuninginpracticeforthe
+evaluatedsettings.
+5.1 Datasets
+In particular, across λ ∈ {0.1,0.5,1.0} and
+Weevaluateonfivebenchmarksspanninggeneral-
+M ∈ {3,5,10},ECEvarieswithinanarrowband
+domain NLP and clinical-language settings that
+(range< 0.007),whileaccuracychangesareneg-
+are commonly used in prior calibration and ro-
+ligible. Increasing M improves calibration, with
+bustness studies. All experiments focus exclu-
+diminishingreturnsbeyondM=5,suggestingthat
+sively on encoder-based pretrained transformer
+stablebehaviordoesnotrequireexpensiveMonte
+classifiers (BERT-family backbones), rather than
+Carlobudgetsorfine-grainedtuning.
+decoder-only language models. The general-
+domain datasets include SQuAD 2.0 (Rajpurkar 6 Results
+etal.,2018),aquestion-answeringbenchmarkwith
+6.1 GeneralNLPCalibrationPerformance
+unanswerable questions; MNLI (Williams et al.,
+2018), a natural language inference benchmark Table 1 reports multi-seed calibration results on
+withmatchedandmismatchedsplitsthatsupport SQuAD,MNLI,andSST-2(ECE↓;mean±stan-
+distribution-shiftanalysis;andSST-2(Socheretal., dard deviation over five seeds) under a shared
+2013),abinarysentimentclassificationbenchmark. evaluationprotocol. Acrosstasks,UAT-LITEim-
+Theclinical-domainbenchmarksincludeMedQA proves calibration relative to the unscaled fine-
+(Jinetal.,2021)andPubMedQA(Jinetal.,2019), tunedBERTbaseline(e.g.,averageECEdecreases
+whichweusetoassessdomaintransferratherthan from0.1072to0.0964),withthelargestimprove-
+clinicalvalidity. mentonMNLI(0.0816 → 0.0638). Italsooutper-
+forms MC Dropout baselines, including uniform Shortcut-stress test on HANS. HANS probes
+and component-specific variants, suggesting that heuristicshortcutreliance. Weadditionallyreport
+thegainsarenotexplainedbystochasticityalone. aper-heuristicbreakdownandanon-entailment-
+Fig.4showsthatglobal-ordocument-levelMC onlysubset(Table6),whichisolatesthedominant
+Dropoutimprovesoverthedeterministicbaseline failure mode of overconfident non-entailment er-
+butremainsbehindTS,whichachievesthelowest rors. On this diagnostic, UAT-LITE and UAT-
+in-domainECE.Wethereforeview UAT-LITE as LITE +TS improve accuracy over Base and
+complementary to TS: UAT-LITE modulates in- Base+TS,suggestingthatuncertainty-weightedat-
+ternalevidenceaggregation,whereasTSrescales tentionmitigatesshortcut-drivenevidencebeyond
+outputlogits. ThebottompanelofTable1reports output-onlyrescaling.
+MedQA and PubMedQA (single seed; accuracy
+CoreFinding
+reportedinseparatecolumns)asaclinicaldomain-
+transferstresstest. Acrossdistributionshifts, TSisstrongestfor
+MedQAanalysisbylinguisticbucket(negation, marginal ECE, whereas UAT-LITE provides
+numericexpressions,biomedicalterminology,and complementary uncertainty-aware inference.
+hedging markers; Table 12) shows a consistent Overall,UAT-LITE+TSisthemostreliable
+pattern: UAT-LITE improvesaccuracyacrossall configurationinourevaluations.
+phenomena,whileUAT-LITE+TSattainsthelow-
+estcalibrationerrorineverybucket. Overall, TS
+isstrongestforin-domainprobabilitycalibration, 6.3 SelectivePredictionPerformance
+UAT-LITE provides complementary uncertainty-
+Table 4 reports threshold-based selective predic-
+aware inference, and UAT-LITE +TS yields the
+tion results on MNLI and SQuAD 2.0, including
+besttrade-offinourevaluations.
+TSandglobalMCDropoutbaselines. Confidence
+6.2 DistributionShiftRobustness is defined as s(x) = max yp θ(y | x). For τ ∈
+{0.9,0.8,0.7}, we report coverage (Cov@τ), ad-
+We evaluate uncertainty under covariate
+mittedaccuracy(Acc@τ),admittedcount(N@τ),
+shift in two settings: (i) MNLI transfer
+andAURC(risk–coverage;↓). Thresholdsarese-
+(matched→mismatched; mild shift) and (ii) four
+lectedonvalidationdataforeachmethod andthen
+OOD suites with stronger shifts (HANS, ANLI,
+appliedattesttime;wealsoreportN@τ tomake
+SNLI, IMDb). Table 2 reports MNLI transfer
+coverageshiftsexplicit.
+results(mean±standarddeviationoverfiveseeds),
+Selective prediction evaluates whether uncer-
+and Table 5 reports selective prediction on OOD
+taintyalignswithpredictionrisk: areliablemodel
+suites,includingadmittedcountsN@τ.
+shouldabstainonhigher-riskinputswhileretaining
+Calibration baselines and composability with coverageonlower-risk,high-confidenceexamples.
+TS. Temperaturescaling(TS)isthestrongest Thissettingisparticularlyinformativeunderfixed
+post-hocbaselineforreducingmarginalECEvia confidence thresholds, where improved marginal
+global logit rescaling. By contrast, UAT-LITE calibration does not necessarily imply better ab-
+modulatesattention-levelevidenceaggregationus- stentionbehavior.
+ing MC-dropout uncertainty and composes natu-
+rallywithTS.OnMNLItransfer, UAT-LITE+TS EffectofTSunderfixedthresholds. Weinclude
+matchesTS-levelaverageECEwithessentially TSbecause,althoughitpreservesthepredictedla-
+unchangedaccuracy(Table2). bel,probabilityrescalingchangeswhichexamples
+exceedafixedthresholdτ. Asaresult,TScansub-
+Selectivepredictionatfixedconfidencethresh-
+stantiallyalterthreshold-levelbehaviorevenwhen
+olds. We report Cov@τ, Acc@τ, N@τ, and
+accuracyremainsunchanged. OnSQuAD2.0,for
+AURC for τ ∈ {0.9,0.8,0.7} (Table 5). Across
+example, TS can markedly reduce Cov@0.9, re-
+OOD suites, TS reliably reduces ECE but does
+flecting confidence compression rather than a re-
+not uniformly dominate selective prediction, es-
+portingartifact.
+pecially when score compression reduces high-τ
+coverage. Empirically,UAT-LITE+TSisthemost Effectofuncertainty-awareinference. Bycon-
+reliableconfiguration,preservingTS-levelcalibra- trast,UAT-LITEmodifiesinternalevidenceaggre-
+tionwhileretainingattention-levelgating. gation through uncertainty-aware attention. This
+PanelA:GeneralNLP(multi-seed)
+Method SQuAD(ECE↓) MNLI(ECE↓) SST-2(ECE↓) Avg(ECE
+↓)
+BERT-base 0.1868±0.000 0.0816±0.000 0.0531±0.000 0.1072
+Base+TS 0.0788±0.000 0.0148±0.000 0.0163±0.000 0.0366
+MCDropout(uniformp=0.1) 0.173±0.001 0.090±0.001 0.039±0.001 0.101
+MCDropout(component-specific) 0.186±0.000 0.109±0.001 0.054±0.001 0.116
+SNGP 0.001±0.000 0.021±0.000 0.009±0.000 0.010
+VI-LastLayer 0.119±0.001 0.096±0.000 0.136±0.002 0.117
+DeepEnsemble(5) 0.168±0.000 0.060±0.000 0.037±0.000 0.089
+GlobalMCDropout(M=10) 0.1600±0.000 0.0565±0.000 0.0501±0.000 0.0889
+UAT-LITE(M=10) 0.1647±0.000 0.0638±0.000 0.0608±0.000 0.0964
+UAT-LITE+TS(M=10) 0.0760±0.000 0.0201±0.000 0.0191±0.000 0.0384
+PanelB:ClinicalQA(singleseed)
+Method MedQA(ECE↓) MedQA(Acc↑) PubMedQA PubMedQA
+(ECE↓) (Acc↑)
+Baseline 0.033 0.246 0.114 0.620
+Base+TS 0.023 0.246 0.128 0.620
+DeepEnsemble(5) 0.007 0.268 0.051 0.520
+UAT-LITE 0.040 0.249 0.103 0.640
+UAT-LITE+TS 0.0069 0.251 0.1018 0.630
+Table1: Maincalibrationresults(generalNLP)andclinicalQAresults. PanelA(multi-seed): SQuAD,MNLI,
+SST-2(ECE ↓; mean ± stdoverfiveseeds; K=15fixed-width confidencebins). Temperaturescalingis fiton
+validationdataandappliedattesttime. ForUAT-LITE+TS,thetemperatureT isfitondev-setMC-meanlogits
+andappliedattesttime. PanelB(singleseed): MedQAandPubMedQA,reportedwithECE↓andaccuracy↑in
+separatecolumns,areusedasaclinicaldomain-transferstresstest. Note: SNGPcalibrationcanbesensitiveto
+implementationdetails(e.g.,confidencedefinitionandbinning);wereportreproducednumbersunderthesame
+evaluationpipeline.
+changes how confidence is formed before thresh- ble 18 reports the resulting overhead. At M=10,
+oldingandcanimprovealignmentbetweenconfi- UAT-LITE incursasubstantialslowdownrelative
+dence and risk at fixed operating points. Overall, to deterministic inference, whereas TS remains
+UAT-LITE,andespeciallyUAT-LITE+TS,yield essentially free. Accordingly, UAT-LITE is best
+morereliablerisk–coveragebehavior,whereas TS suited to offline or batch evaluation, or to selec-
+alonecansubstantiallyshiftcoveragethroughscore tivelytriggeredregimes(e.g.,invokedonlyforlow-
+compression;seeTable4andTable5. confidence or high-risk inputs), rather than as an
+always-on mechanism in latency-critical deploy-
+6.4 ComputationalEfficiencyandLatency ments.
+Because UAT-LITE relies on Monte Carlo sam-
+6.5 AblationStudy
+pling,itincursadditionalinference-timecostthat
+scales approximately linearly with the MC bud- Fig.5decomposesUAT-LITEintoitsconstituent
+get M under a sequential sampling loop (i.e., M components to isolate their individual contribu-
+stochastic forward passes). To quantify end-to- tions. Uncertainty-weighted attention alone re-
+endoverheadinasinglecanonicalsetting,were- duces ECE under controlled comparisons, indi-
+portwall-clocklatencyonanNVIDIAA100GPU cating that attention modulation based on epis-
+withbatchsize32andsequencelength128. UAT- temicuncertaintyisamajordriveroftheobserved
+LITE usesM=10stochasticpassesimplemented calibration gains. By contrast, embedding-level
+as a sequential Monte Carlo loop; under this set- stochasticity alone can slightly degrade calibra-
+ting,thedeterministicmodelrequires62.9msper tion, suggesting that stochasticity without struc-
+batch,whereasUAT-LITErequires1426.9ms,cor- tured uncertainty-aware computation is insuffi-
+respondingtoa22.7×overhead. Temperaturescal- cient. Combining uncertainty-weighted attention
+ingaddsnegligibletest-timecost(< 1ms)because withconfidence-awaredecisionshapingyieldsthe
+itonlyappliesascalarrescalingofthelogits. Ta- largestimprovementamongtheevaluatedcompo-
+Method IDECE↓ OODECE↓ ∆ECE↓ AvgECE↓ IDAcc↑ OODAcc↑
+Base 0.0809±0.0040 0.0555±0.0000 −0.0254±0.0040 0.0682±0.0020 0.7162±0.0048 0.7459±0.0000
+Base+TS 0.0147±0.0031 0.0208±0.0022 0.0061±0.0040 0.0177±0.0018 0.7162±0.0048 0.7459±0.0000
+GlobalMCDropout(M=10) 0.0586±0.0037 0.0334±0.0023 −0.0253±0.0033 0.0460±0.0026 0.7090±0.0047 0.7398±0.0012
+UAT-LITE(M=10) 0.0650±0.0028 0.0402±0.0012 −0.0247±0.0038 0.0526±0.0010 0.7099±0.0038 0.7395±0.0014
+UAT-LITE+TS(M=10) 0.0163±0.0022 0.0199±0.0013 0.0035±0.0017 0.0181±0.0016 0.7105±0.0047 0.7394±0.0004
+Table2: Multi-seeddistribution-shiftrobustnessonMNLI(matched→mismatched). Resultsarereportedasmean
+±standarddeviationoverfiveseeds. ∆ECE=ECE −ECE (lowerisbetter),andAvgECEisdefinedas
+OOD ID
+1(ECE +ECE ). ForUAT-LITE+TS,thetemperatureT isfitonthedevelopmentsetusingMC-meanlogits
+2 ID OOD
+andappliedattesttime.
+nents,consistentwiththeircomplementarity. onlyorstate-spacemodels,remainsanimportant
+Toexaminethedesignchoiceofwheretoapply directionforfuturework.
+uncertaintymodulationwithinattention,weevalu-
+Additional analyses. Additional analyses are
+atevariantsthatgatethequery(Q),key(K),value
+providedin§DtoF,includingthreshold-basedse-
+(V),orallthreejointly(QKV).Fig.3summarizes
+lectiveprediction,OODevaluations(e.g.,HANS),
+the calibration–accuracy trade-offs across SST-2,
+global and document-level MC dropout diagnos-
+MNLI,andSQuAD2.0. Overall,K-onlyachieves
+tics,componentablations,penalty-formablations,
+thelowestECEonSST-2andMNLIbutcansub-
+aggregation and normalization diagnostics, scale
+stantiallyreduceaccuracyonSQuAD2.0,suggest-
+and geometry diagnostics for token uncertainty,
+ingoverlyaggressiveevidencegatinginspan-style
+negationdiagnosticswithqualitativeattentionillus-
+questionanswering. Q-onlyprovidesthemostbal-
+tration, behavioral analysis by linguistic bucket
+ancedbehavior,improvingcalibrationwhilelargely
+on MedQA, sensitivity analyses for λ and M,
+preservingaccuracyacrosstasks,whereasV-only
+character-leveladversarialrobustness,fulllinguis-
+bestpreserves,andinsomecasesslightlyimproves,
+tic uncertainty analysis, cross-model and scaling
+accuracywhileyieldingmoremodestECEgains.
+analyses,andimplementation,complexity,latency,
+JointQKVgatingcanfurtherreduceECEonsome
+andreproducibilitydetails.
+datasets but tends to over-regularize and degrade
+accuracy. 7 Conclusion
+6.6 GeneralizationAcrossBERTModels
+We introduced UAT-LITE, an inference-time
+framework that integrates epistemic uncertainty
+We evaluate generalization across BERT-based into transformer inference through uncertainty-
+encoder architectures spanning general-purpose, weighted attention and a layer-wise variance di-
+biomedical, clinical, and scientific domains (§E). agnostic. AcrossgeneralNLPbenchmarks,UAT-
+Under matched evaluation protocols, UAT-LITE LITEimprovescalibrationrelativetoanunscaled
+improvescalibrationacrossthesepretrainedback- fine-tuned BERT baseline and yields more re-
+bones,yieldinganaveragerelativeECEreduction liable selective prediction behavior under fixed
+ofapproximately32%. confidence thresholds. Under distribution shift
+Thelargestgainsareobservedformid-sizedand (MNLI matched→mismatched and OOD evalua-
+domain-specializedmodels,includingBERT-base tionsuites), uncertainty-awareattentionprovides
+onSQuAD,BioBERTonPubMedQA,andClini- benefitsthatarecomplementarytooutput-levelcal-
+calBERTonMedQA,whereepistemicuncertainty ibration: temperaturescalingremainsthestrongest
+associatedwithsemanticambiguityappearsmore post-hocbaselineforECEreduction,whereasUAT-
+prominent. Bycontrast,improvementsaresmaller LITE targets internal evidence aggregation and
+formodelswithstrongerbaselinecalibration(e.g., composescleanlywith TS whencalibratedproba-
+RoBERTa-baseonMNLI)anddiminish,orocca- bilitiesarerequired. AlthoughMonteCarlosam-
+sionallyreverse,forverysmallorheavilyoverpa- pling increases inference latency, UAT-LITE re-
+rameterizedmodels. quires neither retraining nor modification of pre-
+Theseresultssuggestthatuncertainty-awareat- trained weights, providing a practical bridge be-
+tention generalizes reliably within the BERT en- tween lightweight post-hoc calibration methods
+coderfamily. Extendingthismechanismtofunda- andhigher-costBayesianorensemble-basedalter-
+mentally different architectures, such as decoder- natives.
+0.30
+0.25
+0.20
+0.15
+0.10
+0.05
+0.00
+SST-2 MNLI SQuAD 2.0
+Dataset
+ECE
+ECE ↓ (lower is better)
+450.0
+830.0 540.0 640.0 820.0
+560.0
+320.0
+350.0 650.0
+040.0
+461.0
+632.0
+851.0 161.0
+612.0
+0.95
+0.90
+0.85
+0.80
+0.75
+0.70
+0.65
+0.60
+0.55
+0.50
+SST-2 MNLI SQuAD 2.0
+Dataset
+ycaruccA
+Accuracy ↑ (higher is better)
+409.0 298.0 409.0 609.0 798.0
+807.0
+146.0
+907.0 607.0
+936.0
+656.0
+605.0
+556.0 856.0
+505.0
+Q/K/V Ablation: Uncertainty Modulation Across Datasets (M=10, λ=0.5)
+Original K-only Q-only V-only QKV Best (hatched) Original baseline
+Figure 3: Q/K/V ablation: where to apply uncertainty modulation (M=10, λ=0.5). Top: ECE↓; bottom:
+Accuracy↑onSST-2,MNLI,andSQuAD2.0forOriginal,Q-only,K-only,V-only,andQKV.K-onlyachievesthe
+lowestECEonSST-2andMNLIbutsharplyreducesaccuracyonSQuAD2.0;Q-onlyprovidesthemostconsistent
+trade-offacrosstasks;V-onlybestpreservesaccuracy;andQKVcanover-regularize.
+Limitations attheembeddingstage(viaM stochasticembed-
+ding samples) and reuse this signal to modulate
+Computeandlatency. UAT-LITEintroducesad- attentionthroughoutthenetwork;deeperlayersare
+ditionalinferencecostduetoMonteCarlodropout analyzed through variance attribution rather than
+sampling. Under a single canonical end-to-end by re-estimating U(x ) after each mixing opera-
+j
+GPU benchmark (batch size 32, sequence length tion. Recomputing token uncertainty at interme-
+128, sequential MC loop on one GPU), the over- diate layers is a potentially useful extension, but
+head is substantial (e.g., approximately 22.7× at it would require defining token-level uncertainty
+M=10),whereastemperaturescalingaddsnegligi- aftercontextualmixing(e.g.,residualconnections
+blecost(approximately1.0×). Asaresult, UAT- and attention aggregation) and would further in-
+LITEisnotintendedforlatency-critical,always-on crease inference cost due to additional stochastic
+deployment. Instead,itisbettersuitedtoofflineor passes. Weleaveper-layerrecomputation,andits
+batchsettings,ortoselectivelytriggereduse(e.g., associatedcost–benefittrade-offs,tofuturework,
+enablinguncertainty-awareattentiononlyforlow- especiallyinsettingswhereadditionalcomputeis
+confidence or high-risk inputs), where improved acceptable.
+confidence reliability and internal evidence con-
+trol may justify the additional runtime. Overall, NotareplacementforTSin-domain. Because
+UAT-LITEoccupiesanintermediatepointbetween temperaturescalingisastronglightweightcalibra-
+lightweightpost-hoccalibrationmethods(e.g.,TS) torforin-domainECE, UAT-LITE shouldnotbe
+andhigher-costuncertaintymethods(e.g.,deepen- viewed as a universal substitute for TS. Our pri-
+sembles),tradingadditionalcomputeforinternal marycontributionisdifferent: uncertainty-guided
+uncertainty-aware control signals and diagnostic modulation of the internal evidence aggregation
+capability. process through attention at inference time. Ac-
+cordingly,weemphasizecompositionaluse: UAT-
+Compute-oncetokenuncertainty(noper-layer LITE can be combined with TS (by fitting T on
+recomputation). Forefficiencyandconceptual developmentdatausingMC-meanlogits)whenthe
+clarity, we compute token-level uncertainty once goalistoretaininternaluncertainty-awarebehavior
+whilefurtherimprovingoutputcalibration. Ian J Goodfellow, Jonathon Shlens, and Christian
+Szegedy. 2014. Explaining and harnessing adver-
+Clinicaltransferisastresstest,notclinicalval- sarialexamples. arXivpreprintarXiv:1412.6572.
+idation. On clinical QA benchmarks (MedQA
+ChuanGuo,GeoffPleiss,YuSun,andKilianQWein-
+and PubMedQA), calibration gains can be mod-
+berger.2017. Oncalibrationofmodernneuralnet-
+est, which may reflect dataset properties (e.g., a works. InInternationalconferenceonmachinelearn-
+strongeremphasisonfactualrecallandlessambi- ing,pages1321–1330.PMLR.
+guityinevidenceaggregation)aswellasevaluation
+Gao Huang, Yixuan Li, Geoff Pleiss, Zhuang Liu,
+constraints. Wethereforetreattheseexperiments John E Hopcroft, and Kilian Q Weinberger. 2017.
+asdomain-transferstresstestsratherthanevidence Snapshotensembles: Train1,getmforfree. arXiv
+preprintarXiv:1704.00109.
+of clinical readiness. Any real-world clinical de-
+ploymentwouldrequiretask-andsetting-specific DiJin,EileenPan,NassimOufattole,Wei-HungWeng,
+validation,includingbroadercoverage,robustness HanyiFang,andPeterSzolovits.2021. Whatdisease
+checks,andappropriategovernancesafeguards. does this patient have? a large-scale open domain
+questionansweringdatasetfrommedicalexams. Ap-
+pliedSciences.
+References QiaoJin,BhuwanDhingra,ZhengpingLiu,WilliamCo-
+hen,andXinghuaLu.2019. Pubmedqa:Adatasetfor
+Charles Blundell, Julien Cornebise, Koray
+biomedicalresearchquestionanswering. InProceed-
+Kavukcuoglu, and Daan Wierstra. 2015. Weight
+ings of the 2019 conference on empirical methods
+uncertainty in neural network. In International
+innaturallanguageprocessingandthe9thinterna-
+conferenceonmachinelearning,pages1613–1622.
+tionaljointconferenceonnaturallanguageprocess-
+PMLR.
+ing(EMNLP-IJCNLP),pages2567–2577.
+Tom Brown, Benjamin Mann, Nick Ryder, Melanie AlexKendallandYarinGal.2017. Whatuncertainties
+Subbiah,JaredDKaplan,PrafullaDhariwal,Arvind doweneedinbayesiandeeplearningforcomputer
+Neelakantan,PranavShyam,GirishSastry,Amanda vision? Advancesinneuralinformationprocessing
+Askell, and 1 others. 2020. Language models are systems,30.
+few-shotlearners. Advancesinneuralinformation
+processingsystems,33:1877–1901. YoungSuKo,JonathanParkinson,CongLiu,andWei
+Wang. 2024. Tuna: an uncertainty-aware trans-
+Wenlong Chen and Yingzhen Li. 2023. Calibrating former model for sequence-based protein–protein
+transformers via sparse gaussian processes. arXiv interactionprediction. BriefingsinBioinformatics,
+preprintarXiv:2303.02444. 25(5):bbae359.
+Shrey Desai and Greg Durrett. 2020. Calibra- LorenzKuhn,YarinGal,andSebastianFarquhar.2023.
+tion of pre-trained transformers. arXiv preprint Semanticuncertainty: Linguisticinvariancesforun-
+arXiv:2003.07892. certaintyestimationinnaturallanguagegeneration.
+arXivpreprintarXiv:2302.09664.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and
+Balaji Lakshminarayanan, Alexander Pritzel, and
+KristinaToutanova.2019. Bert: Pre-trainingofdeep
+Charles Blundell. 2017. Simple and scalable pre-
+bidirectionaltransformersforlanguageunderstand-
+ing. In Proceedings of the 2019 conference of the dictiveuncertaintyestimationusingdeepensembles.
+NorthAmericanchapteroftheassociationforcom-
+Advancesinneuralinformationprocessingsystems,
+putationallinguistics: humanlanguagetechnologies, 30.
+volume1(longandshortpapers),pages4171–4186.
+ChristosLouizosandMaxWelling.2017. Multiplica-
+tivenormalizingflowsforvariationalbayesianneural
+Xinjie Fan, Shujian Zhang, Bo Chen, and Mingyuan
+networks. InInternationalconferenceonmachine
+Zhou.2020. Bayesianattentionmodules. Advances
+learning,pages2218–2227.PMLR.
+inNeuralInformationProcessingSystems,33:16362–
+16376.
+DavidJCMacKay.1992. Apracticalbayesianframe-
+workforbackpropagationnetworks. Neuralcompu-
+Firas Gabetni, Giuseppe Curci, Andrea Pilzer, Sub-
+tation,4(3):448–472.
+hankar Roy, Elisa Ricci, and Gianni Franchi.
+2025. Ensembling pruned attention heads for RadfordMNeal.2012. Bayesianlearningforneural
+uncertainty-aware efficient transformers. Preprint, networks,volume118. SpringerScience&Business
+arXiv:2510.18358. Media.
+YarinGalandZoubinGhahramani.2016. Dropoutasa JohnPlattand1others.1999. Probabilisticoutputsfor
+bayesianapproximation: Representingmodeluncer- supportvectormachinesandcomparisonstoregular-
+taintyindeeplearning. Ininternationalconference izedlikelihoodmethods. Advancesinlargemargin
+onmachinelearning,pages1050–1059.PMLR. classifiers,10(3):61–74.
+AmirHosseinRahmati,SanketJantre,WeifengZhang, BiancaZadroznyandCharlesElkan.2001. Obtaining
+YuchengWang,Byung-JunYoon,NathanMUrban, calibratedprobabilityestimatesfromdecisiontrees
+andXiaoningQian.2025. C-lora: Contextuallow- andnaivebayesianclassifiers. InIcml,volume1.
+rank adaptation for uncertainty estimation in large
+languagemodels. arXivpreprintarXiv:2505.17773. Shujian Zhang, Xinjie Fan, Bo Chen, and Mingyuan
+Zhou. 2021. Bayesian attention belief networks.
+Pranav Rajpurkar, Robin Jia, and Percy Liang. 2018. InInternationalConferenceonMachineLearning,
+Knowwhatyoudon’tknow:Unanswerablequestions pages12413–12426.PMLR.
+forsquad. arXivpreprintarXiv:1806.03822.
+HippolytRitter,AleksandarBotev,andDavidBarber.
+2018. Ascalablelaplaceapproximationforneural
+networks. In6thinternationalconferenceonlearn-
+ingrepresentations,ICLR2018-conferencetrackpro-
+ceedings,volume6.InternationalConferenceonRep-
+resentationLearning.
+Richard Socher, Alex Perelygin, Jean Wu, Jason
+Chuang,ChristopherD.Manning,AndrewNg,and
+ChristopherPotts.2013. Recursivedeepmodelsfor
+semanticcompositionalityoverasentimenttreebank.
+In Proceedings of the 2013 Conference on Empiri-
+calMethodsinNaturalLanguageProcessing,pages
+1631–1642,Seattle,Washington,USA.Association
+forComputationalLinguistics.
+Aarne Talman, Hande Celikkanat, Sami Virpioja,
+Markus Heinonen, and Jörg Tiedemann. 2023.
+Uncertainty-awarenaturallanguageinferencewith
+stochastic weight averaging. arXiv preprint
+arXiv:2304.04726.
+ArtemVazhentsev,LyudmilaRvanova,GlebKuzmin,
+Ekaterina Fadeeva, Ivan Lazichny, Alexander
+Panchenko,MaximPanov,TimothyBaldwin,Mrin-
+maya Sachan, Preslav Nakov, and 1 others. 2025.
+Uncertainty-aware attention heads: Efficient unsu-
+perviseduncertaintyquantificationforllms. arXiv
+preprintarXiv:2505.20045.
+YikunWang,RuiZheng,LiangDing,QiZhang,Dahua
+Lin, and Dacheng Tao. 2024. Uncertainty aware
+learning for language model alignment. arXiv
+preprintarXiv:2406.04854.
+AdinaWilliams,NikitaNangia,andSamuelBowman.
+2018. A broad-coverage challenge corpus for sen-
+tenceunderstandingthroughinference. InProceed-
+ingsofthe2018conferenceoftheNorthAmerican
+chapteroftheassociationforcomputationallinguis-
+tics: humanlanguagetechnologies,volume1(long
+papers),pages1112–1122.
+Boyang Xue, Jianwei Yu, Junhao Xu, Shansong Liu,
+ShoukangHu,ZiYe,MengzheGeng,XunyingLiu,
+and Helen Meng. 2021. Bayesian transformer lan-
+guage models for speech recognition. In ICASSP
+2021-2021IEEEInternationalConferenceonAcous-
+tics,SpeechandSignalProcessing(ICASSP),pages
+7378–7382.IEEE.
+Artem Zabolotnyi, Roman Makarov, Mile Mitrovic,
+PolinaProskura,OlegTravkin,RomanAlferov,and
+AlexeyZaytsev.2025. Adue: Improvinguncertainty
+estimation head for lora adapters in llms. arXiv
+preprintarXiv:2505.15443.
+Appendix
+Thissupplementarymaterialprovidesadditionalexperimentalresults,methodologicaldetails,andrepro-
+ducibilityinformationsupportingthemainpaper.
+• AppendixApresentsthemathematicalfoundationsofUAT-LITE,includingthediagnosticlayer-wise
+variancedecomposition,itsderivation,andtheBayesianinterpretationofMCdropout.
+• AppendixBprovidestheinference-timealgorithmforuncertainty-awareattention.
+• AppendixCdetailsbaselines,evaluationmetrics(ECE,robustnessmetrics,selectiveprediction),
+andreportingconventions(seeds,fairness,confidencedefinitions).
+• AppendixDreportsadditionalexperimentalanalyses:
+– Threshold-basedselectiveprediction(MNLI,SQuAD):§D.1andTable4.
+– OODthreshold-basedselectiveprediction(HANS/ANLI/SNLI/IMDb): §D.2andTable5.
+– Global/document-levelMCDropoutdiagnostics: §D.3andFig.4.
+– HANSper-heuristicOODbreakdown: §D.4andTable6.
+– Componentablationsofuncertaintyinjection: §D.5andFig.5.
+– Aggregationandnormalizationdiagnostics(MNLI):§D.7andTable7.
+– Scaleandgeometrydiagnosticsfortokenuncertainty: §D.8andTable8,9and10.
+– Negationdiagnosticsandqualitativeattentionillustration: §D.9andFig.7.
+– Behavioralanalysisbylinguisticbucket: §D.10andTable12.
+– SensitivitytoλandM: §D.11andTable13.
+– Character-leveladversarialrobustness: §D.12andTable14.
+– Fine-grainedlinguisticuncertaintyprobes: §D.13andTable15.
+• Appendix E evaluates generalization across BERT-family backbones and model sizes, including
+cross-domaincalibrationandscalingeffects.
+• Appendix F documents implementation details, compute/latency overhead, hardware setup, and
+codeavailabilityforreproducibility.
+• AppendixGprovidesanextendedrelatedworkdiscussion.
+• AppendixHprovidesanAIusagestatement.
+A MathematicalDetails
+In this section, we present the formal mathematical foundations underlying the uncertainty modeling
+anddiagnosticanalysesusedin UAT-LITE. Wefirstintroducealayer-wisevariancedecompositionthat
+attributespredictiveuncertaintyacrosstransformerdepthunderstochasticinference. Wethenprovide
+a proof of the decomposition, clarify its assumptions, and relate Monte Carlo dropout to approximate
+Bayesianinference. Finally,wediscussthepracticalandinterpretiveimplicationsoflayer-wiseuncer-
+taintyattributionforcalibration,intervention,anduncertainty-awareinference. Theseanalysesserveas
+diagnosticandexplanatorytoolsthatcomplementtheempiricalresultsinthemainpaper,ratherthanas
+claimsofexactposteriorinference.
+A.1 Layer-WiseUncertaintyDecomposition
+Tobetterunderstandhowpredictiveuncertaintyariseswithinthetransformer,weanalyzeitsdistribution
+acrosslayersunderstochasticinference.
+Normalizedvariancecontributions. Tofacilitateinterpretabilityandensureinternalconsistency,we
+reportnormalizedlayer-wisevariancecontributions,definedas
+V(l)
+V˜(l) = , (6)
+(cid:80)L V(k)
+k=1
+suchthatcontributionsacrosslayerssumto100%. Allpercentagesreportedbelowcorrespondtothese
+normalizedvalues.
+Table3presentsrepresentativelayer-wiseuncertaintydecompositionsforanswerableandunanswerable
+SQuADexamples,illustratinghowpredictiveuncertaintyisdistributedacrosstransformerdepthrather
+thanappearingonlyattheoutputlayer. Weemphasizethattheseexamplesareillustrativediagnosticsrather
+than statistical summaries and are intended to provide qualitative insight into uncertainty propagation
+ratherthanpopulation-levelguarantees.
+For the unanswerable example, uncertainty grows progressively through the self-attention stack.
+Whileembedding-levelcontributionsremainmodest(3.6%),uncertaintyincreasessubstantiallyinmid
+andlatelayers,withthelargestcontributionarisingfromlayers9–11(12.5%). Thispatternisconsistent
+withuncertaintyemergingduringlaterreasoningstageswhensufficientevidenceisunavailable,rather
+thanarisingonlyatthefinaldecisionlayer.
+In contrast, the answerable example exhibits a similar normalized uncertainty distribution but a
+differentinternalstructure. Mid-layerattentioncontributesmorestronglytoevidenceaggregation(8.7%),
+whilelate-layeruncertaintyreflectsconfidenttask-levelreasoningratherthanunresolvedambiguity.
+These cases illustrate that aggregate predictive variance alone is insufficient to characterize model
+reliability. Instead,thedistributionofuncertaintyacrosslayersprovidesinsightintowhetheruncertainty
+arisesfromambiguousinputsorfromhigher-levelreasoningprocesses.
+A.2 DerivationofProposition1
+Proof. We derive a diagnostic layer-wise variance decomposition by recursively applying the law of
+total variance across transformer depth. The purpose of this derivation is interpretive: it provides a
+layer-indexedsummaryofwherepredictivevariancearisesoramplifiesduringstochasticinference.
+Setupandnotation. Letyˆdenotethemodel’sfinalprediction(e.g.,aclassprobabilityorlogit),and
+leth(l) ∈ Rd denotethehiddenrepresentationatlayerl ∈ {0,...,L}correspondingtothe[CLS]token.
+StochasticityisintroducedthroughMonteCarlodropoutatinferencetime.
+Eachtransformerlayerimplementsastochasticmapping
+(cid:16) (cid:17)
+h(l) = f(l) h(l−1),ϵ(l) , ϵ(l) ∼ D(l), (7)
+where ϵ(l) denotes dropout-induced noise at layer l. We assume finite second moments so that all
+conditionalvariancesbelowarewelldefined.
+Layer Component NormalizedVar. % Interpretation
+SQuADUnanswerable
+Layer0 Embedding 0.036 3.6% Wordambiguity
+Layer1–4 Attention(early) 0.054 5.4% Contextformation
+Layer5–8 Attention(mid) 0.088 8.8% Escalatinguncertainty
+Layer9–11 Attention(late) 0.125 12.5% Uncertaintyconsolidation
+Layer12 Output 0.021 2.1% Finaldecision
+Total 1.000 100% Correctlyuncertain
+SQuADAnswerable
+Layer0 Embedding 0.037 3.7% Clearinput
+Layer1–4 Attention(early) 0.054 5.4% Evidenceaggregation
+Layer5–8 Attention(mid) 0.087 8.7% Confidencereinforcement
+Layer9–11 Attention(late) 0.126 12.6% Confidentreasoning
+Layer12 Output 0.023 2.3% Finaldecision
+Total 1.000 100% Confidentprediction
+Table3: Normalizedlayer-wiseuncertaintydecompositionforrepresentativeanswerableandunanswerableSQuAD
+examples (single seed). Percentages indicate the relative contributions of each component to total predictive
+uncertainty.
+Recursiveapplicationoftotalvariance. Applyingthelawoftotalvarianceatthefinallayergives
+(cid:104) (cid:16) (cid:17)(cid:105)
+Var(yˆ) = E Var yˆ| h(L−1)
+h(L−1)
+(8)
+(cid:16) (cid:104) (cid:105)(cid:17)
++Var E yˆ| h(L−1) .
+h(L−1)
+Thesameidentitycanthenbeappliedrecursivelytothesecondtermbyconditioningonprogressivelyear-
+lierhiddenrepresentationsh(L−2),h(L−3),...,h(0). Thisyieldsarecursivedecompositionofpredictive
+varianceacrossdepth.
+Diagnosticlayer-wisecontributions. Motivatedbythisrecursion,wedefinethelayer-wisediagnostic
+contributionoflayerlas
+(cid:104) (cid:16) (cid:17)(cid:105)
+V(l) ≜ E Var yˆ| h(l−1) . (9)
+h(l−1) ϵ(l)
+Thesequantitiessummarizethepredictivevariabilityassociatedwiththestochasticityintroducedateach
+layer,conditionedontherepresentationpropagatedfromprecedinglayers.
+Interpretation. Underthisconstruction,predictivevarianceadmitsarecursivelayer-indexeddecompo-
+sition,andthenormalizedvalues
+V(l)
+V˜(l) =
+(cid:80)L V(k)
+k=1
+provideaninterpretablesummaryofhowuncertaintyisdistributedacrossdepth. Weemphasizethatthese
+contributionsareintendedasdiagnosticattributions: theyareusefulforidentifyingwhereuncertainty
+concentratesoramplifiesduringinference,buttheyshouldnotbeinterpretedasuniquecausaleffectsor
+asanovelvarianceidentity.
+A.3 BayesianInterpretationofMCDropout
+MonteCarlodropoutprovidesacomputationallyefficientapproximationtoBayesianinferenceindeep
+neuralnetworks(GalandGhahramani,2016). Ratherthanmaintainingafullposteriordistributionover
+model parameters, dropout induces stochasticity that can be interpreted as sampling from an implicit
+variationalposteriorunderstandardassumptions.
+Bayesianpredictivedistribution. InBayesianinference,predictionsmarginalizeoveruncertaintyin
+modelparameters:
+(cid:90)
+p(y | x,D) = p(y | x,θ)p(θ | D)dθ. (10)
+MonteCarloapproximationviadropout. MCdropoutapproximatesthismarginalizationbyretaining
+dropoutduringinferenceandperformingM stochasticforwardpasses:
+M
+1 (cid:88)
+p(y | x,D) ≈ p(y | x,θ ). (11)
+m
+M
+m=1
+Uncertaintyinterpretation. Variabilityacrosspredictionsreflectsepistemicuncertaintyarisingfrom
+modelanddatalimitationsandis,inprinciple,reduciblewithadditionalinformation.
+RelevancetoUAT-LITE. InUAT-LITE,theseuncertaintyestimatesareexplicitlypropagatedthrough
+attention mechanisms, enabling uncertainty-aware inference without modifying training objectives or
+learnedparameters.
+A.4 ImplicationsofLayer-WiseUncertainty
+Attribution. Decomposingpredictivevarianceacrosstransformerdepthenablesidentificationofwhere
+uncertainty is amplified during inference. As shown in Table 3, unanswerable SQuAD examples con-
+centrate substantial uncertainty in late layers (9–11), consistent with ambiguity emerging during final
+reasoningstages. Answerableexamplesexhibitcomparablelate-layercontributions,buttheuncertainty
+reflectsconfidenttask-levelreasoningratherthanunresolvedambiguity.
+Intervention. Layer-wiseattributionsuggeststhatcalibrationstrategiescould,inprinciple,targethigh-
+variancecomponents. Ourablationstudy(Fig.5)showsthatuncertaintyintroducedattheattentionlevel
+yieldsa21.1%improvementincalibration, whileembedding-leveluncertaintycontributesnegatively
+(-3.1%),supportingselectiveinterventionratherthanuniformstochasticity.
+Interpretability. Unlike post-hoc calibration methods that produce a single uncertainty score, this
+decompositionrevealshowuncertaintyevolvesduringreasoning. Forcomplexsyntacticconstructions,
+uncertaintyiselevatedinearlyandmidlayersduetostructuralprocessing,whilelatelayersconsolidate
+thefinaldecision.
+Scopeandlimitation(per-layerrecomputation). Whileweanalyzewhereuncertaintyconcentrates
+acrossdepthvialayer-wisevarianceattribution(Table3), ourUAT-LITEinterventioncomputestoken
+uncertaintyonce(fromstochasticforwardpasses)andreusesitacrosslayersforefficiency. Recomputing
+tokenuncertaintyaftereachlayerwouldrequiredefininguncertaintyovermixedrepresentationsafter
+contextualizationandwouldincreaseinferencecostroughlyinproportiontothenumberoflayers;we
+leavesuchlayer-wiserecomputationtofuturework.
+A.5 PracticalInference-TimeProcedure
+Attesttime,MonteCarlodropoutproducesmultiplestochasticforwardpassesofthesamepretrained
+transformer. Thesesamplesyieldapredictivemeanandvariance. Themeanisusedasthefinalprediction,
+whilethevariancequantifiesepistemicuncertainty.
+Uncertaintyestimatesinfluenceinferencebymodulatingattentionunderrepresentationambiguityand
+enabling confidence-aware decision shaping at the output level. All uncertainty mechanisms operate
+strictlyatinferencetimeanddonotmodifytrainingdynamicsorlearnedparameters.
+B Inference-TimeAlgorithm
+Inference-timealgorithm. Algorithm1summarizestheinference-timeprocedureusedbyUAT-LITE.
+UncertaintyestimationandpredictionareperformedusingthesameM stochasticforwardpasses,without
+anyseparateembedding-onlysamplingstage.
+Algorithm1Inference-TimeUncertainty-AwareAttention(UAT-LITE)
+Require: Inputtokensx,MonteCarlobudgetM,uncertaintypenaltyλ
+1: Initializerunningstatisticsfortokenembeddings(pertokenx j),withUˆ(0)(x j) = 0
+2: form = 1toM do
+3: Sampledropoutmasks
+4:
+Computetokenembeddingsz(m)
+5: Applyuncertainty-weightedattentionusingthelaggedestimateUˆ(m−1)(x j)
+6:
+Computelogitsℓ(m)
+7:
+Updaterunningestimatesoftoken-leveluncertaintyUˆ(m)(x j)fromz(m)
+8: endfor
+9: Aggregatelogits{ℓ(m)}M toobtainthepredictivemean
+m=1
+10: return Predictionanduncertaintyestimates
+C BaselinesandMetrics
+We compare against BERT-base (110M parameters), MC Dropout (p = 0.1, M = 5), TS, and Deep
+Ensembles(5independentlyfine-tunedmodels). TSistreatedasastrongpost-hoccalibrationbaseline
+that operates purely at the output level and does not modify internal model computation. Because TS
+rescaleslogitswithoutaffectingrepresentations,itiscompatiblewithuncertainty-awareinferenceandcan
+beappliedontopof UAT-LITE. Accordingly,wereportboth TSasastandalonebaselineandthestacked
+variant UAT-LITE +TS to assess composability. For UAT-LITE +TS, the temperature T is fit on the
+developmentsetusingtheMC-meanlogitsproducedbyUAT-LITEandappliedattesttime. Toisolatethe
+effectofuncertainty-awareinternalcomputation,wecompare UAT-LITE againstnon-stackedbaselines
+(e.g.,Base,MCDropout,and TS),andtreat UAT-LITE+TS asanexplicitcompositionalsettingrather
+thanthecoremechanismitself. Allbaselinesusethesamepretrainedbackbone,fine-tuningrecipe,and
+evaluationcodeunlessotherwisestated.
+Bayesianbaselinesbeyondinference-timemethods. MethodssuchasSWAGandLaplaceapproxima-
+tionsestimateparameter-spaceuncertaintythroughtask-specificposteriorfittingorfine-tuning(Talman
+etal.,2023;Ritteretal.,2018). Becauseourscopeisinference-timecalibrationofpretrainedtransformers
+withoutadditionaltrainingorposteriorfitting,wedonotevaluatetheseapproachesasdirectbaselines.
+WediscusstheminRelatedWork(§G)ascomplementarydirections.
+ExpectedCalibrationError(ECE). CalibrationismeasuredusingExpectedCalibrationError(ECE):
+K
+(cid:88) |B k|
+ECE = |acc(B )−conf(B )|, (12)
+k k
+N
+k=1
+wherepredictionsarepartitionedintoK = 15fixed-widthconfidencebins{B }over[0,1]. Foreachbin,
+k
+acc(B )denotesempiricalaccuracy,andconf(B )denotesmeanpredictedconfidence. Here,K denotes
+k k
+thenumberofconfidencebinsusedforcalibrationevaluation,whichisdistinctfromthenumberofMonte
+CarlosamplesM usedforuncertaintyestimation. LowerECEindicatesbettercalibration.
+Confidencedefinition. Forclassificationtasks(MNLI,SST-2,MedQA),confidenceisdefinedasthe
+maximumsoftmaxprobabilityofthepredictedclass,computedafteraggregatingMonteCarlosamples.
+For SQuAD 2.0, confidence corresponds to the predicted answerability probability (unanswerable vs.
+answerable),followingstandardpracticeinuncertainty-awarequestionanswering.
+SQuAD 2.0 evaluation protocol. We evaluate SQuAD 2.0 on the answerability prediction task, in
+whichthemodeldetermineswhetheraquestionisanswerablegiventhecontext. Thisbinaryclassification
+settingiswellsuitedtocalibrationanalysis. WereportanswerabilitypredictionaccuracyalongsideECE
+in Table 1. Span-level extraction (predicting answer start and end positions) is a separate task and is
+orthogonaltoouruncertaintycalibrationcontribution. Ourfocusisoncalibratedconfidencescoresforthe
+answerabilitydecisionratherthanonoptimizingspanextractionperformance.
+Distribution shift robustness metrics. To assess calibration stability under distributional shift, we
+evaluatemodelsonbothin-domain(ID)andout-of-distribution(OOD)dataandreporttwocomplementary
+metrics. First,wemeasurecalibrationdrift:
+∆ECE = ECE −ECE , (13)
+OOD ID
+wheresmaller(ornegative)valuesindicategreaterrobustnessundershift. Second,wereportacalibration
+robustnessscoredefinedastheaverageECEacrossIDandOODsettings:
+1
+Robustness = (ECE +ECE ), (14)
+ID OOD
+2
+withlowervaluesindicatingmorestablecalibrationacrossdomains.
+Selectivepredictionmetrics. Weadditionallyreportselectivecoverageatfixedconfidencethresholds
+andtheAreaUndertheRisk–CoverageCurve(AURC;lowerisbetter). Confidencethresholdsareselected
+on the validation set for each method and then held fixed at test time. We also report admitted counts
+(N@τ)atfixedthresholdstomakescore-rescalingeffects(e.g.,underTS)explicit.
+MCDropoutbaselineconfiguration. TheMCDropoutbaselineusesauniformdropoutrateofp = 0.1
+acrossalllayers,consistentwithpriorcalibrationstudies. Althoughmoreaggressiveorcomponent-specific
+dropouttuningcouldfurtherimproveMCDropoutperformance,suchtuningincreasesimplementation
+complexityandreducescomparabilitywithstandardbaselines. Incontrast,UAT-LITEexplicitlyleverages
+structureduncertaintywithintheattentionmechanismratherthanrelyingsolelyonincreasedstochasticity.
+Thiscomparisonisolatestheeffectofuncertainty-awareattentionratherthanrawdropoutintensity.
+Component-specificMCDropoutcontrol. Todisentangletheeffectofstructuredstochasticityfrom
+uncertainty-awareattention,weadditionallyevaluateanMCDropoutbaselineusingthesamecomponent-
+specific dropout rates as UAT-LITE (0.1 embeddings / 0.2 attention / 0.3 feed-forward), but without
+attentionmodulation. AsshowninTable1,thiscontroldoesnotimprovecalibrationrelativetouniform
+MCDropoutortheBERTbaseline,indicatingthatthegainsofUAT-LITEarisefromuncertainty-weighted
+attentionratherthantuneddropoutalone.
+Reportingconventionsandfairness. Withineachtable,allmethodsareevaluatedusingthesamedata
+splits,evaluationcode,confidencedefinitions,andMonteCarlobudgetM (whereapplicable). ECEis
+computedwithK = 15fixed-widthbinsforallmethods. Temperaturescaling(andUAT-LITE+TS)fitsa
+singlescalartemperatureonthevalidationsetonlyandisappliedattesttimewithoutaccesstotestlabels.
+OODcalibrationmetrics(e.g.,∆ECEandRobustness)arecomputedusingthesamepipelineonIDand
+OODsetstoavoidbinningorconfidence-definitionmismatch.
+Randomseedsandvariability. Main-paperresults(generalcalibration,distribution-shiftrobustness,
+andselectiveprediction)arereportedasmean±standarddeviationoverfiverandomseeds. Appendix
+diagnosticanalyses,includingqualitativeattentionvisualizations,representativelayer-wiseuncertainty
+decompositions, and linguistic or adversarial case studies, are reported using a single seed to reduce
+computationalcostandareexplicitlylabeledassingle-seed inthecorrespondingcaptions. Deterministic
+baselinesexhibitnegligiblevariancebecauseinferenceisfullydeterministicwhenevaluatedfromafixed
+fine-tunedcheckpointreusedacrossseeds.
+D AdditionalExperimentalResults
+Thissectionpresentsadditionalanalysesthatcomplementthemainexperimentalresultsbyproviding
+finer-grained insight into the behavior of UAT-LITE. Specifically, we examine selective prediction
+under fixed thresholds, calibration behavior under stronger OOD shifts, and settings that reveal how
+uncertainty-awareattentionrespondstoambiguity,structure,andsemanticinconsistency. Together,these
+analysesprovideamorenuancedviewofthestrengthsandlimitationsoftheproposedframeworkbeyond
+aggregatecalibrationmetrics.
+Dataset Method τ =0.9 τ =0.8 τ =0.7 AURC↓
+Cov Acc N Cov Acc N Cov Acc N
+Baseline 0.3857 0.8822 1893 0.5591 0.8455 2744 0.6999 0.8032 3435 0.1446
+Base+TS 0.1795 0.9432 881 0.3820 0.8853 1875 0.5515 0.8493 2707 0.1441
+MNLI MCDropout(M=10) 0.3048 0.8984 1496 0.4890 0.8596 2400 0.6447 0.8186 3164 0.1478
+UAT-LITE(M=10) 0.3195 0.8929 1568 0.5026 0.8541 2467 0.6524 0.8154 3202 0.1483
+UAT-LITE+TS 0.1746 0.9428 857 0.3714 0.8826 1823 0.5383 0.8471 2642 0.1479
+Baseline 0.4745 0.7000 2817 0.6468 0.6974 3840 0.7780 0.6850 4619 0.3186
+Base+TS 0.0000 0.0000 0 0.0372 0.6787 221 0.1816 0.6698 1078 0.3186
+SQuAD2.0 MCDropout(M=10) 0.3901 0.7003 2316 0.5875 0.6995 3488 0.7349 0.6890 4363 0.3150
+UAT-LITE(M=10) 0.4051 0.6998 2405 0.5979 0.7000 3550 0.7408 0.6885 4398 0.3177
+UAT-LITE+TS 0.0000 0.0000 0 0.0487 0.6574 289 0.1728 0.6676 1026 0.3177
+Table4: Threshold-basedselectivepredictiononMNLIandSQuAD2.0underfixedconfidencethresholds.
+ResultsarereportedonMNLI(N =4908)andSQuAD2.0(N =5937)forτ ∈{0.9,0.8,0.7}. Cov@τ denotes
+theadmittedfraction,Acc@τ theaccuracyontheadmittedsubset,andN@τ theadmittedcount;AURCsummarizes
+thefullrisk–coveragetrade-off(lowerisbetter).Thetableshowsthattemperature-scaledvariantsadmitsubstantially
+fewerexamplesathighthresholds,especiallyonSQuAD2.0,whileUAT-LITEvariantstendtopreservehigher
+coverageatthesameoperatingpoints. Theseresultsprovideastandard-settingcounterparttothebroaderOOD
+selective-predictionanalysesreportedelsewhereinthepaper.
+D.1 AdditionalThreshold-BasedSelectivePredictionResults
+In addition to the broader OOD suites reported in the main text, we provide threshold-based selective
+predictionresultsonMNLI(N=4,908)andSQuAD2.0(N=5,937)usingthesameevaluationprotocol.
+Confidence is defined as s(x) = max p (y | x), and for thresholds τ ∈ {0.9,0.8,0.7} we report
+y θ
+coverage(Cov@τ),admittedaccuracy(Acc@τ),admittedcounts(N@τ),andAURC.
+Table 4 serves two purposes. First, it shows that the selective prediction behavior observed under
+strongerOODconditionsalsoappearsinstandardevaluationsettings. Second,itclarifieshowpost-hoc
+temperature scaling (TS) changes the admitted fraction at fixed thresholds. In particular, TS sharply
+compresses high-confidence regions (e.g., Cov@0.9 on SQuAD), while maintaining high admitted
+accuracy. Thisbehaviorreflectsoutputprobabilityrescalingratherthanstructuralchangesinevidence
+aggregation.
+By contrast, UAT-LITE modifies confidence through uncertainty-aware attention modulation. As a
+result, changes in coverage reflect altered internal evidence weighting rather than purely scalar logit
+rescaling. TheseresultscomplementtheOODanalysisinthemaintextbyshowingthesameprotocol
+undermilderdistributionconditions.
+D.2 OODThreshold-BasedSelectivePrediction(HANS/ANLI/SNLI/IMDb)
+To further evaluate uncertainty quality under stronger distribution shifts, we conduct threshold-based
+selective prediction experiments across four widely used out-of-distribution (OOD) evaluation suites:
+HANS (N = 30,000), ANLI (N = 3,200), SNLI (N = 9,824), and IMDb (N = 25,000). The full
+resultsarereportedinTable5.
+Selectivepredictionevaluateswhetheramodelcanabstainonlow-confidenceexampleswhilemain-
+taininghighaccuracyontheretainedsubset. Foraconfidencethresholdτ ∈ {0.9,0.8,0.7},weadmit
+predictionsonlywhenthemodelconfidenceexceedsτ. Foreachthreshold,wereportcoverage(Cov@τ),
+admittedaccuracy(Acc@τ),admittedcount(N@τ),andAURC.
+Table5consolidatesresultsacrossallOODsuitesinasingleview,withPanelsA–Dcorrespondingto
+HANS,ANLI,SNLI,andIMDb,respectively. HANSandANLIrepresentparticularlychallengingshifts
+designedtobreakcommonNLIheuristics,whereasSNLIandIMDbprovideadditionalcross-domain
+evaluationsettings.
+Acrossdatasets,thetableshowshowdifferentuncertaintyestimationmethodsaffectselectiveprediction
+behavior. In particular, TS often changes probability calibration without altering the predicted label,
+whichcansubstantiallyshiftcoverageatfixedthresholds. Accordingly,differencesinCov@τ shouldbe
+interpretedaschangesintheconfidencedistributionratherthaninclassificationdecisions. Thisappendix
+thereforecomplementstheMNLItransferanalysisbyprovidingabroaderviewofuncertainty-guided
+Method Acc ECE↓ NLL↓ Cov@.9 Acc@.9 N@.9 Cov@.8 Acc@.8 N@.8 Cov@.7 Acc@.7 N@.7 AURC↓
+PanelA:HANSOOD(N=30,000)
+Baseline 0.4808 0.3092 1.0581 0.2209 0.4831 6626 0.5427 0.4930 16281 0.7502 0.4840 22507 0.5287
+Base+TS 0.4836 0.2283 0.8737 0.0625 0.3952 1875 0.2333 0.4856 6999 0.5415 0.4942 16246 0.5268
+MCDropout 0.4810 0.2506 0.9256 0.0883 0.4392 2650 0.3428 0.4816 10284 0.5929 0.4799 17788 0.5322
+UAT-LITE 0.4807 0.2395 0.9074 0.0687 0.4469 2061 0.3039 0.4650 9117 0.5583 0.4646 16749 0.5385
+UAT-LITE+TS 0.4817 0.1908 0.8222 0.0210 0.3386 629 0.1312 0.4554 3935 0.3951 0.4673 11853 0.5386
+PanelB:ANLIOOD(N=3,200)
+Baseline 0.3109 0.4209 1.9074 0.2050 0.2668 656 0.3978 0.2875 1273 0.5747 0.2953 1839 0.7130
+Base+TS 0.3109 0.3413 1.5450 0.0541 0.2370 173 0.2013 0.2609 644 0.3769 0.2886 1206 0.7126
+MCDropout 0.3106 0.3916 1.7681 0.1456 0.2446 466 0.3231 0.2834 1034 0.5094 0.2914 1630 0.7141
+UAT-LITE 0.3091 0.4040 1.8222 0.1778 0.2566 569 0.3516 0.2836 1125 0.5319 0.2955 1702 0.7130
+UAT-LITE+TS 0.3091 0.3443 1.5591 0.0656 0.2381 210 0.2112 0.2692 676 0.3847 0.2851 1231 0.7124
+PanelC:SNLIOOD(N=9,824)
+Baseline 0.6810 0.0684 0.7757 0.2579 0.9013 2534 0.4540 0.8377 4460 0.6162 0.7907 6054 0.1772
+Base+TS 0.6810 0.0179 0.7497 0.0618 0.9176 607 0.2513 0.9032 2469 0.4379 0.8440 4302 0.1760
+MCDropout 0.6819 0.0328 0.7497 0.1766 0.9182 1735 0.3727 0.8651 3661 0.5408 0.8095 5313 0.1752
+UAT-LITE 0.6759 0.0474 0.7650 0.1995 0.9122 1960 0.3954 0.8540 3884 0.5610 0.8044 5511 0.1792
+UAT-LITE+TS 0.6759 0.0195 0.7534 0.0693 0.9383 681 0.2438 0.8944 2395 0.4274 0.8445 4199 0.1783
+PanelD:IMDbOOD(N=25,000)
+Baseline 0.8281 0.1000 0.4904 0.7780 0.8925 19451 0.8641 0.8687 21602 0.9173 0.8538 22932 0.0640
+Base+TS 0.8281 0.0442 0.3959 0.5960 0.9325 14899 0.7683 0.8950 19208 0.8634 0.8688 21586 0.0640
+MCDropout 0.8195 0.0957 0.4845 0.7367 0.8938 18417 0.8405 0.8673 21012 0.9014 0.8495 22536 0.0695
+UAT-LITE 0.8186 0.1054 0.5078 0.7674 0.8862 19184 0.8570 0.8626 21426 0.9109 0.8463 22772 0.0694
+UAT-LITE+TS 0.8186 0.0501 0.4117 0.5781 0.9279 14453 0.7598 0.8882 18995 0.8583 0.8621 21457 0.0694
+Table5: OODthreshold-basedselectivepredictionacrossfourevaluationsuites. Wereportoverallaccuracy,
+ECE,NLL,Coverage@τ,Acc@τ,admittedcounts(N@τ)forτ ∈{0.9,0.8,0.7},andAURC.PanelsA–Dcorre-
+spondtoHANS(N = 30,000),ANLI(N = 3,200),SNLI(N = 9,824),andIMDb(N = 25,000),respectively.
+Acrossdatasets,temperature-scaledvariantsgenerallyreduceECEandNLL,butoftenadmitsubstantiallyfewer
+examplesathighconfidencethresholds,especiallyonHANSandANLI.Bycontrast,UAT-LITEvariantstypically
+preservehighercoverageatthesamethresholds,reflectingadifferentconfidenceprofileundershift. Thetable
+thereforehighlightsthetrade-offbetweenpost-hocconfidencecompressionanduncertainty-awarefilteringunder
+diverseOODconditions.
+filteringunderdiverseOODconditions.
+D.3 GlobalDocument-LevelMCDropoutDiagnostics
+Tocontextualizethebehaviorofuncertainty-weightedattention,weevaluatestandardglobal/document-
+levelMCDropout appliedtothesameBERT-basecheckpointusedinthemainresults. Here, dropout
+isinjectedatinferencetimewithoutmodifyingtheattentionmechanism,andpredictiveuncertaintyis
+estimated from Monte Carlo sampling (M = 10). Fig. 4 summarizes calibration (ECE, Brier, NLL),
+selective prediction (AURC, Acc@70/80/90), and accuracy across SQuAD 2.0, MNLI, and SST-2
+(absolutevaluesshownineachcell;colordenotesrow-normalizedrelativeperformance).
+Thepurposeofthisanalysisisdiagnosticratherthancompetitive. GlobalMCDropoutimprovesover
+theunscaledbaselineincalibration(e.g.,ECEdecreasesacrossdatasets),butitremainsmateriallybehind
+temperaturescalinginmarginalcalibration(seetheTSgapsreportedelsewhere),confirmingthatnaive
+stochasticinferencealonedoesnotrecoverTS-levelcalibration.
+Importantly, this comparison isolates the effect of where uncertainty is injected. Unlike global MC
+Dropoutwhichaffectsoutputvariancewhileleavingevidenceaggregationunchanged,UAT-LITEincor-
+porates uncertainty directly into the attention logits, modifying evidence aggregation rather than only
+outputvariability. Thediagnosticthereforeclarifiesthatimprovementsobservedinthemaintextarenot
+attributablemerelytoMonteCarlosampling,buttoattention-levelmodulation.
+MC Dropout Diagnostics: Performance Heatmap
+(BERT-base, M=10)
+Acc [Select] ↑ 0.6555 0.7101 0.9014 0.7557
+Best
+ECE [Calib] ↓ 0.1600 0.0565 0.0501 0.0889
+Brier [Calib] ↓ 0.5119 0.3969 0.1485 0.3524
+NLL [Calib] ↓ 0.9165 0.6791 0.2800 0.6252
+Mid
+AURC [Select] ↓ 0.3125 0.1475 0.0258 0.1619
+Acc@70% [Select] ↑ 0.6951 0.8000 0.9639 0.8197
+Acc@80% [Select] ↑ 0.6833 0.7697 0.9569 0.8033
+Worst
+Acc@90% [Select] ↑ 0.6712 0.7410 0.9362 0.7828
+SQuAD 2.0 MNLI SST-2 Avg
+)desilamron-wor(
+ecnamrofrep
+evitaleR
+Figure 4: Global/document-level MCDropoutdiagnostics on BERT-base (M = 10). Heatmapof absolute
+performanceforglobalMCDropoutacrossSQuAD2.0,MNLI,andSST-2(metrics: Acc↑,ECE↓,Brier↓,NLL↓,
+AURC↓,andAcc@70/80/90↑). Eachcellreportsthenumericvalue;shadingindicatesrow-normalizedrelative
+performance(best-to-worstwithineachmetricrow). WhileglobalMCDropoutimprovescalibrationrelativeto
+theunscaledbaseline,itremainssubstantiallybehindtemperaturescaling,motivatingattention-leveluncertainty
+modulationinUAT-LITE.
+D.4 HeuristicSensitivityAnalysisonHANS
+Tolocalizefailuremodesunderdistributionshift,weprovideaper-heuristicbreakdownontheHANS
+benchmark. HANS isolates three common heuristic shortcuts: lexical overlap, subsequence, and con-
+stituentstructure. Table6reportsoverallaccuracybyheuristiccategory(topblock)andnon-entailment-
+onlyaccuracy(bottomblock),whichisthemorechallengingandshortcut-proneregime.
+Thetopblockshowsthatoverallper-heuristicdifferencesarerelativelymodestacrossmethods. How-
+ever, the non-entailment-only breakdown is more revealing, because this subset isolates cases where
+shallow heuristics often produce overconfident errors. In this regime, UAT-LITE and especially UAT-
+LITE+TSshowcleargainsoverthebaseline,withthelargestimprovementsonconstituent-basedexamples.
+Theseresultssuggestthatuncertainty-awareattentionismostusefulnotineasyheuristic-alignedcases,
+butinexampleswhereshortcut-drivenevidenceismisleadingandthemodelmustsuppresssuperficially
+plausiblematches. Overall,thisdiagnosticprovidesamorelocalizedviewofrobustnessundershiftthan
+aggregateHANSaccuracyalone.
+D.5 ComponentAblationofUncertaintyInjection
+Fig.5evaluatesthecontributionofindividualcomponentsofUAT-LITEonSQuAD2.0(validation). We
+isolate: (i)baselineinference,(ii)MCsamplingwithoutattentionmodulation,(iii)uncertainty-weighted
+attention,and(iv)thefullcombinedmodel. TheprimarymetricisExpectedCalibrationError(ECE),with
+accuracyreportedforreference. Twoobservationsarenoteworthy. First,uncertainty-weightedattention
+producesthelargestreductioninECErelativetobaseline,indicatingthatincorporatingepistemicvariance
+intotheattentionlogitsdirectlyimprovescalibration.
+Second,combiningsamplingwithattentionmodulationyieldsfurtherimprovements,suggestingthat
+stochasticsamplingandstructuraluncertaintyinjectionarecomplementary. Notably,accuracyremains
+stable across variants, indicating that improvements in calibration are not driven by trivial accuracy
+Method Lex.Overlap Subsequence Constituent
+Baseline 0.5043 0.4632 0.4750
+Base+TS 0.5104 0.4622 0.4783
+MCDropout 0.5000 0.4642 0.4787
+UAT-LITE 0.4835 0.4777 0.4810
+UAT-LITE+TS 0.4859 0.4710 0.4881
+Non-entailmentonly
+Baseline 0.1804 0.2358 0.3428
+Base+TS 0.2230 0.2714 0.3824
+MCDropout 0.2132 0.2408 0.4158
+UAT-LITE 0.2960 0.2722 0.5580
+UAT-LITE+TS 0.3548 0.3184 0.6100
+Table6: HANSper-heuristicbreakdownunderdistributionshift. Thetopblockreportsoverallaccuracyfor
+thethreeHANSheuristiccategories: lexicaloverlap,subsequence,andconstituentstructure. Thebottomblock
+isolatesnon-entailment-onlyexamples,whichformthemainshortcut-sensitivefailureregimeinHANS.Overall
+per-heuristicaccuracydifferencesaremodest,butthenon-entailmentsubsetrevealsclearerseparationbetween
+methods. UAT-LITEandespeciallyUAT-LITE+TSimprovesubstantiallyonthissubset,withthelargestgainson
+constituentexamples,indicatingbetterbehaviorwhensuperficialheuristicmatchesaremisleading.
+trade-offs. ThisablationconfirmsthatgainsobservedinthemaintextarenotattributabletoMonteCarlo
+samplingalone,butspecificallytoattention-leveluncertaintyweighting.
+D.6 PenaltyFunctionalFormAblation
+Toassesswhethertheexponentialuncertaintypenaltyisessential,wecomparethreemodulationforms
+underidenticalsettings(M = 10,λ = 1.0,SQuAD2.0,singleseed): (i)exponential: a exp(−λu ),
+ij ij
+(ii)linear(clipped): a max(0,1−λu ),and(iii)reciprocal: a /(1+λu ).
+ij ij ij ij
+Fig.6reportstheresults. Thethreeformsyieldbroadlycomparableaccuracyandcalibrationbehavior,
+indicatingthattheoveralleffectstemsfromuncertainty-awaremodulationratherthanasinglefunctional
+choice. Weretaintheexponentialformduetoitssmoothness,guaranteedpositivity(withoutclipping),
+andinterpretationasanadditivelogitpenalty(loga˜ = loga −λu ),whichoffersaconvenientand
+ij ij ij
+numericallywell-behavedmechanismfordownweightinghigh-uncertaintyevidence.
+D.7 AggregationandNormalizationDiagnostics
+This section probes the robustness of two implementation choices underlying UAT-LITE: (i) how we
+aggregateMonteCarlovarianceacrossdraws,and(ii)wherenormalizationisappliedpriortouncertainty
+measurement. We evaluate these choices using the MNLI negation diagnostic, which perturbs inputs
+withoutchangingtheoriginallabels,andwetrackbothlabel-dependentsignals(errorchange)andlabel-
+freestabilitysignals(confidencechange)toensurethatobservedbehaviorsarenotartifactsofaparticular
+aggregationheuristicoraspecificLayerNormplacement.
+Aggregation-statistic sanity check (no LayerNorm). Table 7 (top block) compares three variance
+aggregation statistics (mean-std, RMS-std, median-std) on the MNLI negation diagnostic (N=200,
+seed= 42, λ=0.5). We report changes in confidence and error (dConf/dErr), computed as (negated −
+original),alongwithECEonthesampledsubset(SmpECE)anddevelopmentECE(DevECE).Across
+aggregationschemes,dConfanddErraretightlyclustered,indicatingthatthenegationsensitivitysignalis
+stabletotheaggregationchoice. AlthoughSmpECE/DevECEvaryslightlyacrossstatistics,thequalitative
+conclusionsandeffectdirectionsremainunchanged.
+LayerNorminvariance. Table7(bottomblock)testswhetherapplyingLayerNormbeforeuncertainty
+measurementchangesthediagnosticoutcomes. Foreachaggregationstatistic,wecomparedConf,dErr,
+andDevECEwithandwithoutLayerNorm(“+LN”).WeobservenearlyunchangeddConfandcomparable
+dErracrossnormalizationconditions,whileDevECEimprovesconsistentlyunder+LN.Overall,these
+0.8
+0.7
+0.6
+0.5
+0.4
+0.3
+0.2
+0.1
+0.0
+Baseline + Embeddings + Attention + Decision UAT-Lite
+only only only
+Configuration
+eulaV
+cirteM
+7751.0
+6126.0
+4261.0
+0036.0
+1521.0
+1076.0
+7341.0
+9956.0
+9311.0
+2966.0
+Component Ablation on SQuAD 2.0 (Validation)
+(Hatched = Best Performance per Metric)
+ECE ↓ Accuracy ↑ Best per metric
+Figure5: ComponentablationonSQuAD2.0(validation). Wecomparebaselineinference,embeddings-only
+stochasticity,attention-onlyuncertaintyinjection,decision-onlyuncertaintyshaping,andthefullUAT-LITEmodel.
+ExpectedCalibrationError(ECE;lowerisbetter)istheprimarymetric,whileaccuracyisreportedforreference.
+Theattention-onlyvariantyieldsthelargestsingle-componentECEreductionrelativetothebaseline,indicatingthat
+uncertainty-weightedattentionisthemaincontributortothecalibrationgains. Thefullmodelachievesthebest
+overallcalibrationamongtheshownconfigurationswhilemaintainingaccuracycomparabletotheothervariants.
+Hatchedbarsindicatethebestvalueforeachmetric.
+resultssuggestthatUAT-LITEisnotsensitivetothepreciseLayerNormplacementandthatthereported
+negationbehaviorsarenotnormalizationartifacts.
+D.8 ScaleandGeometryDiagnosticsforTokenUncertainty
+Thisappendixsectionexamineswhethertoken-leveluncertaintycomputedfromembedding-spacestochas-
+ticity reflects a meaningful epistemic signal or could be explained by simple geometric artifacts (e.g.,
+globalembeddingrescaling,anisotropy,ormagnitudeeffects). Tostress-testthispossibility,weconduct
+threecomplementarydiagnosticsonrepresentativetasks(MNLIandSQuAD)underthesameinference-
+time configuration used in the main experiments. First, we test robustness under explicit embedding
+rescaling(e ← ce )andquantifytheresultingchangesintaskmetricsandtoken-uncertaintyrankings.
+j j
+Second,weevaluatealignmentbetweentokenuncertaintyandoutput-spaceepistemicquantitiesderived
+fromMCdropout(predictiveentropyandmutualinformation),whilecontrollingforembeddingnormto
+ruleouttrivialmagnitudeexplanations. Third,weablatealternativeuncertaintydefinitionstoverifythat
+conclusionsdonotdependonasingleaggregationstatistic. Together,theseanalysesclarifywhataspects
+ofU(x )arerobust,whatisscale-sensitive,andwhytheobservedbehaviorisnotreducibletoembedding
+j
+magnitudealone.
+D.8.1 Embedding-RescalingInvarianceTest
+This diagnostic tests whether token uncertainty derived from embedding-space stochasticity could be
+explainedbysimpleembedding-scaleeffects. Werescaletheinputtokenembeddingsatinferencetime
+by a constant factor c ∈ {0.5,1,2,4} while keeping all other settings fixed, and rerun evaluation on
+MNLIandSQuAD.Table8reportstask-levelmetricsanddeltasrelativetotheunscaledbaseline(c=1),
+alongwith(i)token-uncertaintyrankstabilityviaSpearmancorrelationρ(U,U )and(ii)attention-pattern
+c
+stabilityviacosinesimilaritybetweentheresultingattentionweights.
+1.4
+1.2
+1.0
+0.8
+0.6
+0.4
+0.2
+0.0
+ECE ↓ Acc ↑ NLL ↓ AURC ↓
+Metric
+erocS
+4143.0 0623.0 0743.0
+0405.0 0205.0 0505.0
+3434.1
+2493.1
+7334.1
+8905.0 6215.0 5905.0
+Penalty Functional Form Comparison on SQuAD 2.0
+Exponential Reciprocal
+Linear Best per metric
+Figure 6: Penalty functional form ablation (SQuAD 2.0; M = 10, λ = 1.0, single seed). We compare
+three uncertainty-aware modulations of the attention weight a : exponential a exp(−λu ), linear (clipped)
+ij ij ij
+a max(0,1−λu ),andreciprocala /(1+λu ). Acrossmetrics(ECE↓,Acc↑,NLL↓,AURC↓),allthreeyield
+ij ij ij ij
+similarperformance,indicatingthebenefitcomesfromuncertainty-awaredownweightingratherthanaspecific
+functionalchoice. Weusetheexponentialformasthedefaultsinceitissmooth,strictlypositive(noclipping),and
+equivalenttoanadditivelogitpenalty: loga˜ =loga −λu .
+ij ij ij
+Twoobservationsaresalient. First,attentionmodulationremainshighlystableunderrescaling(Attn
+CosSim≥ 0.979acrossallc),indicatingthattheinducedattentionpatternsarelargelypreservedeven
+undersubstantialchangesinembeddingmagnitude. Second,token-uncertaintyrankingsarenotstrictly
+scale-invariant(ρ ≈ 0.10–0.23forc ̸= 1),andcalibrationmetricscanshiftunderextremerescaling(e.g.,
+MNLI∆ECEupto+0.0095atc=2, whileSQuADECEimprovesatc=4). Thus, whiletheattention
+behaviorisrobust,theuncertaintysignalexhibitsboundedscalesensitivity,motivatingthecomplementary
+sanitychecksanduncertainty-definitionablationsbelow.
+D.8.2 EpistemicAlignmentviaCorrelationChecks
+Totestwhethertoken-leveluncertaintyU(x )alignswithmorestandardoutput-spaceepistemicindicators,
+j
+wecompute(underthesameMCdropoutsamples)predictiveentropyH[p¯(y|x)]andmutualinformation
+MI = H[p¯(y|x)]−E[H[p(y|x,ω)]], and measure their association with U(x ). Table 9 reports both
+j
+PearsonandSpearmancorrelations. Inaddition,toruleoutthepossibilitythatU(x )issimplytracking
+j
+embeddingmagnitude,wereportcorrelationswithembeddingnorm∥e ∥andpartialcorrelationsbetween
+j
+U and{H,MI}controllingfor∥e ∥.
+j
+OnMNLI,U(x )showsconsistentmonotonicassociationwithoutput-spaceuncertainty(Spearman
+j
+≈ 0.37 with entropy and ≈ 0.41 with MI), while linear correlations are small but statistically reliable
+given the large number of tokens. On SQuAD, correlations are weaker, suggesting task-dependent
+alignmentbetweentoken-andoutput-spaceuncertainty. Importantly,U(x )isessentiallyuncorrelated
+j
+withembeddingnormonbothdatasets(Pearsonnear0;Spearmannear0),andthenorm-controlledpartial
+correlationsremainnearlyunchanged,indicatingthatthesignalisnotexplainedbyembeddingmagnitude
+alone.
+D.8.3 AlternativeUncertaintyDefinitions: RobustnessAblation
+Finally,weevaluatewhethertheresultsdependonaparticularchoiceofuncertaintydefinition. Beyondthe
+defaultmean-std,wecomparealternativesthatarecommonlyusedtosummarizemultivariatedispersion
+under stochastic embeddings: cov-trace (trace of the covariance), cv (coefficient of variation), and
+Variant AccOrig AccNeg dConf dErr SmpECE DevECE
+Aggregation-statisticsanitycheck(noLayerNorm)
+BaseDet. 0.7050 0.4950 −0.0831 +0.2100 0.1313 –
+mean-std 0.7000 0.4900 −0.0778 +0.2100 0.1123 0.0595
+RMS-std 0.6800 0.4750 −0.0817 +0.2050 0.1199 0.0576
+median-std 0.6850 0.5000 −0.0821 +0.1850 0.1056 0.0584
+LayerNorm-invariancecheck(with/withoutLN)
+Variant dConf dConf+LN dErr dErr+LN DevECE DevECE+LN
+mean-std −0.0778 −0.0782 +0.2100 +0.2000 0.0595 0.0466
+RMS-std −0.0817 −0.0816 +0.2050 +0.2150 0.0576 0.0455
+median-std −0.0821 −0.0818 +0.1850 +0.2150 0.0584 0.0482
+Table 7: Aggregation-statistic sanity check and LayerNorm-invariance check on MNLI. Sanity check uses the
+MNLI negation diagnostic (N=200, seed= 42, λ=0.5), reporting AccOrig/AccNeg and changes (dConf/dErr)
+undernegation. “SmpECE”isECEonthesampledsubset;“DevECE”isdevECE.LayerNorm-invariancereports
+thesameaggregationstatisticswith/withoutapplyingLayerNormbeforeuncertaintymeasurement;LayerNorm
+yieldsnearlyunchangeddConfandcomparabledErr,whileimprovingdevECEacrossaggregations.
+norm-cv (a normalized CV variant). Table 10 shows that performance and calibration remain stable
+acrossthesevariantsonbothMNLIandSQuAD(differencesaresmallanddonotchangethequalitative
+conclusions),suggestingthatUAT-LITEdoesnothingeonasinglearbitraryaggregationofembedding-
+spacevariability.
+D.9 NegationDiagnosticsandQualitativeAttentionIllustration
+Weincludeacontrollednegationperturbationasadiagnosticofuncertaintysensitivityundersemantic
+destabilizationratherthanasacorrectnesstest. Becausenegationcanlegitimatelychangethetruelabel,
+label-dependentquantitiessuchasAccNegand∆Err,bothcomputedagainsttheoriginallabels,areonly
+partiallyinformative. Wethereforeemphasizelabel-freestabilitysignalsthatreflectwhetherthemodel
+expressesincreaseduncertaintyundertheperturbation: thechangeinconfidence(∆Conf),thechangein
+themarginbetweenthetop-1andtop-2predictedprobabilities(∆Margin),andthechangeinpredictive
+entropy(∆Entropy),wherelargerentropyandsmallermarginindicategreateruncertainty.
+This diagnostic tests whether uncertainty estimates respond directionally to a controlled semantic
+change,ratherthanwhetherthemodelisinvarianttoarbitrarylinguisticrephrasings. Accordingly,we
+donotclaimthatcalibrationbehaviorundernegationgeneralizestoallparaphrasesorstylisticvariants.
+Instead,thetemplatebelowprovidesastandardizedperturbationthatenablesconsistentcomparisonacross
+methodsunderthesameintervention.
+Across methods, the negation perturbation lowers confidence and margin while increasing entropy,
+indicating that it induces greater predictive uncertainty. Because the perturbation may change the
+underlyinglabel,theseresultsarebestinterpretedasanuncertainty-responsivenesscheck,thatis,atest
+ofdirectionalsensitivitytosemanticdestabilization,ratherthanasameasureofrobustaccuracyunder
+label-preservingtransformations.
+To aid interpretability, Fig. 7 visualizes a representative example of uncertainty-weighted attention
+under negation. The goal is to illustrate how uncertainty-guided gating can induce small, structured
+redistributionsininternalinformationflow. Wedonottreatattentionasafaithfulexplanationmechanism,
+and this evidence is not used as quantitative evidence. Because attention weights are normalized by
+softmax,absolutemapscanappearvisuallysimilar;wethereforeadditionallyshowadifferenceheatmap
+tohighlightdirectionalshifts.
+D.10 Behavioralanalysisbylinguisticbucket(MedQA)
+Toexaminewhenuncertainty-weightedattentionaffectsreliability,westratifyMedQAitemsintocoarse
+linguisticbucketsusingsimplecues,includingnegationmarkers,numericcontent,biomedicalterms,and
+hedgingmarkers. Table12reportscalibrationandpredictiveperformancewithineachbucket.
+Two patterns are consistent across buckets. First, UAT-LITE alone tends to improve accuracy
+relativetoBase+TS(e.g., 0.2476→0.2614onnegation, 0.2418→0.2514onnumeric, 0.2369→0.2578
+onbiomedical,and0.2344→0.2583onhedges),butitdoesnotimprovein-domaincalibrationrelative
+Dataset c ECE NLL Acc AURC ∆ECE ∆NLL ∆Acc
+MNLI
+MNLI 0.5 0.0117 0.5335 0.7773 0.0836 -0.0048 +0.0138 -0.0100
+MNLI 1.0 0.0165 0.5197 0.7873 0.0783 +0.0000 +0.0000 +0.0000
+MNLI 2.0 0.0260 0.5418 0.7753 0.0864 +0.0095 +0.0221 -0.0120
+MNLI 4.0 0.0212 0.5553 0.7613 0.0924 +0.0047 +0.0356 -0.0260
+SQuAD
+SQuAD 0.5 0.3216 1.3102 0.5075 0.4923 -0.0123 -0.0537 +0.0035
+SQuAD 1.0 0.3339 1.3639 0.5040 0.4913 +0.0000 +0.0000 +0.0000
+SQuAD 2.0 0.3250 1.2799 0.5020 0.4944 -0.0089 -0.0840 -0.0020
+SQuAD 4.0 0.2944 1.1441 0.5060 0.4937 -0.0395 -0.2198 +0.0020
+Dataset c Spearmanρ(U,U ) AttnCosSim
+c
+MNLI
+MNLI 0.5 0.2332 0.9869
+MNLI 2.0 0.2120 0.9842
+MNLI 4.0 0.2015 0.9792
+SQuAD
+SQuAD 0.5 0.1522 0.9922
+SQuAD 2.0 0.0998 0.9913
+SQuAD 4.0 0.1245 0.9851
+Table8: Embedding-rescalinginvariancediagnostic. Werescaleinputembeddingsbyafactorcatinference
+timetotestwhethertheproposeduncertaintysignalisprimarilyatrivialartifactofembeddingmagnitude. The
+toppanelreportstask-levelperformanceonMNLIandSQuAD,includingECE,NLL,accuracy,AURC,andthe
+correspondingchangesrelativetothereferencesettingc=1. Thebottompanelreportstoken-leveluncertainty
+rankstabilityunderrescalingviaSpearmanρ(U,U ),togetherwithattention-patternstabilitymeasuredbycosine
+c
+similarity. Acrossbothdatasets,attentionpatternsremainhighlysimilarunderrescaling,whileuncertaintyrankings
+remainpositivelycorrelatedandtask-levelbehaviorchangesonlymoderately. Takentogether,theseresultssuggest
+thatthemethodisnotexplainedsolelybyrawembeddingscaleandremainsreasonablystableunderembedding
+rescaling.
+Dataset U–H (P) U–H (S) U–MI(P) U–MI(S) U–∥e∥(P) U–∥e∥(S) ρ(U,H |∥e∥) ρ(U,MI|∥e∥)
+MNLI 0.0580 0.3677 0.0759 0.4137 -0.0071 -0.0236 0.0583 0.0759
+SQuAD -0.0163 -0.0222 0.0055 0.1694 -0.0256 -0.0510 -0.0157 0.0041
+Table9: CorrelationsanitychecksfortokenuncertaintyU(x )againstoutput-spaceepistemicmeasures(predictive
+j
+entropyH andmutualinformationMI)computedfromMCdropout. Wealsoreportcorrelationswithembedding
+norm∥e ∥andpartialcorrelationscontrollingfor∥e ∥.Tokenuncertaintyisessentiallyuncorrelatedwithembedding
+j j
+norm,andnorm-controlledpartialcorrelationsremainunchanged.
+toTS,whichremainsthestrongerpost-hoccalibrator. Second,UAT-LITE+TSyieldsthelowestECE
+ineverybucket(0.0110vs.0.0201onnegation; 0.0010vs.0.0257onnumeric; 0.0075vs.0.0302on
+biomedical;0.0080vs.0.0331onhedges),whilepreservingtheaccuracygainsintroducedbyUAT-LITE.
+Thispatternsupportsacomplementaryinterpretation: uncertainty-weightedattentionimprovesinternal
+evidenceaggregation,whereasTSfurthercorrectsoutput-levelconfidence.
+Although coverage at the 0.9 threshold is zero for all methods in these buckets, ECE, AURC, and
+accuracystillrevealmeaningfulbehavioraldifferences. Overall,thisanalysissuggeststhatthebenefit
+of UAT-LITE is not confined to a single linguistic phenomenon, but appears across several medically
+relevantsourcesofambiguityandvariation.
+D.11 SensitivityAnalysisofλandM
+WeexaminethesensitivityofUAT-LITEtotwoinference-timehyperparameters: theuncertaintyweighting
+coefficientλandtheMonteCarlobudgetM. Weevaluatearepresentativegridwithλ ∈ {0.1,0.5,1.0}
+andM ∈ {3,5,10}onSQuAD2.0, whichisparticularlysensitivetoepistemicuncertaintyduetothe
+presenceofbothanswerableandunanswerablequestions. SimilarstabilitytrendswereobservedonMNLI
+Dataset U(x )Variant ECE NLL Acc AURC
+j
+MNLI
+MNLI mean-std 0.0158 0.5128 0.7908 0.0775
+MNLI cov-trace 0.0158 0.5128 0.7908 0.0775
+MNLI cv 0.0165 0.5197 0.7873 0.0783
+MNLI norm-cv 0.0158 0.5128 0.7908 0.0775
+SQuAD
+SQuAD mean-std 0.3377 1.3866 0.5065 0.4940
+SQuAD cov-trace 0.3377 1.3866 0.5065 0.4940
+SQuAD cv 0.3339 1.3639 0.5040 0.4913
+SQuAD norm-cv 0.3377 1.3866 0.5065 0.4940
+Table 10: Sensitivity to the token-level uncertainty definition. We replace the default dimension-averaged
+standarddeviationdefinitionofU(x )withalternativedispersionsummaries,includingcov-trace(totalvariance
+j
+via tr(Cov)) and scale-normalized coefficient-of-variation variants (cv, norm-cv), and reevaluate MNLI and
+SQuAD.PerformanceremainslargelystableacrossvariantsintermsofECE,NLL,accuracy,andAURC,andthe
+overallconclusionsareunchanged. ThissuggeststhatUAT-LITEisnotdependentonasinglespecificaggregation
+ofembedding-levelstochasticity.
+Method AccOrig AccNeg ∆Conf ∆Margin ∆Entropy ∆Err
+Base(deterministic) 0.705 0.495 −0.0831 −0.1422 +0.1524 +0.2100
+UAT-LITE(MC;Q-onlydefault) 0.690 0.495 −0.0796 −0.1316 +0.1387 +0.1950
+UAT-LITE+TS(MC-meanlogits) 0.690 0.495 −0.0766 −0.1224 +0.1172 +0.1950
+Table 11: Negation diagnostic on MNLI (N = 200, seed=42; template: “It is not true that {H}”). ∆ values
+are computed as (negated − original). Because negation may change the true label, AccNeg and ∆Err, both
+measuredagainsttheoriginallabels,shouldbeinterpretedcautiously. Wethereforealsoreportlabel-freestability
+signals,namelythechangeinconfidence,margin(top-1minustop-2probability),andpredictiveentropy. Across
+methods,negationconsistentlylowersconfidenceandmarginwhileincreasingentropy,indicatinggreaterpredictive
+uncertainty under the perturbation. The UAT-LITE variants exhibit slightly smaller magnitude shifts in these
+signalsthanthedeterministicbaseline,suggestingsomewhatmorecontrolledconfidenceresponsesundersemantic
+destabilization.
+and SST-2 and are omitted for brevity. We report ECE and accuracy to assess calibration quality and
+task performance; accuracy is included to verify that calibration changes are not driven by degraded
+performance.
+Table 13 shows that calibration remains stable across the grid: ECE lies in a narrow interval
+[0.0640, 0.0703] (mean = 0.0670, std = 0.0022). No sharp sensitivity to λ is observed; across λ
+blocks, ECE varies by at most ≈ 0.006. Within each λ, increasing M tends to reduce ECE relative
+totheM=3reference(∆ECEisconsistentlynon-positive),butgainsdiminishbeyondM=5: moving
+fromM=3 → 5yieldsmostoftheimprovementatamoderatecostincrease(MCCost≈ 1.67×),while
+M=10providessmalleradditionalbenefitsdespitea3.33×cost. Accuracyissimilarlyrobust: changes
+withineachλblockaresmall(∆Acc≤ 0.0037absolute),indicatingthatuncertainty-weightedattention
+primarilymodulatescalibrationratherthantaskaccuracy. Overall,themethodisinsensitivetoprecise
+tuning of λ and achieves stable calibration over a broad range of inference-time settings, supporting
+practicalitywhenextensivehyperparametersearchisundesirable.
+D.12 Character-LevelAdversarialRobustness
+Table14evaluatesrobustnessundercharacter-levelperturbationsonSST-2. Weapplyrandom5%character
+swapstosimulatetypographicalnoiseandsimpleadversarialcorruption. BoththebaselineBERTmodel
+and UAT-LITEexhibitsubstantialaccuracydegradationunderattack,withaccuracydroppingfrom0.920
+to0.816forthebaselineandfrom0.922to0.812for UAT-LITE. Calibrationalsodeterioratesmarkedly,
+withECEincreasingfrom0.062to0.133forthebaselineandfrom0.055to0.132for UAT-LITE.
+Although UAT-LITE achievesslightlybettercleanaccuracy(0.922vs.0.920)andcleancalibration
+]SLC[ eht tneitap did ton dnopser ylevitisop ot eht tnemtaert . ]PES[
+[CLS]
+the
+patient
+did
+not
+respond positively
+to
+the
+treatment
+.
+[SEP]
+Key Tokens
+snekoT
+yreuQ
+Baseline Transformer Attention
+]SLC[ eht tneitap did ton dnopser ylevitisop ot eht tnemtaert . ]PES[
+UAT-Lite
+(Uncertainty-Weighted)
+Key Tokens
+]SLC[ eht tneitap did ton dnopser ylevitisop ot eht tnemtaert . ]PES[
+Attention
+(UAT-Lite Baseline)
+0.8
+0.7
+0.6
+0.5 0.4
+0.3
+0.2
+0.1
+Key Tokens
+thgieW
+noitnettA
+0.03
+0.02
+0.01
+0.00
+0.01
+noitnettA
+Baseline vs. UAT-Lite vs. Difference
+Figure7: Uncertainty-awareattentionundernegation(illustrative). Attentionheatmapsforastandardtrans-
+former(left),UAT-LITE(middle),andtheirdifference(right)onthesentence“Thepatientdidnotrespondpositively
+tothetreatment.” Whiletheabsoluteattentionmapsappearsimilarbecauseofsoftmaxnormalization,thedifference
+maphighlightssmallbutstructuredredistributions,withattentionshiftingawayfromsentiment-bearingtokens
+andtowardnegation-sensitivepredicatestructureinthisexample. Thisvisualizationisqualitativeandshownfora
+representativerun(singleseed);itisintendedtosupportinterpretabilityratherthanprovideacorpus-levelstatistic.
+(ECE0.055vs.0.062),itsrobustnessunderattackremainsbroadlycomparabletothatofthebaseline.
+Theseresultssuggestthatuncertainty-awareattentionimprovescalibrationundercleanconditionsbut
+provides limited additional robustness to character-level perturbations. This pattern is consistent with
+priorworkshowingthatcalibration-orientedmethodsprimarilyaddressuncertaintyestimationanddo
+not,bythemselves,constituteadversarialdefenses(Goodfellowetal.,2014). Animportantdirectionfor
+futureworkistocombine UAT-LITE withdedicatedadversarial-defensestrategies,suchasadversarial
+trainingorcertifiedrobustnessmethods.
+D.13 FullLinguisticUncertaintyAnalysis
+Table15providesafine-grainedanalysisofhow UAT-LITE respondstodiversesourcesofuncertainty
+spanninglexical,syntactic,epistemic,andlogicalphenomena. Fornegation, UAT-LITE remainsuni-
+formlyconfidentacrossaffirmative,negated,andclinical-negationcases,yieldingnear-zeroestimated
+uncertainty. This behavior indicates invariance to explicit negation cues, which is desirable for clear
+clinical negation (e.g., “not stable”) but also suggests limited sensitivity to polarity reversal in more
+general contexts. This pattern is consistent with the attention analysis in Fig. 7, which shows that
+uncertainty-awareattentionredistributesweightconservativelytowardnegationandpredicatestructure
+withoutproducingelevatedoutput-leveluncertaintyforclearclinicalnegation.
+For lexical ambiguity, the behavior is mixed. When contextual disambiguation is available (“bank
+account”),UAT-LITEshowsameaningfulincreaseinuncertainty. However,forgenuinelyambiguous
+expressions(“bankclosed”),themodelremainshighlyconfident,indicatingresidualoverconfidenceunder
+unresolvedpolysemy. Asimilarintermediatepatternappearsforpolysemoustriggerssuchas“bat,”where
+uncertaintyincreasesbutdoesnotfullyreflecttheunderlyingambiguity.
+Arelatedpatternappearsforepistemichedges. Strongassertions(“definitely”)andweakerhedges
+(“probably,”“possibly”)aretreatedwithnear-maximalconfidence,indicatinglimitedsensitivitytograded
+epistemicmarking. Bycontrast,explicitmodaluncertainty(“might”)leadstoameasurableincreasein
+uncertainty,suggestingthatthemodelrespondsmorestronglytodirectlexicaluncertaintymarkersthanto
+subtlerhedgingcues.
+Forsyntacticcomplexity,UAT-LITEshowsclearersensitivity. Medium-depthstructuresproducethe
+largestincreaseinuncertainty,consistentwithgreaterstructuralprocessingdifficulty. Deeperstructures,
+however,elicitanon-monotonicresponse,suggestingthatthemodelmaypartiallyadapttohighlyregular
+but more complex constructions rather than increasing uncertainty monotonically with depth. Finally,
+under logical contradictions, UAT-LITE appropriately increases uncertainty for inconsistent inputs
+(“healthy∧dying”)whilemaintaininghighconfidenceforcoherentstatements. Thispatternindicates
+sensitivity to semantic inconsistency and is consistent with the framework’s uncertainty propagation
+Bucket N Method ECE↓ Cov@0.9↑ AURC↓ Acc↑
+all 1273 Base+TS 0.0248 0.0000 0.7261 0.2427
+UAT-LITE 0.0809 0.0000 0.7478 0.2498
+UAT-LITE+TS 0.0006 0.0000 0.7493 0.2498
+negation 723 Base+TS 0.0201 0.0000 0.7213 0.2476
+UAT-LITE 0.0677 0.0000 0.7358 0.2614
+UAT-LITE+TS 0.0110 0.0000 0.7362 0.2614
+numeric 1245 Base+TS 0.0257 0.0000 0.7231 0.2418
+UAT-LITE 0.0793 0.0000 0.7441 0.2514
+UAT-LITE+TS 0.0010 0.0000 0.7455 0.2514
+biomedical 574 Base+TS 0.0302 0.0000 0.7259 0.2369
+UAT-LITE 0.0716 0.0000 0.7371 0.2578
+UAT-LITE+TS 0.0075 0.0000 0.7357 0.2578
+hedges 751 Base+TS 0.0331 0.0000 0.7471 0.2344
+UAT-LITE 0.0702 0.0000 0.7351 0.2583
+UAT-LITE+TS 0.0080 0.0000 0.7362 0.2583
+Table12: BehavioralanalysisonMedQAbylinguisticbucket. Itemsarestratifiedusinglightweightheuristic
+cuesfornegation,numericcontent,biomedicalterminology,andhedging. Acrossallbuckets,UAT-LITEimproves
+accuracyrelativetoBase+TS,whereasUAT-LITE+TSachievesthelowestECEineverycase.Thelargestcalibration
+gainsfromstackingwithTSappearinthenumericandhedgebuckets,whilethestrongestaccuracygainsfrom
+UAT-LITEappearinthebiomedicalandhedgebuckets. AlthoughCov@0.9iszerothroughout,ECE,AURC,and
+accuracystillshowconsistentdifferencesacrossmethods,supportingtheviewthatuncertainty-awareattentionand
+TSplaycomplementaryrolesinthissetting.
+acrosslayers.
+E Cross-Model&ScalingAnalysis
+Scopeclarification. Allmodelsevaluatedinthissectionareencoder-only,BERT-derivedtransformer
+architectures. Generalizationtofundamentallydifferentarchitectures,suchasdecoder-onlymodels(e.g.,
+GPT or LLaMA) or state-space models, is outside the scope of the current study and is left for future
+work.
+E.1 GeneralizationAcrossBERTBackbones
+Table16evaluateswhetherthecalibrationbenefitsof UAT-LITE generalizeacrossBERT-based trans-
+formerbackbonespretrainedonheterogeneouscorporaandappliedtodomain-specificbenchmarks. The
+evaluatedmodelsspangeneral-purpose(BERT-base,RoBERTa-base),clinical(ClinicalBERT),biomedi-
+cal(BioBERT),andscientific(SciBERT)representations,therebytestingrobustnessacrosssubstantially
+differentlinguisticandsemanticdomains.
+Across the evaluated settings, UAT-LITE reduces ECE for most pretrained backbones, yielding an
+averagerelativeimprovementofapproximately32%(Table16). ThelargestgainisobservedforBERT-
+base on SQuAD, where ECE decreases by 52% (0.130 → 0.062). Because SQuAD contains both
+answerable and unanswerable questions, it places substantial demands on ambiguity recognition and
+confidenceestimation. Thelargeimprovementinthissettingsuggeststhatuncertainty-weightedattention
+helpsthemodelbettercalibratepredictionswhenevidenceaggregationisuncertain.
+Domain-specialized models also benefit, although to different degrees. BioBERT on PubMedQA
+showsa40%reductioninECE,suggestingthatuncertainty-awareattentionisusefulforevidence-dense
+biomedicaltext. ClinicalBERTonMedQAshowsa25%improvement,indicatingthatthemethodremains
+effective in fact-oriented medical question answering, although the gain is smaller than in some other
+settings. By contrast, RoBERTa-base on MNLI shows only a marginal 2% improvement. MNLI is a
+high-resourcebenchmarkwithstrongpretrainedrepresentationsandarelativelywell-calibratedbaseline,
+leaving less room for further gains. SciBERT on SQuAD similarly shows a modest 10% reduction,
+suggesting that pretraining on specialized scientific corpora may already capture some task-relevant
+uncertaintystructure.
+λ M ECE↓ Acc↑ ∆ECE ∆Acc MCCost×
+(vs.M=3) (vs.M=3) (vs.M=3)
+λ=0.1
+0.1 3 0.0699 0.7075 0.0000 0.0000 1.00
+0.1 5 0.0676 0.7075 −0.0023 +0.0000 1.67
+0.1 10 0.0649 0.7109 −0.0050 +0.0034 3.33
+λ=0.5
+0.5 3 0.0703 0.7059 0.0000 0.0000 1.00
+0.5 5 0.0657 0.7096 −0.0046 +0.0037 1.67
+0.5 10 0.0682 0.7068 −0.0021 +0.0009 3.33
+λ=1.0
+1.0 3 0.0669 0.7090 0.0000 0.0000 1.00
+1.0 5 0.0655 0.7102 −0.0014 +0.0012 1.67
+1.0 10 0.0640 0.7110 −0.0029 +0.0020 3.33
+Summary. ECEmean= 0.0670,std= 0.0022;min= 0.0640,max= 0.0703(range= 0.0063). ∆ECE/∆Accare
+computedwithineachλblockrelativetoM=3;MCCostscaleslinearlywithM.
+Table 13: Sensitivity analysis of UAT-LITE with respect to uncertainty penalty λ and Monte Carlo budget M
+on SQuAD 2.0 (single seed). Calibration remains stable across a wide range of inference-time settings (ECE
+range<0.007). IncreasingM yieldsdiminishingreturnsbeyondM =5,whileaccuracychangesremainsmall,
+indicatinglimitedsensitivitytoprecisehyperparametertuning.
+Attack Method CleanAcc AttackAcc CleanECE AttackECE
+CharacterSwap Baseline 0.920 0.816 0.062 0.133
+CharacterSwap UAT-LITE 0.922 0.812 0.055 0.132
+Table14: Character-leveladversarialrobustnessonSST-2(singleseed). Weevaluate500validationexamples
+under5%randomcharacterswapsusingafine-tunedBERT-basemodel. BoththebaselineandUAT-LITEsuffer
+substantialdegradationinaccuracyandcalibrationunderperturbation. AlthoughUAT-LITEshowsslightlybetter
+cleanaccuracyandcleanECE,attack-timeaccuracyandECEarenearlyunchangedrelativetothebaseline. These
+resultsindicatethatthecalibrationbenefitsofuncertainty-awareattentiononcleandatadonotdirectlytranslateinto
+strongerrobustnessagainstcharacter-levelperturbations.
+Takentogether,theseresultsindicatethatthecalibrationbenefitsof UAT-LITE transferacrossmultiple
+BERT-derivedbackbonesandapplicationdomains,withthelargestgainsarisinginsettingscharacterized
+bygreaterambiguityorlessfavorablebaselinecalibration.
+E.2 EffectofModelCapacityonCalibration
+Table17analyzestheeffectofmodelcapacityoncalibrationimprovementbyapplying UAT-LITE across
+BERTmodelsrangingfromBERT-tiny(4.4Mparameters)toBERT-large(335.1Mparameters). Unlike
+Table16,whichvariesdomainsandpretrainingcorpora,thisanalysisholdsthearchitecturefamilyfixed
+andisolatestheroleofparameterscale.
+Smallandmid-sizedmodelsbenefitmostfromuncertainty-weightedattention. BERT-miniachievesthe
+largestrelativeimprovement,witha58%reductioninECE,followedbyBERT-basewithanapproximately
+53%reduction. Thesemodelsappeartohavesufficientrepresentationalcapacitytoexpressepistemic
+uncertaintywhilestillbenefitingfromexplicituncertaintymodulationwithinattention.
+BERT-tinyandBERT-smallshowmoremodestimprovements(12%and15%,respectively). Forvery
+small models, limited representational capacity may constrain the extent to which uncertainty-aware
+inferencecanreshapeinternalattentionpatterns,yieldingsmallerbutstillconsistentgains. Incontrast,
+BERT-largeshowsdegradedcalibration,withECEincreasingby13%afterapplying UAT-LITE. One
+possible explanation is that, in highly overparameterized models, stochastic perturbations introduced
+throughMonteCarlosamplingmaydisruptalreadystableattentionpatterns,leadingtoexcessvariance
+propagationratherthanimproveduncertaintyestimation.
+Latencymeasurementsfurthercontextualizetheseresults. Althoughinference-timeoverheadremains
+Phenomenon Trigger BaseConf MBConf Unc Diagnostic
+Negation
+Positive excellent 0.53 1.00 0.00 Negation-invariant
+Negated notexcellent 0.52 1.00 0.00 Negation-invariant
+Clinical notstable 0.55 1.00 0.00 Confidentclinicalnegation
+LexicalAmbiguity
+Clearcontext bankaccount 0.51 0.70 0.30 Appropriateambiguity
+Ambiguous bankclosed 0.55 0.99 0.01 Overconfidentambiguity
+Polysemous bat(animal/tool) 0.54 0.83 0.17 Partialpolysemysensitivity
+EpistemicHedges
+Definite definitely 0.51 1.00 0.00 Strongassertion
+Probable probably 0.53 0.99 0.01 Hedge-insensitive
+Possible possibly 0.52 0.99 0.01 Hedge-insensitive
+Uncertain might 0.51 0.85 0.15 Uncertainty-aware
+SyntacticComplexity
+Simple depth=2 0.55 0.82 0.18 Lowstructuralload
+Medium depth=5 0.53 0.54 0.46 Complexity-sensitive
+Complex depth=8 0.53 0.83 0.17 Non-monotonicresponse
+Contradictions
+Consistent healthy,stable 0.52 0.99 0.01 Coherentinput
+Contradictory healthy∧dying 0.53 0.90 0.10 Contradiction-aware
+Table15: Fine-grainedlinguisticuncertaintyanalysisacrossdiversephenomena(singleseed). Thetablereports
+baselineconfidence,UAT-LITEconfidence(MB),derivedepistemicuncertainty,andaqualitativediagnosticinter-
+pretationforrepresentativetriggersspanningnegation,lexicalambiguity,epistemichedging,syntacticcomplexity,
+andcontradiction.Severalpatternsarenotable.Negationandexplicitclinicalnegationproducenear-zerouncertainty,
+indicatingstablebehaviorinthesecases. Bycontrast,unresolvedlexicalambiguityandweakerhedgesoftenremain
+associatedwithhighconfidence,revealingresidualoverconfidence. Thestrongestuncertaintyincreasesappearfor
+mediumsyntacticcomplexityandlogicalcontradiction,suggestinggreatersensitivitytostructuraldifficultyand
+semanticinconsistencythantoallformsoflexicalorepistemicambiguity. Overall,thetablehighlightsboththe
+strengthsandthelimitationsofuncertainty-weightedattentionatafine-grainedlinguisticlevel.
+moderateformid-sizedmodels(e.g.,7ms→39msforBERT-base),itincreasessubstantiallyforlarger
+architectures(26ms→134msforBERT-large). Overall,thisanalysissuggeststhatuncertainty-weighted
+attentionismosteffectiveinthesmall-to-mid-sizedregime,wheremodelcapacityandstochasticityappear
+tobebetterbalanced.
+F ImplementationandReproducibility
+This section characterizes the computational and implementation properties of UAT-LITE. We first
+analyzeitsasymptoticandpracticalcomputationalcomplexityrelativetostandardtransformerinference
+andensemble-baseduncertaintymethods. Wethenquantifytheinference-timeoverheadintroducedby
+MonteCarlosamplingandsummarizetheexperimentalsetup,hardwareconfiguration,andreproducibility
+details required to replicate the reported results. Throughout, we emphasize that UAT-LITE operates
+strictlyatinferencetimeanddoesnotalterpretrainedparametersortrainingcost.
+F.1 ComputationalComplexityAnalysis
+UAT-LITE preserves the parameter count and training cost of the base transformer. All uncertainty-
+awaremechanismsoperatestrictlyatinferencetimeandintroducenoadditionaltrainableparametersor
+architecturalmodifications.
+TheadditionalcostarisessolelyfromMonteCarlo(MC)samplingduringinference:
+• Parameters: identicaltothebasemodel(e.g.,109MforBERT-base)
+• Trainingcost: unchanged
+• Calibrationcost: onescalartemperaturepertask(optional)
+• Inferencecost: M stochasticforwardpasses(M ∈ {5,10})
+BaseModel Domain Dataset BaselineECE +UAT-LITEECE Improvement
+BERT-base General SQuAD 0.130 0.062 52%↓
+RoBERTa-base General MNLI 0.040 0.039 2%↓
+ClinicalBERT Medical MedQA 0.049 0.037 25%↓
+BioBERT Biomedical PubMedQA 0.120 0.072 40%↓
+SciBERT Scientific SQuAD 0.092 0.083 10%↓
+Average — — 0.086 0.059 32%↓
+Table 16: Cross-domain calibration across pretrained BERT-derived backbones (single seed). Expected
+CalibrationError(ECE;lowerisbetter)isreportedbeforeandafterapplyingUAT-LITE,withrelativeimprovement
+computedagainsteachmodel’sownbaseline. Theevaluatedmodelsspangeneral-purpose,clinical,biomedical,and
+scientificpretrainingregimes,allowingcomparisonacrosssubstantiallydifferentdomainsandbenchmarktypes.
+Improvementsareobservedformostbackbones,withthelargestgainsonBERT-baseforSQuADandBioBERTfor
+PubMedQA,whileRoBERTa-baseonMNLIshowsonlyamarginalchange. Overall,thetablesuggeststhatthe
+calibrationbenefitsofUAT-LITEarenotconfinedtoasinglepretrainedmodelordomain,althoughthemagnitude
+ofimprovementvarieswiththebenchmarkandthestrengthofthestartingbaseline.
+Model Params BaselineECE UAT-LITEECE Rel.∆ Latency
+BERT-tiny 4.4M 0.070 0.061 12%↓ 1→5
+BERT-mini 11.2M 0.131 0.056 58%↓ 1→8
+BERT-small 28.8M 0.095 0.081 15%↓ 1→9
+BERT-base 109.5M 0.139 0.066 53%↓ 7→39
+BERT-large 335.1M 0.152 0.172 13%↑ 26→134
+Table17: EffectofmodelcapacityoncalibrationwithintheBERTfamily(singleseed). ExpectedCalibration
+Error(ECE;lowerisbetter)isreportedbeforeandafterapplyingUAT-LITEacrossmodelsrangingfromBERT-tiny
+to BERT-large. Relative change is computed with respect to each model’s baseline ECE, and latency reports
+baseline-to-UAT-LITEinferencetimeinmilliseconds. ThelargestimprovementsoccurforBERT-miniandBERT-
+base,whereasBERT-tinyandBERT-smallshowsmallerbutstillpositivegains. Incontrast,BERT-largeexhibitsa
+degradationincalibrationtogetherwiththehighestinferenceoverhead. Theseresultssuggestthattheeffectiveness
+ofuncertainty-weightedattentiondependsinpartonmodelscale,withthemostfavorabletrade-offappearinginthe
+small-to-mid-sizedregime.
+Inference-timecomplexitythereforescaleslinearlywiththeMCbudgetM. Table18reportsacanonical
+end-to-endGPUbenchmarkatM=10underasequentialMCevaluationloop. Relativetodeterministic
+inference,UAT-LITEincursapproximatelya23×slowdown,whereastemperaturescalingaddsnegligible
+overheadbecauseitappliesonlyascalarrescalingtothelogits. UnlikeDeepEnsembles,whichrequire
+training,storing,andevaluatingmultipleindependentmodels,UAT-LITEintroducesnoadditionaltraining
+ormodel-storagecost,makingitalighter-weightalternativewhenretrainingisundesirable.
+F.2 Inference-TimeOverhead
+Whiletheprevioussubsectioncharacterizesasymptoticcomplexity,wenowreportempiricalinference-
+timeoverheadunderrealisticdeploymentconditions. Attesttime, UAT-LITE performsM stochastic
+forward passes through the same pretrained model. When executed sequentially, runtime increases
+approximately linearly with M. Observed slowdowns depend on the Monte Carlo budget M and the
+latencymeasurementprotocol,includingbatching,sequencelength,andwhetherMCpassesareexecuted
+sequentially or vectorized. Throughout this work, we report latency under the canonical benchmark
+describedinF.4,underwhichoverheadscalesapproximatelylinearlywithM forsequentialMCinference.
+Despitethisoverhead,inference-timecostremainspracticalinsettingswherereliabilityandcalibrated
+confidenceareprioritizedoverrawthroughput. Importantly,thiscostisincurredonlywhenuncertainty-
+awareinferenceisenabledandcaninprinciplebereducedbyloweringM insettingswhereasmaller
+stochasticbudgetisacceptable,asdiscussedinSection7.
+Method Latency(ms) ± Ratio
+Base(det.) 62.93 0.29 1.00×
+Base+TS 63.13 0.27 1.00×
+UAT-LITE(M=10) 1426.90 78.87 22.68×
+UAT-LITE+TS(M=10) 1486.61 7.26 23.62×
+Table18:CanonicalGPUinferencelatencyatM=10. LatencyismeasuredonasingleNVIDIAA100GPUusing
+batchsize32,sequencelength128,andasequentialMonteCarloevaluationloop. Valuesreportend-to-endforward-
+passwall-clocktimeperbatch(mean±standarddeviation),togetherwiththeratiorelativetodeterministicinference
+under the same setting. As expected, UAT-LITE and UAT-LITE +TS incur substantial overhead because they
+requirerepeatedstochasticforwardpasses,whereasBase+TSiseffectivelyidenticaltothedeterministicbaseline.
+ThesmalldifferencebetweenUAT-LITEandUAT-LITE+TSconfirmsthattheadditionalcostisdominatedbyMC
+samplingratherthanbytemperaturescalingitself.
+F.3 ReproducibleExperimentalSetup
+Thissubsectionsummarizestheexperimentalsetupandimplementationdetailsnecessarytoreproduceour
+results. Allexperimentsfollowaconsistentarchitecture,trainingconfiguration,andevaluationprotocol
+acrossdatasets.
+Modelarchitecture.
+• Basemodel: BERT-base-uncased
+• Numberofparameters: 110M
+• Transformerlayers: 12
+• Hiddendimension: 768
+• Attentionheads: 12
+Traininghyperparameters.
+• Optimizer: AdamWwithstandardsettings
+• Learningrate: 2×10−5
+• Learningrateschedule: linearwarmupforthefirst500steps,followedbylineardecay
+• Batchsize: 16
+• Numberofepochs: 3
+• Weightdecay: 0.01
+• Gradientclipping: 1.0
+UAT-LITE configuration.
+• InferenceviaMonteCarlosamplingwithM ∈ {5,10}stochasticforwardpasses(defaultM=10for
+themainrevisiontables;M=5isadditionallyreportedwherenoted)
+• Component-specificdropoutrates:
+– Embeddinglayer: 0.1
+– Attentionlayers: 0.2
+– Feed-forwardlayers: 0.3
+• Uncertainty weighting coefficient: λ = 0.5 (set once on development data and held fixed across
+tasks)
+• SensitivityanalysisforλandM reportedinD.11
+F.4 Hardware,Latency,andCodeAvailability
+Computeresourcesandlatencymeasurement. AllexperimentsareconductedonasingleNVIDIA
+A100GPU(40GB).Unlessotherwisestated,latencyismeasuredasend-to-endforward-passwall-clock
+time,averagedover200runsafter50warm-upiterations. Wereportasinglecanonicallatencybenchmark
+throughoutthepaper: batchsize32,sequencelength128,asequentialMCloopwithoutvectorization
+acrossMCsamples,andasingleGPU.Latencyisreportedperbatchandexpressedasaratiorelativeto
+deterministic inferenceunder the sameconditions. For stochastic methods, latencyis measured using
+thesameMonteCarlobudgetM usedduringevaluation. Reportedslowdownsthereforereflecttheratio
+betweenstochasticanddeterministicinferenceunderidenticalmeasurementsettings.
+Codeavailability. Tosupportreproducibilityduringanonymousreview,weprovideananonymized
+repositorycontainingthecompleteimplementation,includingtrainingscripts,evaluationpipelines,and
+configurationfiles. AllexperimentsareimplementedusingHuggingFaceTransformers,PyTorch,and
+Python. Therepositoryisavailableat: https://github.com/eliashossain001/uq_decomposition/tree/main.
+G SupplementaryRelatedWork
+Thissectionprovidesanextendeddiscussionofpriorworkoncalibration,uncertaintyestimation,and
+uncertainty-awareTransformermodeling. Becausethemainpaperfocusesonmethoddesignandempirical
+evaluation rather than a comprehensive survey, we defer detailed comparisons to this supplementary
+section. We organize related work into three themes: (i) post-hoc calibration and ensemble-based
+uncertaintyestimation,(ii)BayesianTransformersandstochasticinferencemethods,and(iii)approaches
+thatexplicitlyincorporateuncertaintyintoattentionmechanisms. Thisstructureclarifieshow UAT-LITE
+differsfromandcomplementsexistingtechniques.
+G.1 CalibrationandUncertainty
+Despitehighpredictiveaccuracy,modernneuralnetworksareoftenpoorlycalibrated(Guoetal.,2017).
+Post-hoc calibration methods such as temperature scaling (Guo et al., 2017), Platt scaling (Platt et al.,
+1999), and histogram binning (Zadrozny and Elkan, 2001) adjust output confidence without altering
+internalrepresentations. Whilesimpleandeffective,thesemethodsarelimitedbythequalityoflearned
+featuresanddonotaffectmodelreasoning.
+Ensemble-basedapproachesimprovecalibrationbyaveragingpredictionsfrommultiplemodels. Deep
+Ensembles (Lakshminarayanan et al., 2017) and snapshot ensembles (Huang et al., 2017) are among
+thestrongestcalibrationbaselines,butrequiretraining,storing,andevaluatingmultiplemodelreplicas,
+resulting in substantial computational and memory overhead. More efficient approximations, such as
+ensemblingprunedattentionheadswithinasingleTransformer(Gabetnietal.,2025),reducecostbut
+stillrelyonarchitecturalmodificationorfusedensemblestructures. Ourworkinsteadtargetscompetitive
+calibrationusinginference-timestochasticitywithinasinglepretrainedmodel.
+G.2 BayesianandStochasticMethods
+Bayesianneuralnetworksprovideprincipleduncertaintyestimatesbyplacingdistributionsovermodel
+parameters(MacKay,1992;Neal,2012). However,scalableapproximationssuchasvariationalinference
+(Blundelletal.,2015;LouizosandWelling,2017)andLaplacemethods(Ritteretal.,2018)scalepoorly
+toTransformer-sizedmodels. BayesianTransformervariants(Xueetal.,2021;Fanetal.,2020)further
+requirearchitecturalmodificationandretraining,limitingcompatibilitywithpretrainedbackbones.
+Several recent methods estimate uncertainty in weight space. Stochastic Weight Averaging and its
+Gaussianextension(SWAG)approximateposteriordistributionsduringfine-tuningandimproveuncer-
+taintyqualityinNLItasks(Talmanetal.,2023). Parameter-efficientBayesianadaptationmethodssuchas
+C-LoRA(Rahmatietal.,2025)introducelatentvariableswithinlow-rankadapters,butrequireBayesian
+fine-tuningandtask-specificparameterupdates. Otherapproachesimproveuncertaintyestimationthrough
+post-hocoutputheads(Zabolotnyietal.,2025)oruncertainty-awarelossreweightingduringalignment
+(Wangetal.,2024). Thesemethodsprimarilyinfluencetrainingdynamicsoroutputdistributionsanddo
+notmodifyinternalTransformercomputationsatinferencetime.
+MonteCarloDropout(GalandGhahramani,2016)providesalightweightalternativebyapproximating
+Bayesianinferencethroughstochasticforwardpasses. StandardMCDropoutappliesuniformstochasticity
+acrosslayersandtreatsuncertaintyonlyasanoutput-levelsignal. OurworkbuildsonMCDropout,but
+explicitlyusestheresultinguncertaintytoinfluenceattentionduringinference.
+G.3 Uncertainty-AwareAttention
+Calibration and uncertainty issues are particularly pronounced in Transformer-based models. Larger
+Transformersareoftenincreasinglyoverconfident(DesaiandDurrett,2020),andsemanticuncertainty
+plays a significant role in language understanding and generation (Kuhn et al., 2023). Most existing
+methodstreatuncertaintyasapost-hocquantity,leavingattentionpatternsandinternalrepresentations
+unchanged.
+Severalapproachesinjectuncertaintydirectlyintoattentionmechanisms. BayesianAttentionBelief
+Networks(Zhangetal.,2021)modelattentionweightsaslatentrandomvariables,whileSparseGaussian
+ProcessAttention(ChenandLi,2023)reformulatesself-attentionusingkernel-basedGaussianprocess
+inference. Although principled, these methods require architectural changes and variational training,
+limitingtheirapplicabilitytopretrainedmodels. Domain-specificuncertainty-awareTransformers,such
+as TUnA (Ko et al., 2024), introduce uncertainty primarily through output layers rather than through
+attentionmodulationitself.
+Recentworkexploresefficientuncertaintymechanismsinspiredbyensemblesorparameter-efficient
+adaptation. Hydra Ensembles (Gabetni et al., 2025) approximate Deep Ensembles by fusing multiple
+attentionheads,achievingcompetitivecalibrationwithreducedcost. However,uncertaintyarisesfrom
+architecturalfusionandremainsanoutput-levelaggregation. Similarly,C-LoRA(Rahmatietal.,2025)
+requiresBayesianfine-tuningtomodeluncertainty. Othermethodsleverageuncertaintyfordownstream
+decision-making,suchasselectiveprediction(Vazhentsevetal.,2025),butdonotaffectinternalattention
+computation.
+Positioningof UAT-LITE. UAT-LITEintegratesepistemicuncertaintyintoself-attentionatinference
+time,withoutmodifyingpretrainedweights,trainingobjectives,ormodelarchitecture. Unlikepost-hoc
+scalers(e.g.,temperaturescaling)thatadjustconfidenceonlyattheoutputlayer,ourmethodusesuncer-
+taintyestimatestomodulateinternaltokeninteractions,aimingtoimprovereliabilityunderambiguity,
+distributionshift,andselectivedecision-making. Importantly,UAT-LITEiscomplementarytopost-hoc
+scaling: temperaturescalingcanbeappliedontopofouruncertainty-awareinferencewhenthegoalisto
+minimizein-domaincalibrationerrorwhilepreservinguncertainty-awareinternalcomputation.
+H AIUsageStatement
+Weusedlargelanguagemodelsasauxiliarytoolsduringmanuscriptpreparation. Claudewasusedfor
+limitedcodingassistance,includingrefactoringanddebuggingsupport. ChatGPTwasusedforwriting
+assistance,includinggrammarchecking,spellingcorrection,andstylisticrefinement. Allcoreresearch
+contributions,includingthescientificideas,experimentaldesign,implementation,empiricalevaluation,
+analysis,andconclusions,weredevelopedbytheauthors. Allresultsarebasedonourownexperiments
+using publicly available datasets and verified code. No AI system was used to generate data, conduct
+experiments,ordrawscientificconclusions.

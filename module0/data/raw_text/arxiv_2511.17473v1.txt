@@ -1,0 +1,763 @@
+MASKED-AND-REORDERED SELF-SUPERVISION FOR
+REINFORCEMENT LEARNING FROM VERIFIABLE REWARDS
+ZhenWang∗ ZhifengGao GuolinKe
+DPTechnology DPTechnology DPTechnology
+November24,2025
+ABSTRACT
+Test-timescalinghasbeenshowntosubstantiallyimprovelargelanguagemodels’(LLMs)mathemat-
+icalreasoning. However,foralargeportionofmathematicalcorpora,especiallytheoremproving,
+RLVR’sscalabilityislimited: intermediatereasoningiscrucial,whilefinalanswersaredifficultto
+directlyandreliablyverify. Meanwhile,token-levelSFToftendegeneratesintorotememorization
+ratherthaninducinglongerchainsofthought. InspiredbyBERT’sself-supervisedtasks,wepropose
+MR-RLVR(Masked-and-ReorderedRLVR),whichconstructsprocess-levelself-supervisedrewards
+via“masked-then-fill”and“stepreordering”toextractlearnablesignalsfromintermediatereasoning.
+Ourtrainingpipelinecomprisestwostages: wefirstperformself-supervisedtrainingonsampled
+mathematicalcalculationandproofdata;wethenconductRLVRfine-tuningonmathematicalcal-
+culationdatasetswhereonlyoutcomesareverifiable. WeimplementMR-RLVRonQwen2.5-3B
+andDeepSeek-R1-Distill-Qwen-1.5B,andevaluateonAIME24,AIME25,AMC23,andMATH500.
+Underafixedsamplinganddecodingbudget,MR-RLVRachievesaveragerelativegainsoverthe
+originalRLVRof+9.86%Pass@1,+5.27%Pass@5,and+4.00%Pass@8. Theseresultsindicate
+thatincorporatingprocess-awareself-supervisedsignalscaneffectivelyenhanceRLVR’sscalability
+andperformanceinonlyoutcome-verifiablesettings.
+1 Introduction
+Largelanguagemodels(LLMs)haverecentlymaderapidprogressonmathematicalandscientificreasoningtasks,
+drivenbytechniquessuchaschain-of-thoughtprompting, diversesampling, andtest-timescaling. Reinforcement
+learning(RL)hasfurtherimprovedperformanceonreasoning-intensivetasksincludingmathematicalproblemsolving,
+code generation, and program synthesis [Yang et al., 2025, Guo et al., 2025]. A central question in these settings
+ishowtodesignrewardsignalsthatguidemodelstowardreliableandgeneralizablereasoningstrategies. Verifiable
+rewardsobtainedbyprogrammaticallycheckingfinalanswersorexecutingunittestsofferapracticalsolution: whether
+amodeloutputsatisfiespredefinedsymbolicornumericconstraintscanoftenbedeterminedautomatically,providing
+scalableandlow-costsupervisionforRL[Guoetal.,2024,Yangetal.,2024]. ReinforcementLearningfromVerifiable
+Rewards(RLVR)[Shaoetal.,2024]instantiatesthisideabydirectlyoptimizingpoliciestopasssymbolicornumerical
+checksattheleveloffinalanswers,andhasshownstrongperformanceoncodegenerationandmathematicalreasoning
+tasks[Shaoetal.,2024,Guoetal.,2025].
+However,terminallyverifiablerewardsprimarilyconstrainthefinalanswer. Tofurtherimprovecomplexmulti-step
+reasoning,itiscrucialyetchallengingtoconstructequallyinformativetrainingsignalsfortheintermediatereasoning
+process. Onelineofworkexplicitlyleveragesintermediatesteps: processsupervisionandProcessRewardModel
+(PRM)frameworks[Lightmanetal.,2023,Guanetal.,2025]providestep-levelsupervisionbyscoringorclassifying
+intermediatesteps,improvingstabilityandinterpretabilityinmathematicalreasoning. Theseapproaches,however,
+typicallyrequirelarge-scale,high-qualityhumanannotations,andincomplextheorem-provingscenariositisinherently
+difficulttodecidewhetheralocalstepisreasonable. Thisleadstohighannotationcostsandlimitsscalabilitytodiverse
+large-scalecorpora. Inaddition,token-levelsupervisedfine-tuning(SFT)onchain-of-thoughtdataoftendegenerates
+∗Correspondingauthor.wangz@dp.tech
+5202
+voN
+12
+]LC.sc[
+1v37471.1152:viXra
+APREPRINT-NOVEMBER24,2025
+intoimitatingspecificsolutiontemplatesratherthanlearningtransferablereasoningstrategies[Lightmanetal.,2023].
+Human-centricsupervisionthusstrugglestosimultaneouslyachievelowannotationcost,scalability,andtransferability
+ofreasoningability.
+RLVRremovestheneedforstep-levellabelsbutprovidesonlyweakconstraintsontheintermediatereasoningtrajectory.
+As a result, it is susceptible to process hallucinations: the model may generate plausible-looking yet incorrect or
+redundantreasoningsteps,andsucherrorsareoftendifficulttodetectandcorrectusingonlyterminalverification. In
+manymathematicalandtheorem-provingdatasets,correctnessatthesteplevelisimportantinitsownright,yethard
+toverifyviaaunified,low-costprogrammaticprocedure. Complementarytoprocesssupervision,recentworkhas
+exploredself-supervisedsignalsorexistingtrajectoriesasdenserrewardsforreasoning,forexamplebyusingmodel
+confidenceinreferenceanswersasintrinsicrewardsorbydesigningnext-segmentreasoningobjectivesfromexpert
+tracesandpretrainingcorporaandconvertingthemintoRLtrainingsignals[Yuetal.,2025,Lietal.,2025,Dengetal.,
+2025]. Theseapproachesmitigaterewardsparsitywithoutadditionalhumanannotationsordomain-specificverifiers,
+suggestingthatcombiningself-supervisionwithRLisapromisingdirectionforstrengtheningmulti-stepreasoning.
+Weaskwhetheritispossibletoextractprocess-levelsignalsdirectlyfromexistingmathematicalreasoningtrajectories
+andconvertthemintoverifiablerewardsthatarecompatiblewithRLVR,withoutrelyingonadditionalhumanprocess
+annotationsorexplicitexpertactionsequences. Ourstartingpointistheobservationthatself-superviseddestruction–
+reconstructionobjectives,suchasthoseusedinBERT[Devlinetal.,2019,Raffeletal.,2023],helpmodelscapture
+semantic and structural dependencies within context by masking and reconstructing missing spans. This property
+naturallyalignswithmodelingtheconstraintsanddependenciesbetweenstepsinmulti-stepreasoning.
+Inthiswork,weproposeMR-RLVR(Masked-and-ReorderedRLVR),whichaugmentsRLVRwithdense,structured
+process-levelself-supervisionderivedfrommathematicalreasoningtrajectories. Underasettingwhereonlyterminal
+rewards are externally verifiable, we construct internal process rewards that can be computed automatically and
+integrated into RL training. Concretely, we design two process-aware tasks on proof-style and computation-style
+trajectories: (1)Masked-Then-Fill,whichmaskskeyformulas,reasoningsteps,ortheoreminvocationsandrequiresthe
+modeltoreconstructthemissingcontentgivensurroundingcontext;and(2)StepReordering,whichshufflesreasoning
+stepsandasksthemodeltorecoveracoherentlogicalorder. Forbothtasks,wedefineprocess-levelrewardsbasedon
+thematchbetweengeneratedspansandreferencereasoningatthelevelsofmathematicalentitiesandtext,andonthe
+agreementbetweenpredictedandreferencesteporders. Theserewardscanbecomputedautomaticallyfromexisting
+trajectoriesanduseddirectlyasRLsignals,withoutanyadditionalhumanannotation.
+MR-RLVRadoptsasimpletwo-stagetrainingframework. InStageI,weuseonlytheprocess-levelrewardsdescribed
+abovetoperformRLVRupdatesonmathematicalcorporathatjointlycoverproof-styleandcomputation-stylereasoning,
+encouragingthepolicytoproducereasoningprocesseswithmorecoherentlocallogicandclearerstepdependencies.
+In Stage II, starting from the Stage I checkpoint, we fine-tune the model on computational math problems with
+programmatically verifiable final answers, using only terminally verifiable rewards. The model first learns better
+reasoning structure under dense process-level signals, and then adapts to verifiable tasks under sparse but precise
+terminalsupervision. ThiscombinationaimstoimprovethestabilityandscalabilityofRLVRoncomplexmathematical
+reasoningtaskswithoutincreasinghumanannotationcost,andtoreduceprocesshallucinations.
+Ourcontributionsaresummarizedasfollows:
+1. Process-levelself-supervisionasverifiablerewards. WeproposeaframeworkthatdesignsMask-Then-Fill
+andStepReorderingtasksonmathematicalreasoningtrajectoriesandconvertstheiroutcomesintoprocess-
+levelrewardsbasedonmathematical-entitymatchingandorderingconsistency. ThisallowsRLVRtoreceive
+fine-grainedprocesssupervisionwithoutanyhumanprocessannotations.
+2. Two-stageMR-RLVRtrainingunderterminal-verifiablesupervision. Weintroduceatwo-stagetraining
+procedurethatfirstperformsRLVRpretrainingwithprocess-levelrewardsondiverseproofandcomputational
+reasoningcorpora,andthenappliesoutcome-levelRLVRfine-tuningoncomputationalproblemswithverifiable
+finalanswers,alleviatingexplorationdifficultiesundersparserewards.
+3. Empirical gains and data efficiency on mathematical reasoning benchmarks. On Qwen2.5-3B and
+DeepSeek-R1-Distill-Qwen-1.5B, MR-RLVR consistently outperforms a GRPO baseline on AIME24,
+AIME25,AMC23,andMATH500,achievinganaveragerelativeimprovementofabout9.86%inPass@1,
+5.27%inPass@5and4.00%inPass@8underafixedsamplingbudget. Inlow-dataregimes,MR-RLVRalso
+exhibitsbettersampleefficiencythanstandardRLVR.
+2
+APREPRINT-NOVEMBER24,2025
+2 Relatedwork
+PRMandRLVRformathreasoning. Fromtheperspectiveoftrainingsignals,large-modeltrainingformathematical
+reasoningtypicallyfollowstwolines: processsupervisionandoutcome-verifiablerewards. Theformerisexemplified
+byProcessRewardModels(PRMs)combinedwithMCTS-stylesearch,whichscoreintermediatestepsandusestep-
+levelvalueestimatestoguidetreeexpansionandpruning,therebyachievingstable,interpretable,andsearch-capable
+reinforcementreasoningonmathandcodetasks[Lightmanetal.,2023,Wangetal.,2024,Zhangetal.,2024,Guanetal.,
+2025]. However,suchmethodsrequireexpensivestep-levelannotations(orlarge-modelscoring)aswellasadditional
+searchinfrastructure. Incontrast,theRLVRlineavoidsexplicitsteplabelsandreliessolelyonprogrammableoutcome
+verifiersthatscorefinalanswersorexecutablecode[Shaoetal.,2024]. Onautomaticallygradablebenchmarkssuch
+asAIME,AMC,andMATH,systemsincludingDeepSeek-Math,andQwen2.5-Mathhavedemonstratedsubstantial
+gainsinmathematicalandcodereasoningunderthisparadigm[Guoetal.,2024,Shaoetal.,2024,Guoetal.,2025,
+Yangetal.,2024,2025]. Nevertheless,standardRLVRimposesalmostnoconstraintsontheintermediatereasoning
+processandisthuspronetoprocesshallucinationsandredundantsteps. Incomparison,MR-RLVRpreservestheRLVR
+assumptionofrelyingonlyonoutcome-verifiablerewards,withoutintroducingexternalPRMsorhumansteplabels;
+instead,itautomaticallyconstructsself-supervisedtaskssuchasmaskedreconstructionandsteppermutationonexisting
+mathematicalreasoningtrajectories,convertstheircompletionqualityintoprocess-levelrewardsusablebyRL,and
+combinesthemwithasecond-stageRLVRtrainingbasedonoutcomerewards.
+Self-supervisedprocesssignalsforreasoningtasks. Acomplementarylineofworkexploresself-supervisedprocess
+signals for reasoning tasks. ClozeMath adapts text-infilling and PrefixLM objectives to the mathematical setting
+bymaskingintermediateequationsduringsupervisedfine-tuningandrequiringthemodeltorecoverthem,thereby
+strengthening the modeling of key mathematical entities and local structure; however, its self-supervised signal is
+only used as an SFT loss and is not explicitly converted into RL rewards [Pham et al., 2025]. RLPR, RLPT, and
+SRLinsteadembedself-supervisedsignalsintoreinforcementlearningorpreference-optimizationframeworks: RLPR
+usesthemodel’s(relative)generationprobabilityofareferenceanswerasanintrinsicreward,extendingRLVRto
+generaldomainswithouthumanscoring[Yuetal.,2025];RLPTdefinesanext-chunkpredictionobjectiveonlarge-
+scaleunlabeledtextandemploysanauxiliarymodeltoscoresemanticconsistencybetweenthepredictionandthe
+ground-truthcontinuationasareward[Lietal.,2025];SRLdecomposesexpertsolutionsintosequencesofactions
+andusesaction-levelsimilarityasrewardstoguidestepwiseimitationofexperttrajectories[Dengetal.,2025]. These
+worksdemonstratethatprobabilities,semanticconsistency,andactionsimilaritycanallserveaseffectiveintrinsic
+rewards,buttheirrewarddesignsaremostlycenteredontheconsistencyorsimilarityofwholeanswersorrelatively
+longsegments,withlimitedspecializationforkeyentities,locallogicaldependencies,andsteporderinginmathematical
+reasoning. MR-RLVRinsteaddirectlydesignsfine-grained,structure-awareself-supervisedtasks(maskedrefillingand
+steppermutation)onmathematicalreasoningtrajectoriesandconvertstaskoutcomesintoautomaticallycomputable
+process-levelrewardsthatintegrateseamlesslyintoanRLVRpipeline.
+3 Preliminaries
+A large language model (LLM) can be regarded as a conditional probabilistic model π (y,z | x), where x ∈ X
+θ
+denotestheinputproblemorcontext,z =(z ,...,z )representsthereasoningtrajectory,andy ∈Y denotesthefinal
+1 T
+output. Whenaground-truthanswerisavailable,itisdenotedbyy⋆. Thelearningsignalisprovidedbyaverifiable
+rewardfunctionr(x,z,y)∈[0,1],whichquantifiesthedegreetowhichamodel-generatedsolutionsatisfiesthetask
+specification. Thisrewardiscomputedautomaticallythroughaprogrammaticevaluationthatchecksthelogicalor
+factualconsistencyofthemodeloutput. Dependingonthetask,rmaybeinstantiatedthroughnumericaltolerance
+scoring,symbolicortextualequivalence,structuredoutputvalidation,orcode-levelunitandintegrationtests.
+RLVRobjective. ReinforcementLearningfromVerifiableRewards(RLVR)maximizestheexpectedverifiablereward
+whilepenalizingdivergencefromareferencepolicythroughaKullback–Leibler(KL)regularizationterm. Formally,
+theoptimizationobjectiveis
+max E [r(x,z,y)] − βE [KL(π (z,y |x)∥π (z,y |x))], (1)
+θ
+x∼D,(z,y)∼πθ(z,y|x) x∼D θ ref
+where π is a fixed or exponentially moving-averaged (EMA) reference policy, and β > 0 controls the trade-off
+ref
+between maximizing the verifiable reward and maintaining proximity to the reference distribution. The first term
+encouragesthemodeltogeneratereasoningpathsandanswersthatsatisfyprogrammaticallyverifiableconditions,
+whereastheKLpenaltymitigatesexcessivepolicydriftandstabilizestrainingundertherestricteddataregimetypical
+ofverifiabletasks. ThisformulationparallelsthegeneralformofReward-RegularizedPolicyOptimization(RRPO)
+andservesasthefoundationfortheGRPOupdateruleintroducedbelow.
+3
+APREPRINT-NOVEMBER24,2025
+GRPOformulation. GeneralizedReinforcementPolicyOptimization(GRPO)[Shaoetal.,2024]optimizesthepolicy
+bymaximizingaclippedsurrogateobjectiveovergroupsofsampledoutputs,providingstableupdateswithintheRLVR
+framework. Foreachinputq,asetofresponses{o }G isdrawnfromtheoldpolicyπ ,andthepolicyparameters
+i i=1 θold
+areoptimizedundertheobjective
+ 
+J GRPO(θ)=E 
+G1
+(cid:88)G
+|o1
+|(cid:88)|oi|
+min(cid:16)
+ρ θ,i,tAˆ i,t, clip(ρ θ,i,t, 1−ϵ, 1+ϵ)Aˆ
+i,t(cid:17)
+−βD KL(π θ∥π ref), (2)
+i
+i=1 t=1
+where ρ = πθ(oi,t|q,oi,<t) is the per-token likelihood ratio and Aˆ is the corresponding advantage estimate.
+θ,i,t πθold(oi,t|q,oi,<t) i,t
+Outcome-levelsupervisionassignseachsequenceo anormalizedscalarrewardAˆ =(r −mean(r))/std(r),shared
+i i,t i
+across all tokens in that sequence. The KL regularization term constrains deviation from reference model, and is
+estimatedusingtheper-tokenunbiasedform
+π (o |q,o ) π (o |q,o )
+D (π ∥π )= ref i,t i,<t −log ref i,t i,<t −1, (3)
+KL θ ref π (o |q,o ) π (o |q,o )
+θ i,t i,<t θ i,t i,<t
+followingtheunbiasedestimatorproposedbySchulmanetal.[2015]. Thisformulationretainsthestabilityproperties
+ofPPOwhileoptimizingdirectlytowardverifiablerewardsignals.
+4 Methodology
+MR-RLVRenablesmodelstoexploitintermediatereasoningevenwhenonlyfinalanswersareverifiable. Trainingpro-
+ceedsintwostages. InStageI,wederiveprocess-levelrewardsfromreasoningtracesviaprocess-awareself-supervised
+tasks(Masked-Then-FillandStepReordering)andrunaninitialRLVRphaseusingonlytheseprocess-levelrewards.
+InStageII,wefine-tunewithRLVRsupervisedexclusivelybyprogrammaticallyverifiablefinal-answerrewards. This
+two-stagedesignfirstshapesthepolicydistributionwithprocess-levelsignalsandthentrainsundersparseoutcome
+supervision,yieldingmoreinformativegradientsandmorestableexploration. Figure1illustratestheframework: Stage
+Iusesonlyprocess-levelrewards;StageIIusesonlyfinal-answerrewards.
+4.1 Process-awareself-superviseddatacuration
+In the first stage, we construct training data for process-aware self-supervised tasks, designed to guide the model
+in learning local logical consistency and step dependencies within reasoning trajectories. Specifically, we sample
+mathematicalproofandcomputationalreasoningproblemstoformtheprocess-levelself-supervisedtrainingcorpus,
+whileonlythecomputationalreasoningsubsetisusedinStageIIfine-tuning.
+For each problem x and its corresponding reasoning trajectory and answer (z,y), we not only filter semantically
+well-structuredandsymbolicallyvalidreasoningtexts,butalsorestructureoverlyverboseorredundantreasoningchains
+toobtainconciseandlogicallycoherentreasoningprocesses. Twostructuraltransformationsarethenapplied:
+(1)Masked-Then-Filltask. Keyformulas,inferencesteps,ortheoreminvocationsinthereasoningtextaremasked
+tocreatealistofmaskedpositionsM = {m },alongwiththecorrespondingground-truthcompletions. Thistask
+k
+requiresthemodeltoreconstructmissingreasoningcontentgivencontextualinformation.
+(2)Step Reordering task. The reasoning trajectory is decomposed into ordered steps {s }, which are randomly
+j
+permutedtoformaperturbedsequence. Themodelisrequiredtorecoverthecorrectorderbasedonlogicalcoherence.
+Aftertheseoperations,wedenotetheprocessedreasoningsequenceaszˆ. Themodelinputconsistsoftheproblem
+statementxandthemodifiedreasoningzˆ,whilethesupervisionsignalinvolveseithertokenrestorationorsteporder
+prediction.
+4.2 Process-levelrewarddesignforself-supervision
+Duringtheself-supervisedphase,themodelconstructsaprocess-levelrewardsignalbasedoneithertheMasked-Then-
+FillorStepReorderingtask(onlyoneofthemisusedpertrainingrun).
+(1)Masked-Then-Fillreward. Formaskedsamples,hmaskedlocationsarerandomlyselectedforevaluation. The
+reward is defined as the mean semantic match score between model completions and ground truths, measured by
+4
+APREPRINT-NOVEMBER24,2025
+Figure1: OverviewoftheMR-RLVRtwo-stagetrainingframework. StageIusesprocess-levelrewardsfromself-
+supervisedtasks;StageIIusesfinal-outcomerewards.
+MathRulerformathematicalentityalignmentandsupplementedbytextualsimilarityasfallback:
+h
+1 (cid:88)
+r (x,zˆ,y)= Match (mˆ ,m⋆). (4)
+mask h entity k k
+k=1
+(2)StepReorderingreward. Forthestepreorderingtask,wemeasurehowwellthemodelrecoversthecorrect
+positionofeachreasoningstepinthesequence. Leto denotethereferenceorderovernreasoningsteps,ando
+true pred
+thepermutationpredictedbythemodel. Wedenotebypos (k)theindexofstepkinthereferenceordero ,andby
+true true
+pos (k)itsindexinthepredictedordero . Wedefineanormalizedposition-baseddistance
+pred pred
+n
+d (o ,o )=
+1 (cid:88) I(cid:2)
+pos (k)̸=pos
+(k)(cid:3)
+,
+pos pred true n pred true
+k=1
+whereI[·]istheindicatorfunction. Thisdistanced ∈[0,1]measuresthefractionofstepsthatareplacedatincorrect
+pos
+positions.
+Thecorrespondingstep-orderrewardisthendefinedas
+r (x,z˜,y)=1−d (o ,o ),
+order pos pred true
+sothatperfectlyorderedsequencesreceivereward1,whilesequencesinwhichallstepsaremisplacedreceivereward0.
+Thisrewardnaturallyliesin[0,1]andcanbedirectlycombinedwiththemasked-then-fillrewardwithintheMR-RLVR
+framework.
+Accordingly,theprocess-levelrewardisdefinedas
+r (x,z˜,y)=I ·r (x,z˜,y)+I ·r (x,z˜,y), (5)
+proc mask mask order order
+whereI ,I ∈ {0,1}areindicatorfunctionsfortheMasked-Then-FillandStepReorderingtaskswithI +
+mask order mask
+I =1.
+order
+5
+APREPRINT-NOVEMBER24,2025
+4.3 StageII:fine-tuningwithoutcome-onlyrewards
+In the second stage, we initialize from the checkpoint obtained through process-level reinforcement learning and
+fine-tuneonprogrammaticallyverifiableprobleminstances. Themodelnowgeneratescompletereasoningtrajectories
+fromtheproblemstatementxandthemodelgeneratesbothreasoningzandanswery,receivingsupervisionfromthe
+final-outcomerewardr (y⋆,y).
+final
+Onlycomputationalreasoningtasksareincludedhere,astheyfeatureopen-endedreasoningtrajectoriesbutdeterministic
+finalanswers. Duringfine-tuning,themodelreceivesabinaryverifiablereward:
+r
+(y⋆,y)=I(cid:2) Verify(y⋆,y)=True(cid:3)
+, (6)
+final
+wherey⋆ istheground-truthanswerandVerify(y⋆,y)denotessymbolicandnumericalverificationcomparingthe
+generatedansweryagainsty⋆.
+ThissignalisusedtoperformRLVRoptimizationundertheGRPOobjective. Thetwo-stageschemefirstshapesthe
+reasoningdistributionusingdenseprocess-levelsupervision,thenrefinesitwithsparsebutpreciseoutcomerewards,
+yieldingstableoptimizationandverifiablycorrectmulti-stepreasoningbehavior.
+5 Experiment
+5.1 ExperimentalSetup
+Training Data Curation To accommodate diverse reasoning styles, we construct our training corpus from two
+data sources: DeepTheorem[Zhang et al., 2025] primarily contains theorem-proving problems, while DeepMath
+[He et al., 2025] focuses on computational reasoning tasks. We sample 10k problems equally from both datasets.
+SincethereasoningtracesinDeepMatharegeneratedbyDeepSeekmodelsandcontainmultipleinternalverification
+stepsthatmayleadtoinformationleakagewithintrajectories,werefineallDeepMathsamplesusingGPT-o3-mini
+toensureclean,step-by-stepreasoningwithoutredundantself-verification. Asidentifyingkeytheorems,formulas,
+andreasoningstepsformaskingorreorderingisnon-trivial,weemployDeepSeek-R1-0528toprocesstherefined
+reasoningtrajectoriesandgeneratetask-specificannotations: maskedpositionsfortheMasked-Then-Filltaskandstep
+boundariesfortheStepReorderingtask(prompttemplatesinAppendixA).Toavoidtrivialmaskingtasks,weretain
+onlysampleswithatleast7maskedpositions. Fromthefilteredpool,weselect10ksamplesforeachofthetwotasks
+(Masked-Then-FillandStepReordering),randomlysampling20kinstancesforStageItrainingand6kforvalidation.
+ForStageIIfine-tuning,weselect5kcomputationalreasoningsamplesfromtheStageItrainingdataasthetrainingset,
+with1.5kheldoutforvalidation,ensuringthatStageIIfocusesonverifiablecomputationalproblemswithdeterministic
+answers.
+ModelConfiguration WeconductexperimentsonQwen2.5-3B-Base[Qwenetal.,2025]andDeepSeek-R1-Distill-
+Qwen-1.5B[Guo et al., 2025]. We employ the GRPO objective for reinforcement learning. All experiments are
+conductedwithintheverlframework[Shengetal.,2025]onasinglenodewith8NVIDIAA100(80GB)orA800(80
+GB)GPUs. TooptimizeGPUmemoryusage,severalparametersdifferslightlybetweenQwen-3BandDeepSeek-R1-
+Distill-Qwen-1.5. DetailedexperimentalhyperparameterscanbefoundintheAppendixB.
+EvaluationSetup Weevaluatereasoningperformanceonfourchallengingmathematicalbenchmarks: AIME2024,
+AIME2025,AMC2023Lietal.,2024,andMATH500Hendrycksetal.,2021. Wereporttheunbiasedestimatorof
+Pass@kChenetal.[2021],definedas
+(cid:34) (cid:0)n−c(cid:1)(cid:35)
+Pass@k =E 1− k , (7)
+x∼D (cid:0)n(cid:1)
+k
+wherenisthenumberofgeneratedsolutionsperproblem,cisthenumberofcorrectsolutions,andk ∈{1,5,8}denotes
+thenumberofattemptsallowed. Wesetn=64forallevaluations. Duringinference,weusenucleussamplingwith
+temperature0.6,top-p0.95,andamaximumgenerationlengthof4096tokens. Answersareverifiedprogrammatically
+throughsymboliccomputationusingMathRulerhiyouga[2025]andtextmatching.
+5.2 MainResults
+Table1presentsthemainexperimentalresultscomparingourMR-RLVRmethodagainsttheGRPObaselineacross
+fourmathematicalreasoningbenchmarks. Overall,MR-RLVRdemonstratesconsistentperformanceimprovementsover
+6
+APREPRINT-NOVEMBER24,2025
+Table1: Performancecomparisonacrossmathematicalreasoningbenchmarks.
+Qwen2.5-3B
+Pass@1(%) Pass@5(%) Pass@8(%)
+Benchmark
+Base +GRPO +MR-RLVR Base +GRPO +MR-RLVR Base +GRPO +MR-RLVR
+AIME24 1.93 5.63 6.30(↑12.04%) 7.48 14.29 13.20(↓7.61%) 10.23 17.29 15.43(↓10.74%)
+AIME25 0.73 2.03 2.76(↑35.98%) 3.58 8.53 10.44(↑22.44%) 5.13 12.10 14.05(↑16.11%)
+AMC23 14.06 36.13 40.82(↑12.98%) 41.70 60.39 64.48(↑6.82%) 50.89 66.29 69.80(↑5.29%)
+MATH500 27.75 63.30 65.87(↑4.06%) 62.97 79.83 80.94(↑1.39%) 70.97 83.29 83.85(↑0.67%)
+DeepSeek-R1-Distill-Qwen-1.5B
+Pass@1(%) Pass@5(%) Pass@8(%)
+Benchmark
+Base +GRPO +MR-RLVR Base +GRPO +MR-RLVR Base +GRPO +MR-RLVR
+AIME24 9.17 18.70 19.43(↑3.90%) 21.93 36.40 36.96(↑1.54%) 26.00 41.98 42.08(↑0.24%)
+AIME25 10.62 15.94 17.24(↑8.17%) 23.10 27.40 31.72(↑15.77%) 26.43 29.50 35.43(↑20.12%)
+AMC23 36.84 62.30 63.01(↑1.14%) 66.57 84.23 85.62(↑1.65%) 72.98 89.30 89.48(↑0.20%)
+MATH500 60.80 78.05 78.51(↑0.59%) 85.04 90.08 90.25(↑0.19%) 88.38 91.85 91.97(↑0.13%)
+WereportPass@k(k∈{1,5,8})withn=64samplesperproblem.Arrowsindicaterelativeimprovement(%)overtheGRPO
+baseline.Boldindicatesthebestperformancewithineachmodelfamily.
+GRPO,particularlyinchallengingscenarioswherebaselineperformanceisrelativelylow. OntheQwen2.5-3Bmodel,
+weobservesubstantialgainsonAIME2025,withPass@1,Pass@5,andPass@8achievingrelativeimprovementsof
+35.98%,22.44%,and16.11%,respectively. SimilartrendsareevidentinAIME24Pass@1(+12.04%)andacrossall
+metricsonAMC23(+5.29%to+12.98%).
+Interestingly,theperformancegainsexhibitinterestingpatternsacrossdifferentmodelarchitecturesandtaskdifficulties.
+Intermsofaverageimprovementmagnitude,MR-RLVRyieldssignificantlylargergainsonQwen2.5-3B(average
+8.29%)comparedtoDeepSeek-R1-Distill-Qwen-1.5B(average4.47%). Thisdiscrepancymaybeattributedtothe
+fact that the former has only undergone basic pretraining without complex post-training procedures, thus offering
+greaterroomforoptimizationthroughverificationenhancement. Anothernotableobservationisthatbothmodelsshow
+relativelylimitedimprovementsonMATH500(0.13%-4.06%). Thisisnotonlybecausethebaselineperformanceis
+alreadyhigh(Pass@1>78%),butmoreimportantly,theproblemsinMATH500arerelativelysimpleandthemodels
+havelargelymasteredtheirsolutionpatterns,resultinginminimalmarginalgainsfrommulti-roundverification. In
+contrast,ourmethoddemonstratesmuchstrongervalueoncompetition-levelproblemssuchasAIMEandAMC.We
+alsoobserveminorperformancedegradationonAIME24Pass@5/Pass@8forQwen2.5-3B,whichweattributetothe
+inherentvarianceinthesamplingprocesswithn=64samples.
+TheseresultsvalidatetheeffectivenessofourMR-RLVRframeworkinimprovingmathematicalreasoningcapabilities.
+Theconsistentgainsonchallengingbenchmarks(AIME24,AIME25,AMC23)demonstratethatMR-RLVRsuccess-
+fullyenhancesthemodel’sabilitytogenerateandverifycorrectsolutions,particularlyinscenarioswherebaseline
+performanceleavessubstantialroomforimprovement. Meanwhile,themoremodestimprovementsonrelativelysimple
+taskslikeMATH500indicatethatourmethodprovidesmaximumvaluewhenappliedtohigh-difficultyproblemsatthe
+boundaryofmodelcompetence,whichalignswellwiththedesignprincipleofMR-RLVR,totacklecomplexreasoning
+tasksnotyetfullymasteredbythemodelthroughiterativerefinement.
+5.3 MoreAnalysisaboutMR-RLVR
+5.3.1 DataEfficiencyAnalysis
+ToinvestigatethedataefficiencyofMR-RLVR,weconductexperimentswithdifferenttrainingdatascalesonDeepSeek-
+R1-Distill-Qwen-1.5B.Table2comparesMR-RLVRagainsttheGRPObaselineusing1kand3ktrainingsamples.
+ResultsshowthatMR-RLVRconsistentlyoutperformsGRPOacrossdifferentdataregimes. With1ksamples,MR-
+RLVRdemonstratessignificantimprovementsoverGRPO,especiallyonPass@5andPass@8metrics,whilePass@1
+showsminimalgains. OnAIME24,MR-RLVRachieves26.90%and31.84%forPass@5/Pass@8comparedtoGRPO’s
+24.62%and28.69%,representingrelativegainsof9.26%and10.99%,whereasPass@1remainsunchangedat11.09%.
+Thispatternsuggeststhatwithlimitedtrainingdata,theMR-RLVRframeworkprimarilyimprovesthemodel’sability
+togeneratediversehigh-qualitycandidatesratherthandirectlyenhancingsingle-sampleaccuracy. Whenscaledto
+3ksamples,MR-RLVRmaintainsitsadvantagewitha10.08%relativeimprovementonAIME24Pass@8(40.97%
+7
+APREPRINT-NOVEMBER24,2025
+Table2: PerformancecomparisonofDeepSeek-R1-Distill-Qwen-1.5Bunderdifferenttrainingdatascales.
+AIME24 AIME25 AMC23 MATH500
+Method
+P@1 P@5 P@8 P@1 P@5 P@8 P@1 P@5 P@8 P@1 P@5 P@8
+BaseModel 9.17 21.93 26.00 10.62 23.10 26.43 36.84 66.57 72.98 60.80 85.04 88.38
+Trainingwith1ksamples
++GRPO 11.09 24.62 28.69 11.98 24.56 28.02 41.99 70.81 77.11 65.24 86.28 89.01
++MR-RLVR 11.09 26.90 31.84 11.93 25.45 28.91 42.73 72.82 79.25 65.67 86.49 89.24
+Trainingwith3ksamples
++GRPO 16.67 32.41 37.22 15.31 28.67 31.97 58.01 81.86 86.91 76.40 89.77 91.79
++MR-RLVR 16.56 35.13 40.97 15.57 29.37 32.35 59.02 82.72 86.31 76.24 89.45 91.47
+Table3: AllexperimentsuseDeepSeek-R1-Distill-Qwen-1.5Basthebasemodel. Boldindicatesbetterperformance
+betweenGRPOandMR-RLVRatthesamedatascale.
+vs. 37.22%). This consistent advantage suggests that process-level self-supervision in MR-RLVR provides more
+sample-efficientlearningsignalsthanstandardGRPO,enablingbettergeneralizationwithlimitedtrainingdata. On
+thesimplerMATH500benchmark,thegapnarrows,confirmingthatMR-RLVR’sbenefitsaremostpronouncedon
+challengingproblems.
+5.4 MR-RLVRTasksforDataAugmentation
+GiventhesampleefficiencygainsdemonstratedbyMR-RLVR,wefurtherexploreself-supervisedpretrainingtasksfor
+expandingtrainingsignalswithoutadditionalhumanannotations. Wedesigntwotasks,stepreorderingandmasked-
+then-fill,thatleverageexistingmathematicalreasoningcorporatoautomaticallygeneratediversereasoningtrajectories.
+Table6andTable7presentstworepresentativecasestogetherwithmodeloutputs.
+Valueofthestepreorderingtask. AsshowninTable6,inthecaseinvolvingtheLebesguedifferentiationtheorem,
+themodelneedstorestore6shuffledproofstepstotheircorrectlogicalorder. Duringthisprocess,themodelperforms
+detailedlogicalanalysisofeachstepandidentifiesinter-stepdependencies. Forinstance,themodelrecognizesthatStep
+2(definingF(x))isthestartingpointoftheproof,Step4(providingthedominatingfunction)isanecessarycondition
+forapplyingtheDominatedConvergenceTheorem,andStep1isthekeytheoremapplicationstep. Thisanalytical
+processconstitutesastructuredreconstructionoftheoriginalproof: themodelnotonlyproducesthecorrectordering
+butalsogeneratesanexplanationofwhythisorderingisvalid. Comparedtotheoriginalshuffledsteps,themodel
+automaticallygenerateslogicalinterpretationsofeachstepandexplicitannotationsofinter-stepdependenciesduring
+thereorderingprocess. Thesegeneratedreasoningtrajectorieseffectivelycomplementtheoriginalconcisereasoning
+process. Whileoriginalproofstypicallyonlyprovidekeysteps,themodel’sanalysisrevealshowtoidentifytheoverall
+proofstructureandhowtodeterminelogicaldependenciesbetweensteps,therebymakingimplicitreasoningstructures
+explicit. Thisautomaticallygeneratedstructuredinterpretationprovidesrichertrainingsignalsformodelstolearn
+completeproofconstructioncapabilities.
+Valueofthemasked-then-filltask. Table7presentsamasked-then-fillcaseinvolvingbitwiseoperations. Thetask
+requiresthemodeltocompletethreemaskedkeyformulas. Themodelsuccessfullyderivesthefirsttwo: simplifying
+A⊕0xFFFFFFFFto∼A,anddeterminingA=0x81010100throughbitanalysis. However,atthethirdmaskposition
+(verificationstep),themodelprovides0x7EFEFEFF⊕0x81010100=0xFFFFFFFF,whiletheoriginalsolutionrequires
+computing the addition 0x7EFEFEFF+0x81010100. Although this equation is mathematically correct, since the
+XORoperationdoesyield0xFFFFFFFF,itusesthewrongoperator. Moresubtly,becausethesetwonumbershave
+nooverlappingbits(nobitpositionis1inbothnumbers),additionandXORhappentoproduceidenticalresultsin
+thiscase. Thiscoincidentallycorrectsituationrevealsspeculativebehavior: themodelmaydirectlyapplythesame
+patternafterseeingXORoperatorsmultipletimesintheprecedingtext,orinferfromcontextthattheresultshould
+be0xFFFFFFFFandthenreverse-engineeraseeminglyreasonableformula,ratherthanstrictlyfollowingtherequired
+reasoningprocedure. Sucherrorsaremoredifficulttodetectthanobviouscomputationalmistakes.
+Overall,thetwotasksaugmentthetrainingcorpusintwocomplementaryways. First,correcttrajectoriesgenerated
+duringstepreorderingandmasked-then-fillprovidedetailedandstructuredreasoningtracesthatcanbedirectlyreused
+asadditionaltrainingdata. Second,speculativeerrorssurfacedbythe**masked-then-filltask**canbeturnedinto
+error-correctionobjectives,wheremodelsaretrainedtoidentifyandfixlogicalflaws,therebyimprovingtheirself-
+8
+APREPRINT-NOVEMBER24,2025
+checkingcapability. Thispretrainingstagethereforesuppliesmoreinformativeandsample-efficientlearningsignals
+thanrelyingsolelyonsupervisedsolutions.
+6 Conclusion
+This paper presents MR-RLVR, a framework that enriches reinforcement learning from verifiable rewards with
+process-levelself-supervision. Insteadofrelyingsolelyonoutcome-levelrewardsderivedfromfinal-answerchecking,
+MR-RLVRconstructstwotypesofprocess-leveltasks,namelymasked-then-fillandstepreordering,onmathematical
+reasoningtraces,therebyprovidingdensetrainingsignalsforintermediatereasoningsteps. Thesetasksencouragethe
+modelnotonlytoproducecorrectfinalanswers,butalsotoacquirereusablepatternsandstructuresofreasoning,rather
+thanmerelymemorizingsuperficialsolutiontemplates.
+WeimplementandevaluateMR-RLVRonQwen2.5-3BandDeepSeek-R1-Distill-Qwen-1.5B,andconductsystematic
+experimentsonadiversesetofmathematicalbenchmarks,includingAIME24,AIME25,AMC23,andMATH500.
+Underafixedsamplinganddecodingbudget,MR-RLVRconsistentlyoutperformsstandardRLVR.Thisindicatesthat
+process-levelself-supervisionbecomesespeciallybeneficialwhenproblemsrequirelong-horizon,multi-stepreasoning.
+Our data efficiency analysis further shows that, compared to relying solely on outcome-level rewards, MR-RLVR
+providesmoreinformativelearningsignalsinlow-dataregimes.
+Forfuturework, wefirstnotethatthecurrentimplementationadoptsfixedmaskingpositionsformasked-then-fill
+taskandafixedshufflingschemeforstepreordering. Aninterestingdirectionistoexploredynamicallysampling
+maskinglocationsandreorderingstrategiesduringtraining,allowingdataaugmentationandprocess-leveltasksto
+adapttothemodel’scurrentstateandfurtherimprovesampleefficiency. Second,weplantoextendMR-RLVRto
+broaderstructuredreasoningdomainssuchasprogramsynthesisandformaltheoremproving,aswellastomultimodal
+reasoningtasksinvolvingimages,diagrams,andgeometricfigures,whererichstructureandverifiablesignalsnaturally
+arise. Inadditiontomaskingandreordering,weaimtodesignmorediverseprocess-leveltasks,suchaserrorcorrection
+tasksthatexplicitlyrequirethemodeltoidentifyandreviseincorrectstepsinareasoningchain. Finally,MR-RLVRis
+highlycomplementarytoexplicitprocessrewardmodelsandtest-timescalingtechniques;integratingthesecomponents
+moretightlymayfurtherenhancethereliabilityandscalabilityofreasoning-focusedlanguagemodels. Wehopethat
+MR-RLVRoffersausefulstartingpointformoreprincipledintegrationofself-supervisionandverifiablerewardsinthe
+trainingofreasoning-orientedlargelanguagemodels.
+References
+MarkChen,JerryTworek,HeewooJun,QimingYuan,HenriquePondedeOliveiraPinto,JaredKaplan,HarriEdwards,
+YuriBurda,NicholasJoseph,GregBrockman,AlexRay,RaulPuri,GretchenKrueger,MichaelPetrov,HeidyKhlaaf,
+GirishSastry,PamelaMishkin,BrookeChan,ScottGray,NickRyder,MikhailPavlov,AletheaPower,LukaszKaiser,
+MohammadBavarian,ClemensWinter,PhilippeTillet,FelipePetroskiSuch,DaveCummings,MatthiasPlappert,
+FotiosChantzis,ElizabethBarnes,ArielHerbert-Voss,WilliamHebgenGuss,AlexNichol,AlexPaino,Nikolas
+Tezak,JieTang,IgorBabuschkin,SuchirBalaji,ShantanuJain,WilliamSaunders,ChristopherHesse,AndrewN.
+Carr,JanLeike,JoshAchiam,VedantMisra,EvanMorikawa,AlecRadford,MatthewKnight,MilesBrundage,Mira
+Murati,KatieMayer,PeterWelinder,BobMcGrew,DarioAmodei,SamMcCandlish,IlyaSutskever,andWojciech
+Zaremba. Evaluatinglargelanguagemodelstrainedoncode,2021. URLhttps://arxiv.org/abs/2107.03374.
+YiheDeng,I-HungHsu,JunYan,ZifengWang,RujunHan,GufengZhang,YanfeiChen,WeiWang,TomasPfister,
+andChen-YuLee. Supervisedreinforcementlearning: Fromexperttrajectoriestostep-wisereasoning,2025. URL
+https://arxiv.org/abs/2510.25992.
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova. Bert: Pre-training of deep bidirectional
+transformersforlanguageunderstanding,2019. URLhttps://arxiv.org/abs/1810.04805.
+XinyuGuan,LiLynaZhang,YifeiLiu,NingShang,YouranSun,YiZhu,FanYang,andMaoYang. rstar-math: Small
+llms can master math reasoning with self-evolved deep thinking, 2025. URL https://arxiv.org/abs/2501.
+04519.
+DayaGuo,QihaoZhu,DejianYang,ZhendaXie,KaiDong,WentaoZhang,GuantingChen,XiaoBi,Y.Wu,Y.K.Li,
+FuliLuo,YingfeiXiong,andWenfengLiang. Deepseek-coder: Whenthelargelanguagemodelmeetsprogramming
+–theriseofcodeintelligence,2024. URLhttps://arxiv.org/abs/2401.14196.
+DayaGuo,DejianYang,HaoweiZhang,JunxiaoSong,RuoyuZhang,RunxinXu,QihaoZhu,ShirongMa,PeiyiWang,
+XiaoBi,etal. Deepseek-r1: Incentivizingreasoningcapabilityinllmsviareinforcementlearning. arXivpreprint
+arXiv:2501.12948,2025.
+9
+APREPRINT-NOVEMBER24,2025
+ZhiweiHe,TianLiang,JiahaoXu,QiuzhiLiu,XingyuChen,YueWang,LinfengSong,DianYu,ZhenwenLiang,
+Wenxuan Wang, Zhuosheng Zhang, Rui Wang, Zhaopeng Tu, Haitao Mi, and Dong Yu. Deepmath-103k: A
+large-scale,challenging,decontaminated,andverifiablemathematicaldatasetforadvancingreasoning,2025. URL
+https://arxiv.org/abs/2504.11456.
+Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song, and Jacob
+Steinhardt. Measuringmathematicalproblemsolvingwiththemathdataset. arXivpreprintarXiv:2103.03874,2021.
+hiyouga. Mathruler. https://github.com/hiyouga/MathRuler,2025.
+JiaLi,EdwardBeeching,LewisTunstall,BenLipkin,RomanSoletskyi,ShengyiHuang,KashifRasul,LonghuiYu,
+AlbertQJiang,ZijuShen,etal. Numinamath: Thelargestpublicdatasetinai4mathswith860kpairsofcompetition
+mathproblemsandsolutions. HuggingFacerepository,13(9):9,2024.
+Siheng Li, Kejiao Li, Zenan Xu, Guanhua Huang, Evander Yang, Kun Li, Haoyuan Wu, Jiajia Wu, Zihao Zheng,
+ChenchenZhang,KunShi,KyrierlDeng,QiYi,RuibinXiong,TingqiangXu,YuhaoJiang,JianfengYan,Yuyuan
+Zeng,GuanghuiXu,JinbaoXue,ZhijiangXu,ZhengFang,ShuaiLi,QibinLiu,XiaoxueLi,ZhuoyuLi,Yangyu
+Tao,FeiGao,ChengJiang,BoChaoWang,KaiLiu,JianchenZhu,WaiLam,WayytWang,BoZhou,andDiWang.
+Reinforcementlearningonpre-trainingdata,2025. URLhttps://arxiv.org/abs/2509.19249.
+HunterLightman,VineetKosaraju,YuraBurda,HarriEdwards,BowenBaker,TeddyLee,JanLeike,JohnSchulman,
+IlyaSutskever,andKarlCobbe. Let’sverifystepbystep,2023. URLhttps://arxiv.org/abs/2305.20050.
+QuangHieuPham,ThuyDuongNguyen,TungPham,AnhTuanLuu,andDatQuocNguyen. Clozemath: Improving
+mathematicalreasoninginlanguagemodelsbylearningtofillequations,2025. URLhttps://arxiv.org/abs/
+2506.03763.
+Qwen,:,AnYang,BaosongYang,BeichenZhang,BinyuanHui,BoZheng,BowenYu,ChengyuanLi,DayihengLiu,
+FeiHuang,HaoranWei,HuanLin,JianYang,JianhongTu,JianweiZhang,JianxinYang,JiaxiYang,JingrenZhou,
+JunyangLin,KaiDang,KemingLu,KeqinBao,KexinYang,LeYu,MeiLi,MingfengXue,PeiZhang,QinZhu,
+RuiMen,RunjiLin,TianhaoLi,TianyiTang,TingyuXia,XingzhangRen,XuanchengRen,YangFan,YangSu,
+YichangZhang,YuWan,YuqiongLiu,ZeyuCui,ZhenruZhang,andZihanQiu. Qwen2.5technicalreport,2025.
+URLhttps://arxiv.org/abs/2412.15115.
+ColinRaffel,NoamShazeer,AdamRoberts,KatherineLee,SharanNarang,MichaelMatena,YanqiZhou,WeiLi,
+and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer, 2023. URL
+https://arxiv.org/abs/1910.10683.
+JohnSchulman,PhilippMoritz,SergeyLevine,MichaelJordan,andPieterAbbeel. High-dimensionalcontinuous
+controlusinggeneralizedadvantageestimation. arXivpreprintarXiv:1506.02438,2015.
+ZhihongShao,PeiyiWang,QihaoZhu,RunxinXu,JunxiaoSong,XiaoBi,HaoweiZhang,MingchuanZhang,YKLi,
+Yang Wu, et al. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv
+preprintarXiv:2402.03300,2024.
+GuangmingSheng,ChiZhang,ZilingfengYe,XibinWu,WangZhang,RuZhang,YanghuaPeng,HaibinLin,and
+ChuanWu.Hybridflow:Aflexibleandefficientrlhfframework.InProceedingsoftheTwentiethEuropeanConference
+onComputerSystems,EuroSys’25,page1279–1297.ACM,March2025. doi: 10.1145/3689031.3696075. URL
+http://dx.doi.org/10.1145/3689031.3696075.
+PeiyiWang,LeiLi,ZhihongShao,R.X.Xu,DamaiDai,YifeiLi,DeliChen,Y.Wu,andZhifangSui. Math-shepherd:
+Verifyandreinforcellmsstep-by-stepwithouthumanannotations,2024. URLhttps://arxiv.org/abs/2312.
+08935.
+AnYang,BeichenZhang,BinyuanHui,BofeiGao,BowenYu,ChengpengLi,DayihengLiu,JianhongTu,Jingren
+Zhou, Junyang Lin, Keming Lu, Mingfeng Xue, Runji Lin, Tianyu Liu, Xingzhang Ren, and Zhenru Zhang.
+Qwen2.5-math technical report: Toward mathematical expert model via self-improvement, 2024. URL https:
+//arxiv.org/abs/2409.12122.
+AnYang,AnfengLi,BaosongYang,BeichenZhang,BinyuanHui,BoZheng,BowenYu,ChangGao,ChengenHuang,
+ChenxuLv,ChujieZheng,DayihengLiu,FanZhou,FeiHuang,FengHu,HaoGe,HaoranWei,HuanLin,Jialong
+Tang,JianYang,JianhongTu,JianweiZhang,JianxinYang,JiaxiYang,JingZhou,JingrenZhou,JunyangLin,Kai
+Dang,KeqinBao,KexinYang,LeYu,LianghaoDeng,MeiLi,MingfengXue,MingzeLi,PeiZhang,PengWang,
+QinZhu,RuiMen,RuizeGao,ShixuanLiu,ShuangLuo,TianhaoLi,TianyiTang,WenbiaoYin,XingzhangRen,
+XinyuWang,XinyuZhang,XuanchengRen,YangFan,YangSu,YichangZhang,YingerZhang,YuWan,Yuqiong
+Liu,ZekunWang,ZeyuCui,ZhenruZhang,ZhipengZhou,andZihanQiu. Qwen3technicalreport,2025. URL
+https://arxiv.org/abs/2505.09388.
+10
+APREPRINT-NOVEMBER24,2025
+TianyuYu,BoJi,ShouliWang,ShuYao,ZefanWang,GanquCui,LifanYuan,NingDing,YuanYao,ZhiyuanLiu,
+Maosong Sun, and Tat-Seng Chua. Rlpr: Extrapolating rlvr to general domains without verifiers, 2025. URL
+https://arxiv.org/abs/2506.18254.
+DanZhang,SiningZhoubian,ZiniuHu,YisongYue,YuxiaoDong,andJieTang. Rest-mcts*: Llmself-trainingvia
+processrewardguidedtreesearch,2024. URLhttps://arxiv.org/abs/2406.03816.
+ZiyinZhang,JiahaoXu,ZhiweiHe,TianLiang,QiuzhiLiu,YansiLi,LinfengSong,ZhenwenLiang,Zhuosheng
+Zhang,RuiWang,ZhaopengTu,HaitaoMi,andDongYu. Deeptheorem: Advancingllmreasoningfortheorem
+provingthroughnaturallanguageandreinforcementlearning,2025. URLhttps://arxiv.org/abs/2505.23754.
+11
+APREPRINT-NOVEMBER24,2025
+Appendices
+A Prompts
+A.1 PromptsforDataCuration
+Promptformasked-then-filldatacuration
+Youareahelpfulassistant.
+Task: Extractthemostkeyformulasortheoremnamesfromthefollowingoriginalanswertextandsavethemin
+JSONformat.
+OutputFormat: ReturnthekeyformulasortheoremnamesinaJSONobjectwiththefollowingstructure:
+{
+"theorems": [
+"Theorem or formula name 1",
+"Theorem or formula name 2",
+"Theorem or formula name 3",
+// Continue until all key formulas or theorem names are included
+]
+}
+Requirements:
+• Extractonlythecontentfromtheoriginaltextwithoutaddingnewformulasortheorems.
+• UsestandardLaTeXformatforallmathematicalsymbolsandexpressions.
+• Sorttheextractedtheoremsbyimportance,placingthemostimportantonesfirstandthelessimportant
+oneslater.
+• TheoutputmustcomplywithJSONformatandbereadyforuse.
+Promptforstepreorderingdatacuration
+Youareahelpfulassistant.
+Task: Splitthefollowinganswerintoindependentlogicalstepswhilemaintainingtheoriginalmeaningofthe
+content.
+OutputFormat: ReturnthestepsinaJSONobjectwiththefollowingstructure:
+{
+"steps": [
+"Step 1 description...",
+"Step 2 description...",
+"Step 3 description...",
+// Continue until all steps are included
+]
+}
+Requirements:
+• Allstepsmustbegeneratedfromtheoriginalanswertextwithoutcreatingnewstepsorcontent.
+• Eachstepshouldmaintainanindependentlogicalmeaning,allowingittostandalone.
+• The steps should connect logically in a way that reconstructs the original answer when combined
+together.
+• Ensureclarityandconcisenessineachsteptofacilitateunderstanding.
+• UsestandardLaTeXformatforallmathematicalsymbolsandexpressions.
+A.2 PromptsforMR-RLVR
+blank
+12
+APREPRINT-NOVEMBER24,2025
+PromptforMasked-Then-Filltask
+System:
+AconversationbetweentheUserandtheAssistant.
+TheUsersuppliesamathematicalstatementtogetherwithapartialsolutioninwhichsomeformulasortheorems
+aremaskedwith<formula_masked>tags.
+TheAssistant’staskistocompletethemissingportionsofthesolutionbyreplacingthe<formula_masked>
+tagswiththeappropriatemathematicalformulasortheorems.
+Pleaseadheretothefollowingstructuredapproach:
+1. Beginbyperformingacomprehensivelogicalanalysistodeterminethepreciseformula
+requiredforeach<formula_masked>tag. Theobjectiveistoensurethelogicalcoherence
+andcompletenessoftheentiresolution.
+2. Enclose your **detailed logical analysis**, explaining the derivation of each missing
+formula,within<think>tags,formattedasfollows:
+<think>
+[Yourdetailedreasoningprocess,explaininghoweachmissingformulawasde-
+rived.]
+</think>
+3. Finally,uponcompletionoftheanalysisandderivationofallmissingformulas,provide
+**only**thederivedformulas,enclosedwithin\boxed{}notation:
+\boxed{formula_1; formula_2; ...; formula_n}
+Theformulaswithinthe\boxed{}answermustappearinthesameorderastheircorrespond-
+ing<formula_masked>tagsintheoriginalsolution. Allmathematicalformulasshouldbe
+presentedusingproperLaTeXnotation.
+User:
+Theuser’sstatement:
+Thepartialsolutionis:
+PromptforStepreorderingtask
+System:
+AconversationbetweentheUserandtheAssistant.
+TheUsersuppliesamathematicalstatementandasolutionwhosestepsareoutoforder(eachstepisalready
+numberedwith’Stepi’).
+TheAssistant’staskistodeterminethecorrectlogicalsequenceofthesesteps.
+Pleaseadheretothefollowingstructuredapproach:
+1. Beginbyperformingacomprehensivelogicalanalysisofthemathematicalstatementandallgiven
+stepstoestablishtheircorrectsequentialorder. Theobjectiveistoreconstructalogicallysoundand
+completesolution.
+2. Enclose your **detailed logical analysis**, explaining how you determined the correct sequence,
+within<think>tags,formattedasfollows:
+<think>
+[Yourdetailedreasoningprocess,explaininghowthelogicalsequenceofstepswasdeter-
+mined.]
+</think>
+3. Finally,provide**only**thecorrectsequenceofstepnumbers,enclosedwithin\boxed{}notation:
+\boxed{n1, n2, n3, ..., nk}
+Thestepnumberswithinthe\boxed{}answermustrepresentthefinal,logicallyorderedsequenceof
+thesteps.
+User:
+Theuser’sstatement:
+Theshuffledsolution:
+13
+APREPRINT-NOVEMBER24,2025
+PromptforOutcome-onlyTask
+System:
+AconversationbetweenUserandAssistant.
+TheUserprovidesaquestion,andtheAssistantoutputstheanswer.
+TheAssistant’staskistosolvethequestionandprovidethefinalanswer.
+Pleaseadheretothefollowingstructuredapproach:
+1. Provideaconcisesolutionanalysistodeterminehowtocomputetheanswerandencloseadetailed,
+step-by-stepderivationwithin<think>tags. Usethefollowingformat:
+<think>
+[Yourdetailedreasoningprocessanalysis,explainedthroughastep-by-stepderivation.]
+</think>
+2. Finally,provideonlythefinalresultwritteninstandardLaTeXandenclosedwithin\boxed{ }.
+User:
+heuser’squestion:
+B ImplementationDetails
+Parameter qwen-3bSTAGEI qwen-3bSTAGEII
+LearningRate(lr) 1×10−6 1×10−6
+RolloutNumber 16 16
+RolloutTemperature 1.0 1.0
+PromptLengthToken 2048 1024
+ResponseLengthToken 4096 4096
+TrainingBatchSize 512 512
+PPOMiniBatchSize 64 64
+KLLossCoefficient 0.001 0.001
+TrainingEpochs 3 3
+Table4: ThetraininghyperparametersofMR-RLVRforqwen-3b
+Parameter Deepseek-R1-distill-Qwen-1.5bSTAGEI Deepseek-R1-distill-Qwen-1.5bSTAGEII
+LearningRate 1×10−6 1×10−6
+RolloutNumber 8 16
+Temperature 1.0 1.0
+PromptLengthToken 2048 1024
+ResponseLengthToken 8192 4096
+TrainingBatchSize 512 512
+PPOMiniBatchSize 64 64
+KLLossCoefficient 0.001 0.001
+TrainingEpochs 3 3
+Table5: ThetraininghyperparametersofMR-RLVRfordeepseek-dis-qwen-1.5b
+C TestCases
+blank
+14
+APREPRINT-NOVEMBER24,2025
+CaseofReorderingStepsTask
+Problem: LeibnizIntegralRuleunderLebesgueConditions
+Letf :Rn →RsatisfytheconditionsoftheLebesguedifferentiationtheorem,andletS ⊂Rnbemeasurable
+with0<|S|<∞.
+Prove: Forallxsuchthat ∂f existsa.e. inS,
+∂x
+d (cid:90) (cid:90) ∂f
+f(x,y)dy = (x,y)dy.
+dx ∂x
+S S
+Input:
+Step0: Statethatforalmosteveryy ∈S,thepointwiselimit
+f(x+h,y)−f(x,y) ∂f
+lim = (x,y)
+h→0 h ∂x
+existsbyhypothesis.
+Step1: ApplytheDominatedConvergenceTheoremtointerchangelimitandintegral,yielding
+(cid:90) f(x+h,y)−f(x,y) (cid:90) ∂f
+lim dy = (x,y)dy.
+h→0 S h S ∂x
+(cid:82)
+Step2: DefineF(x)= f(x,y)dyandstatethegoaltoshow
+S
+dF (cid:90) ∂f
+= (x,y)dy.
+dx ∂x
+S
+Step3: Concludethat
+dF (cid:90) ∂f
+= (x,y)dy.
+dx ∂x
+S
+(cid:12) (cid:12)
+Step4: Notethat(cid:12)∂f(x,y)(cid:12)≤g(y)and
+(cid:12)∂x (cid:12)
+(cid:12) (cid:12)
+(cid:12)f(x+h,y)−f(x,y)(cid:12)
+(cid:12) (cid:12)≤g(y)
+(cid:12) h (cid:12)
+forsufficientlysmallh,wheregisLebesgueintegrableoverS.
+Step5: ExpressthedifferencequotientforF(x)as
+F(x+h)−F(x) (cid:90) f(x+h,y)−f(x,y)
+= dy forh̸=0.
+h h
+S
+Output:
+Step0: Thisisacrucialstepinestablishingthedifferentiabilityoff inthex-direction.
+Step1: ThisisakeystepinprovingthedifferentiabilityofF(x).
+Step2: Thisisthestartingpointoftheproof.
+Step3: Thisisthefinalresultweareaimingtoprove.
+Step4: ThisisanecessarysteptoapplytheDominatedConvergenceTheorem.
+Step5: ThisisacrucialstepinestablishingthedifferentiabilityofF(x).
+Basedonthisanalysis,thecorrectlogicalsequenceis:
+2→5→0→4→1→3
+Table6: DetailedExaminationofReorderingStepsintheProofoftheLeibnizIntegralRuleunderLebesgueConditions
+15
+APREPRINT-NOVEMBER24,2025
+CaseofMasked-Then-FillTask
+Problem: FindthehexadecimalvalueofAsatisfying
+(0x7EFEFEFF+A)⊕(A⊕0xFFFFFFFF)=0x81010100
+where+denotesbitwiseadditionand⊕denotesXOR.
+Input:
+Step1. Simplification
+NotethatA⊕0xFFFFFFFF=∼Aforany32-bitvalue. Rewritetheequationas:
+<formula_masked>
+Step2. BinaryAnalysis
+Write0x7EFEFEFFinbinary:
+0x7EFEFEFF=01111110111111101111111011111111
+Observe: zerosatbitpositions31,24,16,and8.
+Step3. DerivingA
+Toavoidcarriesduringaddition,Ashouldhave1’sonlywhere0x7EFEFEFFhas0’s:
+<formula_masked>
+Step4. Verification
+Compute0x7EFEFEFF+A. Sincethereisnooverlap(nobitis1inbothnumbers),theadditionresultis:
+<formula_masked>
+Thenverify:
+0xFFFFFFFF⊕0x7EFEFEFF=0x81010100
+Output:
+<formula_masked>→(0x7EFEFEFF+A)⊕∼A=0x81010100 ✓Correct
+<formula_masked>→A=0x81010100 ✓Correct
+<formula_masked>→0x7EFEFEFF⊕0x81010100=0xFFFFFFFF × Wrongoperator! Shouldbe’+’
+Expected: 0x7EFEFEFF+0x81010100=0xFFFFFFFF
+Table7:DetailedExaminationofMask-Then-FillforFindingtheHexadecimalValueofABasedonBitwiseOperations
+16

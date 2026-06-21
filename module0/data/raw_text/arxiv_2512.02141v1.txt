@@ -1,0 +1,341 @@
+Feature Selection Empowered BERT for Detection of
+Hate Speech with Vocabulary Augmentation
+PritishN.Desai1[0009−0008−6728−1835]andTanayKewalramani1[0009−0000−9271−3427]
+SrimantaMandal1[0000−0003−3871−6621]
+DhirubhaiAmbaniUniversity(FormerlyDA-IICT),Gandhinagar,India
+{202201312, 202201362, srimanta_mandal}@daiict.ac.in
+Abstract. Abusivespeechonsocialmediaposesapersistentandevolvingchal-
+lenge,drivenbythecontinuousemergenceofnovelslangandobfuscatedterms
+designedtocircumventdetectionsystems.Inthiswork,wepresentadata-efficient
+strategyforfine-tuningBERTonhatespeechclassificationbysignificantlyreduc-
+ingtrainingsetsizewithoutcompromisingperformance.Ourapproachemploys
+aTF–IDF-basedsampleselectionmechanismtoretainonlythemostinformative
+75%ofexamples,therebyminimizingtrainingoverhead.Toaddressthelimita-
+tions of BERT’s native vocabulary in capturing evolving hate speech terminol-
+ogy, we augment the tokenizer with domain-specific slang and lexical variants
+commonlyfoundinabusivecontexts.Experimentalresultsonawidelyusedhate
+speech dataset demonstrate that our method achieves competitive performance
+whileimprovingcomputationalefficiency,highlightingitspotentialforscalable
+andadaptiveabusivecontentmoderation.Thesourcecodeforthisworkisavail-
+ableat:https://github.com/UltimateTanA/BMP.
+Keywords: BERT·HateSpeech·TF–IDF·VocabularyAugmentation
+1 Introduction
+Thedetectionofhatespeechonsocialmediaremainsapressingchallengeduetothedy-
+namicandadversarialnatureofonlinelanguage[1].Userscontinuouslyadapttheirex-
+pressionsbyemployingcreativespellings,deliberateobfuscations,andevolvingslang
+to evade automatic moderation systems. As a result, static or overly generic detection
+modelsquicklybecomeoutdated,failingtorecognizeemergingabusivepatterns.
+Pre-trainedlanguagemodelssuchasBERThavedemonstratedimpressiveresultsin
+variousnaturallanguageprocessing(NLP)tasks,includinghatespeechdetection[2,17].
+However,theireffectivenesscanbehinderedbytwokeylimitations.First,largetraining
+datasets often contain substantial redundancy and noise, which inflates computational
+requirements and reduces training efficiency. Second, BERT’s fixed vocabulary, de-
+rivedfromgeneral-domaincorpora,lackstheflexibilitytocapturethenuanced,domain-
+specificlanguagecharacteristicofhatespeech—particularlytermsinvolvingnewslurs,
+internetjargon,ormaskedprofanity.
+Toaddressthesechallenges,weproposeadata-andvocabulary-efficientfine-tuning
+approach for hate speech detection using BERT. Our method comprises two compo-
+nents:(1)aTF–IDF-basedsampleselectionprocessthatretainsonlythemostinforma-
+tive75%oftrainingdata,reducingredundancywhilepreservingperformance,and(2)
+5202
+ceD
+1
+]LC.sc[
+1v14120.2152:viXra
+avocabularyaugmentationmechanismthatextendsBERT’stokenizerwithhate-related
+slangandlexicalvariantsabsentfromitsoriginalvocabulary.Thisdualstrategyenables
+moreefficientandcontext-awarelearningfromlimiteddata.
+We evaluate our approach on the Davidson [3] hate speech dataset, comparing a
+baseline BERT model trained on the full dataset with default vocabulary against our
+optimized model trained on the filtered dataset and extended lexicon. Despite the re-
+duced dataset size, our method matches or outperforms the baseline across all major
+evaluation metrics while significantly reducing training time and computational cost.
+These findings suggest that targeted data selection and vocabulary enhancement can
+effectivelyimprovethescalabilityandrobustnessofhatespeechdetectionsystems.
+Themaincontributionsofthepapercanbehighlightedasfollows.
+– Introducealightweightdatafilteringtechniquethatretainsonlythetop75%most
+informative tweets from the training set, significantly reducing dataset size while
+preservingclassificationperformance.
+– Extend BERT’s tokenizer with hate-related slang, obfuscated terms, and variant
+spellingstoimprovecoverageofabusivelanguagenotcapturedintheoriginalvo-
+cabulary.
+– Demonstratethattheproposedstrategyachievescomparableorbetterperformance
+across standard evaluation metrics using the Davidson et al. hate speech dataset,
+whilereducingtrainingtimeandcomputationaloverhead.
+2 RelatedWorks
+Alietal.(2025)[1]proposedanembedding-basedmethodtoexpandhatespeechlex-
+icons in real-time, enabling the detection of emerging and obfuscated slurs. They de-
+veloped a hybrid model that integrates BERT with lexicon-based techniques to effec-
+tively recognize toxic language containing intentional spelling variations designed to
+evade detection. Their model achieved up to 95% accuracy across several benchmark
+datasets,includingDavidsonetal.[3],Fountaetal.[6],ImplicitHateCorpus[5],Hate-
+Check[13],ToxicSpan[11],andToxicGen[7].Additionally,theycuratedasecondary
+dataset from Twitter’s 1% Public Streaming API (Jan 2021–Dec 2022) using random
+sampling.Todiscoverobfuscatedtoxicterms,theyemployedagraph-basedsimilarity
+approachforlexicalexpansion.
+Casellietal.(2021)introducedHateBERT[2],avariantofBERTfine-tunedonabu-
+sive language. They trained the model on the RAL-E dataset, which contains English
+Reddit comments from communities banned for offensive or hateful content. Experi-
+mental results demonstrated that HateBERT consistently outperforms standard BERT
+acrossmultiplehatespeechdetectionbenchmarks.
+Wangetal.[17]focusedonimprovingtheefficiencyofBERTforprocessinglong
+texts by applying feature selection techniques to reduce input length. They experi-
+mented with six approaches: four traditional methods—TF-IDF [12], TextRank [10],
+Mutual Information (MI) [9], and Chi-squared Statistic (CHI) [15]—as well as two
+truncationstrategies:tail-only(preservingthelastLtokens)andhead+tail(preserving
+thefirstandlastL/2tokens).Thesemethodsprovedeffectiveinmaintainingmodelper-
+formancewhilesignificantlyloweringcomputationalcosts,particularlyforBERTinput
+lengthsof128,256,or512tokens.
+3 ProposedMethod
+Fig.1.Architectureofourmethod
+Our method is depicted through Fig. 1. One can infer from the above architecture
+thatourmethodbroadlyusestwomajorblocks:DatafilteringusingTF-IDFscores,and
+augmentationofmissinglexiconswithBERT’svocabulary.
+3.1 TF-IDF
+TF-IDF (Term Frequency–Inverse Document Frequency) is a widely used statistical
+measureintextminingandinformationretrieval.Itevaluateshowimportantawordis
+toaspecificdocumentrelativetoacollectionorcorpusofdocuments.TermFrequency
+(TF)measureshowfrequentlyatermt appearsinadocumentd.Itiscomputedas
+Numberoftimestermt appearsind
+TF(t,d)= . (1)
+Totalnumberoftermsind
+On the other hand, Inverse Document Frequency (IDF) quantifies the rarity of a term
+acrossalldocumentsinthecorpus.Itiscalculatedas
+(cid:18) (cid:19)
+N
+IDF(t)=log , (2)
+1+DF(t)
+whereN isthetotalnumberofdocuments,DF(t)isthenumberofdocumentsinwhich
+thetermtappears.Theconstant1isaddedinthedenominatortoavoiddivisionbyzero.
+ThefinalTF-IDFscoreforatermisobtainedbymultiplyingitsTFandIDFvalues.
+TF-IDF(t,d)=TF(t,d)×IDF(t) (3)
+Thisscoreishighfortermsthatarefrequentinadocumentbutrareacrossthecorpus,
+makingthemvaluablekeywords.
+3.2 TF–IDF-BasedDataFiltering
+We use a fixed 80–20 train–test split on the Davidson et al. dataset, which remains
+constantacrossallexperiments.Inthebaselinesetup,wefine-tunethestandardBERT
+modelonthefull80%trainingsetandevaluateitontheunchangedtestset.
+Toinvestigatedatareduction,weapplyaclassicalTF–IDF–basedfilteringstrategy
+that retains tweets with the most distinctive linguistic features related to hate or of-
+fensive speech, while discarding those that are generic or redundant. Specifically, we
+computeTF–IDFscoresforallwordsinthedataset.Foreachtweet,wecalculateanag-
+gregateTF–IDFscorebysummingtheindividualwordscores.Wethenrankthetweets
+basedonthesescoresandconstructmultiplereducedtrainingsubsetsbyretainingthe
+top80%,75%,70%,andprogressivelyfewerofthemostinformativetweets.Thisap-
+proach allows us to systematically evaluate the effects of training data reduction and
+vocabularyaugmentation—bothindependentlyandincombination—whilekeepingthe
+testsetandmodelconfigurationunchanged.
+3.3 BERT
+BERT(BidirectionalEncoderRepresentationsfromTransformers)[4]isadeeplearn-
+ingmodelthatlearnscontextualizedwordembeddingsusingatransformer-basedarchi-
+tecture.Itisdesignedtocapturebidirectionaldependenciesbyapplyingself-attention
+over entire input sequences. Given an input sequence of tokens X ={x ,x ,...,x },
+1 2 n
+each token x is first mapped to an embedding vector e ∈Rd, which is a sum of the
+i i
+token,positional,andsegmentembeddings:
+e =TokenEmbed(x)+PositionEmbed(i)+SegmentEmbed(s) (4)
+i i i
+TheresultingembeddingsarepassedthroughastackofLtransformerencoderlayers.
+Eachencoderlayerusesamulti-headself-attentionmechanism[16],computedas
+(cid:18) QK⊤(cid:19)
+Attention(Q,K,V)=softmax √ V (5)
+d
+k
+where the queries Q, keys K, and valuesV are obtained by linear transformations of
+theinputQ=XWQ, K=XWK, V =XWV andWQ,WK,WV arelearnableweight
+matrices.BERTistrainedusingtwoself-supervisedlearningobjectives
+– MaskedLanguageModeling(MLM):Randomtokensintheinputsequenceare
+replacedwithaspecial[MASK]token,andthemodellearnstopredicttheoriginal
+tokenfromthesurroundingcontext.Foramaskedtokenx ,theprobabilitydistri-
+m
+bution over the vocabulary is given by P(x |X )=softmax(W h ), where h is
+m \m o m m
+thehiddenstateatthemaskedposition,andW istheoutputprojectionmatrix.
+o
+– Next Sentence Prediction (NSP): The model is given a pair of sentences and
+trained to predict whether the second sentence logically follows the first. This is
+implementedasabinaryclassificationtaskusingthe[CLS]tokenrepresentation.
+TheoutputofBERTisasequenceofcontextualizedembeddings{h ,h ,...,h },where
+1 2 n
+each h ∈Rd represents a token enriched with contextual information from the entire
+i
+sentence.Theseembeddingscanbefine-tunedfordownstreamtaskssuchasclassifica-
+tion,questionanswering,ornamedentityrecognition.
+3.4 BERTVocabularyAugmentation
+Reducing the size of the training dataset can limit the linguistic diversity available to
+themodel.Toaddressthis,weintroduceacomplementarystrategy:augmentingBERT’s
+vocabularywithdomain-specifictermsrelatedtohatespeech.ThebaseuncasedBERT
+modelusesafixedWordPiecevocabularyofapproximately30,000tokens,learnedfrom
+general-purposeEnglishcorpora.Asaresult,manyslurs,slang,andcreativelyspelled
+abusivetermscommonlyfoundinhatefulcontentarepoorlyrepresented—particularly
+whentrainingdataislimited.Toovercomethislimitation,wecuratealistofsuchterms
+from both the dataset and external hate speech lexicons, and add them to BERT’s vo-
+cabulary.UsingtheHuggingFacetoolkit,weloadthepre-trainedBERTmodelandtok-
+enizer,thenappendthenewtokens.Thisprocessonlyalterstheinputembeddinglayer
+withoutretrainingthefullmodel,makingitalightweightyeteffectiveformofdomain
+adaptation.Thenumberofaddedtokensremainssmall—justafewdozen—compared
+to the original 30,000-token vocabulary. By infusing BERT with a hate-aware vocab-
+ulary,weensurethateven areducedtrainingsetprovidesthemodelwithexposureto
+keyhatefulexpressions,therebyenhancingitsdetectioncapability.
+4 ExperimentalSetupandResults
+4.1 DatasetandSplits
+We conduct experiments on the Davidson et al. (2017) hate speech dataset [3], which
+contains24,783tweetslabeledintothreecategories:hatespeech(about5.77%oftweets),
+offensive language (77.4%), and neither (16.8%). For simplicity, we treat tweets con-
+taining hate speech and offensive language as a single class, and tweets containing
+neitherastheotherclass.
+Weusethedatasetintwoforms:thefulldataset(forthebaseline)andthefiltered
+subset. To ensure fair evaluation, we fix a 20% test split (approximately 5k tweets),
+which remains identical across all experiments. This test set is stratified to include a
+representative mix of the two classes. The remaining 80% of the data ( 19k tweets)
+serves as the training pool for the baseline model. For our filtered approach, we ap-
+ply TF–IDF filtering to this training pool (without modifying the test set) to create a
+condensed training set of roughly 14k tweets. The test set always remains the same,
+enablingadirect,apples-to-applescomparisonofmodelperformance.
+4.2 Results
+Here, we explore the impact of TF-IDF-based dataset filtering and vocabulary expan-
+sionontheperformanceofaBERT-basedhatespeechclassificationmodel.Bysystem-
+aticallyfilteringthetrainingdatatoretainthemostinformativesamplesandenhancing
+the tokenizer with the explicit inclusion of frequently occurring offensive terms, we
+aim to improve the model’s generalization and sensitivity to critical linguistic cues.
+Fig.2presentsacomparativeanalysisofkeyevaluationmetricsacrossdifferentfilter-
+ingthresholds,highlightingthebalancebetweendatasetreductionandrepresentational
+power.
+Fig.2. Comparison of evaluation metrics (Accuracy, Precision, Recall, and F1 Score) for the
+vanillamodelandvariousTF-IDFfilteredvariants(from80%to50%).
+TheplotillustratesthatthevanillaBERTmodelmaintainsconsistentperformance
+across all evaluation metrics, establishing a strong baseline. In contrast, the TF-IDF-
+based variants reduce the training data by retaining only the top-k most informative
+samples,whilesimultaneouslyexpandingBERT’svocabularywithdomain-specificof-
+fensiveterms.Thistwofoldstrategymitigatesnoiseandenhancestokenizationforlin-
+guistically obfuscated or abusive expressions. The results indicate that moderate lev-
+elsoffiltering(∼75%–70%)eitherpreserveorslightlyimproveclassificationperfor-
+mance, suggesting that a more focused dataset, when combined with targeted vocab-
+ulary augmentation, enhances model robustness. However, more filtering (60%–50%)
+leadstoanoticeableperformancedrop,implyingthatexcessivedatareductioncompro-
+misesessentiallinguisticcontext.Thesefindingsunderscoretheimportanceofstriking
+abalancebetweendatasetselectivityandthepreservationoflinguisticdiversity.
+Table1.DetailedClass-wiseEvaluation
+Metric Original TF-IDF TF-IDF TF-IDF TF-IDF TF-IDF TF-IDF HurtBERT BERT+
+Davidsontop80%top75%top70%top65%top60%top50% [8] DeepModel[14]
+Precision(Class0) 0.8812 0.8679 0.9044 0.8757 0.8692 0.8696 0.8905 - -
+Recall(Class0) 0.8992 0.9304 0.8968 0.9136 0.9256 0.9208 0.8595 - -
+F1-score(Class0) 0.8901 0.8980 0.9005 0.8942 0.8965 0.8980 0.8748 - 0.89
+Precision(Class1) 0.9795 0.9857 0.9792 0.9824 0.9848 0.9838 0.9718 - 0.96
+Recall(Class1) 0.9755 0.9714 0.9808 0.9738 0.9719 0.9714 0.9787 - 0.96
+F1-score(Class1) 0.9775 0.9785 0.9800 0.9781 0.9783 0.9785 0.9752 - 0.98
+MacroAvgF1 0.9338 0.9383 0.9403 0.9362 0.9374 0.9362 0.9250 0.908 -
+WeightedAvgF1 0.9628 0.9650 0.9667 0.9640 0.9645 0.9639 0.9584 - 0.962
+Table2.ComparisonofBERTPerformanceonOriginalvs.TF-IDFFilteredDavidsonDataset
+Configuration TotalTime(s)Accuracy
+OriginalDavidson(80-20split) 1420.13 0.9627
+TF-IDFTop80%(trainingdata) 1086.69 0.9645
+TF-IDFTop75%(trainingdata) 1039.14 0.9667
+TF-IDFTop70%(trainingdata) 973.68 0.9637
+TF-IDFTop65%(trainingdata) 919.93 0.9641
+TF-IDFTop60%(trainingdata) 870.61 0.9635
+TF-IDFTop50%(trainingdata) 743.96 0.9586
+Tables 1 and 2 demonstrate the effectiveness of the proposed approach. Table 1
+provides a detailed breakdown of precision, recall, and F1 scores across various lev-
+els of training data filtering. Notably, at the 75% and 70% thresholds, performance
+remainsstableorslightlyimprovesacrossbothclasses,indicatingthateliminatinglow-
+information tweets enables the model to better focus on informative linguistic pat-
+terns. This suggests that moderate data reduction can enhance generalization. How-
+ever,performancebeginstodeclinebelowthe65%level—particularlyinClass0pre-
+cision—highlighting the adverse impact of reduced linguistic diversity. Despite this,
+even the 65% filtered dataset outperforms many existing methods in most evaluation
+metrics. Table 2 further shows that TF-IDF-based filtering significantly reduces train-
+ing time—by nearly 50% at the 50% threshold—while maintaining accuracy close to
+or exceeding the baseline, underscoring the computational efficiency of the proposed
+strategy.WefurtherassesstheimpactofvocabularyaugmentationinTable3.There-
+Table3.ComparisonofBERTPerformanceonOriginalvs.TF-IDFFilteredDavidsonDataset
+withoutvocabularyaugmentation(epochs=3,batchsize=8)
+Configuration TotalTime(s)Accuracy
+OriginalDavidson(80-20split) 1420.13 0.9627
+TF-IDFTop80%(trainingdata) 1066 0.9613
+TF-IDFTop70%(trainingdata) 955.10 0.9631
+TF-IDFTop60%(trainingdata) 854.04 0.958
+TF-IDFTop50%(trainingdata) 729 0.955
+sultsshowthat,acrossallfilteringlevels,theabsenceofaugmentationleadstoacon-
+sistentdropinaccuracy,underscoringtheimportanceofincorporatingdomain-specific
+vocabulary.Thesefindingshighlighttheinterplaybetweendatasetqualityandrepresen-
+tationalcapacity.WhileTF-IDFfilteringeffectivelyremovesnoisyorredundantsam-
+ples, directing learning toward more informative examples, vocabulary augmentation
+enhancesthemodel’sabilitytorecognizeadversarialslangandobfuscatedhateterms
+that standard BERT tokenizers often overlook. Together, these techniques enable effi-
+cientlearningfromfewerexamples.However,excessivefilteringmaylimitthemodel’s
+exposuretocriticalcontextualinformation,reducingitsabilitytodetectimplicitforms
+ofhate.Therefore,abalancedstrategy—combiningmoderatefilteringwithvocabulary
+augmentation—offerstheoptimaltrade-offbetweenefficiencyandmodelrobustness.
+5 Conclusion
+Thispaperpresentsanefficientandscalableapproachforhatespeechdetectionthatbal-
+ancesmodelperformancewithreducedcomputationaloverhead.ByleveragingTF–IDF-
+basedfiltering,weidentifyandretainthemostinformativetrainingexamples,substan-
+tially lowering data volume without sacrificing classification accuracy. Furthermore,
+weaddressthelexicallimitationsofBERTbyaugmentingitsvocabularywithdomain-
+specificslangandobfuscatedtermsprevalentinabusivelanguage.Resultsconfirmthat
+our combined strategy not only maintains competitive performance but also enhances
+training efficiency. These findings underscore the viability of lightweight adaptations
+forreal-worlddeploymentindynamicandevolvingsocialmediaenvironments.
+References
+1. S.Ali,J.Blackburn,andG.Stringhini.Evolvinghatespeechonline:Anadaptiveframework
+fordetectionandmitigation. arXivpreprint,arXiv:2502.10921,2025.
+2. Tommaso Caselli, Valerio Basile, Jelena Mitrovic´, and Michael Granitzer. HateBERT:
+Retraining BERT for abusive language detection in English. In Aida Mostafazadeh Da-
+vani,DouweKiela,MathiasLambert,BertieVidgen,VinodkumarPrabhakaran,andZeerak
+Waseem, editors, Proceedings of the 5th Workshop on Online Abuse and Harms (WOAH
+2021),pages17–25,Online,August2021.AssociationforComputationalLinguistics.
+3. Thomas Davidson, Dana Warmsley, Michael Macy, and Ingmar Weber. Automated hate
+speechdetectionandtheproblemofoffensivelanguage. ProceedingsoftheInternational
+AAAIConferenceonWebandSocialMedia,11,032017.
+4. JacobDevlin,Ming-WeiChang,KentonLee,andKristinaToutanova.BERT:pre-trainingof
+deepbidirectionaltransformersforlanguageunderstanding. InJillBurstein,ChristyDoran,
+andThamarSolorio,editors,ProceedingsoftheConferenceoftheNorthAmericanChapter
+oftheAssociationforComputationalLinguistics:HumanLanguageTechnologies,NAACL-
+HLT,pages4171–4186.AssociationforComputationalLinguistics,2019.
+5. MaiElSherief,CalebZiems,DavidMuchlinski,VaishnaviAnupindi,JordynSeybolt,Mun-
+munDeChoudhury,andDiyiYang. Latenthatred:Abenchmarkforunderstandingimplicit
+hatespeech. InProceedingsofthe2021ConferenceonEmpiricalMethodsinNaturalLan-
+guageProcessing,pages345–363,2021.
+6. Antigoni Founta, Constantinos Djouvas, Despoina Chatzakou, Ilias Leontiadis, Jeremy
+Blackburn,GianlucaStringhini,AthenaVakali,MichaelSirivianos,andNicolasKourtellis.
+Largescalecrowdsourcingandcharacterizationoftwitterabusivebehavior. InProceedings
+oftheInternationalAAAIConferenceonWebandSocialMedia,volume12,2018.
+7. ThomasHartvigsen,SaadiaGabriel,HamidPalangi,MaartenSap,DipankarRay,andEce
+Kamar. Toxigen:Alarge-scalemachine-generateddatasetforadversarialandimplicithate
+speechdetection. InProceedingsofthe60thAnnualMeetingoftheAssociationforCompu-
+tationalLinguistics(Volume1:LongPapers),pages3309–3326,2022.
+8. Anna Koufakou, Endang Wahyu Pamungkas, Valerio Basile, and Viviana Patti. Hurtbert:
+Incorporatinglexicalfeatureswithbertforthedetectionofabusivelanguage. InSeyiAki-
+wowo,BertieVidgen,VinodkumarPrabhakaran,andZeerakWaseem,editors,Proceedings
+oftheFourthWorkshoponOnlineAbuseandHarms,pages34–43,Online,2020.Association
+forComputationalLinguistics.
+9. A. Kraskov, H. Stögbauer, and P. Grassberger. Estimating mutual information. Physical
+ReviewE,69(6):066138,2004.
+10. R.MihalceaandP.Tarau. Textrank:Bringingorderintotext. InProceedingsofthe2004
+ConferenceonEmpiricalMethodsinNaturalLanguageProcessing,pages404–411,2004.
+11. JohnPavlopoulos,LéoLaugier,AlexandrosXenos,JeffreySorensen,andIonAndroutsopou-
+los. Fromthedetectionoftoxicspansinonlinediscussionstotheanalysisoftoxic-to-civil
+transfer. InProceedingsofthe60thAnnualMeetingoftheAssociationforComputational
+Linguistics(ACL2022),Dublin,Ireland,2022.
+12. J.Ramos. Usingtf-idftodeterminewordrelevanceindocumentqueries. InProceedingsof
+theFirstInstructionalConferenceonMachineLearning,volume242,pages133–142,New
+Jersey,2003.
+13. PaulRöttger,BertieVidgen,DongNguyen,ZeerakWaseem,HelenMargetts,andJanetPier-
+rehumbert. Hatecheck:Functionaltestsforhatespeechdetectionmodels. InProceedings
+ofthe59thAnnualMeetingoftheAssociationforComputationalLinguisticsandthe11th
+InternationalJointConferenceonNaturalLanguageProcessing(Volume1:LongPapers),
+pages41–58,2021.
+14. HindSaleh,AreejAlhothali,andKawtharMoria. Detectionofhatespeechusingbertand
+hatespeechwordembeddingwithdeepmodel. arXivpreprint,arXiv:2111.01515,2021.
+15. A.SatorraandP.M.Bentler.Ascaleddifferencechi-squareteststatisticformomentstructure
+analysis. Psychometrika,66(4):507–514,2001.
+16. AshishVaswani,NoamShazeer,NikiParmar,JakobUszkoreit,LlionJones,AidanNGomez,
+ŁukaszKaiser,andIlliaPolosukhin.Attentionisallyouneed.InI.Guyon,U.VonLuxburg,
+S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett, editors, Advances in
+Neural Information Processing Systems, volume 30, pages 1–11. Curran Associates, Inc.,
+2017.
+17. K.Wang,J.Huang,Y.Liu,B.Cao,andJ.Fan. Combiningfeatureselectionmethodswith
+bert:Anin-depthexperimentalstudyoflongtextclassification. InMachineLearningand
+KnowledgeDiscoveryinDatabases.Springer,2021.

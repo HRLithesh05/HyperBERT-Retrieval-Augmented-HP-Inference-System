@@ -49,6 +49,7 @@ export function NavBar() {
             {navLink('/upload', 'Upload', UploadCloud)}
             {navLink('/corpus', 'Corpus', Database)}
             {navLink('/evaluation', 'Evaluation', BarChart2)}
+            {navLink('/methodology', 'About', Brain)}
           </nav>
         </div>
         <ThemeToggle />

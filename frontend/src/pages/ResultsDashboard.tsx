@@ -720,6 +720,104 @@ export default function ResultsDashboard() {
           </button>
         </div>
 
+        {/* ── Card 5c: Meta-Agent Reasoning ── */}
+        {(liveData?.agent_decisions?.length ?? 0) > 0 && (
+          <div className="glass-panel p-6 mb-6">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-display font-bold text-lg flex items-center gap-2" style={{ color: 'var(--text-heading)' }}>
+                <Activity className="w-5 h-5" style={{ color: 'var(--accent-tertiary)' }} />
+                Meta-Agent Reasoning
+              </h3>
+              {liveData?.agent_summary && (
+                <div className="flex items-center gap-3 text-xs font-mono">
+                  <span className="px-2 py-1 rounded-lg" style={{ background: 'rgba(16,185,129,0.1)', color: 'var(--status-success)' }}>
+                    ✓ {liveData.agent_summary.accepted} accepted
+                  </span>
+                  {liveData.agent_summary.confidence_boosted > 0 && (
+                    <span className="px-2 py-1 rounded-lg" style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--accent-secondary)' }}>
+                      ↑ {liveData.agent_summary.confidence_boosted} boosted
+                    </span>
+                  )}
+                  {liveData.agent_summary.llm_overridden > 0 && (
+                    <span className="px-2 py-1 rounded-lg" style={{ background: 'rgba(245,158,11,0.1)', color: 'var(--status-warning)' }}>
+                      ⇄ {liveData.agent_summary.llm_overridden} LLM-overridden
+                    </span>
+                  )}
+                  {liveData.agent_summary.has_llm_access && (
+                    <span className="px-2 py-1 rounded-lg" style={{ background: 'rgba(139,92,246,0.1)', color: 'var(--accent-primary)' }}>
+                      🤖 LLM enabled
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {liveData!.agent_decisions!.map((decision, idx) => {
+                const actionColors: Record<string, { bg: string; text: string; label: string }> = {
+                  'ACCEPT': { bg: 'rgba(16,185,129,0.1)', text: 'var(--status-success)', label: '✓ Accepted' },
+                  'ACCEPT_WITH_CAVEAT': { bg: 'rgba(245,158,11,0.08)', text: 'var(--status-warning)', label: '⚠ Accepted with Caveat' },
+                  'VERIFIED_BY_LLM': { bg: 'rgba(59,130,246,0.1)', text: 'var(--accent-secondary)', label: '✓ Verified by LLM' },
+                  'LLM_OVERRIDE': { bg: 'rgba(245,158,11,0.12)', text: 'var(--status-warning)', label: '⇄ LLM Override' },
+                  'KEEP_RAG_FLAG_REVIEW': { bg: 'rgba(239,68,68,0.08)', text: 'var(--status-danger)', label: '⚑ Flagged for Review' },
+                  'ACCEPT_LOW_CONF': { bg: 'rgba(100,116,139,0.1)', text: 'var(--text-muted)', label: '○ Low Confidence' },
+                };
+                const style = actionColors[decision.action] || actionColors['ACCEPT'];
+                const isExpanded = expanded.id === `agent-${idx}` && expanded.type === 'trace';
+
+                return (
+                  <div key={idx} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-glass)', background: 'var(--bg-surface-2)' }}>
+                    <button
+                      onClick={() => toggleExpand(`agent-${idx}`, 'trace')}
+                      className="interactive w-full flex items-center justify-between px-4 py-3 text-left"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-xs font-bold w-32 truncate" style={{ color: 'var(--text-primary)' }}>
+                          {decision.param.replace(/_/g, ' ')}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: style.bg, color: style.text }}>
+                          {style.label}
+                        </span>
+                        {decision.original_confidence !== decision.result_confidence && (
+                          <span className="text-xs font-mono" style={{ color: 'var(--accent-secondary)' }}>
+                            {decision.original_confidence}% → {decision.result_confidence}%
+                          </span>
+                        )}
+                      </div>
+                      <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+                        <ChevronDown className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                      </motion.div>
+                    </button>
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.25 }}
+                          className="overflow-hidden"
+                        >
+                          <div className="px-4 pb-4 space-y-2" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '0.75rem' }}>
+                            {decision.reasoning.map((r, ri) => (
+                              <div key={ri} className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                <span className="mt-0.5 w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold"
+                                  style={{ background: 'var(--bg-surface-3)', color: 'var(--text-muted)' }}>
+                                  {ri + 1}
+                                </span>
+                                <span style={{ lineHeight: 1.5 }}>{r}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* ── Card 6: Audit Trail ── */}
         <div className="glass-panel overflow-hidden mb-8">
           <button

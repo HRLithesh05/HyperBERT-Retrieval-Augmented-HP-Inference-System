@@ -59,6 +59,23 @@ export interface AnalysisResult {
     warnings: any[];
   };
   audit_log: Array<{ module: string; timestamp: string; message: string }>;
+  agent_decisions?: Array<{
+    param: string;
+    action: string;
+    original_value: any;
+    original_confidence: number;
+    result_value: any;
+    result_confidence: number;
+    reasoning: string[];
+  }>;
+  agent_summary?: {
+    total_params_reviewed: number;
+    accepted: number;
+    llm_consulted: number;
+    confidence_boosted: number;
+    llm_overridden: number;
+    has_llm_access: boolean;
+  };
 }
 
 /** Upload a PDF and run the full M1-M7 pipeline */

@@ -756,12 +756,6 @@ def launch_notebook(session_id: str):
     """Launch JupyterLab with the session's generated notebook."""
     global _jupyter_process
     import subprocess
-    import shutil
-
-    # Check if jupyterlab is installed
-    jupyter_path = shutil.which("jupyter")
-    if not jupyter_path:
-        return jsonify({"error": "JupyterLab not installed. Run: pip install jupyterlab"}), 500
 
     # Find the notebook file
     nb_path = SESSIONS_DIR / session_id / "training_notebook.ipynb"
@@ -771,7 +765,7 @@ def launch_notebook(session_id: str):
         if alt.exists():
             nb_dir = ROOT / "test_results"
         else:
-            return jsonify({"error": "Notebook not found for this session"}), 404
+            return jsonify({"error": "Notebook not found for this session. Run the pipeline first via Upload."}), 404
     else:
         nb_dir = SESSIONS_DIR / session_id
 
@@ -783,25 +777,46 @@ def launch_notebook(session_id: str):
         except subprocess.TimeoutExpired:
             _jupyter_process.kill()
 
+    # Build the Tornado CSP header to allow iframe embedding
+    tornado_settings = json.dumps({
+        "headers": {
+            "Content-Security-Policy": "frame-ancestors 'self' http://localhost:5173 http://localhost:3000 *",
+            "Access-Control-Allow-Origin": "*",
+        }
+    })
+
     try:
+        # Use sys.executable -m jupyter for reliable Windows spawning
         _jupyter_process = subprocess.Popen(
             [
-                jupyter_path, "lab",
+                sys.executable, "-m", "jupyter", "lab",
                 "--no-browser",
                 "--port=8888",
                 "--ServerApp.token=hyperbert",
                 "--ServerApp.allow_origin=*",
+                f"--ServerApp.tornado_settings={tornado_settings}",
+                "--ServerApp.disable_check_xsrf=True",
                 f"--notebook-dir={nb_dir}",
             ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
 
         # Give it a moment to start
-        time.sleep(2)
+        time.sleep(3)
 
         if _jupyter_process.poll() is not None:
-            return jsonify({"error": "JupyterLab failed to start"}), 500
+            stderr_out = ""
+            try:
+                stderr_out = _jupyter_process.stderr.read().decode("utf-8", errors="replace")[:500]
+            except Exception:
+                pass
+            msg = "JupyterLab failed to start."
+            if "No module named" in stderr_out:
+                msg += " JupyterLab is not installed. Run: pip install jupyterlab"
+            elif stderr_out:
+                msg += f" Error: {stderr_out[:200]}"
+            return jsonify({"error": msg}), 500
 
         url = "http://localhost:8888/lab/tree/training_notebook.ipynb?token=hyperbert"
         return jsonify({"url": url, "pid": _jupyter_process.pid}), 200

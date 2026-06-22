@@ -46,6 +46,15 @@ def analyze_pdf(pdf_path: str) -> dict:
     import sys
     import os
 
+    # ── Check critical dependencies up-front ──
+    try:
+        import fitz  # PyMuPDF — required for text extraction
+    except ImportError:
+        raise RuntimeError(
+            "PyMuPDF (fitz) is not installed. "
+            "Install it with: pip install PyMuPDF"
+        )
+
     # Add module0/src to path so we can import HP extraction patterns
     module0_src = os.path.join(
         os.path.dirname(__file__), "..", "..", "module0", "src"
@@ -54,15 +63,28 @@ def analyze_pdf(pdf_path: str) -> dict:
     if module0_src not in sys.path:
         sys.path.insert(0, module0_src)
 
-    from hp.hp_extract import _extract_from_text, _prepare_text
-    from hp.hp_validate import validate_hp_json
+    try:
+        from hp.hp_extract import _extract_from_text, _prepare_text
+        from hp.hp_validate import validate_hp_json
+    except ImportError as e:
+        raise RuntimeError(
+            f"Could not import HP extraction modules from module0/src/hp: {e}. "
+            f"Make sure module0/src/hp/ exists with hp_extract.py and hp_validate.py."
+        )
 
     pdf_path = str(Path(pdf_path).resolve())
 
     # Step 1: Extract text
-    raw_text = extract_text_from_pdf(pdf_path)
+    try:
+        raw_text = extract_text_from_pdf(pdf_path)
+    except Exception as e:
+        raise RuntimeError(f"Failed to read PDF '{pdf_path}': {e}")
+
     if not raw_text or len(raw_text) < 100:
-        raise ValueError(f"Could not extract text from PDF: {pdf_path}")
+        raise ValueError(
+            f"Could not extract meaningful text from PDF: {pdf_path}. "
+            f"The file may be scanned/image-only (OCR not supported) or corrupted."
+        )
 
     # Step 2: Extract tables (best-effort)
     tables = extract_tables_from_pdf(pdf_path)

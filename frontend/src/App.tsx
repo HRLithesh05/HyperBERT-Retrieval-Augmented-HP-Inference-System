@@ -9,6 +9,7 @@ import CorpusExplorer from './pages/CorpusExplorer';
 import ComparisonDashboard from './pages/ComparisonDashboard';
 import EvaluationDashboard from './pages/EvaluationDashboard';
 import NotebookViewer from './pages/NotebookViewer';
+import Methodology from './pages/Methodology';
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
               <Route path="/notebook/:id" element={<NotebookViewer />} />
               <Route path="/corpus" element={<CorpusExplorer />} />
               <Route path="/evaluation" element={<EvaluationDashboard />} />
+              <Route path="/methodology" element={<Methodology />} />
             </Routes>
           </main>
         </div>

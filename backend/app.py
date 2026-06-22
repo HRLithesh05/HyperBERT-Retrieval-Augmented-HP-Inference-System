@@ -658,9 +658,9 @@ def corpus_papers():
 
     filt: dict = {}
     if task:
-        filt["task"] = {"$regex": task, "$options": "i"}
+        filt["hp_json.task"] = {"$regex": task, "$options": "i"}
     if model:
-        filt["model"] = {"$regex": model, "$options": "i"}
+        filt["hp_json.model"] = {"$regex": model, "$options": "i"}
     if source:
         filt["source"] = source
     if query:
@@ -671,12 +671,21 @@ def corpus_papers():
 
     collection = DB[CONFIG["mongodb"].get("clean_collection", "papers_clean")]
     total = collection.count_documents(filt)
-    papers = list(
-        collection.find(filt, {"_id": 0, "title": 1, "task": 1, "model": 1,
-                                "source": 1, "year": 1, "rscore": 1, "hyperparameters": 1})
+    raw_papers = list(
+        collection.find(filt, {"_id": 0, "title": 1, "source": 1, "year": 1, "rscore": 1, "hp_json": 1})
         .skip(page * per_page)
         .limit(per_page)
     )
+
+    papers = []
+    for p in raw_papers:
+        hp_data = p.get("hp_json", {})
+        p["task"] = hp_data.get("task", "unknown")
+        p["model"] = hp_data.get("model", "unknown")
+        p["hyperparameters"] = hp_data.get("hyperparameters", {})
+        if "hp_json" in p:
+            del p["hp_json"]
+        papers.append(p)
 
     return jsonify({"total": total, "page": page, "per_page": per_page, "papers": papers}), 200
 
@@ -780,17 +789,24 @@ def launch_notebook(session_id: str):
     # Build the Tornado CSP header to allow iframe embedding
     tornado_settings = json.dumps({
         "headers": {
-            "Content-Security-Policy": "frame-ancestors 'self' http://localhost:5173 http://localhost:3000 *",
+            "Content-Security-Policy": "frame-ancestors 'self' http://localhost:5173 http://localhost:3000 http://127.0.0.1:5173 *",
             "Access-Control-Allow-Origin": "*",
         }
     })
 
     try:
+        # Auto-install jupyterlab if missing (for zero-configuration user experience)
+        try:
+            import jupyterlab
+        except ImportError:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "jupyterlab"])
+
         # Use sys.executable -m jupyter for reliable Windows spawning
         _jupyter_process = subprocess.Popen(
             [
                 sys.executable, "-m", "jupyter", "lab",
                 "--no-browser",
+                "--ip=127.0.0.1",
                 "--port=8888",
                 "--ServerApp.token=hyperbert",
                 "--ServerApp.allow_origin=*",
@@ -803,7 +819,7 @@ def launch_notebook(session_id: str):
         )
 
         # Give it a moment to start
-        time.sleep(3)
+        time.sleep(4)
 
         if _jupyter_process.poll() is not None:
             stderr_out = ""
@@ -812,13 +828,11 @@ def launch_notebook(session_id: str):
             except Exception:
                 pass
             msg = "JupyterLab failed to start."
-            if "No module named" in stderr_out:
-                msg += " JupyterLab is not installed. Run: pip install jupyterlab"
-            elif stderr_out:
+            if stderr_out:
                 msg += f" Error: {stderr_out[:200]}"
             return jsonify({"error": msg}), 500
 
-        url = "http://localhost:8888/lab/tree/training_notebook.ipynb?token=hyperbert"
+        url = "http://127.0.0.1:8888/lab/tree/training_notebook.ipynb?token=hyperbert"
         return jsonify({"url": url, "pid": _jupyter_process.pid}), 200
 
     except Exception as e:

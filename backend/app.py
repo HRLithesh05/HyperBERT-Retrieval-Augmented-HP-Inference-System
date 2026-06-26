@@ -727,25 +727,31 @@ def corpus_stats():
     collection = DB[CONFIG["mongodb"].get("clean_collection", "papers_clean")]
     total = collection.count_documents({})
 
-    # Task distribution
-    task_pipeline = [{"$group": {"_id": "$task", "count": {"$sum": 1}}},
-                     {"$sort": {"count": -1}}]
+    # Task distribution (data is nested inside hp_json)
+    task_pipeline = [
+        {"$project": {"task": {"$ifNull": ["$hp_json.task", "unknown"]}}},
+        {"$group": {"_id": "$task", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+    ]
     task_dist = [{"task": d["_id"] or "unknown", "count": d["count"]}
                  for d in collection.aggregate(task_pipeline)]
 
     # Model distribution
-    model_pipeline = [{"$group": {"_id": "$model", "count": {"$sum": 1}}},
-                      {"$sort": {"count": -1}}, {"$limit": 10}]
+    model_pipeline = [
+        {"$project": {"model": {"$ifNull": ["$hp_json.model", "unknown"]}}},
+        {"$group": {"_id": "$model", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}, {"$limit": 10},
+    ]
     model_dist = [{"model": d["_id"] or "unknown", "count": d["count"]}
                   for d in collection.aggregate(model_pipeline)]
 
-    # HP coverage
+    # HP coverage (hyperparameters are nested inside hp_json.hyperparameters)
     hp_fields = ["learning_rate", "batch_size", "epochs", "optimizer",
                  "max_seq_length", "weight_decay", "dropout", "scheduler",
                  "warmup_steps", "gradient_clipping", "seed", "warmup_ratio"]
     hp_coverage = {}
     for hp in hp_fields:
-        count = collection.count_documents({f"hyperparameters.{hp}": {"$ne": None, "$exists": True}})
+        count = collection.count_documents({f"hp_json.hyperparameters.{hp}": {"$ne": None, "$exists": True}})
         hp_coverage[hp] = {"count": count, "pct": round(count / total * 100, 1) if total else 0}
 
     return jsonify({
@@ -759,56 +765,120 @@ def corpus_stats():
 # ── Notebook execution endpoints ───────────────────────────────────────
 
 _jupyter_process = None
+_JUPYTER_PORT = 8888
+
+
+def _ensure_notebook_exists(session_id: str) -> Path | None:
+    """Return the notebook path, generating it on-the-fly if the session
+    data exists but the .ipynb was never created (e.g. pipeline crashed)."""
+    session_dir = SESSIONS_DIR / session_id
+    nb_path = session_dir / "training_notebook.ipynb"
+
+    if nb_path.exists():
+        return nb_path
+
+    # Try to regenerate from saved session JSON
+    data = _load_session(session_id)
+    if data and data.get("config"):
+        try:
+            from src.module7.notebook_gen import generate_notebook
+            session_dir.mkdir(parents=True, exist_ok=True)
+            generate_notebook(
+                validated_config=data["config"],
+                evidence_report=data.get("evidence_report", {}),
+                user_hp_json={
+                    "task": data.get("paper", {}).get("task", ""),
+                    "model": data.get("paper", {}).get("model", "BERT"),
+                    "dataset": data.get("paper", {}).get("dataset", ""),
+                    "hyperparameters": {k: v.get("value") for k, v in data["config"].items()},
+                },
+                contradiction_report=data.get("contradictions", {}),
+                validation_result=data.get("validation", {"verdict": "OK", "validated_config": data["config"]}),
+                output_path=str(nb_path),
+            )
+            return nb_path
+        except Exception as exc:
+            print(f"[NOTEBOOK] Auto-generate failed: {exc}")
+
+    # Fallback: check test_results
+    alt = ROOT / "test_results" / "training_notebook.ipynb"
+    if alt.exists():
+        return alt
+
+    return None
+
+
+def _wait_for_jupyter(port: int, timeout: float = 20.0) -> bool:
+    """Poll JupyterLab until it responds or timeout."""
+    import urllib.request
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/jupyter/api?token=hyperbert", timeout=2
+            )
+            return True
+        except Exception:
+            time.sleep(0.5)
+    return False
+
 
 @app.route("/api/launch-notebook/<session_id>", methods=["POST"])
 def launch_notebook(session_id: str):
-    """Launch JupyterLab with the session's generated notebook."""
+    """Launch JupyterLab with the session's generated notebook.
+    Fully automatic: installs jupyterlab if needed, generates notebook
+    if missing, and starts the server."""
     global _jupyter_process
     import subprocess
 
-    # Find the notebook file
-    nb_path = SESSIONS_DIR / session_id / "training_notebook.ipynb"
-    if not nb_path.exists():
-        # Check test_results fallback
-        alt = ROOT / "test_results" / "training_notebook.ipynb"
-        if alt.exists():
-            nb_dir = ROOT / "test_results"
-        else:
-            return jsonify({"error": "Notebook not found for this session. Run the pipeline first via Upload."}), 404
-    else:
-        nb_dir = SESSIONS_DIR / session_id
+    # ── Step 1: Ensure the notebook file exists ──
+    nb_path = _ensure_notebook_exists(session_id)
+    if nb_path is None:
+        return jsonify({
+            "error": "No analysis data found for this session. Please upload a PDF first via the Upload page."
+        }), 404
+    nb_dir = nb_path.parent
 
-    # Kill existing jupyter if running
+    # ── Step 2: Kill any existing Jupyter server ──
     if _jupyter_process and _jupyter_process.poll() is None:
         _jupyter_process.terminate()
         try:
             _jupyter_process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             _jupyter_process.kill()
+        _jupyter_process = None
 
-    # Build the Tornado CSP header to allow iframe embedding
+    # ── Step 3: Auto-install jupyterlab if missing ──
+    try:
+        import jupyterlab  # noqa: F401
+    except ImportError:
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "jupyterlab"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+        except subprocess.CalledProcessError as e:
+            return jsonify({"error": f"Failed to auto-install JupyterLab: {e}"}), 500
+
+    # ── Step 4: Build CSP headers for iframe embedding ──
     tornado_settings = json.dumps({
         "headers": {
-            "Content-Security-Policy": "frame-ancestors 'self' http://localhost:5173 http://localhost:3000 http://127.0.0.1:5173 *",
+            "Content-Security-Policy": "frame-ancestors *",
             "Access-Control-Allow-Origin": "*",
         }
     })
 
+    # ── Step 5: Launch JupyterLab with base_url=/jupyter/ ──
+    # This matches the Vite proxy path, so all assets load correctly
     try:
-        # Auto-install jupyterlab if missing (for zero-configuration user experience)
-        try:
-            import jupyterlab
-        except ImportError:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "jupyterlab"])
-
-        # Use sys.executable -m jupyter for reliable Windows spawning
         _jupyter_process = subprocess.Popen(
             [
                 sys.executable, "-m", "jupyter", "lab",
                 "--no-browser",
                 "--ip=127.0.0.1",
-                "--port=8888",
+                f"--port={_JUPYTER_PORT}",
                 "--ServerApp.token=hyperbert",
+                "--ServerApp.base_url=/jupyter/",
                 "--ServerApp.allow_origin=*",
                 f"--ServerApp.tornado_settings={tornado_settings}",
                 "--ServerApp.disable_check_xsrf=True",
@@ -818,21 +888,23 @@ def launch_notebook(session_id: str):
             stderr=subprocess.PIPE,
         )
 
-        # Give it a moment to start
-        time.sleep(4)
+        # Poll for readiness instead of blind sleep
+        if not _wait_for_jupyter(_JUPYTER_PORT, timeout=20):
+            # Check if process died
+            if _jupyter_process.poll() is not None:
+                stderr_out = ""
+                try:
+                    stderr_out = _jupyter_process.stderr.read().decode("utf-8", errors="replace")[:500]
+                except Exception:
+                    pass
+                return jsonify({"error": f"JupyterLab crashed on startup. {stderr_out[:300]}"}), 500
+            # Still not responding but alive — give benefit of the doubt
+            return jsonify({
+                "error": "JupyterLab is starting but not yet responding. Try again in a few seconds."
+            }), 503
 
-        if _jupyter_process.poll() is not None:
-            stderr_out = ""
-            try:
-                stderr_out = _jupyter_process.stderr.read().decode("utf-8", errors="replace")[:500]
-            except Exception:
-                pass
-            msg = "JupyterLab failed to start."
-            if stderr_out:
-                msg += f" Error: {stderr_out[:200]}"
-            return jsonify({"error": msg}), 500
-
-        url = "http://127.0.0.1:8888/lab/tree/training_notebook.ipynb?token=hyperbert"
+        # Return proxied URL (goes through Vite's /jupyter proxy → same origin)
+        url = f"/jupyter/lab/tree/{nb_path.name}?token=hyperbert"
         return jsonify({"url": url, "pid": _jupyter_process.pid}), 200
 
     except Exception as e:

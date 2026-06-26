@@ -14,6 +14,13 @@ export default defineConfig({
         target: 'http://localhost:5000',
         changeOrigin: true,
       },
+      '/jupyter': {
+        target: 'http://127.0.0.1:8888',
+        changeOrigin: true,
+        ws: true,
+        // No path rewrite — JupyterLab uses base_url=/jupyter/
+        // so all its requests already have the /jupyter prefix
+      },
     },
   },
 })

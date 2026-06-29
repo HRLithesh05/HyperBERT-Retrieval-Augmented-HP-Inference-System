@@ -9,38 +9,15 @@ from pathlib import Path
 
 
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """Extract full text from a PDF. Tries PyMuPDF first, falls back to pdfplumber."""
-    # Strategy 1: PyMuPDF (fastest, best quality)
-    try:
-        import fitz  # PyMuPDF
-        doc = fitz.open(pdf_path)
-        pages: list[str] = []
-        for page in doc:
-            pages.append(page.get_text("text"))
-        doc.close()
-        return "\n\n".join(pages)
-    except Exception:
-        pass  # Fall through to pdfplumber
+    """Extract full text from a PDF using PyMuPDF."""
+    import fitz  # PyMuPDF
 
-    # Strategy 2: pdfplumber (reliable fallback)
-    try:
-        import pdfplumber
-        pages = []
-        with pdfplumber.open(pdf_path) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    pages.append(text)
-        if pages:
-            return "\n\n".join(pages)
-    except Exception:
-        pass
-
-    raise RuntimeError(
-        f"Could not extract text from '{pdf_path}'. "
-        "Neither PyMuPDF nor pdfplumber could read the file. "
-        "Install PyMuPDF with: pip install PyMuPDF"
-    )
+    doc = fitz.open(pdf_path)
+    pages: list[str] = []
+    for page in doc:
+        pages.append(page.get_text("text"))
+    doc.close()
+    return "\n\n".join(pages)
 
 
 def extract_tables_from_pdf(pdf_path: str) -> list[list[list[str]]]:
@@ -69,8 +46,14 @@ def analyze_pdf(pdf_path: str) -> dict:
     import sys
     import os
 
-    # ── Dependencies: PyMuPDF or pdfplumber (at least one required) ──
-    # extract_text_from_pdf() handles the fallback logic internally
+    # ── Check critical dependencies up-front ──
+    try:
+        import fitz  # PyMuPDF — required for text extraction
+    except ImportError:
+        raise RuntimeError(
+            "PyMuPDF (fitz) is not installed. "
+            "Install it with: pip install PyMuPDF"
+        )
 
     # Add module0/src to path so we can import HP extraction patterns
     module0_src = os.path.join(

@@ -4,7 +4,6 @@ import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileText, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { analyzePDF } from '@/lib/api';
-import { useSession } from '@/contexts/SessionContext';
 
 const modules = [
   { id: 1, name: 'PDF Analyzer', summary: '14,200 chars, 3 tables extracted', detail: 'Parsing text, tables & raw hyperparameters' },
@@ -23,7 +22,6 @@ export default function UploadProcess() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { setSession } = useSession();
 
   const onDrop = useCallback(async (accepted: File[]) => {
     if (!accepted.length) return;
@@ -33,11 +31,9 @@ export default function UploadProcess() {
     setError(null);
 
     try {
+      // Call the real backend — this runs M1-M7 pipeline
       const result = await analyzePDF(pdf);
-      const sid = result.session_id;
-      const title = result.paper?.title || pdf.name.replace('.pdf', '');
-      setSessionId(sid);
-      setSession(sid, title);
+      setSessionId(result.session_id);
 
       // Replay the audit_log to animate modules one-by-one
       const byModule: Record<string, string> = {};
@@ -61,7 +57,16 @@ export default function UploadProcess() {
     } catch (e: any) {
       console.error("API error:", e);
       setError(e.message || "Pipeline failed. Make sure the backend is running on port 5000.");
-      setProgress(modules.length);
+      // Still animate for demo mode if backend is offline
+      let i = 0;
+      const tick = async () => {
+        i++;
+        setProgress(i);
+        setModuleSummaries(prev => { const n = [...prev]; n[i-1] = modules[i-1]?.summary || ''; return n; });
+        if (i < modules.length) setTimeout(tick, 1000 + Math.random() * 300);
+        else setSessionId('demo');
+      };
+      setTimeout(tick, 800);
     }
   }, []);
 
@@ -235,8 +240,7 @@ export default function UploadProcess() {
                 >
                   <div className="pt-6" style={{ borderTop: '1px solid var(--border-glass)' }}>
                     <button
-                      onClick={() => navigate(`/results/${sessionId}`)}
-                      disabled={!sessionId}
+                      onClick={() => navigate(`/results/${sessionId || 'demo'}`)}
                       className="interactive w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-white transition-all"
                       style={{
                         background: 'var(--accent-gradient)',
@@ -249,23 +253,6 @@ export default function UploadProcess() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-          {/* Error display */}
-          {error && (
-            <div className="px-8 pb-6">
-              <div className="rounded-xl p-4" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                <p className="text-sm font-semibold mb-1" style={{ color: 'var(--status-danger)' }}>Pipeline Error</p>
-                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{error}</p>
-                <button
-                  onClick={() => { setFile(null); setProgress(-1); setError(null); setSessionId(null); setModuleSummaries(Array(7).fill('')); }}
-                  className="interactive mt-3 px-4 py-1.5 rounded-lg text-xs font-medium"
-                  style={{ background: 'var(--bg-surface-3)', color: 'var(--text-primary)' }}
-                >
-                  Try Again
-                </button>
-              </div>
-            </div>
-          )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link, Navigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle2, XCircle, ArrowLeft, Zap, Brain, Database,
   Loader2, AlertTriangle, ChevronDown, BarChart2,
 } from 'lucide-react';
 import { getComparison } from '@/lib/api';
-import { useSession } from '@/contexts/SessionContext';
 
 /* ── Helper: confidence color ─────────────────────────────── */
 function confColor(pct: number) {
@@ -24,31 +23,22 @@ function sourceLabel(src: string) {
 /* ── Main Page ──────────────────────────────────────────────── */
 export default function ComparisonDashboard() {
   const { id } = useParams<{ id: string }>();
-  const { sessionId: ctxSessionId, hasRealSession } = useSession();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedParam, setExpandedParam] = useState<string | null>(null);
 
-  // Use real session from context if URL has 'demo'
-  const effectiveId = (!id || id === 'demo') && hasRealSession ? ctxSessionId! : id;
-
-  // Redirect to real session URL if needed
-  if (effectiveId && effectiveId !== id) {
-    return <Navigate to={`/compare/${effectiveId}`} replace />;
-  }
-
   useEffect(() => {
-    if (!effectiveId || effectiveId === 'demo') {
+    if (!id || id === 'demo') {
       setLoading(false);
-      setError('No analysis session found — upload a paper first to see a live RAG vs LLM comparison.');
+      setError('Demo mode — upload a paper to see a live RAG vs LLM comparison.');
       return;
     }
     setLoading(true);
-    getComparison(effectiveId)
+    getComparison(id)
       .then(d => { setData(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
-  }, [effectiveId]);
+  }, [id]);
 
   if (loading) {
     return (

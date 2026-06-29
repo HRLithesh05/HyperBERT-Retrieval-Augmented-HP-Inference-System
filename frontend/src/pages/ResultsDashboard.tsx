@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis,
@@ -10,6 +10,7 @@ import {
   Activity, ChevronDown, Edit2, Play, Eye, BarChart2,
 } from 'lucide-react';
 import { getSession, downloadUrl, type AnalysisResult } from '@/lib/api';
+import { useSession } from '@/contexts/SessionContext';
 
 /* ────────────────────────────────
    Mock data (will be replaced by API)
@@ -144,19 +145,28 @@ function ConfBar({ pct, dim }: { pct: number; dim?: boolean }) {
 export default function ResultsDashboard() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { sessionId: ctxSessionId, hasRealSession } = useSession();
   const [liveData, setLiveData] = useState<AnalysisResult | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<{ id: string; type: ExpandType }>({ id: '', type: null });
   const [auditOpen, setAuditOpen] = useState(false);
   const [editValues, setEditValues] = useState<Record<string, string>>({});
 
+  // If id is 'demo' but we have a real session, redirect
+  const effectiveId = (!id || id === 'demo') && hasRealSession ? ctxSessionId! : id;
+
+  // Redirect to real session URL if needed
+  if (effectiveId && effectiveId !== id) {
+    return <Navigate to={`/results/${effectiveId}`} replace />;
+  }
+
   // Load live data if a real session ID is provided
   useEffect(() => {
-    if (!id || id === 'demo') return;
-    getSession(id)
+    if (!effectiveId || effectiveId === 'demo') return;
+    getSession(effectiveId)
       .then(setLiveData)
       .catch(e => setLoadError(e.message));
-  }, [id]);
+  }, [effectiveId]);
 
   // Merge live API data into the UI structures
   const paperInfo = liveData?.paper;
@@ -242,14 +252,22 @@ export default function ResultsDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => window.open(downloadUrl.yaml(id || ''), '_blank')}
+              onClick={() => {
+                const dlId = effectiveId || '';
+                if (!dlId || dlId === 'demo') { alert('Upload a paper first to export config.'); return; }
+                window.open(downloadUrl.yaml(dlId), '_blank');
+              }}
               className="interactive flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors"
               style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-glass)', color: 'var(--text-primary)' }}
             >
               <Download className="w-4 h-4" /> Export Config
             </button>
             <button
-              onClick={() => window.open(downloadUrl.notebook(id || ''), '_blank')}
+              onClick={() => {
+                const navId = effectiveId || '';
+                if (!navId || navId === 'demo') { alert('Upload a paper first to view notebook.'); return; }
+                navigate(`/notebook/${navId}`);
+              }}
               className="interactive flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
               style={{ background: 'var(--accent-gradient)', boxShadow: '0 4px 16px rgba(124,58,237,0.3)' }}
             >
@@ -295,14 +313,14 @@ export default function ResultsDashboard() {
                 </div>
               </div>
               {/* Radar chart */}
-              <div style={{ width: 200, flexShrink: 0 }}>
+              <div style={{ width: 260, flexShrink: 0 }}>
                 <p className="text-xs font-semibold uppercase text-center mb-2" style={{ color: 'var(--text-muted)' }}>
                   Reproducibility Profile
                 </p>
-                <ResponsiveContainer width="100%" height={170}>
-                  <RadarChart cx="50%" cy="50%" outerRadius="65%" data={liveRadarData}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <RadarChart cx="50%" cy="50%" outerRadius="50%" data={liveRadarData}>
                     <PolarGrid stroke="var(--border-glass)" />
-                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} />
+                    <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
                     <Radar dataKey="A" stroke="var(--accent-primary)" fill="var(--accent-primary)" fillOpacity={0.25}
                       animationDuration={1000} />
                   </RadarChart>
@@ -645,10 +663,10 @@ export default function ResultsDashboard() {
           </h3>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { icon: '📓', name: 'Jupyter Notebook', ext: '.ipynb', desc: 'Ready-to-run training notebook with confidence annotations', primary: true, url: downloadUrl.notebook(id || '') },
-              { icon: '🐍', name: 'Python Script', ext: '.py', desc: 'HuggingFace TrainingArguments script with inline comments', primary: false, url: downloadUrl.script(id || '') },
-              { icon: '📋', name: 'YAML Config', ext: '.yaml', desc: 'Machine-readable config for automation pipelines', primary: false, url: downloadUrl.yaml(id || '') },
-              { icon: '📄', name: 'JSON Config', ext: '.json', desc: 'Full parameter configuration with confidence scores', primary: false, url: downloadUrl.config(id || '') },
+              { icon: '📓', name: 'Jupyter Notebook', ext: '.ipynb', desc: 'Ready-to-run training notebook with confidence annotations', primary: true, url: downloadUrl.notebook(effectiveId || '') },
+              { icon: '🐍', name: 'Python Script', ext: '.py', desc: 'HuggingFace TrainingArguments script with inline comments', primary: false, url: downloadUrl.script(effectiveId || '') },
+              { icon: '📋', name: 'YAML Config', ext: '.yaml', desc: 'Machine-readable config for automation pipelines', primary: false, url: downloadUrl.yaml(effectiveId || '') },
+              { icon: '📄', name: 'JSON Config', ext: '.json', desc: 'Full parameter configuration with confidence scores', primary: false, url: downloadUrl.config(effectiveId || '') },
             ].map(item => (
               <div
                 key={item.ext}
@@ -683,7 +701,7 @@ export default function ResultsDashboard() {
         {/* ── Card 5b: Quick Actions — Compare & Notebook ── */}
         <div className="grid sm:grid-cols-2 gap-5 mb-6">
           <button
-            onClick={() => navigate(`/compare/${id || 'demo'}`)}
+            onClick={() => navigate(`/compare/${effectiveId || 'demo'}`)}
             className="interactive glass-panel p-6 flex items-start gap-4 text-left transition-all group"
             style={{ border: '1px solid rgba(245,158,11,0.2)' }}
           >
@@ -701,7 +719,7 @@ export default function ResultsDashboard() {
             </div>
           </button>
           <button
-            onClick={() => navigate(`/notebook/${id || 'demo'}`)}
+            onClick={() => navigate(`/notebook/${effectiveId || 'demo'}`)}
             className="interactive glass-panel p-6 flex items-start gap-4 text-left transition-all group"
             style={{ border: '1px solid rgba(16,185,129,0.2)' }}
           >

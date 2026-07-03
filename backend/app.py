@@ -549,29 +549,120 @@ def get_session(session_id: str):
 
 # ── Download endpoints ─────────────────────────────────────────────────
 
+def _ensure_download_files(session_id: str) -> dict | None:
+    """Ensure all downloadable files exist for a session.
+    Auto-generates any missing ones from the session JSON data.
+    Returns session data or None if session doesn't exist."""
+    data = _load_session(session_id)
+    if data is None:
+        return None
+
+    session_dir = SESSIONS_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    config = data.get("config", {})
+
+    # Auto-generate notebook if missing
+    nb_path = session_dir / "training_notebook.ipynb"
+    if not nb_path.exists() and config:
+        try:
+            from src.module7.notebook_gen import generate_notebook
+            generate_notebook(
+                validated_config=config,
+                evidence_report=data.get("evidence_report", {}),
+                user_hp_json={
+                    "task": data.get("paper", {}).get("task", ""),
+                    "model": data.get("paper", {}).get("model", "BERT"),
+                    "dataset": data.get("paper", {}).get("dataset", ""),
+                    "hyperparameters": {k: v.get("value") for k, v in config.items()},
+                },
+                contradiction_report=data.get("contradictions", {}),
+                validation_result=data.get("validation", {"verdict": "OK", "validated_config": config}),
+                output_path=str(nb_path),
+            )
+        except Exception as exc:
+            print(f"[DOWNLOAD] Auto-generate notebook failed: {exc}")
+
+    # Auto-generate training script if missing
+    script_path = session_dir / "training_script.py"
+    if not script_path.exists() and config:
+        try:
+            lines = [
+                '"""Auto-generated HyperBERT Training Script"""',
+                "from transformers import TrainingArguments, Trainer, AutoModelForSequenceClassification, AutoTokenizer",
+                "",
+                f"model_name = \"{data.get('paper', {}).get('model', 'bert-base-uncased')}\"",
+                "tokenizer = AutoTokenizer.from_pretrained(model_name)",
+                "model = AutoModelForSequenceClassification.from_pretrained(model_name)",
+                "",
+                "training_args = TrainingArguments(",
+                "    output_dir='./results',",
+            ]
+            for param, entry in config.items():
+                val = entry.get("value")
+                conf = entry.get("confidence_pct", 0)
+                src = entry.get("source", "unknown")
+                if val is not None:
+                    val_str = f"'{val}'" if isinstance(val, str) else str(val)
+                    lines.append(f"    {param}={val_str},  # {src} (confidence: {conf}%)")
+            lines.extend([")", "", "# trainer = Trainer(model=model, args=training_args, ...)", ""])
+            script_path.write_text("\n".join(lines), encoding="utf-8")
+        except Exception as exc:
+            print(f"[DOWNLOAD] Auto-generate script failed: {exc}")
+
+    # Auto-generate YAML config if missing
+    yaml_path = session_dir / "config.yaml"
+    if not yaml_path.exists() and config:
+        try:
+            import yaml
+            yaml_data = {"hyperparameters": {}, "metadata": {
+                "model": data.get("paper", {}).get("model"),
+                "task": data.get("paper", {}).get("task"),
+            }}
+            for param, entry in config.items():
+                yaml_data["hyperparameters"][param] = {
+                    "value": entry.get("value"),
+                    "source": entry.get("source"),
+                    "confidence_pct": entry.get("confidence_pct"),
+                }
+            yaml_path.write_text(yaml.dump(yaml_data, default_flow_style=False), encoding="utf-8")
+        except Exception as exc:
+            print(f"[DOWNLOAD] Auto-generate YAML failed: {exc}")
+
+    return data
+
+
 @app.route("/api/download/<session_id>/notebook", methods=["GET"])
 def download_notebook(session_id: str):
+    data = _ensure_download_files(session_id)
+    if data is None:
+        return jsonify({"error": "Session not found"}), 404
     path = SESSIONS_DIR / session_id / "training_notebook.ipynb"
     if not path.exists():
-        return jsonify({"error": "Notebook not found for this session"}), 404
+        return jsonify({"error": "Could not generate notebook for this session"}), 404
     return send_file(str(path), as_attachment=True, download_name="training_notebook.ipynb",
                      mimetype="application/json")
 
 
 @app.route("/api/download/<session_id>/script", methods=["GET"])
 def download_script(session_id: str):
+    data = _ensure_download_files(session_id)
+    if data is None:
+        return jsonify({"error": "Session not found"}), 404
     path = SESSIONS_DIR / session_id / "training_script.py"
     if not path.exists():
-        return jsonify({"error": "Script not found"}), 404
+        return jsonify({"error": "Could not generate script for this session"}), 404
     return send_file(str(path), as_attachment=True, download_name="training_script.py",
                      mimetype="text/plain")
 
 
 @app.route("/api/download/<session_id>/yaml", methods=["GET"])
 def download_yaml(session_id: str):
+    data = _ensure_download_files(session_id)
+    if data is None:
+        return jsonify({"error": "Session not found"}), 404
     path = SESSIONS_DIR / session_id / "config.yaml"
     if not path.exists():
-        return jsonify({"error": "YAML config not found"}), 404
+        return jsonify({"error": "Could not generate YAML for this session"}), 404
     return send_file(str(path), as_attachment=True, download_name="hyperbert_config.yaml",
                      mimetype="text/yaml")
 
@@ -869,7 +960,6 @@ def launch_notebook(session_id: str):
     })
 
     # ── Step 5: Launch JupyterLab with base_url=/jupyter/ ──
-    # This matches the Vite proxy path, so all assets load correctly
     try:
         _jupyter_process = subprocess.Popen(
             [
@@ -958,4 +1048,3 @@ if __name__ == "__main__":
     print("  MongoDB:", "✅ connected" if MONGO_OK else "⚠️  unavailable")
     print("=" * 55)
     app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
-

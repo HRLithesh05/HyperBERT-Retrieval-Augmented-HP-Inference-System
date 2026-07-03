@@ -1,9 +1,13 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
-import { UploadCloud, FileText, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, Circle, ArrowRight, Lock, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { analyzePDF } from '@/lib/api';
+import { useSession } from '@/contexts/SessionContext';
+import { useAuth, isAuthConfigured } from '@/contexts/AuthContext';
+
+const GUEST_LIMIT = 5;
 
 const modules = [
   { id: 1, name: 'PDF Analyzer', summary: '14,200 chars, 3 tables extracted', detail: 'Parsing text, tables & raw hyperparameters' },
@@ -22,6 +26,9 @@ export default function UploadProcess() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { setSession, incrementUsage, guestUsageCount } = useSession();
+  const { isAuthenticated, loginWithGoogle } = useAuth();
+  const isOverLimit = isAuthConfigured() && !isAuthenticated && guestUsageCount >= GUEST_LIMIT;
 
   const onDrop = useCallback(async (accepted: File[]) => {
     if (!accepted.length) return;
@@ -31,9 +38,10 @@ export default function UploadProcess() {
     setError(null);
 
     try {
-      // Call the real backend — this runs M1-M7 pipeline
       const result = await analyzePDF(pdf);
       setSessionId(result.session_id);
+      setSession(result.session_id);
+      incrementUsage();
 
       // Replay the audit_log to animate modules one-by-one
       const byModule: Record<string, string> = {};
@@ -98,13 +106,44 @@ export default function UploadProcess() {
               style={{ color: 'var(--text-heading)' }}>
               Analyze a Paper
             </h1>
-            <p className="text-center mb-10" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-center mb-2" style={{ color: 'var(--text-secondary)' }}>
               Upload your BERT fine-tuning paper and we'll infer all missing hyperparameters.
             </p>
+            {isAuthConfigured() && !isAuthenticated && (
+              <p className="text-center text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
+                {guestUsageCount}/{GUEST_LIMIT} free analyses used
+              </p>
+            )}
 
-            <div
-              {...getRootProps()}
-              className="interactive relative flex flex-col items-center justify-center gap-4 p-16 rounded-3xl transition-all duration-300"
+            {/* Guest limit reached */}
+            {isOverLimit ? (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                className="glass-panel p-8 text-center" style={{ maxWidth: 480, width: '100%' }}
+              >
+                <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+                  style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)' }}>
+                  <Lock className="w-7 h-7" style={{ color: 'var(--accent-primary)' }} />
+                </div>
+                <h2 className="font-display font-bold text-xl mb-2" style={{ color: 'var(--text-heading)' }}>
+                  Free Limit Reached
+                </h2>
+                <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
+                  You've analyzed {GUEST_LIMIT} papers as a guest. Sign in for unlimited access.
+                </p>
+                <button
+                  onClick={loginWithGoogle}
+                  className="interactive inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: 'var(--accent-gradient)', color: 'white' }}
+                >
+                  <LogIn className="w-4 h-4" /> Sign in with Google
+                </button>
+                <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>Free forever • Unlimited papers</p>
+              </motion.div>
+            ) : (
+              <div
+                {...getRootProps()}
+                className="interactive relative flex flex-col items-center justify-center gap-4 p-16 rounded-3xl transition-all duration-300"
               style={{
                 border: `2px dashed ${isDragActive ? 'var(--accent-primary)' : 'var(--border-highlight)'}`,
                 background: isDragActive ? 'rgba(139,92,246,0.06)' : 'var(--bg-surface-1)',
@@ -128,6 +167,7 @@ export default function UploadProcess() {
                 </p>
               </div>
             </div>
+            )}
           </motion.div>
         ) : (
           /* ─── PROCESSING ─── */

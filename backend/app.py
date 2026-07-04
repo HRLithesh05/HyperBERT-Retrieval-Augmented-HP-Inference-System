@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent          # e:\major_project_dataco
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "module0" / "src"))
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 from flask_cors import CORS
 from pymongo import MongoClient
 
@@ -537,6 +537,271 @@ def analyze():
         err = traceback.format_exc()
         print(f"❌ Pipeline error: {err}")
         return jsonify({"error": str(e), "traceback": err}), 500
+
+
+# ── SSE Streaming Analyze endpoint ─────────────────────────────────────
+
+@app.route("/api/analyze-stream", methods=["POST"])
+def analyze_stream():
+    """Stream pipeline progress via Server-Sent Events.
+    Each module completion sends an event so the frontend can update in real-time.
+    Final event contains the complete result JSON."""
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded."}), 400
+
+    uploaded = request.files["file"]
+    if not uploaded.filename or not uploaded.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF files are accepted."}), 400
+
+    session_id = str(uuid.uuid4())
+    session_dir = SESSIONS_DIR / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = session_dir / "paper.pdf"
+    uploaded.save(str(pdf_path))
+
+    # We need to read the file data before streaming since the request context will be active
+    filename = uploaded.filename
+
+    def generate():
+        audit_log = []
+
+        def log(module, msg):
+            entry = {"module": module, "timestamp": datetime.now(timezone.utc).isoformat(), "message": msg}
+            audit_log.append(entry)
+            print(f"[{module}] {msg}")
+
+        def emit(module, step, message):
+            """Send an SSE event to the client."""
+            data = json.dumps({"module": module, "step": step, "message": message})
+            return f"data: {data}\n\n"
+
+        try:
+            (analyze_pdf, check_completeness, InferenceEngine,
+             apply_constraints, detect_contradictions,
+             validate_config, generate_notebook) = _load_pipeline_modules()
+
+            # ── M1 ──
+            log("M1", f"Processing PDF: {filename}")
+            yield emit("M1", 1, f"Processing PDF: {filename}")
+            t0 = time.perf_counter()
+            user_result = analyze_pdf(str(pdf_path))
+            m1_msg = f"Extracted {len(user_result.get('text',''))} chars, task={user_result.get('task')}, model={user_result.get('model')}"
+            log("M1", m1_msg)
+            present_hps = {k: v for k, v in user_result.get("hyperparameters", {}).items() if v is not None}
+            log("M1", f"Found {len(present_hps)} explicit HPs: {list(present_hps.keys())}")
+            yield emit("M1", 1, f"{len(user_result.get('text',''))} chars, {len(present_hps)} HPs found")
+
+            user_hp_json = {
+                "model": user_result.get("model"),
+                "task": user_result.get("task"),
+                "dataset": user_result.get("dataset"),
+                "hyperparameters": user_result.get("hyperparameters", {}),
+                "missing_params": user_result.get("missing_params", []),
+                "confidence": user_result.get("confidence", 0.0),
+            }
+
+            # ── M2 ──
+            yield emit("M2", 2, "Computing R-Score and completeness")
+            log("M2", "Computing R-Score and completeness")
+            completeness = check_completeness(user_hp_json, weights=CONFIG.get("rscore", {}).get("weights"))
+            m2_msg = f"R-Score={completeness['rscore']:.3f}, {completeness['completeness_pct']}% complete"
+            log("M2", m2_msg)
+            yield emit("M2", 2, m2_msg)
+
+            repro_score = round(completeness["completeness_pct"], 1)
+
+            # ── M3 ──
+            evidence_report = {}
+            inferred_config = {}
+            strategy_used = "none"
+            strategy_cascade = {}
+
+            if completeness["needs_inference"] and MONGO_OK:
+                yield emit("M3", 3, "Starting FAISS evidence retrieval")
+                log("M3", "Starting FAISS evidence retrieval")
+                engine = InferenceEngine(CONFIG, DB)
+                result = engine.infer(
+                    user_hp_json=user_hp_json,
+                    missing_params=completeness["missing_params"],
+                    title=user_result.get("title", ""),
+                    abstract=user_result.get("abstract", ""),
+                )
+                inferred_config = result["inferred_config"]
+                evidence_report = result["evidence_report"]
+                strategy_used = result["strategy_used"]
+                strategy_cascade = _build_strategy_cascade(strategy_used, evidence_report)
+                m3_msg = f"Strategy={strategy_used}, {evidence_report.get('total_evidence_papers', 0)} papers"
+                log("M3", m3_msg)
+                yield emit("M3", 3, m3_msg)
+            else:
+                log("M3", "Skipped — all HPs present or MongoDB unavailable")
+                for param, value in user_hp_json["hyperparameters"].items():
+                    inferred_config[param] = {
+                        "value": value,
+                        "source": "extracted_from_paper" if value is not None else "bert_default",
+                        "confidence": 1.0 if value is not None else 0.2,
+                    }
+                strategy_cascade = _build_strategy_cascade("none", {})
+                yield emit("M3", 3, "Skipped — all HPs present")
+
+            # ── M4 ──
+            yield emit("M4", 4, "Applying domain constraints")
+            log("M4", "Applying domain constraints")
+            constraint_result = apply_constraints(inferred_config, task=user_hp_json.get("task"))
+            inferred_config = constraint_result["config"]
+            adjustments = constraint_result["adjustments"]
+            m4_msg = f"{len(adjustments)} adjustments applied"
+            for adj in adjustments:
+                log("M4", f"Adjusted {adj['param']}: {adj['reason']}")
+            yield emit("M4", 4, m4_msg)
+
+            # ── M5 ──
+            yield emit("M5", 5, "Running contradiction detection")
+            log("M5", "Running contradiction / outlier detection")
+            contradiction_report = detect_contradictions(evidence_report)
+            m5_msg = contradiction_report.get("summary", "No contradictions")
+            log("M5", m5_msg)
+            yield emit("M5", 5, m5_msg[:50])
+
+            # ── M6 ──
+            yield emit("M6", 6, "Running self-critique validator")
+            log("M6", "Running self-critique validator")
+            validation_result = validate_config(inferred_config)
+            validated_config = validation_result["validated_config"]
+            m6_msg = f"Verdict: {validation_result['verdict']}"
+            log("M6", m6_msg)
+            yield emit("M6", 6, m6_msg)
+
+            # ── M7 ──
+            yield emit("M7", 7, "Generating Jupyter notebook")
+            log("M7", "Generating Jupyter notebook")
+            nb_path = generate_notebook(
+                validated_config=validated_config,
+                evidence_report=evidence_report,
+                user_hp_json=user_hp_json,
+                contradiction_report=contradiction_report,
+                validation_result=validation_result,
+                output_path=str(session_dir / "training_notebook.ipynb"),
+            )
+            log("M7", f"Notebook: {nb_path}")
+            yield emit("M7", 7, "training_notebook.ipynb created")
+
+            elapsed = round(time.perf_counter() - t0, 2)
+            log("DONE", f"Pipeline complete in {elapsed}s")
+
+            # ── M8: LLM Comparison ──
+            llm_comparison = None
+            try:
+                from src.module8.llm_baseline import run_llm_comparison
+                if completeness["missing_params"]:
+                    yield emit("M8", 8, "Running LLM comparison")
+                    log("M8", "Running LLM comparison")
+                    llm_comparison = run_llm_comparison(
+                        task=user_hp_json.get("task", ""),
+                        model=user_hp_json.get("model", "BERT"),
+                        dataset=user_hp_json.get("dataset", ""),
+                        missing_params=completeness["missing_params"],
+                        rag_config=validated_config,
+                        gemini_key=os.environ.get("GEMINI_API_KEY"),
+                        groq_key=os.environ.get("GROQ_API_KEY"),
+                    )
+                    summary = llm_comparison.get("comparison", {}).get("summary", {})
+                    m8_msg = f"{summary.get('agreed', 0)}/{summary.get('total_compared', 0)} agree"
+                    log("M8", m8_msg)
+                    yield emit("M8", 8, m8_msg)
+            except Exception as llm_err:
+                log("M8", f"LLM comparison skipped: {llm_err}")
+                yield emit("M8", 8, "Skipped")
+
+            # ── M8b: Meta-Agent ──
+            agent_result = None
+            try:
+                from src.module8.meta_agent import run_meta_agent
+                log("M8b", "Running meta-reasoning agent")
+                agent_result = run_meta_agent(
+                    inferred_config=validated_config,
+                    per_param_confidence={},
+                    paper_info={
+                        "task": user_hp_json.get("task", ""),
+                        "model": user_hp_json.get("model", "BERT"),
+                        "dataset": user_hp_json.get("dataset", ""),
+                    },
+                    missing_params=completeness["missing_params"],
+                    gemini_key=os.environ.get("GEMINI_API_KEY"),
+                    groq_key=os.environ.get("GROQ_API_KEY"),
+                )
+                validated_config = agent_result.get("enhanced_config", validated_config)
+            except Exception:
+                agent_result = None
+
+            # Enrich + exports (same as /api/analyze)
+            enriched_config = _enrich_config(validated_config, evidence_report, user_result, strategy_used)
+            paper_info = {"title": user_result.get("title", ""), "task": user_result.get("task", ""), "model": user_result.get("model", "")}
+            py_script = _generate_python_script(enriched_config, paper_info)
+            (session_dir / "training_script.py").write_text(py_script, encoding="utf-8")
+            try:
+                yaml_config = _generate_yaml_config(enriched_config, paper_info)
+                (session_dir / "config.yaml").write_text(yaml_config, encoding="utf-8")
+            except ImportError:
+                (session_dir / "config.yaml").write_text("# yaml package not installed\n", encoding="utf-8")
+
+            response = {
+                "session_id": session_id,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "pipeline_seconds": elapsed,
+                "paper": {
+                    "title": user_result.get("title", ""),
+                    "task": user_result.get("task"),
+                    "model": user_result.get("model"),
+                    "dataset": user_result.get("dataset"),
+                    "reproducibility_score": repro_score,
+                    "explicit_hp_count": len(present_hps),
+                    "total_hp_count": 12,
+                },
+                "completeness": {
+                    "rscore": completeness["rscore"],
+                    "present_params": list(present_hps.keys()),
+                    "missing_params": completeness["missing_params"],
+                    "completeness_pct": completeness["completeness_pct"],
+                    "needs_inference": completeness["needs_inference"],
+                },
+                "strategy_cascade": strategy_cascade,
+                "strategy_used": strategy_used,
+                "config": enriched_config,
+                "evidence_papers": evidence_report.get("papers", [])[:10],
+                "constraints": [
+                    {"param": adj["param"], "rule": adj.get("rule", "Domain Rule"),
+                     "old_value": adj.get("old_value"), "new_value": adj.get("new_value"),
+                     "explanation": adj.get("reason", ""), "citation": adj.get("citation", "")}
+                    for adj in adjustments
+                ],
+                "contradictions": contradiction_report.get("contradictions", []),
+                "contradiction_summary": contradiction_report.get("summary", "No contradictions detected"),
+                "validation": {
+                    "verdict": validation_result["verdict"],
+                    "errors": validation_result.get("errors", []),
+                    "corrections": validation_result.get("corrections", []),
+                    "warnings": validation_result.get("warnings", []),
+                },
+                "audit_log": audit_log,
+                "llm_comparison": llm_comparison,
+                "agent_decisions": agent_result.get("agent_decisions", []) if agent_result else [],
+                "agent_summary": agent_result.get("agent_summary", {}) if agent_result else {},
+            }
+
+            _save_session(session_id, response)
+
+            # Final result event
+            yield f"event: result\ndata: {json.dumps(response)}\n\n"
+
+        except Exception as e:
+            import traceback
+            err_msg = str(e)
+            print(f"❌ Pipeline error: {traceback.format_exc()}")
+            yield f"event: error\ndata: {json.dumps({'error': err_msg})}\n\n"
+
+    return Response(generate(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.route("/api/session/<session_id>", methods=["GET"])

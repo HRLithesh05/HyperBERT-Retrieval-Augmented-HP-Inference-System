@@ -3,8 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileText, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { analyzePDFStream, analyzePDF } from '@/lib/api';
-import { useSession } from '@/contexts/SessionContext';
+import { analyzePDF } from '@/lib/api';
 
 const modules = [
   { id: 1, name: 'PDF Analyzer', summary: '14,200 chars, 3 tables extracted', detail: 'Parsing text, tables & raw hyperparameters' },
@@ -23,7 +22,6 @@ export default function UploadProcess() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { setSession, incrementUsage } = useSession();
 
   const onDrop = useCallback(async (accepted: File[]) => {
     if (!accepted.length) return;
@@ -33,49 +31,42 @@ export default function UploadProcess() {
     setError(null);
 
     try {
-      // Use SSE streaming for real-time progress synced with backend
-      const result = await analyzePDFStream(pdf, (module, step, message) => {
-        // Map module step to the 1-7 module index
-        const idx = step <= 7 ? step - 1 : 6; // M8+ maps to last visible slot
-        setProgress(step <= 7 ? step : 7);
-        setModuleSummaries(prev => {
-          const next = [...prev];
-          if (idx >= 0 && idx < 7) {
-            next[idx] = message.slice(0, 50);
-          }
-          return next;
-        });
-      });
-
+      // Call the real backend — this runs M1-M7 pipeline
+      const result = await analyzePDF(pdf);
       setSessionId(result.session_id);
-      setSession(result.session_id);
-      incrementUsage();
-      // Ensure all 7 are marked complete
-      setProgress(modules.length);
-    } catch (e: any) {
-      console.error("SSE stream error, falling back:", e);
-      // Fallback to non-streaming API
-      try {
-        const result = await analyzePDF(pdf);
-        setSessionId(result.session_id);
-        setSession(result.session_id);
-        incrementUsage();
-        for (let i = 0; i < modules.length; i++) {
-          setProgress(i + 1);
-        }
-      } catch (e2: any) {
-        setError(e2.message || "Pipeline failed. Make sure the backend is running on port 5000.");
-        // Demo mode fallback
-        let i = 0;
-        const tick = async () => {
-          i++;
-          setProgress(i);
-          setModuleSummaries(prev => { const n = [...prev]; n[i-1] = modules[i-1]?.summary || ''; return n; });
-          if (i < modules.length) setTimeout(tick, 1000 + Math.random() * 300);
-          else setSessionId('demo');
-        };
-        setTimeout(tick, 800);
+
+      // Replay the audit_log to animate modules one-by-one
+      const byModule: Record<string, string> = {};
+      for (const log of result.audit_log) {
+        byModule[log.module] = log.message;
       }
+
+      // Animate through modules using audit_log timestamps
+      for (let i = 0; i < modules.length; i++) {
+        await new Promise(r => setTimeout(r, 600 + Math.random() * 200));
+        setProgress(i + 1);
+        const mKey = `M${i + 1}`;
+        if (byModule[mKey]) {
+          setModuleSummaries(prev => {
+            const next = [...prev];
+            next[i] = byModule[mKey].slice(0, 45);
+            return next;
+          });
+        }
+      }
+    } catch (e: any) {
+      console.error("API error:", e);
+      setError(e.message || "Pipeline failed. Make sure the backend is running on port 5000.");
+      // Still animate for demo mode if backend is offline
+      let i = 0;
+      const tick = async () => {
+        i++;
+        setProgress(i);
+        setModuleSummaries(prev => { const n = [...prev]; n[i-1] = modules[i-1]?.summary || ''; return n; });
+        if (i < modules.length) setTimeout(tick, 1000 + Math.random() * 300);
+        else setSessionId('demo');
+      };
+      setTimeout(tick, 800);
     }
   }, []);
 
@@ -107,14 +98,13 @@ export default function UploadProcess() {
               style={{ color: 'var(--text-heading)' }}>
               Analyze a Paper
             </h1>
-            <p className="text-center mb-2" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-center mb-10" style={{ color: 'var(--text-secondary)' }}>
               Upload your BERT fine-tuning paper and we'll infer all missing hyperparameters.
             </p>
 
-
             <div
-                {...getRootProps()}
-                className="interactive relative flex flex-col items-center justify-center gap-4 p-16 rounded-3xl transition-all duration-300"
+              {...getRootProps()}
+              className="interactive relative flex flex-col items-center justify-center gap-4 p-16 rounded-3xl transition-all duration-300"
               style={{
                 border: `2px dashed ${isDragActive ? 'var(--accent-primary)' : 'var(--border-highlight)'}`,
                 background: isDragActive ? 'rgba(139,92,246,0.06)' : 'var(--bg-surface-1)',

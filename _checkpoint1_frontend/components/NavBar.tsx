@@ -49,12 +49,9 @@ export function NavBar() {
             {navLink('/upload', 'Upload', UploadCloud)}
             {navLink('/corpus', 'Corpus', Database)}
             {navLink('/evaluation', 'Evaluation', BarChart2)}
-            {navLink('/methodology', 'About', Brain)}
           </nav>
         </div>
-        <div className="flex items-center gap-3">
-          <ThemeToggle />
-        </div>
+        <ThemeToggle />
       </div>
     </header>
   );

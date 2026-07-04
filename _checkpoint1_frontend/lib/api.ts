@@ -59,23 +59,6 @@ export interface AnalysisResult {
     warnings: any[];
   };
   audit_log: Array<{ module: string; timestamp: string; message: string }>;
-  agent_decisions?: Array<{
-    param: string;
-    action: string;
-    original_value: any;
-    original_confidence: number;
-    result_value: any;
-    result_confidence: number;
-    reasoning: string[];
-  }>;
-  agent_summary?: {
-    total_params_reviewed: number;
-    accepted: number;
-    llm_consulted: number;
-    confidence_boosted: number;
-    llm_overridden: number;
-    has_llm_access: boolean;
-  };
 }
 
 /** Upload a PDF and run the full M1-M7 pipeline */
@@ -94,82 +77,6 @@ export async function analyzePDF(file: File): Promise<AnalysisResult> {
   }
 
   return res.json();
-}
-
-/** Upload PDF with SSE streaming — real-time module progress */
-export async function analyzePDFStream(
-  file: File,
-  onProgress: (module: string, step: number, message: string) => void,
-): Promise<AnalysisResult> {
-  const form = new FormData();
-  form.append("file", file);
-
-  const res = await fetch(`${BASE}/analyze-stream`, {
-    method: "POST",
-    body: form,
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown server error" }));
-    throw new Error(err.error || `HTTP ${res.status}`);
-  }
-
-  return new Promise((resolve, reject) => {
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    function processChunk(text: string) {
-      buffer += text;
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.module && data.step) {
-              onProgress(data.module, data.step, data.message);
-            }
-          } catch {}
-        }
-        if (line.startsWith("event: result")) {
-          // Next data line is the final result
-          const nextDataIdx = lines.indexOf(line) + 1;
-          if (nextDataIdx < lines.length && lines[nextDataIdx].startsWith("data: ")) {
-            try {
-              resolve(JSON.parse(lines[nextDataIdx].slice(6)));
-              return;
-            } catch {}
-          }
-        }
-        if (line.startsWith("event: error")) {
-          const nextDataIdx = lines.indexOf(line) + 1;
-          if (nextDataIdx < lines.length && lines[nextDataIdx].startsWith("data: ")) {
-            try {
-              const errData = JSON.parse(lines[nextDataIdx].slice(6));
-              reject(new Error(errData.error || "Pipeline failed"));
-              return;
-            } catch {}
-          }
-        }
-      }
-    }
-
-    function pump(): Promise<void> {
-      return reader.read().then(({ done, value }) => {
-        if (done) {
-          // Process remaining buffer
-          if (buffer.trim()) processChunk("\n");
-          return;
-        }
-        processChunk(decoder.decode(value, { stream: true }));
-        return pump();
-      });
-    }
-
-    pump().catch(reject);
-  });
 }
 
 /** Fetch a previously stored session by ID */

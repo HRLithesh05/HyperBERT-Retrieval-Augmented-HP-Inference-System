@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import math
 
-# Minimum confidence threshold — below this we flag as "low confidence"
-CONFIDENCE_THRESHOLD = 0.3
+# Minimum confidence threshold — below this we fall back to BERT defaults.
+# Set low (0.15) so corpus-inferred values are preferred over generic defaults
+# even with limited evidence. The UI shows the confidence % so users can judge.
+CONFIDENCE_THRESHOLD = 0.15
 
 
 def calibrate_confidence(

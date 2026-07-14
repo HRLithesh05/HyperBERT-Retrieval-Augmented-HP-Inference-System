@@ -20,9 +20,10 @@ from src.module3.confidence import calibrate_confidence, CONFIDENCE_THRESHOLD
 class InferenceEngine:
     """Core retrieval-augmented hyperparameter inference engine."""
 
-    def __init__(self, config: dict, mongo_db):
+    def __init__(self, config: dict, mongo_db, retriever=None):
         self.config = config
-        self.retriever = FAISSRetriever(config, mongo_db)
+        # Use pre-built retriever if provided, otherwise create new one
+        self.retriever = retriever if retriever is not None else FAISSRetriever(config, mongo_db)
         self.min_evidence = config.get("inference", {}).get("min_evidence", 3)
         self.top_k = config.get("inference", {}).get("top_k", 20)
 

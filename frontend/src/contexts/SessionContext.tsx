@@ -26,7 +26,7 @@ const SessionContext = createContext<SessionState>({
 });
 
 const STORAGE_KEY = 'hyperbert_session_id';
-const USAGE_KEY = 'hyperbert_guest_usage';
+const USAGE_KEY = 'hyperbert_guest_usage_v2';
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState<string | null>(() => {

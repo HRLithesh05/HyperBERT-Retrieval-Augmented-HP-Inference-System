@@ -59,6 +59,7 @@ export interface AnalysisResult {
     warnings: any[];
   };
   audit_log: Array<{ module: string; timestamp: string; message: string }>;
+  llm_comparison?: any;
   agent_decisions?: Array<{
     param: string;
     action: string;
@@ -118,13 +119,31 @@ export async function analyzePDFStream(
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let resolved = false;
 
-    function processChunk(text: string) {
-      buffer += text;
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
+    function processLines(lines: string[]) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.startsWith("event: result")) {
+          // Next line should be the data
+          if (i + 1 < lines.length && lines[i + 1].startsWith("data: ")) {
+            try {
+              resolved = true;
+              resolve(JSON.parse(lines[i + 1].slice(6)));
+              return;
+            } catch {}
+          }
+        }
+        if (line.startsWith("event: error")) {
+          if (i + 1 < lines.length && lines[i + 1].startsWith("data: ")) {
+            try {
+              const errData = JSON.parse(lines[i + 1].slice(6));
+              resolved = true;
+              reject(new Error(errData.error || "Pipeline failed"));
+              return;
+            } catch {}
+          }
+        }
         if (line.startsWith("data: ")) {
           try {
             const data = JSON.parse(line.slice(6));
@@ -133,38 +152,22 @@ export async function analyzePDFStream(
             }
           } catch {}
         }
-        if (line.startsWith("event: result")) {
-          // Next data line is the final result
-          const nextDataIdx = lines.indexOf(line) + 1;
-          if (nextDataIdx < lines.length && lines[nextDataIdx].startsWith("data: ")) {
-            try {
-              resolve(JSON.parse(lines[nextDataIdx].slice(6)));
-              return;
-            } catch {}
-          }
-        }
-        if (line.startsWith("event: error")) {
-          const nextDataIdx = lines.indexOf(line) + 1;
-          if (nextDataIdx < lines.length && lines[nextDataIdx].startsWith("data: ")) {
-            try {
-              const errData = JSON.parse(lines[nextDataIdx].slice(6));
-              reject(new Error(errData.error || "Pipeline failed"));
-              return;
-            } catch {}
-          }
-        }
       }
     }
 
     function pump(): Promise<void> {
       return reader.read().then(({ done, value }) => {
         if (done) {
-          // Process remaining buffer
-          if (buffer.trim()) processChunk("\n");
+          if (buffer.trim()) {
+            processLines(buffer.split("\n"));
+          }
           return;
         }
-        processChunk(decoder.decode(value, { stream: true }));
-        return pump();
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        processLines(lines);
+        if (!resolved) return pump();
       });
     }
 

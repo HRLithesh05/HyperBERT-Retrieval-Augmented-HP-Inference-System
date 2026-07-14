@@ -1,10 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import { UploadCloud, FileText, CheckCircle2, Circle, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { analyzePDFStream, analyzePDF } from '@/lib/api';
 import { useSession } from '@/contexts/SessionContext';
+import { useAuth } from '@/contexts/AuthContext';
+import { SignInModal } from '@/components/AuthGate';
 
 const modules = [
   { id: 1, name: 'PDF Analyzer', summary: '14,200 chars, 3 tables extracted', detail: 'Parsing text, tables & raw hyperparameters' },
@@ -23,20 +25,26 @@ export default function UploadProcess() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { setSession, incrementUsage } = useSession();
+  const { sessionId: ctxSessionId, setSession, incrementUsage } = useSession();
+  const { canAnalyze, remainingFree, isGuest, isAuthenticated } = useAuth();
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   const onDrop = useCallback(async (accepted: File[]) => {
     if (!accepted.length) return;
+    // Check guest limit before proceeding
+    if (!canAnalyze) {
+      setShowAuthModal(true);
+      return;
+    }
     const pdf = accepted[0];
     setFile(pdf);
     setProgress(0);
     setError(null);
 
     try {
-      // Use SSE streaming for real-time progress synced with backend
+      // Use SSE streaming for real-time progress synced with backend terminal
       const result = await analyzePDFStream(pdf, (module, step, message) => {
-        // Map module step to the 1-7 module index
-        const idx = step <= 7 ? step - 1 : 6; // M8+ maps to last visible slot
+        const idx = step <= 7 ? step - 1 : 6;
         setProgress(step <= 7 ? step : 7);
         setModuleSummaries(prev => {
           const next = [...prev];
@@ -50,7 +58,6 @@ export default function UploadProcess() {
       setSessionId(result.session_id);
       setSession(result.session_id);
       incrementUsage();
-      // Ensure all 7 are marked complete
       setProgress(modules.length);
     } catch (e: any) {
       console.error("SSE stream error, falling back:", e);
@@ -60,12 +67,27 @@ export default function UploadProcess() {
         setSessionId(result.session_id);
         setSession(result.session_id);
         incrementUsage();
+
+        // Replay the audit_log to animate modules one-by-one
+        const byModule: Record<string, string> = {};
+        for (const log of result.audit_log) {
+          byModule[log.module] = log.message;
+        }
         for (let i = 0; i < modules.length; i++) {
+          await new Promise(r => setTimeout(r, 600 + Math.random() * 200));
           setProgress(i + 1);
+          const mKey = `M${i + 1}`;
+          if (byModule[mKey]) {
+            setModuleSummaries(prev => {
+              const next = [...prev];
+              next[i] = byModule[mKey].slice(0, 45);
+              return next;
+            });
+          }
         }
       } catch (e2: any) {
         setError(e2.message || "Pipeline failed. Make sure the backend is running on port 5000.");
-        // Demo mode fallback
+        // Still animate for demo mode if backend is offline
         let i = 0;
         const tick = async () => {
           i++;
@@ -88,6 +110,14 @@ export default function UploadProcess() {
 
   const done = progress >= modules.length && sessionId !== null;
 
+  // Auto-navigate to results after pipeline completes
+  useEffect(() => {
+    if (done && sessionId && sessionId !== 'demo') {
+      const timer = setTimeout(() => navigate(`/results/${sessionId}`), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [done, sessionId, navigate]);
+
   return (
     <div
       className="relative flex flex-col items-center justify-center px-4 py-16"
@@ -107,14 +137,41 @@ export default function UploadProcess() {
               style={{ color: 'var(--text-heading)' }}>
               Analyze a Paper
             </h1>
-            <p className="text-center mb-2" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-center mb-6" style={{ color: 'var(--text-secondary)' }}>
               Upload your BERT fine-tuning paper and we'll infer all missing hyperparameters.
             </p>
 
+            {/* Resume previous session */}
+            {ctxSessionId && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+                className="w-full mb-6 px-5 py-4 rounded-2xl flex items-center justify-between"
+                style={{
+                  background: 'rgba(16,185,129,0.06)',
+                  border: '1px solid rgba(16,185,129,0.2)',
+                }}
+              >
+                <div>
+                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Previous analysis available
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Session: {ctxSessionId.slice(0, 8)}… — Click to view results
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate(`/results/${ctxSessionId}`)}
+                  className="interactive flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-white"
+                  style={{ background: 'var(--accent-gradient)' }}
+                >
+                  <ArrowRight className="w-3.5 h-3.5" /> Resume
+                </button>
+              </motion.div>
+            )}
 
             <div
-                {...getRootProps()}
-                className="interactive relative flex flex-col items-center justify-center gap-4 p-16 rounded-3xl transition-all duration-300"
+              {...getRootProps()}
+              className="interactive relative flex flex-col items-center justify-center gap-4 p-16 rounded-3xl transition-all duration-300"
               style={{
                 border: `2px dashed ${isDragActive ? 'var(--accent-primary)' : 'var(--border-highlight)'}`,
                 background: isDragActive ? 'rgba(139,92,246,0.06)' : 'var(--bg-surface-1)',
@@ -240,6 +297,19 @@ export default function UploadProcess() {
               })}
             </div>
 
+            {/* Error banner */}
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="mx-8 mb-4 px-4 py-3 rounded-xl text-sm"
+                  style={{ background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.2)', color: 'var(--status-danger)' }}
+                >
+                  ⚠ {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {/* Done CTA */}
             <AnimatePresence>
               {done && (
@@ -266,6 +336,21 @@ export default function UploadProcess() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Guest usage counter */}
+      {isGuest && !file && (
+        <motion.p
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+          className="text-xs mt-6" style={{ color: 'var(--text-muted)' }}
+        >
+          {remainingFree > 0
+            ? `${remainingFree} free analysis${remainingFree === 1 ? '' : 'es'} remaining`
+            : 'Free limit reached — sign in for unlimited access'}
+        </motion.p>
+      )}
+
+      {/* Auth modal */}
+      <SignInModal open={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
   );
 }

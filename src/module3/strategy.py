@@ -50,6 +50,7 @@ class EvidencePool:
                 "rscore": rscore,
                 "model": hp_json.get("model"),
                 "task": hp_json.get("task"),
+                "hyperparameters": hps,  # Include actual HP values for evidence table
             })
 
 

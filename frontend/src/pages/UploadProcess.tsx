@@ -28,6 +28,24 @@ export default function UploadProcess() {
   const { sessionId: ctxSessionId, setSession, incrementUsage } = useSession();
   const { canAnalyze, remainingFree, isGuest, isAuthenticated } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [modelReady, setModelReady] = useState(true); // assume ready
+
+  // Poll backend for model readiness
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        if (!cancelled) setModelReady(data.retriever_ready);
+        if (!data.retriever_ready && !cancelled) {
+          setTimeout(check, 3000); // Re-check every 3s
+        }
+      } catch { /* backend not up yet */ }
+    };
+    check();
+    return () => { cancelled = true; };
+  }, []);
 
   const onDrop = useCallback(async (accepted: File[]) => {
     if (!accepted.length) return;
@@ -137,9 +155,18 @@ export default function UploadProcess() {
               style={{ color: 'var(--text-heading)' }}>
               Analyze a Paper
             </h1>
-            <p className="text-center mb-6" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-center mb-4" style={{ color: 'var(--text-secondary)' }}>
               Upload your BERT fine-tuning paper and we'll infer all missing hyperparameters.
             </p>
+
+            {/* Model loading status */}
+            <div className="flex items-center justify-center gap-2 mb-4">
+              <div className={`w-2 h-2 rounded-full ${!modelReady ? 'animate-pulse' : ''}`}
+                style={{ background: modelReady ? 'var(--status-success)' : 'var(--status-warning)' }} />
+              <span className="text-xs" style={{ color: modelReady ? 'var(--status-success)' : 'var(--status-warning)' }}>
+                {modelReady ? 'AI model ready' : 'AI model loading — analysis will be slower'}
+              </span>
+            </div>
 
             {/* Resume previous session */}
             {ctxSessionId && (

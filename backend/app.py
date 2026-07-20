@@ -98,6 +98,15 @@ def get_retriever():
     return _GLOBAL_RETRIEVER
 
 
+# ── Status endpoint ──────────────────────────────────────────────────
+@app.route("/api/status")
+def api_status():
+    """Returns backend readiness status — lets frontend show loading state."""
+    return jsonify({
+        "retriever_ready": _retriever_ready.is_set(),
+        "mongo_ok": MONGO_OK,
+    })
+
 # ══════════════════════════════════════════════════════════════════════
 #  HELPERS
 # ══════════════════════════════════════════════════════════════════════
@@ -683,23 +692,44 @@ def analyze_stream():
             if completeness["needs_inference"] and MONGO_OK:
                 yield emit("M3", 3, "Starting FAISS evidence retrieval")
                 log("M3", "Starting FAISS evidence retrieval")
-                engine = InferenceEngine(CONFIG, DB, retriever=get_retriever())
-                t3 = time.perf_counter()
-                result = engine.infer(
-                    user_hp_json=user_hp_json,
-                    missing_params=completeness["missing_params"],
-                    title=user_result.get("title", ""),
-                    abstract=user_result.get("abstract", ""),
-                )
-                m3_elapsed = time.perf_counter() - t3
-                log("M3", f"Evidence retrieval completed in {m3_elapsed:.1f}s")
-                inferred_config = result["inferred_config"]
-                evidence_report = result["evidence_report"]
-                strategy_used = result["strategy_used"]
-                strategy_cascade = _build_strategy_cascade(strategy_used, evidence_report)
-                m3_msg = f"Strategy={strategy_used}, {evidence_report.get('total_evidence_papers', 0)} papers"
-                log("M3", m3_msg)
-                yield emit("M3", 3, m3_msg)
+
+                # Check if retriever is still loading — notify the user
+                if not _retriever_ready.is_set():
+                    yield emit("M3", 3, "⏳ Loading AI model (first-time setup)...")
+                    log("M3", "Waiting for retriever model to finish loading...")
+
+                retriever = get_retriever()
+                if retriever is None:
+                    log("M3", "Retriever unavailable — skipping inference")
+                    yield emit("M3", 3, "Retriever unavailable — using defaults")
+                    for param in completeness["missing_params"]:
+                        from src.module3.strategy import BERT_DEFAULTS
+                        inferred_config[param] = {
+                            "value": BERT_DEFAULTS.get(param),
+                            "source": "bert_default",
+                            "confidence": 0.2,
+                            "reason": "retriever unavailable",
+                        }
+                    strategy_cascade = _build_strategy_cascade("none", {})
+                else:
+                    yield emit("M3", 3, "Model ready — searching corpus...")
+                    engine = InferenceEngine(CONFIG, DB, retriever=retriever)
+                    t3 = time.perf_counter()
+                    result = engine.infer(
+                        user_hp_json=user_hp_json,
+                        missing_params=completeness["missing_params"],
+                        title=user_result.get("title", ""),
+                        abstract=user_result.get("abstract", ""),
+                    )
+                    m3_elapsed = time.perf_counter() - t3
+                    log("M3", f"Evidence retrieval completed in {m3_elapsed:.1f}s")
+                    inferred_config = result["inferred_config"]
+                    evidence_report = result["evidence_report"]
+                    strategy_used = result["strategy_used"]
+                    strategy_cascade = _build_strategy_cascade(strategy_used, evidence_report)
+                    m3_msg = f"Strategy={strategy_used}, {evidence_report.get('total_evidence_papers', 0)} papers"
+                    log("M3", m3_msg)
+                    yield emit("M3", 3, m3_msg)
             else:
                 log("M3", "Skipped — all HPs present or MongoDB unavailable")
                 for param, value in user_hp_json["hyperparameters"].items():

@@ -5,9 +5,8 @@
  *   - 5 papers can be analyzed without signing in
  *   - Notebook launch and analysis history require sign-in
  *
- * Credentials in frontend/.env:
- *   VITE_AUTH0_DOMAIN=dev-iutbwvtqrluinf71.us.auth0.com
- *   VITE_AUTH0_CLIENT_ID=m345VQTMFb82eJDZ2SEPxY4nEab8Z8oy
+ * Auth flow: Uses loginWithPopup for inline sign-in (no page redirect).
+ * This keeps the user on the current page after signing in.
  */
 import { createContext, useContext, type ReactNode } from 'react';
 import { Auth0Provider, useAuth0, type User } from '@auth0/auth0-react';
@@ -21,13 +20,12 @@ interface AuthState {
   user: User | undefined;
   isAuthenticated: boolean;
   isLoading: boolean;
-  /** true when user is not signed in */
   isGuest: boolean;
-  /** true when guest still has free papers remaining, or is authenticated */
   canAnalyze: boolean;
-  /** number of free papers remaining for guest */
   remainingFree: number;
-  loginWithGoogle: () => void;
+  /** Opens a popup for Google sign-in (stays on current page) */
+  loginWithGoogle: () => Promise<void>;
+  /** Opens a popup for any sign-in method */
   loginWithPopup: () => Promise<void>;
   logout: () => void;
   getAccessToken: () => Promise<string>;
@@ -40,13 +38,12 @@ const AuthContext = createContext<AuthState>({
   isGuest: true,
   canAnalyze: true,
   remainingFree: GUEST_PAPER_LIMIT,
-  loginWithGoogle: () => {},
+  loginWithGoogle: async () => {},
   loginWithPopup: async () => {},
   logout: () => {},
   getAccessToken: async () => '',
 });
 
-/** Check if Auth0 is configured (credentials present) */
 export function isAuthConfigured(): boolean {
   return !!(domain && clientId);
 }
@@ -56,7 +53,6 @@ function AuthContextBridge({ children }: { children: ReactNode }) {
     user,
     isAuthenticated,
     isLoading,
-    loginWithRedirect,
     loginWithPopup: auth0Popup,
     logout: auth0Logout,
     getAccessTokenSilently,
@@ -68,14 +64,20 @@ function AuthContextBridge({ children }: { children: ReactNode }) {
   const remainingFree = Math.max(0, GUEST_PAPER_LIMIT - guestUsageCount);
   const canAnalyze = isAuthenticated || guestUsageCount < GUEST_PAPER_LIMIT;
 
-  const loginWithGoogle = () => {
-    loginWithRedirect({
-      authorizationParams: {
-        connection: 'google-oauth2',
-      },
-    });
+  // Use POPUP for Google sign-in — user stays on the current page
+  const loginWithGoogle = async () => {
+    try {
+      await auth0Popup({
+        authorizationParams: {
+          connection: 'google-oauth2',
+        },
+      });
+    } catch (e) {
+      console.error('Auth0 Google login error:', e);
+    }
   };
 
+  // Generic popup login
   const loginWithPopup = async () => {
     try {
       await auth0Popup();
@@ -113,7 +115,6 @@ function AuthContextBridge({ children }: { children: ReactNode }) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // If Auth0 isn't configured, render children directly (dev mode — no gating)
   if (!isAuthConfigured()) {
     return (
       <AuthContext.Provider
@@ -124,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isGuest: true,
           canAnalyze: true,
           remainingFree: GUEST_PAPER_LIMIT,
-          loginWithGoogle: () => console.warn('Auth0 not configured'),
+          loginWithGoogle: async () => console.warn('Auth0 not configured'),
           loginWithPopup: async () => console.warn('Auth0 not configured'),
           logout: () => {},
           getAccessToken: async () => '',

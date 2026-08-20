@@ -11,6 +11,7 @@ Uses urllib.request — no extra dependencies needed.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import time
@@ -74,31 +75,96 @@ def check_ollama_health() -> dict:
         }
 
 
-def _parse_llm_json(response_text: str) -> dict:
-    """Extract JSON from LLM response, handling markdown code blocks and thinking tags."""
-    # Remove <think>...</think> blocks (Qwen3 sometimes includes reasoning)
-    cleaned = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL)
-    
-    # Try to find JSON in code blocks first
-    json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', cleaned, re.DOTALL)
-    if json_match:
-        return json.loads(json_match.group(1))
+def _clean_json_str(s: str) -> str:
+    """Pre-process text to fix common LLM JSON syntax issues."""
+    # Remove markdown code fences if present
+    s = re.sub(r'```(?:json)?\s*', '', s)
+    s = s.replace('```', '')
+    # Remove <think>...</think> tags if any
+    s = re.sub(r'<think>.*?</think>', '', s, flags=re.DOTALL)
+    # Remove trailing commas before } or ]
+    s = re.sub(r',\s*([\}\]])', r'\1', s)
+    return s.strip()
 
-    # Try to find raw JSON object
-    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned, re.DOTALL)
-    if json_match:
+
+def _parse_llm_json(response_text: str, target_params: list[str] | None = None) -> dict:
+    """Extract JSON from LLM response with multiple robust fallback layers.
+    
+    Handles:
+    1. Standard JSON with double quotes (json.loads)
+    2. Python dict syntax with single quotes (ast.literal_eval)
+    3. Trailing commas and single-quote repair
+    4. Regex key-value extraction for requested parameters
+    """
+    if not response_text or not response_text.strip():
+        return {}
+
+    cleaned = _clean_json_str(response_text)
+
+    # Candidate strings to try parsing
+    candidates = []
+
+    # 1. Regex match for outermost { ... }
+    match_outer = re.search(r'(\{.*\})', cleaned, re.DOTALL)
+    if match_outer:
+        candidates.append(match_outer.group(1).strip())
+
+    # 2. Regex match for non-greedy { ... }
+    match_inner = re.search(r'(\{[^{}]*\})', cleaned, re.DOTALL)
+    if match_inner:
+        candidates.append(match_inner.group(1).strip())
+
+    # 3. Whole cleaned text
+    candidates.append(cleaned)
+
+    for cand in candidates:
+        cand_clean = re.sub(r',\s*([\}\]])', r'\1', cand)
+        
+        # Layer 1: Strict JSON
         try:
-            return json.loads(json_match.group(0))
-        except json.JSONDecodeError:
+            res = json.loads(cand_clean)
+            if isinstance(res, dict) and res:
+                return res
+        except Exception:
             pass
 
-    # Try the simplest JSON pattern
-    json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-    if json_match:
-        return json.loads(json_match.group(0))
+        # Layer 2: ast.literal_eval for single-quoted Python dicts (e.g. {'learning_rate': 2e-5})
+        try:
+            res = ast.literal_eval(cand_clean)
+            if isinstance(res, dict) and res:
+                return res
+        except Exception:
+            pass
 
-    # Last resort: try the whole cleaned text
-    return json.loads(cleaned.strip())
+        # Layer 3: Quote substitution (single to double quotes)
+        try:
+            fixed_quotes = re.sub(r"(?<!\\)'", '"', cand_clean)
+            res = json.loads(fixed_quotes)
+            if isinstance(res, dict) and res:
+                return res
+        except Exception:
+            pass
+
+    # Layer 4: Fallback regex parameter extraction
+    params_to_find = target_params or list(BERT_HP_SCHEMA.keys())
+    extracted = {}
+    for param in params_to_find:
+        m = re.search(rf'[\'"]?{re.escape(param)}[\'"]?\s*:\s*[\'"]?([^\r\n,}}"\']+)[\'"]?', response_text)
+        if m:
+            raw_val = m.group(1).strip()
+            try:
+                if "." in raw_val or "e" in raw_val.lower():
+                    extracted[param] = float(raw_val)
+                else:
+                    extracted[param] = int(raw_val)
+            except ValueError:
+                extracted[param] = raw_val
+
+    if extracted:
+        return extracted
+
+    # Final attempt if everything failed
+    return json.loads(cleaned)
 
 
 def _validate_hp_values(raw: dict, target_params: list[str] | None = None) -> dict:
@@ -301,7 +367,7 @@ Do not include any explanation or reasoning, just the JSON object. No thinking, 
         }
     
     try:
-        raw_values = _parse_llm_json(result["text"])
+        raw_values = _parse_llm_json(result["text"], missing)
         validated = _validate_hp_values(raw_values, missing)
         return {
             "source": f"ollama-{model}",
@@ -370,7 +436,7 @@ Return ONLY the JSON object. No thinking, no reasoning, no explanation."""
         }
     
     try:
-        raw_values = _parse_llm_json(result["text"])
+        raw_values = _parse_llm_json(result["text"], missing_params)
         validated = _validate_hp_values(raw_values, missing_params)
         return {
             "source": f"ollama-{model}",

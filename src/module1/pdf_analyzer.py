@@ -231,7 +231,7 @@ def _prepare_text(raw_text: str, max_chars: int = 20000) -> str:
 
 
 # =====================================================================
-# Core extraction
+# Core extraction — Step 1: Regex
 # =====================================================================
 
 def _extract_from_text(text: str) -> dict:
@@ -307,11 +307,109 @@ def _extract_from_text(text: str) -> dict:
 
 
 # =====================================================================
+# Step 2: LLM-based extraction via Ollama (Qwen3-4B)
+# =====================================================================
+
+def _extract_with_llm(text: str, regex_result: dict) -> dict:
+    """Use Qwen3-4B via Ollama to extract HPs that regex missed.
+    
+    Only queries the LLM for parameters not found by regex.
+    Returns the LLM extraction result dict.
+    """
+    try:
+        from src.module8.ollama_client import (
+            check_ollama_health,
+            query_ollama_for_extraction,
+        )
+    except ImportError:
+        return {"suggestions": {}, "error": "ollama_client not available"}
+
+    # Check Ollama health first
+    health = check_ollama_health()
+    if not health["running"]:
+        return {"suggestions": {}, "error": f"Ollama not running: {health['error']}"}
+
+    # Query LLM for missing params
+    llm_result = query_ollama_for_extraction(
+        paper_text=text,
+        existing_hps=regex_result.get("hyperparameters", {}),
+    )
+    return llm_result
+
+
+# =====================================================================
+# Step 3: Validation merge — cross-validate regex + LLM
+# =====================================================================
+
+def _validate_and_merge(regex_result: dict, llm_result: dict) -> dict:
+    """Merge regex and LLM extraction results with validation.
+    
+    Priority: regex > LLM (regex is more reliable for standard formats).
+    LLM values fill in gaps where regex found nothing.
+    
+    Adds extraction_sources tracking for transparency.
+    """
+    regex_hps = regex_result.get("hyperparameters", {})
+    llm_suggestions = llm_result.get("suggestions", {})
+    
+    merged_hps = dict(regex_hps)  # Start with regex results
+    extraction_sources = {}
+    
+    for param in HP_FIELDS:
+        regex_val = regex_hps.get(param)
+        llm_val = llm_suggestions.get(param)
+        
+        if regex_val is not None:
+            # Regex found it — trust regex
+            merged_hps[param] = regex_val
+            extraction_sources[param] = "regex"
+        elif llm_val is not None:
+            # Only LLM found it — validate and use
+            merged_hps[param] = llm_val
+            extraction_sources[param] = "llm_extracted"
+        else:
+            # Neither found it — stays None
+            merged_hps[param] = None
+            extraction_sources[param] = "not_found"
+    
+    # Also merge task/model/dataset if regex missed them
+    merged_model = regex_result.get("model")
+    merged_task = regex_result.get("task")
+    merged_dataset = regex_result.get("dataset")
+    
+    # Recalculate missing params and confidence
+    missing = [f for f in HP_FIELDS if merged_hps.get(f) is None]
+    found_count = len(HP_FIELDS) - len(missing)
+    confidence = round(found_count / len(HP_FIELDS), 2) if HP_FIELDS else 0
+    
+    return {
+        "model": merged_model,
+        "task": merged_task,
+        "dataset": merged_dataset,
+        "hyperparameters": merged_hps,
+        "missing_params": missing,
+        "confidence": confidence,
+        "extraction_sources": extraction_sources,
+        "llm_extraction": {
+            "source": llm_result.get("source", ""),
+            "latency_ms": llm_result.get("latency_ms", 0),
+            "params_found": list(llm_suggestions.keys()),
+            "error": llm_result.get("error"),
+        },
+    }
+
+
+# =====================================================================
 # Public API — called by backend/app.py
 # =====================================================================
 
 def analyze_pdf(pdf_path: str) -> dict:
-    """Extract text from a PDF and run HP extraction.
+    """Extract text from a PDF and run the 3-step HP extraction pipeline.
+    
+    Pipeline:
+        Step 1: Regex extraction (fast, reliable for standard formats)
+        Step 2: Qwen LLM extraction via Ollama (for params regex missed)
+        Step 3: Validation merge (cross-validate and combine both)
 
     Parameters
     ----------
@@ -322,7 +420,8 @@ def analyze_pdf(pdf_path: str) -> dict:
     -------
     dict with keys:
         text, title, abstract, model, task, dataset,
-        hyperparameters, missing_params, confidence
+        hyperparameters, missing_params, confidence,
+        extraction_sources, llm_extraction
     """
     path = Path(pdf_path)
     if not path.exists():
@@ -340,8 +439,30 @@ def analyze_pdf(pdf_path: str) -> dict:
     # 3. Prepare text (keep intro + relevant sections)
     prepared = _prepare_text(raw_text, max_chars=20000)
 
-    # 4. Run regex-based HP extraction
-    result = _extract_from_text(prepared)
+    # ── Step 1: Regex-based HP extraction ──
+    regex_result = _extract_from_text(prepared)
+    
+    # ── Step 2: LLM extraction for missing params ──
+    llm_result = {"suggestions": {}, "error": None}
+    if regex_result["missing_params"]:
+        try:
+            print(f"  [M1-LLM] Regex found {len(HP_FIELDS) - len(regex_result['missing_params'])}/{len(HP_FIELDS)} params. "
+                  f"Querying Qwen for {len(regex_result['missing_params'])} missing: {regex_result['missing_params']}")
+            llm_result = _extract_with_llm(prepared, regex_result)
+            if llm_result.get("error"):
+                print(f"  [M1-LLM] LLM extraction failed: {llm_result['error']} — using regex-only results")
+            else:
+                found = list(llm_result.get("suggestions", {}).keys())
+                print(f"  [M1-LLM] LLM found {len(found)} additional params: {found} "
+                      f"(latency: {llm_result.get('latency_ms', 0)}ms)")
+        except Exception as e:
+            print(f"  [M1-LLM] LLM extraction error: {e} — using regex-only results")
+            llm_result = {"suggestions": {}, "error": str(e)}
+    else:
+        print(f"  [M1-LLM] Regex found all {len(HP_FIELDS)} params — skipping LLM extraction")
+
+    # ── Step 3: Validation merge ──
+    result = _validate_and_merge(regex_result, llm_result)
 
     # 5. Merge into final output
     result["text"] = raw_text

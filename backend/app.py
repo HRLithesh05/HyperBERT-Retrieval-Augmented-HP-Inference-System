@@ -52,8 +52,10 @@ with open(CONFIG_PATH, encoding="utf-8") as f:
     CONFIG = json.load(f)
 
 # ── MongoDB ────────────────────────────────────────────────────────────
+# Allow MONGODB_URI from .env to override config.json
+_mongo_uri = os.environ.get("MONGODB_URI") or CONFIG["mongodb"]["uri"]
 try:
-    _mongo = MongoClient(CONFIG["mongodb"]["uri"], serverSelectionTimeoutMS=3000)
+    _mongo = MongoClient(_mongo_uri, serverSelectionTimeoutMS=5000)
     _mongo.server_info()
     DB = _mongo[CONFIG["mongodb"]["db"]]
     MONGO_OK = True
@@ -732,12 +734,20 @@ def analyze_stream():
                     yield emit("M3", 3, m3_msg)
             else:
                 log("M3", "Skipped — all HPs present or MongoDB unavailable")
+                from src.module3.strategy import BERT_DEFAULTS
                 for param, value in user_hp_json["hyperparameters"].items():
-                    inferred_config[param] = {
-                        "value": value,
-                        "source": "extracted_from_paper" if value is not None else "bert_default",
-                        "confidence": 1.0 if value is not None else 0.2,
-                    }
+                    if value is not None:
+                        inferred_config[param] = {
+                            "value": value,
+                            "source": "extracted_from_paper",
+                            "confidence": 1.0,
+                        }
+                    else:
+                        inferred_config[param] = {
+                            "value": BERT_DEFAULTS.get(param),
+                            "source": "bert_default",
+                            "confidence": 0.2,
+                        }
                 strategy_cascade = _build_strategy_cascade("none", {})
                 yield emit("M3", 3, "Skipped — all HPs present")
 
@@ -906,6 +916,14 @@ def get_session(session_id: str):
     data = _load_session(session_id)
     if data is None:
         return jsonify({"error": "Session not found"}), 404
+    # Backfill BERT default values for old sessions that stored None
+    from src.module3.strategy import BERT_DEFAULTS
+    config = data.get("config", {})
+    for param, entry in config.items():
+        if entry.get("source") == "bert_default" and entry.get("value") is None:
+            default_val = BERT_DEFAULTS.get(param)
+            if default_val is not None:
+                entry["value"] = default_val
     return jsonify(data), 200
 
 
@@ -1046,8 +1064,40 @@ def compare_session(session_id: str):
     if data is None:
         return jsonify({"error": "Session not found"}), 404
 
+    # Backfill BERT default values for old sessions
+    from src.module3.strategy import BERT_DEFAULTS
+    config = data.get("config", {})
+    for param, entry in config.items():
+        if entry.get("source") == "bert_default" and entry.get("value") is None:
+            default_val = BERT_DEFAULTS.get(param)
+            if default_val is not None:
+                entry["value"] = default_val
+
+    # Also fix cached comparison data if it has null rag_values
     llm_comparison = data.get("llm_comparison")
     if llm_comparison:
+        per_param = llm_comparison.get("comparison", {}).get("per_param", {})
+        needs_update = False
+        for param, pp in per_param.items():
+            if pp.get("rag_value") is None and param in config:
+                pp["rag_value"] = config[param].get("value")
+                needs_update = True
+        if needs_update:
+            # Recalculate agreement
+            agreed = sum(1 for pp in per_param.values()
+                         if pp.get("rag_value") is not None and pp.get("llm_value") is not None
+                         and (pp["rag_value"] == pp["llm_value"] or str(pp["rag_value"]) == str(pp["llm_value"])))
+            total = len(per_param)
+            summary = llm_comparison.get("comparison", {}).get("summary", {})
+            summary["agreed"] = agreed
+            summary["disagreed"] = total - agreed
+            summary["agreement_pct"] = round(agreed / total * 100) if total > 0 else 0
+            for param, pp in per_param.items():
+                rv, lv = pp.get("rag_value"), pp.get("llm_value")
+                pp["agrees"] = rv is not None and lv is not None and (rv == lv or str(rv) == str(lv))
+                pp["has_both"] = rv is not None and lv is not None
+            _save_session(session_id, data)
+
         return jsonify({
             "session_id": session_id,
             "paper": data.get("paper", {}),
@@ -1087,6 +1137,12 @@ def compare_session(session_id: str):
         # Generate mock comparison from RAG data so the frontend has something to show
         print(f"⚠️  LLM comparison failed ({e}), generating RAG-vs-default comparison")
         config = data.get("config", {})
+        # Backfill BERT defaults for old sessions with None values
+        for param, entry in config.items():
+            if entry.get("source") == "bert_default" and entry.get("value") is None:
+                default_val = BERT_DEFAULTS.get(param)
+                if default_val is not None:
+                    entry["value"] = default_val
         missing = data.get("completeness", {}).get("missing_params", [])
         from src.module3.strategy import BERT_DEFAULTS
         per_param = {}
@@ -1132,6 +1188,159 @@ def compare_session(session_id: str):
             "completeness": data.get("completeness", {}),
             "llm_comparison": mock_result,
         }), 200
+
+
+# ── Ollama status endpoint ─────────────────────────────────────────────
+
+@app.route("/api/ollama/status", methods=["GET"])
+def ollama_status():
+    """Check if Ollama is running and which models are available."""
+    try:
+        from src.module8.ollama_client import check_ollama_health
+        health = check_ollama_health()
+        return jsonify(health), 200
+    except Exception as e:
+        return jsonify({
+            "running": False,
+            "models": [],
+            "has_qwen": False,
+            "error": str(e),
+        }), 200
+
+
+# ── Live Ollama comparison endpoint ────────────────────────────────────
+
+@app.route("/api/compare-live/<session_id>", methods=["POST"])
+def compare_live(session_id: str):
+    """Run a live LLM comparison using Ollama (Qwen3-4B).
+    
+    Queries the local Ollama instance for HP suggestions and compares
+    them against the RAG-inferred values from the session.
+    """
+    data = _load_session(session_id)
+    if data is None:
+        return jsonify({"error": "Session not found"}), 404
+
+    try:
+        from src.module8.ollama_client import (
+            check_ollama_health,
+            query_ollama_for_comparison,
+        )
+
+        # Check Ollama health
+        health = check_ollama_health()
+        if not health["running"]:
+            return jsonify({
+                "error": f"Ollama is not running: {health['error']}",
+                "ollama_status": health,
+            }), 503
+
+        if not health["has_qwen"]:
+            return jsonify({
+                "error": "Qwen3 model not found in Ollama. Run: ollama pull qwen3:4b",
+                "ollama_status": health,
+            }), 503
+
+        # Get session info
+        paper = data.get("paper", {})
+        completeness = data.get("completeness", {})
+        config = data.get("config", {})
+        # Backfill BERT defaults for old sessions
+        from src.module3.strategy import BERT_DEFAULTS
+        for param, entry in config.items():
+            if isinstance(entry, dict) and entry.get("source") == "bert_default" and entry.get("value") is None:
+                default_val = BERT_DEFAULTS.get(param)
+                if default_val is not None:
+                    entry["value"] = default_val
+        missing = completeness.get("missing_params", [])
+
+        if not missing:
+            # Compare ALL params, not just missing ones
+            missing = list(config.keys())
+
+        # Query Ollama for suggestions
+        llm_result = query_ollama_for_comparison(
+            task=paper.get("task", ""),
+            model_name=paper.get("model", "BERT"),
+            dataset=paper.get("dataset", ""),
+            missing_params=missing,
+        )
+
+        # Build per-param comparison
+        per_param = {}
+        agreed = 0
+        total = 0
+
+        for param in missing:
+            entry = config.get(param, {})
+            rag_val = entry.get("value") if isinstance(entry, dict) else entry
+            rag_conf = entry.get("confidence_pct", entry.get("confidence", 0) * 100) if isinstance(entry, dict) else 0
+            rag_source = entry.get("source", "unknown") if isinstance(entry, dict) else "unknown"
+            inference_trace = entry.get("inference_trace", []) if isinstance(entry, dict) else []
+
+            llm_val = llm_result["suggestions"].get(param)
+
+            # Determine agreement
+            agrees = False
+            has_both = rag_val is not None and llm_val is not None
+            if has_both:
+                total += 1
+                try:
+                    r = float(rag_val)
+                    l = float(llm_val)
+                    if r == 0 and l == 0:
+                        agrees = True
+                    elif r != 0:
+                        agrees = abs(r - l) / abs(r) <= 0.2
+                    else:
+                        agrees = abs(r - l) <= 1e-6
+                except (ValueError, TypeError):
+                    agrees = str(rag_val).lower() == str(llm_val).lower()
+
+                if agrees:
+                    agreed += 1
+
+            per_param[param] = {
+                "rag_value": rag_val,
+                "rag_confidence": round(rag_conf, 1) if isinstance(rag_conf, (int, float)) else 0,
+                "rag_source": rag_source,
+                "inference_trace": inference_trace,
+                "llm_value": llm_val,
+                "agrees": agrees,
+                "has_both": has_both,
+            }
+
+        agreement_pct = round(agreed / total * 100, 1) if total > 0 else 0
+
+        result = {
+            "session_id": session_id,
+            "paper": paper,
+            "completeness": completeness,
+            "ollama_status": health,
+            "llm_comparison": {
+                "llm_result": {
+                    "source": llm_result["source"],
+                    "latency_ms": llm_result["latency_ms"],
+                    "error": llm_result.get("error"),
+                },
+                "comparison": {
+                    "per_param": per_param,
+                    "summary": {
+                        "total_compared": total,
+                        "agreed": agreed,
+                        "disagreed": total - agreed,
+                        "agreement_pct": agreement_pct,
+                    },
+                },
+            },
+        }
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        import traceback
+        print(f"❌ Live comparison error: {traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Corpus endpoints ───────────────────────────────────────────────────

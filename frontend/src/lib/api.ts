@@ -219,6 +219,32 @@ export async function getComparison(sessionId: string): Promise<any> {
   return res.json();
 }
 
+/** Check Ollama health status */
+export async function getOllamaStatus(): Promise<{
+  running: boolean;
+  models: string[];
+  has_qwen: boolean;
+  error: string | null;
+}> {
+  const res = await fetch(`${BASE}/ollama/status`);
+  if (!res.ok) {
+    return { running: false, models: [], has_qwen: false, error: `HTTP ${res.status}` };
+  }
+  return res.json();
+}
+
+/** Run live Ollama comparison for a session */
+export async function runLiveComparison(sessionId: string): Promise<any> {
+  const res = await fetch(`${BASE}/compare-live/${sessionId}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Live comparison failed" }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 /** Download URL helpers */
 export const downloadUrl = {
   notebook: (id: string) => `${BASE}/download/${id}/notebook`,

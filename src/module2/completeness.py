@@ -75,8 +75,8 @@ def check_completeness(hp_json: dict, weights: dict | None = None) -> dict:
     # Critical HP check
     critical_missing = [f for f in CRITICAL_HPS if f in missing]
 
-    # Decision: need inference if any critical HP is missing, or rscore < 0.5
-    needs_inference = bool(critical_missing) or rscore < 0.5
+    # Decision: need inference if ANY params are missing
+    needs_inference = bool(missing)
 
     # Summary
     if not needs_inference:

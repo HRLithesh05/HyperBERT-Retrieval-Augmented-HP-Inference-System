@@ -14,6 +14,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -23,6 +24,12 @@ import textwrap
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Ensure UTF-8 output on Windows consoles to prevent emoji crash
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 # ── Setup sys.path so backend can import existing modules ──────────────
 ROOT = Path(__file__).resolve().parent.parent          # e:\major_project_datacollection
@@ -131,16 +138,66 @@ def _get_session_path(session_id: str) -> Path:
     return SESSIONS_DIR / f"{session_id}.json"
 
 
-def _save_session(session_id: str, data: dict):
+def _save_session(session_id: str, data: dict, guest_id: str | None = None, user_id: str | None = None, content_hash: str | None = None):
+    """Save session with both user_id (Auth0) and guest_id support."""
     path = _get_session_path(session_id)
     path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
 
+    if MONGO_OK and DB is not None:
+        try:
+            session_doc = {
+                "_id": session_id,
+                "data": data,
+                "user_id": user_id,
+                "guest_id": guest_id,
+                "content_hash": content_hash,
+                "paper_title": data.get("paper", {}).get("title", ""),
+                "paper_task": data.get("paper", {}).get("task"),
+                "paper_model": data.get("paper", {}).get("model"),
+                "completeness_pct": data.get("completeness", {}).get("completeness_pct", 0),
+                "created_at": datetime.now(timezone.utc),
+            }
+            DB["sessions"].replace_one({"_id": session_id}, session_doc, upsert=True)
+        except Exception as e:
+            print(f"MongoDB session save error: {e}")
+
+
 
 def _load_session(session_id: str) -> dict | None:
+    """Load session from MongoDB first, then filesystem fallback."""
+    # Try MongoDB first
+    if MONGO_OK and DB is not None:
+        try:
+            doc = DB["sessions"].find_one({"_id": session_id})
+            if doc:
+                return doc.get("data", doc)
+        except Exception as e:
+            print(f"⚠️  MongoDB session load failed: {e}")
+
+    # Filesystem fallback
     path = _get_session_path(session_id)
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _find_existing_session(content_hash: str) -> dict | None:
+    """Check if a paper with the same content hash was already analyzed.
+
+    Returns the existing session data if found, None otherwise.
+    """
+    if not content_hash or not MONGO_OK or DB is None:
+        return None
+    try:
+        doc = DB["sessions"].find_one(
+            {"content_hash": content_hash},
+            sort=[("created_at", -1)],
+        )
+        if doc:
+            return doc.get("data", doc)
+    except Exception as e:
+        print(f"⚠️  Duplicate check failed: {e}")
+    return None
 
 
 def _build_strategy_cascade(strategy_used: str, evidence_report: dict) -> dict:
@@ -388,6 +445,16 @@ def analyze():
         user_result = analyze_pdf(str(pdf_path))
         log("M1", f"Extracted {len(user_result.get('text',''))} chars, task={user_result.get('task')}, model={user_result.get('model')}")
 
+        # ── Duplicate detection via content hash ──────────────────
+        extracted_text = user_result.get("text", "")
+        content_hash = hashlib.sha256(extracted_text.encode("utf-8")).hexdigest() if extracted_text else None
+        guest_id = request.headers.get("X-Guest-Id") or request.args.get("guest_id")
+
+        existing = _find_existing_session(content_hash)
+        if existing:
+            log("M1", "Duplicate paper detected — returning cached session")
+            return jsonify(existing), 200
+
         present_hps = {k: v for k, v in user_result.get("hyperparameters", {}).items() if v is not None}
         log("M1", f"Found {len(present_hps)} explicit HPs: {list(present_hps.keys())}")
 
@@ -455,6 +522,16 @@ def analyze():
         log("M5", "Running contradiction / outlier detection")
         contradiction_report = detect_contradictions(evidence_report)
         log("M5", contradiction_report.get("summary", "Complete"))
+
+        # ── M5b: Cross-parameter plausibility ──────────────────────
+        try:
+            from src.module5.plausibility import check_cross_param_plausibility
+            plausibility_warnings = check_cross_param_plausibility(inferred_config)
+            if plausibility_warnings:
+                log("M5", f"Found {len(plausibility_warnings)} plausibility warning(s)")
+                contradiction_report.setdefault("contradictions", []).extend(plausibility_warnings)
+        except Exception as e:
+            log("M5", f"Plausibility check skipped: {e}")
 
         # ── M6 ──────────────────────────────────────────────────────
         log("M6", "Running self-critique validator")
@@ -604,7 +681,7 @@ def analyze():
             "agent_summary": agent_result.get("agent_summary", {}) if agent_result else {},
         }
 
-        _save_session(session_id, response)
+        _save_session(session_id, response, guest_id=guest_id, content_hash=content_hash)
         return jsonify(response), 200
 
     except Exception as e:
@@ -925,6 +1002,87 @@ def get_session(session_id: str):
             if default_val is not None:
                 entry["value"] = default_val
     return jsonify(data), 200
+
+
+@app.route("/api/sessions", methods=["GET"])
+def list_sessions():
+    """List past analysis sessions, filterable by guest_id.
+
+    Query params:
+        guest_id: Filter by anonymous user identifier
+        page: Page number (default 1)
+        per_page: Items per page (default 20, max 50)
+    """
+    guest_id = request.args.get("guest_id")
+    page = max(1, int(request.args.get("page", 1)))
+    per_page = min(50, max(1, int(request.args.get("per_page", 20))))
+    skip = (page - 1) * per_page
+
+    if MONGO_OK and DB is not None:
+        try:
+            query = {}
+            if guest_id:
+                query["guest_id"] = guest_id
+
+            total = DB["sessions"].count_documents(query)
+            cursor = DB["sessions"].find(
+                query,
+                {
+                    "_id": 1,
+                    "paper_title": 1,
+                    "paper_task": 1,
+                    "paper_model": 1,
+                    "completeness_pct": 1,
+                    "created_at": 1,
+                },
+            ).sort("created_at", -1).skip(skip).limit(per_page)
+
+            sessions = []
+            for doc in cursor:
+                sessions.append({
+                    "session_id": doc["_id"],
+                    "paper_title": doc.get("paper_title", "Untitled"),
+                    "paper_task": doc.get("paper_task"),
+                    "paper_model": doc.get("paper_model"),
+                    "completeness_pct": doc.get("completeness_pct", 0),
+                    "created_at": doc.get("created_at", "").isoformat()
+                        if hasattr(doc.get("created_at", ""), "isoformat")
+                        else str(doc.get("created_at", "")),
+                })
+
+            return jsonify({
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "sessions": sessions,
+            }), 200
+
+        except Exception as e:
+            print(f"⚠️  MongoDB sessions list failed: {e}")
+
+    # Filesystem fallback: list session JSON files
+    sessions = []
+    for p in sorted(SESSIONS_DIR.glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            sessions.append({
+                "session_id": data.get("session_id", p.stem),
+                "paper_title": data.get("paper", {}).get("title", "Untitled"),
+                "paper_task": data.get("paper", {}).get("task"),
+                "paper_model": data.get("paper", {}).get("model"),
+                "completeness_pct": data.get("completeness", {}).get("completeness_pct", 0),
+                "created_at": data.get("generated_at", ""),
+            })
+        except Exception:
+            continue
+
+    paginated = sessions[skip:skip + per_page]
+    return jsonify({
+        "total": len(sessions),
+        "page": page,
+        "per_page": per_page,
+        "sessions": paginated,
+    }), 200
 
 
 # ── Download endpoints ─────────────────────────────────────────────────

@@ -70,6 +70,11 @@ class FAISSRetriever:
             return self._embed_cache[text]
         t0 = time.perf_counter()
         vec = self.model.encode([text], normalize_embeddings=True).astype("float32")
+        # Verify L2-normalization (cosine similarity requires unit vectors)
+        norm = np.linalg.norm(vec)
+        if not np.isclose(norm, 1.0, atol=1e-4):
+            print(f"  ⚠️ [Retriever] Query vector NOT normalized (norm={norm:.6f}), forcing normalization")
+            vec = vec / norm
         self._embed_cache[text] = vec
         print(f"  [Retriever] Query encoded in {time.perf_counter()-t0:.2f}s")
         return vec
@@ -131,22 +136,31 @@ class FAISSRetriever:
     ) -> list[dict]:
         """Retrieve top-k papers, filtered by task/model/dataset.
 
+        Uses taxonomy normalization so that name variations
+        (e.g. 'CoNLL-2003' vs 'conll2003') don't cause missed matches.
         Uses 2x pool (not 3x) since documents are now cached.
         """
+        from src.module3.taxonomy import normalize_task, normalize_dataset
+
         candidates = self.retrieve(query_text, top_k=top_k * 2)
+
+        # Normalize query-side names
+        norm_task = normalize_task(task)
+        norm_dataset = normalize_dataset(dataset)
+        norm_model = model_name.lower().strip() if model_name else None
 
         filtered = []
         for doc in candidates:
             hp = doc.get("hp_json", {})
-            doc_task = (hp.get("task") or "").lower()
-            doc_model = (hp.get("model") or "").lower()
-            doc_dataset = (hp.get("dataset") or "").lower()
+            doc_task = normalize_task(hp.get("task") or "")
+            doc_model = (hp.get("model") or "").lower().strip()
+            doc_dataset = normalize_dataset(hp.get("dataset") or "")
 
-            if task and task.lower() not in doc_task and doc_task not in task.lower():
+            if norm_task and norm_task not in (doc_task or "") and (doc_task or "") not in norm_task:
                 continue
-            if model_name and model_name.lower() not in doc_model and doc_model not in model_name.lower():
+            if norm_model and norm_model not in doc_model and doc_model not in norm_model:
                 continue
-            if dataset and dataset.lower() not in doc_dataset and doc_dataset not in dataset.lower():
+            if norm_dataset and norm_dataset not in (doc_dataset or "") and (doc_dataset or "") not in norm_dataset:
                 continue
 
             filtered.append(doc)
@@ -155,3 +169,4 @@ class FAISSRetriever:
                 break
 
         return filtered
+

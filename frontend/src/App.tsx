@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { CustomCursor } from './components/CustomCursor';
 import { ThemeProvider } from './components/ThemeProvider';
 import { NavBar } from './components/NavBar';
+import { SessionSidebar } from './components/SessionSidebar';
 import { SessionProvider } from './contexts/SessionContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { AuthGate } from './components/AuthGate';
@@ -21,6 +22,7 @@ function App() {
         <AuthProvider>
           <Router>
             <CustomCursor />
+            <SessionSidebar />
             <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
               <NavBar />
               <main style={{ flex: 1 }}>

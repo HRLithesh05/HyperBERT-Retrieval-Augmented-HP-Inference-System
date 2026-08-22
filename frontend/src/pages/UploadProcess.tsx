@@ -25,7 +25,7 @@ export default function UploadProcess() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { sessionId: ctxSessionId, setSession, incrementUsage } = useSession();
+  const { sessionId: ctxSessionId, setSession, incrementUsage, guestId } = useSession();
   const { canAnalyze, remainingFree, isGuest, isAuthenticated } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [modelReady, setModelReady] = useState(true); // assume ready
@@ -71,7 +71,7 @@ export default function UploadProcess() {
           }
           return next;
         });
-      });
+      }, guestId);
 
       setSessionId(result.session_id);
       setSession(result.session_id);
@@ -81,7 +81,7 @@ export default function UploadProcess() {
       console.error("SSE stream error, falling back:", e);
       // Fallback to non-streaming API
       try {
-        const result = await analyzePDF(pdf);
+        const result = await analyzePDF(pdf, guestId);
         setSessionId(result.session_id);
         setSession(result.session_id);
         incrementUsage();
@@ -201,8 +201,8 @@ export default function UploadProcess() {
               className="interactive relative flex flex-col items-center justify-center gap-4 p-16 rounded-3xl transition-all duration-300"
               style={{
                 border: `2px dashed ${isDragActive ? 'var(--accent-primary)' : 'var(--border-highlight)'}`,
-                background: isDragActive ? 'rgba(139,92,246,0.06)' : 'var(--bg-surface-1)',
-                boxShadow: isDragActive ? '0 0 40px rgba(139,92,246,0.2), inset 0 0 40px rgba(139,92,246,0.05)' : 'none',
+                background: isDragActive ? 'rgba(99,102,241,0.08)' : 'var(--bg-surface-1)',
+                boxShadow: isDragActive ? '0 0 35px -5px rgba(99,102,241,0.3), inset 0 0 20px rgba(99,102,241,0.05)' : 'none',
                 cursor: 'pointer',
               }}
             >
@@ -241,7 +241,7 @@ export default function UploadProcess() {
             {!done && (
               <div
                 className="absolute left-0 w-full h-0.5 pointer-events-none z-10 animate-laser"
-                style={{ background: 'linear-gradient(90deg, transparent, var(--accent-primary), transparent)' }}
+                style={{ background: 'linear-gradient(90deg, transparent, var(--accent-primary), var(--accent-tertiary), transparent)' }}
               />
             )}
 
@@ -250,9 +250,9 @@ export default function UploadProcess() {
               <div className="flex items-center gap-4">
                 <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.2)' }}
+                  style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)' }}
                 >
-                  <FileText className="w-6 h-6" style={{ color: 'var(--accent-secondary)' }} />
+                  <FileText className="w-6 h-6" style={{ color: 'var(--accent-primary)' }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</p>

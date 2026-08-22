@@ -38,8 +38,9 @@ export function CustomCursor() {
         style={{
           width: hovering ? 48 : 32,
           height: hovering ? 48 : 32,
-          border: `2px solid ${hovering ? 'var(--accent-tertiary)' : 'var(--accent-secondary)'}`,
-          background: hovering ? 'rgba(139,92,246,0.08)' : 'transparent',
+          border: `1.5px solid ${hovering ? 'var(--accent-tertiary)' : 'var(--accent-primary)'}`,
+          background: hovering ? 'rgba(99,102,241,0.08)' : 'transparent',
+          boxShadow: hovering ? '0 0 12px rgba(6,182,212,0.35)' : 'none',
           backdropFilter: hovering ? 'blur(4px)' : 'none',
           mixBlendMode: 'difference',
         }}

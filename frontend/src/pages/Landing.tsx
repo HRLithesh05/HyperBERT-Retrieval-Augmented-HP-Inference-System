@@ -67,27 +67,27 @@ export default function Landing() {
       {/* Animated background orbs */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div
-          className="absolute w-[600px] h-[600px] rounded-full animate-blob"
+          className="absolute w-[650px] h-[650px] rounded-full animate-blob"
           style={{
-            top: '5%', left: '10%',
-            background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)',
-            filter: 'blur(40px)',
+            top: '2%', left: '10%',
+            background: 'radial-gradient(circle, rgba(99,102,241,0.14) 0%, rgba(59,130,246,0.06) 45%, transparent 70%)',
+            filter: 'blur(60px)',
           }}
         />
         <div
-          className="absolute w-[500px] h-[500px] rounded-full animate-blob animation-delay-2000"
+          className="absolute w-[550px] h-[550px] rounded-full animate-blob animation-delay-2000"
           style={{
-            top: '20%', right: '5%',
-            background: 'radial-gradient(circle, rgba(6,182,212,0.12) 0%, transparent 70%)',
-            filter: 'blur(40px)',
+            top: '18%', right: '5%',
+            background: 'radial-gradient(circle, rgba(6,182,212,0.12) 0%, rgba(99,102,241,0.05) 50%, transparent 70%)',
+            filter: 'blur(60px)',
           }}
         />
         <div
-          className="absolute w-[400px] h-[400px] rounded-full animate-blob animation-delay-4000"
+          className="absolute w-[480px] h-[480px] rounded-full animate-blob animation-delay-4000"
           style={{
-            bottom: '10%', left: '40%',
-            background: 'radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%)',
-            filter: 'blur(40px)',
+            bottom: '8%', left: '35%',
+            background: 'radial-gradient(circle, rgba(59,130,246,0.1) 0%, transparent 70%)',
+            filter: 'blur(60px)',
           }}
         />
       </div>
@@ -97,7 +97,7 @@ export default function Landing() {
         {/* Badge */}
         <motion.div {...fadeUp(0)} className="mb-8">
           <span
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium shadow-sm"
             style={{
               background: 'var(--bg-surface-2)',
               border: '1px solid var(--border-highlight)',
@@ -106,7 +106,7 @@ export default function Landing() {
           >
             <span
               className="w-2 h-2 rounded-full"
-              style={{ background: 'var(--status-success)', boxShadow: '0 0 6px var(--status-success)' }}
+              style={{ background: 'var(--status-success)', boxShadow: '0 0 8px var(--status-success)' }}
             />
             Backed by 435 Research Papers
           </span>
@@ -135,10 +135,10 @@ export default function Landing() {
             className="group interactive flex items-center gap-2 px-8 py-4 rounded-xl font-semibold text-white transition-all duration-200"
             style={{
               background: 'var(--accent-gradient)',
-              boxShadow: '0 4px 20px rgba(124,58,237,0.35)',
+              boxShadow: '0 4px 18px -2px rgba(99,102,241,0.45)',
             }}
-            onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 6px 28px rgba(124,58,237,0.5)')}
-            onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 4px 20px rgba(124,58,237,0.35)')}
+            onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 6px 24px -2px rgba(99,102,241,0.65)')}
+            onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 4px 18px -2px rgba(99,102,241,0.45)')}
           >
             Upload a Paper
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />

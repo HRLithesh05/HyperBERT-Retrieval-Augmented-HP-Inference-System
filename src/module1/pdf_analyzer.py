@@ -197,12 +197,52 @@ def _parse_int(s: str) -> int | None:
         return None
 
 
+# Pre-training context keywords — if a match is near these, it's likely
+# describing pre-training configuration, not fine-tuning.
+_PRETRAIN_KEYWORDS = re.compile(
+    r"pre[- ]?train|pretraining|from\s+scratch|masked\s+language|MLM|NSP|"
+    r"next\s+sentence\s+predict|pre[- ]?training\s+(?:phase|stage|step)",
+    re.IGNORECASE,
+)
+
+
+def _is_pretraining_context(text: str, match_pos: int, window: int = 250) -> bool:
+    """Check if a regex match is within a proximity window of pre-training keywords.
+
+    Args:
+        text: Full document text.
+        match_pos: Character position of the regex match.
+        window: Number of characters before/after to check.
+
+    Returns:
+        True if the match is likely describing a pre-training parameter.
+    """
+    start = max(0, match_pos - window)
+    end = min(len(text), match_pos + window)
+    context = text[start:end]
+    return bool(_PRETRAIN_KEYWORDS.search(context))
+
+
 def _first_match(text: str, patterns: list[re.Pattern]) -> str | None:
+    """Find the first regex match, preferring fine-tuning context over pre-training.
+
+    If the first match is in a pre-training context, continue searching for
+    a match in a fine-tuning context. Falls back to the first match if no
+    fine-tuning-context match is found.
+    """
+    first_result = None
     for pat in patterns:
-        m = pat.search(text)
-        if m:
-            return m.group(1)
-    return None
+        for m in pat.finditer(text):
+            value = m.group(1)
+            if _is_pretraining_context(text, m.start()):
+                # Store as fallback, keep looking for fine-tuning match
+                if first_result is None:
+                    first_result = value
+                continue
+            # Found a match NOT in pretraining context — use it
+            return value
+    # All matches were in pretraining context, or no match found
+    return first_result
 
 
 # =====================================================================
@@ -216,18 +256,76 @@ _SECTION_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Methodology/Experiments section patterns — higher priority for HP extraction
+_METHODOLOGY_RE = re.compile(
+    r"^[#\d.]*\s*(experiment(?:al)?(?:\s+(?:setup|setting|detail|configuration))?|"
+    r"(?:training|implementation)\s+(?:detail|setup|configuration)|"
+    r"hyperparameter|fine[- ]?tuning\s+(?:setup|detail|configuration)|"
+    r"method(?:ology)?)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Sections to EXCLUDE (conclusion, references, appendix)
+_END_SECTION_RE = re.compile(
+    r"^[#\d.]*\s*(conclusion|reference|bibliograph|acknowledge|appendix|"
+    r"supplementar|limitation|future\s+work|ethics)",
+    re.IGNORECASE | re.MULTILINE,
+)
+
 
 def _prepare_text(raw_text: str, max_chars: int = 20000) -> str:
+    """Prepare text by keeping intro + relevant sections, excluding endings."""
     if not raw_text:
         return ""
     head = raw_text[:3000]
     rest = raw_text[3000:]
+
+    # Find where irrelevant tail sections start
+    end_match = _END_SECTION_RE.search(rest)
+    if end_match:
+        rest = rest[:end_match.start()]
+
     relevant: list[str] = []
     for match in _SECTION_RE.finditer(rest):
         start = match.start()
         relevant.append(rest[start: start + 5000])
     combined = head + "\n\n".join(relevant)
     return combined[:max_chars]
+
+
+def _extract_methodology(raw_text: str) -> str | None:
+    """Extract the Methodology/Experiments section text specifically.
+
+    Returns the text of the first methodology-like section found,
+    or None if no such section is detected.
+    """
+    if not raw_text:
+        return None
+
+    matches = list(_METHODOLOGY_RE.finditer(raw_text))
+    if not matches:
+        return None
+
+    # Take the first methodology match
+    start = matches[0].start()
+
+    # Find where the next major section starts after this one
+    # Look for any section header after the current one
+    remaining = raw_text[start + 100:]  # skip past the header itself
+    next_section = re.search(
+        r"\n\s*(?:\d+\.?\s+)?(?:conclusion|reference|result|discussion|"
+        r"related\s+work|introduction|abstract|appendix|acknowledge)",
+        remaining,
+        re.IGNORECASE,
+    )
+
+    if next_section:
+        end = start + 100 + next_section.start()
+    else:
+        end = min(start + 8000, len(raw_text))
+
+    section_text = raw_text[start:end]
+    return section_text if len(section_text.strip()) > 100 else None
 
 
 # =====================================================================
@@ -440,7 +538,27 @@ def analyze_pdf(pdf_path: str) -> dict:
     prepared = _prepare_text(raw_text, max_chars=20000)
 
     # ── Step 1: Regex-based HP extraction ──
+    # Run on full prepared text first
     regex_result = _extract_from_text(prepared)
+
+    # Section-aware: also extract from Methodology/Experiments section
+    methodology_text = _extract_methodology(raw_text)
+    if methodology_text:
+        methodology_result = _extract_from_text(methodology_text)
+        # Prefer methodology-section values over full-text values
+        # (reduces risk of picking up pre-training or unrelated HPs)
+        for param in HP_FIELDS:
+            method_val = methodology_result["hyperparameters"].get(param)
+            full_val = regex_result["hyperparameters"].get(param)
+            if method_val is not None and full_val is not None and method_val != full_val:
+                # Methodology section found a different value — prefer it
+                regex_result["hyperparameters"][param] = method_val
+                print(f"  [M1-Section] {param}: preferring methodology value "
+                      f"({method_val}) over full-text value ({full_val})")
+            elif method_val is not None and full_val is None:
+                regex_result["hyperparameters"][param] = method_val
+        # Update missing params
+        regex_result["missing_params"] = [f for f in HP_FIELDS if regex_result["hyperparameters"].get(f) is None]
     
     # ── Step 2: LLM extraction for missing params ──
     llm_result = {"suggestions": {}, "error": None}

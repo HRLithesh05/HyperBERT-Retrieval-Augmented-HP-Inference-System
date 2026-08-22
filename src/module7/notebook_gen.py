@@ -616,16 +616,19 @@ def _build_warnings(contradiction_report, validation_result) -> str:
         if contras:
             parts.append("### ⚠️ Evidence Warnings\n")
             for c in contras[:5]:
-                parts.append(f"- **{c['param']}**: {c['message']}")
+                param_label = c.get("param") or ", ".join(c.get("params", [])) or c.get("rule", "Warning")
+                parts.append(f"- **{param_label}**: {c.get('message', '')}")
 
     if validation_result:
         corrections = validation_result.get("corrections", [])
         if corrections:
             parts.append("\n### 🔧 Auto-Corrections\n")
             for c in corrections:
-                parts.append(f"- **{c['param']}**: {c['message']}")
+                param_label = c.get("param") or ", ".join(c.get("params", [])) or "Correction"
+                parts.append(f"- **{param_label}**: {c.get('message', '')}")
 
     return "\n".join(parts) if parts else ""
+
 
 
 def _build_citations(evidence_report: dict) -> str:

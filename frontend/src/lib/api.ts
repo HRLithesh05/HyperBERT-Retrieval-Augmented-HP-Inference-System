@@ -80,13 +80,17 @@ export interface AnalysisResult {
 }
 
 /** Upload a PDF and run the full M1-M7 pipeline */
-export async function analyzePDF(file: File): Promise<AnalysisResult> {
+export async function analyzePDF(file: File, guestId?: string): Promise<AnalysisResult> {
   const form = new FormData();
   form.append("file", file);
+
+  const headers: Record<string, string> = {};
+  if (guestId) headers["X-Guest-Id"] = guestId;
 
   const res = await fetch(`${BASE}/analyze`, {
     method: "POST",
     body: form,
+    headers,
   });
 
   if (!res.ok) {
@@ -101,13 +105,18 @@ export async function analyzePDF(file: File): Promise<AnalysisResult> {
 export async function analyzePDFStream(
   file: File,
   onProgress: (module: string, step: number, message: string) => void,
+  guestId?: string,
 ): Promise<AnalysisResult> {
   const form = new FormData();
   form.append("file", file);
 
+  const headers: Record<string, string> = {};
+  if (guestId) headers["X-Guest-Id"] = guestId;
+
   const res = await fetch(`${BASE}/analyze-stream`, {
     method: "POST",
     body: form,
+    headers,
   });
 
   if (!res.ok) {
@@ -241,6 +250,30 @@ export async function runLiveComparison(sessionId: string): Promise<any> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Live comparison failed" }));
     throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/** Session history entry */
+export interface SessionSummary {
+  session_id: string;
+  paper_title: string;
+  paper_task: string | null;
+  paper_model: string | null;
+  completeness_pct: number;
+  created_at: string;
+}
+
+/** Fetch list of past analysis sessions */
+export async function getSessions(guestId?: string): Promise<{
+  total: number;
+  sessions: SessionSummary[];
+}> {
+  const qs = new URLSearchParams();
+  if (guestId) qs.set("guest_id", guestId);
+  const res = await fetch(`${BASE}/sessions?${qs}`);
+  if (!res.ok) {
+    return { total: 0, sessions: [] };
   }
   return res.json();
 }

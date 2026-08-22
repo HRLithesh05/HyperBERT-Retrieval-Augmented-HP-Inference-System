@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeToggle } from './ThemeToggle';
-import { Database, UploadCloud, Zap, BarChart2, Brain, LogIn, LogOut, User, FileText } from 'lucide-react';
+import { Database, UploadCloud, BarChart2, Brain, LogIn, LogOut, User, FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSession } from '@/contexts/SessionContext';
 
@@ -57,12 +57,20 @@ export function NavBar() {
     >
       <div className="container mx-auto px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-8">
-          <Link to="/" className="flex items-center gap-2 interactive">
+          <Link to="/" className="flex items-center gap-2.5 interactive group">
             <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center"
-              style={{ background: 'var(--accent-gradient)' }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 group-hover:scale-105"
+              style={{
+                background: 'var(--accent-gradient)',
+                boxShadow: '0 0 16px -2px rgba(99,102,241,0.45)',
+              }}
             >
-              <Zap className="w-4 h-4 text-white" />
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none">
+                <rect x="4" y="4" width="3.5" height="16" rx="1.75" fill="white" />
+                <rect x="16.5" y="4" width="3.5" height="16" rx="1.75" fill="white" />
+                <rect x="6" y="10" width="12" height="4" rx="1.5" fill="white" />
+                <circle cx="12" cy="12" r="1.5" fill="#090d16" />
+              </svg>
             </div>
             <span className="font-display font-bold text-xl tracking-tight text-gradient">
               HyperBERT

@@ -70,13 +70,29 @@ export default function NotebookViewer() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {id && (
-            <a href={downloadUrl.notebook(id)} download
+            <button
+              onClick={async () => {
+                if (!id) return;
+                try {
+                  const res = await fetch(downloadUrl.notebook(id));
+                  if (!res.ok) throw new Error('Download failed');
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'training_notebook.ipynb';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                } catch (e) {
+                  console.error('Download failed:', e);
+                }
+              }}
               className="interactive flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium"
               style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-glass)' }}>
               <Download className="w-3 h-3" /> Download .ipynb
-            </a>
-          )}
+            </button>
           {status === 'running' && jupyterUrl && (
             <a href={jupyterUrl} target="_blank" rel="noopener noreferrer"
               className="interactive flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium"

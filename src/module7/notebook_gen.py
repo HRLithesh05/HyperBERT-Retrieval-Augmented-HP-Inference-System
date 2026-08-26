@@ -275,37 +275,146 @@ def generate_notebook(
                 f'print(f"Tokenization complete. Max seq length: {{MAX_SEQ_LENGTH}}")'
             ))
     else:
-        cells.append(_md_cell(
-            "⚠️ **Manual dataset setup required.**\n\n"
-            "Replace the placeholder below with your dataset path or HuggingFace dataset ID.\n"
-            "Examples:\n"
-            '- `load_dataset("csv", data_files={"train": "train.csv", "test": "test.csv"})`\n'
-            '- `load_dataset("your_username/your_dataset")`'
-        ))
-        cells.append(_code_cell(
-            f"from transformers import AutoTokenizer\n"
-            f"from datasets import load_dataset\n"
-            f"\n"
-            f'MODEL_NAME = "{model_name}"\n'
-            f"MAX_SEQ_LENGTH = {max_seq}\n"
-            f"\n"
-            f"tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)\n"
-            f"\n"
-            f"# ↓↓↓ REPLACE WITH YOUR DATASET ↓↓↓\n"
-            f'# dataset = load_dataset("csv", data_files={{"train": "train.csv", "test": "test.csv"}})\n'
-            f'dataset = load_dataset("imdb")  # Placeholder — replace with your data\n'
-            f"\n"
-            f"def tokenize_function(examples):\n"
-            f"    return tokenizer(\n"
-            f'        examples["text"],\n'
-            f'        padding="max_length",\n'
-            f"        truncation=True,\n"
-            f"        max_length=MAX_SEQ_LENGTH,\n"
-            f"    )\n"
-            f"\n"
-            f"tokenized = dataset.map(tokenize_function, batched=True)\n"
-            f'print(f"Tokenizer loaded: {{MODEL_NAME}}, Max seq length: {{MAX_SEQ_LENGTH}}")'
-        ))
+        # No known HuggingFace dataset — provide task-appropriate scaffolding
+        if task_type == "token_classification":
+            # NER fallback: synthetic BIO example so the notebook runs out of the box
+            cells.append(_md_cell(
+                "⚠️ **Dataset `" + dataset_name + "` requires manual setup.**\n\n"
+                "The cell below creates a **small synthetic NER dataset** so the notebook\n"
+                "runs end-to-end without errors. Replace it with your real data.\n\n"
+                "Your real dataset must have:\n"
+                "- `tokens`: a list of words per example\n"
+                "- `ner_tags`: a list of integer BIO-tag IDs (same length as tokens)\n\n"
+                "Example HuggingFace datasets for NER:\n"
+                '- `load_dataset("conll2003")` — classic English NER\n'
+                '- `load_dataset("wnut_17")` — emerging/novel entities\n'
+                '- `load_dataset("multiconer", "en")` — complex NER'
+            ))
+            cells.append(_code_cell(
+                f"from transformers import AutoTokenizer\n"
+                f"from datasets import Dataset, DatasetDict, Features, Sequence, ClassLabel, Value\n"
+                f"\n"
+                f'MODEL_NAME = "{model_name}"\n'
+                f"MAX_SEQ_LENGTH = {max_seq}\n"
+                f"\n"
+                f"tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)\n"
+                f"\n"
+                f"# ↓↓↓ REPLACE WITH YOUR REAL DATASET ↓↓↓\n"
+                f"# Standard BIO tag schema for demo purposes\n"
+                f'BIO_TAGS = ["O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", "B-MISC", "I-MISC"]\n'
+                f"\n"
+                f"features = Features({{\n"
+                f'    "tokens": Sequence(Value("string")),\n'
+                f'    "ner_tags": Sequence(ClassLabel(names=BIO_TAGS)),\n'
+                f"}})\n"
+                f"\n"
+                f"# Synthetic examples — replace with your real corpus\n"
+                f"train_data = {{\n"
+                f'    "tokens": [\n'
+                f'        ["John", "works", "at", "Google", "in", "London", "."],\n'
+                f'        ["Alice", "joined", "Microsoft", "last", "year", "."],\n'
+                f'        ["The", "Eiffel", "Tower", "is", "in", "Paris", "."],\n'
+                f"    ],\n"
+                f'    "ner_tags": [\n'
+                f"        [1, 0, 0, 3, 0, 5, 0],  # B-PER, O, O, B-ORG, O, B-LOC, O\n"
+                f"        [1, 0, 3, 0, 0, 0],      # B-PER, O, B-ORG, O, O, O\n"
+                f"        [0, 7, 8, 0, 0, 5, 0],   # O, B-MISC, I-MISC, O, O, B-LOC, O\n"
+                f"    ],\n"
+                f"}}\n"
+                f"\n"
+                f"dataset = DatasetDict({{\n"
+                f'    "train": Dataset.from_dict(train_data, features=features),\n'
+                f'    "validation": Dataset.from_dict(train_data, features=features),\n'
+                f'    "test": Dataset.from_dict(train_data, features=features),\n'
+                f"}})\n"
+                f"\n"
+                f"# Derive label names from the dataset schema\n"
+                f"label_names = dataset['train'].features['ner_tags'].feature.names\n"
+                f'print(f"Labels: {{label_names}}")\n'
+                "print(f\"Train samples: {len(dataset['train'])}\")"
+                "\n"
+                f"\n"
+                f"def tokenize_and_align_labels(examples):\n"
+                f'    """Tokenize and align NER labels with subword tokens."""\n'
+                f"    tokenized = tokenizer(\n"
+                f"        examples['tokens'],\n"
+                f"        truncation=True,\n"
+                f"        max_length=MAX_SEQ_LENGTH,\n"
+                f"        is_split_into_words=True,\n"
+                f"    )\n"
+                f"    labels = []\n"
+                f"    for i, label in enumerate(examples['ner_tags']):\n"
+                f"        word_ids = tokenized.word_ids(batch_index=i)\n"
+                f"        label_ids = []\n"
+                f"        prev_word_id = None\n"
+                f"        for word_id in word_ids:\n"
+                f"            if word_id is None:\n"
+                f"                label_ids.append(-100)\n"
+                f"            elif word_id != prev_word_id:\n"
+                f"                label_ids.append(label[word_id])\n"
+                f"            else:\n"
+                f"                label_ids.append(-100)  # Subword gets -100\n"
+                f"            prev_word_id = word_id\n"
+                f"        labels.append(label_ids)\n"
+                f"    tokenized['labels'] = labels\n"
+                f"    return tokenized\n"
+                f"\n"
+                f"tokenized = dataset.map(tokenize_and_align_labels, batched=True,\n"
+                f"                        remove_columns=dataset['train'].column_names)\n"
+                f'print("Tokenization complete with label alignment.")'
+            ))
+        else:
+            # Sequence classification fallback
+            cells.append(_md_cell(
+                "⚠️ **Dataset `" + dataset_name + "` requires manual setup.**\n\n"
+                "The cell below creates a **small synthetic classification dataset** so the\n"
+                "notebook runs end-to-end without errors. Replace it with your real data.\n\n"
+                "Examples:\n"
+                '- `load_dataset("csv", data_files={"train": "train.csv", "test": "test.csv"})`\n'
+                '- `load_dataset("your_username/your_dataset")`\n'
+                '- `load_dataset("imdb")` — movie review sentiment'
+            ))
+            cells.append(_code_cell(
+                f"from transformers import AutoTokenizer\n"
+                f"from datasets import Dataset, DatasetDict\n"
+                f"\n"
+                f'MODEL_NAME = "{model_name}"\n'
+                f"MAX_SEQ_LENGTH = {max_seq}\n"
+                f"\n"
+                f"tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)\n"
+                f"\n"
+                f"# ↓↓↓ REPLACE WITH YOUR REAL DATASET ↓↓↓\n"
+                f"train_data = {{\n"
+                f'    "text": [\n'
+                f'        "This is a positive example sentence.",\n'
+                f'        "This is a negative example sentence.",\n'
+                f'        "Another positive review of the product.",\n'
+                f"    ],\n"
+                f'    "label": [1, 0, 1],\n'
+                f"}}\n"
+                f"\n"
+                f"dataset = DatasetDict({{\n"
+                f'    "train": Dataset.from_dict(train_data),\n'
+                f'    "validation": Dataset.from_dict(train_data),\n'
+                f'    "test": Dataset.from_dict(train_data),\n'
+                f"}})\n"
+                f"\n"
+                "print(f\"Train samples: {len(dataset['train'])}\")"
+                "\n"
+                "print(f\"Labels: {set(dataset['train']['label'])}\")"
+                "\n"
+                f"\n"
+                f"def tokenize_function(examples):\n"
+                f"    return tokenizer(\n"
+                f"        examples['text'],\n"
+                f'        padding="max_length",\n'
+                f"        truncation=True,\n"
+                f"        max_length=MAX_SEQ_LENGTH,\n"
+                f"    )\n"
+                f"\n"
+                f"tokenized = dataset.map(tokenize_function, batched=True)\n"
+                f'print(f"Tokenization complete. Max seq length: {{MAX_SEQ_LENGTH}}")'
+            ))
 
     # ===================== Ph2: Model Init =====================
     cells.append(_md_cell("## Phase 2: Model Initialization"))

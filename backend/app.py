@@ -713,6 +713,7 @@ def analyze_stream():
 
     # We need to read the file data before streaming since the request context will be active
     filename = uploaded.filename
+    guest_id = request.headers.get("X-Guest-Id") or request.args.get("guest_id")
 
     def generate():
         audit_log = []
@@ -742,6 +743,16 @@ def analyze_stream():
             present_hps = {k: v for k, v in user_result.get("hyperparameters", {}).items() if v is not None}
             log("M1", f"Found {len(present_hps)} explicit HPs: {list(present_hps.keys())}")
             yield emit("M1", 1, f"{len(user_result.get('text',''))} chars, {len(present_hps)} HPs found")
+
+            # ── Duplicate detection via content hash ──
+            extracted_text = user_result.get("text", "")
+            content_hash = hashlib.sha256(extracted_text.encode("utf-8")).hexdigest() if extracted_text else None
+
+            existing = _find_existing_session(content_hash)
+            if existing:
+                log("M1", "Duplicate paper detected — returning cached session")
+                yield f"event: result\ndata: {json.dumps(existing)}\n\n"
+                return
 
             user_hp_json = {
                 "model": user_result.get("model"),
@@ -973,7 +984,7 @@ def analyze_stream():
                 "agent_summary": agent_result.get("agent_summary", {}) if agent_result else {},
             }
 
-            _save_session(session_id, response)
+            _save_session(session_id, response, guest_id=guest_id, content_hash=content_hash)
 
             # Final result event
             yield f"event: result\ndata: {json.dumps(response)}\n\n"

@@ -672,7 +672,23 @@ export default function ResultsDashboard() {
                   <p className="text-xs" style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>{item.desc}</p>
                 </div>
                 <button
-                  onClick={() => window.open(item.url, '_blank')}
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(item.url);
+                      if (!res.ok) throw new Error('Download failed');
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `${item.name.toLowerCase().replace(/\s+/g, '_')}${item.ext}`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (e) {
+                      console.error('Download failed:', e);
+                    }
+                  }}
                   className="interactive mt-auto flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-white transition-all"
                   style={{
                     background: item.primary ? 'var(--accent-gradient)' : 'var(--bg-surface-3)',

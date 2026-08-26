@@ -1,191 +1,219 @@
-# HyperBERT — Retrieval-Augmented Hyperparameter Inference System
+# HyperBERT — Retrieval-Augmented Hyperparameter Inference for BERT
 
-> **When 92% of BERT papers don't report all their hyperparameters, HyperBERT reads the paper, finds what's missing, and infers every value — with full citations, confidence scores, and evidence trails.**
+> **When 92% of BERT papers don't report all their hyperparameters, HyperBERT reads the paper, finds what's missing, and infers every value — with citations, confidence scores, and full evidence trails.**
 
 ---
 
-## What This Project Does
+## Overview
 
-HyperBERT is a **full-stack research tool** that solves the BERT reproducibility crisis. It takes a PDF of any BERT fine-tuning paper and:
+HyperBERT is a full-stack research tool that addresses the **BERT reproducibility crisis**. Given any BERT fine-tuning paper as a PDF, it:
 
-1. **Extracts** whatever hyperparameters the authors did report (regex + table extraction)
-2. **Scores** the paper's reproducibility using an R-Score (weighted checklist of 12 HPs)
-3. **Retrieves** similar papers from a 435-paper corpus using FAISS semantic search
-4. **Infers** missing hyperparameters using statistical aggregation of evidence
-5. **Validates** all values against BERT domain constraints
-6. **Generates** a ready-to-run Jupyter notebook with confidence annotations
+1. **Extracts** reported hyperparameters using regex + section-aware parsing + optional LLM augmentation
+2. **Scores** the paper's reproducibility via a weighted R-Score across 12 hyperparameters
+3. **Retrieves** similar papers from a 455-paper corpus using FAISS semantic search
+4. **Infers** missing values through statistical aggregation with three-axis confidence scoring
+5. **Validates** all values against BERT domain constraints and detects contradictions
+6. **Generates** a ready-to-run Jupyter notebook with per-parameter confidence annotations
 
-Every single inferred value has a **citation trail**, a **confidence decomposition** (similarity × agreement × support), and a **full reasoning trace** showing exactly why that value was chosen.
+Every inferred value carries a **citation trail**, **confidence decomposition** (similarity × agreement × support), and a **full reasoning trace**.
+
+### Evaluation Results
+
+| Metric | Value |
+|--------|-------|
+| **Overall Exact Match Rate** | **74.6%** |
+| Papers Evaluated (LOO) | 84 |
+| Total Inferences | 291 |
+| Corpus Size | 455 papers |
+
+<details>
+<summary><strong>Per-Parameter Accuracy</strong></summary>
+
+| Parameter | N | Exact Match | Within Tolerance |
+|-----------|:-:|:-----------:|:----------------:|
+| learning_rate | 45 | 73.3% | 73.3% |
+| batch_size | 67 | 55.2% | 80.6% |
+| epochs | 55 | 54.5% | 61.8% |
+| max_seq_length | 17 | 76.5% | 88.2% |
+| optimizer | 34 | 94.1% | 94.1% |
+| weight_decay | 25 | 100% | 100% |
+| warmup_steps | 6 | 100% | 100% |
+| warmup_ratio | 3 | 100% | 100% |
+| scheduler | 15 | 100% | 100% |
+| gradient_clipping | 3 | 100% | 100% |
+| dropout | 18 | 94.4% | 94.4% |
+| seed | 3 | 100% | 100% |
+
+</details>
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Frontend (React 18 + Vite + TypeScript)                    │
-│  8 Pages: Landing, Upload, Results Dashboard, Comparison,   │
-│           Notebook Viewer, Corpus Explorer, Evaluation,      │
-│           Methodology                                        │
-│  Port 5173                                                   │
-├─────────────────────────────────────────────────────────────┤
-│  Backend API (Flask + Flask-CORS)                            │
-│  12 REST endpoints                                           │
-│  Port 5000                                                   │
-├─────────────────────────────────────────────────────────────┤
-│  8-Module Inference Pipeline                                 │
+┌──────────────────────────────────────────────────────────────┐
+│  Frontend — React 18 + Vite + TypeScript                     │
+│  8 Pages: Landing, Upload, Results, Comparison, Notebook,    │
+│           Corpus Explorer, Evaluation, Methodology           │
+│  Auth: Auth0 (optional) with guest mode (5 free analyses)    │
+│  Port: 5173                                                  │
+├──────────────────────────────────────────────────────────────┤
+│  Backend API — Flask + SSE Streaming                         │
+│  15+ REST endpoints with real-time pipeline progress         │
+│  Session persistence: MongoDB + filesystem fallback          │
+│  Port: 5000                                                  │
+├──────────────────────────────────────────────────────────────┤
+│  Inference Pipeline (8 Modules)                              │
 │  M1: PDF Analyzer → M2: Completeness → M3: FAISS Retrieval  │
-│  → M4: Constraints → M5: Contradictions → M6: Validator     │
-│  → M7: Notebook Gen → M8: Meta-Agent + LLM Comparison       │
-├─────────────────────────────────────────────────────────────┤
+│  → M4: Domain Constraints → M5: Contradiction Detection     │
+│  → M6: Self-Critique Validator → M7: Notebook Generator      │
+│  → M8: Meta-Agent + LLM Comparison                          │
+├──────────────────────────────────────────────────────────────┤
 │  Data Layer                                                  │
-│  MongoDB (435 papers) · FAISS Index (384-dim embeddings)     │
-│  Sentence-Transformers (all-MiniLM-L6-v2)                    │
-└─────────────────────────────────────────────────────────────┘
+│  MongoDB Atlas (455 papers) · FAISS Index (384-dim)          │
+│  Sentence-Transformers (all-MiniLM-L6-v2, 22.7M params)     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Features & What They're For
+## Pipeline Modules
 
-### 1. PDF Upload & Analysis Pipeline
-**What it does:** Drag-and-drop any BERT paper PDF → watch an animated pipeline process it through all 8 modules in real-time.
+### M1 — PDF Analyzer
+Extracts text from PDFs using `pdfplumber`, identifies the task/model/dataset, and runs section-aware HP extraction with regex patterns. Optionally augments with an LLM (Qwen via Ollama) for parameters regex misses.
 
-**Who it's for:** Researchers trying to reproduce a paper's results but frustrated by missing hyperparameters.
+### M2 — Completeness Checker
+Computes a weighted **R-Score** (Reproducibility Score) measuring how many of 12 standard hyperparameters the paper reports. Identifies exactly which parameters are missing.
 
-**How effective it is:** The pipeline correctly extracts hyperparameters from complex academic PDFs using regex patterns tuned to 435+ papers. It handles tables, multi-column layouts, and varied formatting. The animated frontend shows exactly which module is processing, giving transparency into a process that would otherwise be a black box.
+### M3 — Evidence Retrieval & Inference
+Encodes the paper abstract into a 384-dim vector, searches the FAISS index for similar papers, and uses a **4-strategy cascade** (S1: task+model+dataset → S2: task+model → S3: task-only → S4: global) to find evidence. Infers missing values via weighted median aggregation with three-axis confidence scoring.
 
----
+### M4 — Domain Constraints
+Applies 18 BERT-specific rules (e.g., AdamW couples weight_decay, batch_size must be power-of-2, learning_rate range bounds) to validate and correct inferred values.
 
-### 2. Inference Dashboard
-**What it does:** After analysis, displays every hyperparameter in an interactive dashboard with:
-- **Per-HP confidence decomposition** (three-axis: similarity, agreement, support)
-- **Evidence trail** — click any HP to see the 5-7 step reasoning trace
-- **Value distribution** — bar chart showing what similar papers used
-- **Domain constraints** — which rules were applied and why
+### M5 — Contradiction Detection
+Uses IQR-based outlier detection across evidence papers to flag contradictory values. Reports when an inferred value disagrees with the corpus consensus.
 
-**Who it's for:** Researchers who need to *understand* why a value was inferred, not just accept a number.
+### M6 — Self-Critique Validator
+Final validation pass against hard domain bounds (e.g., learning_rate ∈ [1e-6, 1e-2]). Auto-corrects out-of-range values and logs every correction with rationale.
 
-**How effective it is:** This is the core differentiator from LLM-based approaches. An LLM says "use learning_rate=2e-5" with no evidence. HyperBERT says "learning_rate=2e-5, confidence 59.5%, based on 4/6 matched papers [citations], similarity=0.82, agreement=0.71." This level of transparency is unprecedented in hyperparameter recommendation systems.
+### M7 — Notebook Generator
+Generates a **task-aware** Jupyter notebook with 6 phases:
+- Branches template by task type (NER → `tokenize_and_align_labels` + `seqeval`, Classification → standard tokenization + `accuracy/f1`)
+- Auto-fetches datasets from HuggingFace (25+ known datasets mapped)
+- Falls back to synthetic demo data when dataset isn't recognized, so notebooks always run out of the box
+- Every HP is annotated with source and confidence in code comments
 
----
-
-### 3. RAG vs LLM Comparison
-**What it does:** Side-by-side comparison of HyperBERT's RAG-inferred values vs a Gemini/Groq LLM's suggestions for the same paper. Shows agreement percentage, per-HP verdict, and methodology differences.
-
-**Who it's for:** Evaluators, thesis reviewers, and researchers who want to see the advantage of citation-backed inference over black-box LLM suggestions.
-
-**How effective it is:** Makes the project's thesis tangible. You can literally see "RAG says 32 (cited from 4 papers)" next to "LLM says 32 (no citation)" and understand why evidence-based inference is more trustworthy. When they disagree, you can see exactly which one to trust and why.
-
----
-
-### 4. Meta-Reasoning Agent
-**What it does:** An adaptive agent that runs after the inference pipeline and reviews each HP's confidence:
-- **High confidence (≥60%):** Accepts the value
-- **Medium confidence (30-60%):** Accepts but optionally consults LLM for verification
-- **Low confidence (<30%):** Queries LLM for a second opinion
-- When RAG and LLM **agree**, confidence is boosted by 15%
-- When they **disagree**, RAG is kept (it has citations) but flagged for review
-
-**Who it's for:** Demonstrates agentic AI behavior — the system makes decisions, logs reasoning, and adapts its strategy.
-
-**How effective it is:** Turns a fixed pipeline into an adaptive system. The UI shows every agent decision with expandable reasoning traces, making the "agentic" aspect of the project concrete and visible rather than just a buzzword.
+### M8 — Meta-Agent & LLM Comparison
+- **Meta-Agent**: Adaptive reasoning agent that reviews each HP's confidence and optionally consults an LLM for low-confidence values. Logs every decision with expandable reasoning traces.
+- **LLM Baseline**: Side-by-side comparison of RAG-inferred values vs Gemini/Groq LLM suggestions, showing agreement rates and per-HP verdicts.
 
 ---
 
-### 5. Notebook Generation & Execution
-**What it does:** Generates a 5-phase Jupyter notebook:
-1. Dataset Preparation (auto-fetches from HuggingFace if detected)
-2. Model Initialization
-3. Training Configuration (every HP annotated with confidence)
-4. Training Loop
-5. Evaluation
+## Features
 
-Can be downloaded as `.ipynb`, `.py`, or `.yaml`, or launched directly in an embedded JupyterLab within the app.
-
-**Who it's for:** Researchers who want to go straight from "read a paper" to "run the training."
-
-**How effective it is:** The dataset auto-fetch (25+ common NLP datasets mapped to HuggingFace IDs) eliminates manual setup for popular benchmarks. The confidence annotations in the notebook code comments mean the researcher knows exactly which values to trust and which to tweak.
-
----
-
-### 6. Corpus Explorer
-**What it does:** Browse the 435-paper corpus with filtering by task, model, and search. Shows HP coverage statistics and dataset distribution.
-
-**Who it's for:** Researchers curious about the evidence base, or who want to verify the corpus quality.
-
-**How effective it is:** Full transparency into the data that powers inference. Users can verify that the corpus contains papers relevant to their domain.
-
----
-
-### 7. Evaluation Dashboard
-**What it does:** Displays accuracy metrics from two evaluation scripts:
-- **Leave-One-Out (LOO):** For each paper, masks each HP → runs inference → compares to ground truth. Computes EMR, MAE, and within-tolerance rate.
-- **RAG vs LLM:** Head-to-head accuracy comparison on the same papers.
-
-Shows per-HP accuracy bars, strategy ablation, confidence calibration, and agreement analysis.
-
-**Who it's for:** Thesis reviewers and evaluators who need empirical proof the system works.
-
-**How effective it is:** Without this, the project is just a software demo. With concrete EMR and MAE numbers, it becomes a research contribution. The evaluation scripts are ready to run — just execute them to populate the dashboard.
-
----
-
-### 8. About/Methodology Page
-**What it does:** Interactive page showing the problem statement, 8-module pipeline architecture, and RAG vs LLM comparison table. Built directly into the app.
-
-**Who it's for:** Capstone presentations. Present directly from your web app without PowerPoint.
+| Feature | Description |
+|---------|-------------|
+| **Real-time Pipeline** | SSE streaming shows each module completing live during analysis |
+| **Inference Dashboard** | Per-HP confidence decomposition, evidence trails, value distributions |
+| **RAG vs LLM Comparison** | Side-by-side: cited RAG values vs black-box LLM suggestions |
+| **Notebook Generation** | Download `.ipynb`, `.py`, `.yaml`, or `.json` — or launch embedded JupyterLab |
+| **Corpus Explorer** | Browse 455 papers with task/model filtering and HP coverage stats |
+| **Evaluation Dashboard** | LOO accuracy metrics, per-HP bars, strategy ablation, confidence calibration |
+| **Session History** | Per-user analysis history with MongoDB persistence |
+| **Auth0 Integration** | Optional Google sign-in with 5-analysis guest limit (works without Auth0 configured) |
+| **Dark/Light Theme** | Professional Indigo/Cobalt palette with theme toggle |
+| **Duplicate Detection** | Content-hash based deduplication returns cached results instantly |
 
 ---
 
 ## Quick Start
 
 ### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- MongoDB (running on default port 27017)
+- **Python** 3.10+
+- **Node.js** 18+
+- **MongoDB** (Atlas or local on port 27017)
 
-### 1. Backend
+### 1. Clone & Install
+
 ```bash
-cd e:\major_project_datacollection
+git clone https://github.com/HRLithesh05/major_project_datacollection.git
+cd major_project_datacollection
 
-# Install Python dependencies
+# Python dependencies
 pip install -r backend/requirements.txt
 
-# (Optional) Set API keys for LLM comparison
-# Create a .env file:
-# GEMINI_API_KEY=your_key
-# GROQ_API_KEY=your_key
-
-# Start MongoDB, then:
-python backend/app.py
-```
-
-### 2. Frontend
-```bash
+# Frontend dependencies
 cd frontend
 npm install
+cd ..
+```
+
+### 2. Environment Setup
+
+Create a `.env` file in the project root:
+
+```env
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?appName=<app>
+```
+
+**(Optional)** For LLM comparison features, add:
+```env
+GEMINI_API_KEY=your_gemini_api_key
+GROQ_API_KEY=your_groq_api_key
+```
+
+**(Optional)** For Auth0 authentication, create `frontend/.env`:
+```env
+VITE_AUTH0_DOMAIN=your_auth0_domain
+VITE_AUTH0_CLIENT_ID=your_auth0_client_id
+```
+
+> **Note:** The system works fully without API keys or Auth0 — LLM comparison is skipped and all users get unlimited guest access.
+
+### 3. Start
+
+```bash
+# Terminal 1: Backend
+python backend/app.py
+
+# Terminal 2: Frontend
+cd frontend
 npm run dev
 ```
 
-### 3. Open
-Navigate to **http://localhost:5173**
+### 4. Open
+
+Navigate to **http://localhost:5173** — upload any BERT fine-tuning paper PDF.
 
 ---
 
 ## Running Evaluations
 
-To get real accuracy numbers for the Evaluation Dashboard:
-
 ```bash
-# Leave-One-Out evaluation (20-paper quick test)
+# Leave-One-Out evaluation (full corpus — ~45s)
+python evaluation/loo_evaluation.py
+
+# Quick test with N papers
 python evaluation/loo_evaluation.py 20
 
-# RAG vs LLM comparison (10-paper test, requires API keys)
+# RAG vs LLM comparison (requires GEMINI_API_KEY or GROQ_API_KEY)
 python evaluation/rag_vs_llm_eval.py 10
 ```
 
-Results are saved to `evaluation/` and automatically appear on the Evaluation Dashboard.
+Results are saved to `evaluation/` and automatically displayed on the Evaluation Dashboard.
+
+---
+
+## CLI Usage
+
+```bash
+# Run inference on a PDF from the command line
+python hyperbert.py infer --pdf paper.pdf --output results/
+
+# With custom config
+python hyperbert.py infer --pdf paper.pdf --output results/ --config module0/config.json
+```
 
 ---
 
@@ -194,13 +222,17 @@ Results are saved to `evaluation/` and automatically appear on the Evaluation Da
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/health` | Backend health check |
-| `POST` | `/api/analyze` | Upload PDF → run full M1-M8 pipeline |
-| `GET` | `/api/session/:id` | Fetch stored analysis results |
+| `GET` | `/api/status` | Retriever readiness + MongoDB status |
+| `POST` | `/api/analyze` | Upload PDF → run M1–M8 → return JSON |
+| `POST` | `/api/analyze-stream` | Upload PDF → SSE stream pipeline progress |
+| `GET` | `/api/session/:id` | Fetch stored session results |
+| `GET` | `/api/sessions?guest_id=` | List user's analysis history |
 | `GET` | `/api/compare/:id` | RAG vs LLM comparison data |
 | `GET` | `/api/download/:id/notebook` | Download `.ipynb` |
-| `GET` | `/api/download/:id/script` | Download `.py` script |
+| `GET` | `/api/download/:id/script` | Download `.py` training script |
 | `GET` | `/api/download/:id/yaml` | Download `.yaml` config |
-| `GET` | `/api/corpus/papers` | Browse corpus (with filters) |
+| `GET` | `/api/download/:id/config` | Download `.json` config |
+| `GET` | `/api/corpus/papers` | Browse corpus (with task/model filters) |
 | `GET` | `/api/corpus/stats` | Corpus statistics |
 | `POST` | `/api/launch-notebook/:id` | Launch embedded JupyterLab |
 | `POST` | `/api/stop-notebook` | Stop JupyterLab server |
@@ -212,55 +244,60 @@ Results are saved to `evaluation/` and automatically appear on the Evaluation Da
 ## Project Structure
 
 ```
-major_project_datacollection/
 ├── backend/
-│   ├── app.py                    # Flask REST API (12 endpoints)
-│   ├── requirements.txt          # Python dependencies
-│   └── sessions/                 # Per-analysis session storage
+│   ├── app.py                        # Flask API server (15+ endpoints, SSE streaming)
+│   ├── requirements.txt              # Python dependencies
+│   └── sessions/                     # Per-session analysis storage (gitignored)
+│
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/                # 8 React pages
-│   │   │   ├── Landing.tsx       # Hero + live stats
-│   │   │   ├── UploadProcess.tsx # PDF upload + pipeline animation
-│   │   │   ├── ResultsDashboard  # HP table, evidence, agent decisions
-│   │   │   ├── ComparisonDash..  # RAG vs LLM side-by-side
-│   │   │   ├── NotebookViewer    # Embedded JupyterLab
-│   │   │   ├── CorpusExplorer    # 435-paper browser
-│   │   │   ├── EvaluationDash..  # Accuracy metrics & charts
-│   │   │   └── Methodology.tsx   # Architecture + how it works
-│   │   ├── components/           # NavBar, ThemeToggle, etc.
-│   │   ├── lib/api.ts            # API client
-│   │   └── styles/               # CSS design system
-│   └── package.json
+│   │   ├── pages/                    # 8 React pages
+│   │   │   ├── Landing.tsx           # Hero page with live corpus stats
+│   │   │   ├── UploadProcess.tsx     # PDF drag-and-drop + pipeline animation
+│   │   │   ├── ResultsDashboard.tsx  # HP table, evidence trails, exports
+│   │   │   ├── ComparisonDashboard.tsx # RAG vs LLM side-by-side
+│   │   │   ├── NotebookViewer.tsx    # Embedded JupyterLab viewer
+│   │   │   ├── CorpusExplorer.tsx    # 455-paper corpus browser
+│   │   │   ├── EvaluationDashboard.tsx # LOO accuracy metrics & charts
+│   │   │   └── Methodology.tsx       # Architecture & methodology page
+│   │   ├── components/               # NavBar, ThemeToggle, AuthGuard, etc.
+│   │   ├── contexts/                 # AuthContext (Auth0), SessionContext
+│   │   ├── lib/api.ts                # API client with SSE support
+│   │   └── styles/globals.css        # Design system (CSS variables)
+│   ├── package.json
+│   └── vite.config.ts                # Vite config with API proxy
+│
 ├── src/
-│   ├── module1/pdf_analyzer.py   # PDF text + HP extraction
-│   ├── module2/completeness.py   # R-Score computation
-│   ├── module3/inference.py      # FAISS retrieval + inference
-│   ├── module4/constraints.py    # Domain constraint engine
-│   ├── module5/contradictions.py # Outlier / contradiction detection
-│   ├── module6/validator.py      # Range validation + auto-correct
-│   ├── module7/notebook_gen.py   # Jupyter notebook generator
+│   ├── module1/pdf_analyzer.py       # PDF text extraction + HP regex
+│   ├── module2/completeness.py       # R-Score computation
+│   ├── module3/
+│   │   ├── retriever.py              # FAISS search + MongoDB document fetch
+│   │   ├── engine.py                 # Inference orchestrator (4-strategy cascade)
+│   │   ├── aggregator.py             # Weighted median/mode aggregation
+│   │   ├── confidence.py             # Three-axis confidence scoring
+│   │   ├── strategy.py              # S1–S4 retrieval strategy cascade
+│   │   └── taxonomy.py               # Task/dataset name normalization
+│   ├── module4/constraints.py        # 18 BERT domain rules
+│   ├── module5/
+│   │   ├── contradictions.py         # IQR outlier detection
+│   │   └── plausibility.py           # Cross-parameter plausibility checks
+│   ├── module6/validator.py          # Range validation + auto-correction
+│   ├── module7/notebook_gen.py       # Task-aware Jupyter notebook generator
 │   └── module8/
-│       ├── llm_baseline.py       # LLM comparison (Gemini/Groq)
-│       └── meta_agent.py         # Adaptive reasoning agent
-├── module0/                      # Corpus builder (4 APIs, FAISS)
+│       ├── meta_agent.py             # Adaptive reasoning agent
+│       ├── llm_baseline.py           # Gemini/Groq LLM comparison
+│       └── ollama_client.py          # Local Ollama LLM client
+│
 ├── evaluation/
-│   ├── loo_evaluation.py         # Leave-One-Out accuracy test
-│   └── rag_vs_llm_eval.py        # Head-to-head RAG vs LLM test
-├── hyperbert.py                  # CLI entry point
-└── .env                          # API keys (not committed)
+│   ├── loo_evaluation.py             # Leave-One-Out accuracy evaluation
+│   ├── rag_vs_llm_eval.py            # Head-to-head RAG vs LLM benchmark
+│   ├── retrieval_eval.py             # FAISS retrieval quality evaluation
+│   └── corpus_audit.py              # Corpus coverage & quality audit
+│
+├── hyperbert.py                      # CLI entry point
+├── rebuild_faiss.py                  # Rebuild FAISS index from MongoDB
+└── .env                              # Environment variables (gitignored)
 ```
-
----
-
-## Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GEMINI_API_KEY` | Optional | For LLM comparison (Gemini 2.0 Flash) |
-| `GROQ_API_KEY` | Optional | Fallback LLM (Llama 3.1 via Groq) |
-
-Without API keys, the system works fully — LLM comparison is simply skipped.
 
 ---
 
@@ -268,16 +305,31 @@ Without API keys, the system works fully — LLM comparison is simply skipped.
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, TypeScript, Vite, Framer Motion, Recharts, Lucide Icons |
-| Backend | Python 3.10+, Flask, Flask-CORS |
-| Database | MongoDB 7.0 |
-| Search | FAISS (384-dim), Sentence-Transformers |
-| PDF | PyMuPDF, pdfplumber |
-| LLM | Google Gemini 2.0 Flash API, Groq API |
-| Notebook | JupyterLab (optional, for embedded execution) |
+| **Frontend** | React 18, TypeScript, Vite, Framer Motion, Recharts, Lucide Icons |
+| **Backend** | Python 3.11, Flask, Flask-CORS, Server-Sent Events |
+| **Database** | MongoDB Atlas (pymongo) |
+| **Search** | FAISS (384-dim cosine similarity), Sentence-Transformers (all-MiniLM-L6-v2) |
+| **PDF Parsing** | pdfplumber, PyMuPDF |
+| **LLM** | Google Gemini 2.0 Flash, Groq (Llama 3.1), Ollama (Qwen, local) |
+| **Auth** | Auth0 (optional, popup-based Google sign-in) |
+| **Notebook** | JupyterLab (optional, for embedded execution) |
+
+---
+
+## Environment Variables
+
+| Variable | Location | Required | Description |
+|----------|----------|----------|-------------|
+| `MONGODB_URI` | `.env` | **Yes** | MongoDB connection string |
+| `GEMINI_API_KEY` | `.env` | No | Google Gemini API key for LLM comparison |
+| `GROQ_API_KEY` | `.env` | No | Groq API key (Llama 3.1 fallback) |
+| `VITE_AUTH0_DOMAIN` | `frontend/.env` | No | Auth0 tenant domain |
+| `VITE_AUTH0_CLIENT_ID` | `frontend/.env` | No | Auth0 application client ID |
+
+> Without API keys, the system works fully — LLM comparison and Auth0 are gracefully skipped.
 
 ---
 
 ## License
 
-Capstone research project.
+Academic research project — Capstone/Major Project.

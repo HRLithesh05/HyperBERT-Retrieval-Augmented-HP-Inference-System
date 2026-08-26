@@ -107,7 +107,7 @@ export function NavBar() {
             isAuthenticated ? (
               <div className="flex items-center gap-2">
                 {user?.picture ? (
-                  <img src={user.picture} alt="" className="w-7 h-7 rounded-full" style={{ border: '2px solid var(--accent-primary)' }} />
+                  <img src={user.picture} alt="" className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" crossOrigin="anonymous" style={{ border: '2px solid var(--accent-primary)' }} />
                 ) : (
                   <div className="w-7 h-7 rounded-full flex items-center justify-center"
                     style={{ background: 'var(--accent-primary)', color: 'white' }}>

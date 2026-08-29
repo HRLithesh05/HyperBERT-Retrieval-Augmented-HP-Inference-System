@@ -27,7 +27,7 @@ const modules = [
   {
     id: 'M3', name: 'FAISS Retrieval Engine', icon: Database,
     color: '#10b981',
-    desc: 'Searches a 435-paper corpus using semantic vector similarity (384-dim sentence embeddings). Uses a 4-strategy cascade: Task+Model+Dataset → Task+Model → Task → Global.',
+    desc: 'Searches a 465-paper corpus using semantic vector similarity (384-dim sentence embeddings). Uses a 4-strategy cascade: Task+Model+Dataset → Task+Model → Task → Global.',
     tech: 'FAISS, Sentence-Transformers (all-MiniLM-L6-v2)',
   },
   {
@@ -51,7 +51,7 @@ const modules = [
   {
     id: 'M7', name: 'Notebook Generator', icon: BookOpen,
     color: '#8b5cf6',
-    desc: 'Generates a ready-to-run Jupyter notebook with 5 phases: dataset prep, model init, training config, training loop, evaluation. Annotates every HP with confidence.',
+    desc: 'Generates a ready-to-run Jupyter notebook with task-aware branching (token classification / NER with BIO-alignment vs sequence classification). Annotates every HP with confidence.',
     tech: 'nbformat, HuggingFace Transformers template',
   },
   {
@@ -92,8 +92,8 @@ export default function Methodology() {
           </p>
           <p className="text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
             HyperBERT solves this by using{' '}
-            <strong style={{ color: 'var(--accent-primary)' }}>Retrieval-Augmented Inference</strong> — finding similar papers in a 435-paper corpus
-            and statistically inferring the missing values. Every decision is transparent, cited, and verifiable.
+            <strong style={{ color: 'var(--accent-primary)' }}>Retrieval-Augmented Inference</strong> — finding similar papers in a 465-paper corpus
+            and statistically inferring the missing values (achieving <strong>75.1% exact match accuracy</strong> in leave-one-out evaluation). Every decision is transparent, cited, and verifiable.
           </p>
         </motion.div>
 

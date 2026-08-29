@@ -11,7 +11,7 @@ import { SignInModal } from '@/components/AuthGate';
 const modules = [
   { id: 1, name: 'PDF Analyzer', summary: '14,200 chars, 3 tables extracted', detail: 'Parsing text, tables & raw hyperparameters' },
   { id: 2, name: 'Completeness Check', summary: 'R-Score: 0.129 — 11 HPs missing', detail: 'Computing R-Score and identifying missing parameters' },
-  { id: 3, name: 'Evidence Retrieval', summary: 'S2 matched 6 NER+BERT papers', detail: 'Searching 435 papers in FAISS index (384-dim vectors)' },
+  { id: 3, name: 'Evidence Retrieval', summary: 'S2 matched 6 NER+BERT papers', detail: 'Searching 465 papers in FAISS index (384-dim vectors)' },
   { id: 4, name: 'Domain Constraints', summary: 'weight_decay adjusted (Adam→0)', detail: 'Applying BERT domain rules (AdamW/WD coupling)' },
   { id: 5, name: 'Contradiction Check', summary: 'No contradictions detected', detail: 'IQR outlier detection across evidence values' },
   { id: 6, name: 'Self-Critique Validator', summary: 'All bounds valid — PASS', detail: 'Final domain bounds validation for all 12 parameters' },

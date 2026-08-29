@@ -28,7 +28,7 @@ const hpRows = [
     id: 'batch_size', name: 'Batch Size', value: '32', source: 'inferred', confidence: 59.5,
     papers: 6,
     trace: [
-      'Searched 435 papers in FAISS index (384-dim sentence vectors)',
+      'Searched 465 papers in FAISS index (384-dim sentence vectors)',
       'Strategy S2 (Task + Model) matched 6 NER+BERT papers',
       'Found batch_size in 4/6 papers: [16, 32, 32, 64]',
       'Computed weighted scores: Paper1=0.78, Paper2=0.92, Paper3=0.85, Paper4=0.71',

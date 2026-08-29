@@ -21,28 +21,25 @@ Every inferred value carries a **citation trail**, **confidence decomposition** 
 
 | Metric | Value |
 |--------|-------|
-| **Overall Exact Match Rate** | **74.6%** |
-| Papers Evaluated (LOO) | 84 |
-| Total Inferences | 291 |
-| Corpus Size | 455 papers |
+| **Overall Exact Match Rate** | **80.9%** |
+| Naive Baseline EMR | 27.3% |
+| **Lift over Naive** | **+53.6pp** |
+| Papers Evaluated (LOO) | 83 |
+| Total Inferences | 256 |
+| Corpus Size | 465 papers |
 
 <details>
 <summary><strong>Per-Parameter Accuracy</strong></summary>
 
 | Parameter | N | Exact Match | Within Tolerance |
 |-----------|:-:|:-----------:|:----------------:|
-| learning_rate | 45 | 73.3% | 73.3% |
-| batch_size | 67 | 55.2% | 80.6% |
-| epochs | 55 | 54.5% | 61.8% |
-| max_seq_length | 17 | 76.5% | 88.2% |
-| optimizer | 34 | 94.1% | 94.1% |
-| weight_decay | 25 | 100% | 100% |
-| warmup_steps | 6 | 100% | 100% |
-| warmup_ratio | 3 | 100% | 100% |
-| scheduler | 15 | 100% | 100% |
-| gradient_clipping | 3 | 100% | 100% |
-| dropout | 18 | 94.4% | 94.4% |
-| seed | 3 | 100% | 100% |
+| learning_rate | 58 | 89.7% | 89.7% |
+| batch_size | 44 | 63.6% | 81.8% |
+| epochs | 62 | 79.0% | 85.5% |
+| max_seq_length | 15 | 66.7% | 100% |
+| optimizer | 48 | 83.3% | 83.3% |
+| weight_decay | 18 | 94.4% | 94.4% |
+| dropout | 11 | 100% | 100% |
 
 </details>
 

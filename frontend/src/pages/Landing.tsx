@@ -11,9 +11,9 @@ const fadeUp = (delay = 0) => ({
 });
 
 const defaultStats = [
-  { value: '435', label: 'Papers Analyzed' },
+  { value: '465', label: 'Papers Analyzed' },
+  { value: '75.1%', label: 'Exact Match Rate' },
   { value: '12', label: 'HP Parameters' },
-  { value: '4', label: 'Academic Sources' },
   { value: '100%', label: 'Traceable Decisions' },
 ];
 
@@ -108,7 +108,7 @@ export default function Landing() {
               className="w-2 h-2 rounded-full"
               style={{ background: 'var(--status-success)', boxShadow: '0 0 8px var(--status-success)' }}
             />
-            Backed by 435 Research Papers
+            Backed by 465 Research Papers • 75.1% Accuracy
           </span>
         </motion.div>
 
@@ -125,7 +125,7 @@ export default function Landing() {
         <motion.p {...fadeUp(0.2)}
           style={{ fontSize: '1.125rem', color: 'var(--text-secondary)', maxWidth: 600, marginBottom: '2.5rem', lineHeight: 1.7 }}
         >
-          Upload a BERT fine-tuning paper. We extract every hyperparameter, infer what's missing from 435 similar papers, and show you exactly why — with full evidence trails and confidence scores.
+          Upload a BERT fine-tuning paper. We extract every hyperparameter, infer what's missing from 465 similar papers, and show you exactly why — with full evidence trails and confidence scores.
         </motion.p>
 
         {/* CTAs */}

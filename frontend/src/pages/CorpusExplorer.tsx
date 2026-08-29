@@ -5,21 +5,22 @@ import { getCorpusPapers, getCorpusStats } from '@/lib/api';
 
 /* ── Fallback demo data (when backend / MongoDB unavailable) ── */
 const demoStats = {
-  total_papers: 435,
+  total_papers: 465,
   task_distribution: [
-    { task: 'NER', count: 142 },
-    { task: 'Text Classification', count: 98 },
-    { task: 'Sentiment Analysis', count: 67 },
-    { task: 'Question Answering', count: 55 },
-    { task: 'Relation Extraction', count: 38 },
-    { task: 'Other', count: 35 },
+    { task: 'Text Classification', count: 290 },
+    { task: 'Relation Extraction', count: 60 },
+    { task: 'NER', count: 51 },
+    { task: 'Question Answering', count: 42 },
+    { task: 'Natural Language Inference', count: 16 },
+    { task: 'Semantic Similarity', count: 6 },
   ],
   model_distribution: [
-    { model: 'bert-base-uncased', count: 165 },
-    { model: 'bert-base-cased', count: 78 },
-    { model: 'bert-large-uncased', count: 45 },
-    { model: 'scibert', count: 42 },
-    { model: 'biobert', count: 38 },
+    { model: 'bert-base-uncased', count: 329 },
+    { model: 'roberta', count: 80 },
+    { model: 'albert', count: 31 },
+    { model: 'biobert', count: 9 },
+    { model: 'distilbert', count: 7 },
+    { model: 'scibert', count: 7 },
   ],
   hp_coverage: {
     learning_rate: { pct: 45 },

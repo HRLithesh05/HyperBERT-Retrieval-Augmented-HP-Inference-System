@@ -51,10 +51,15 @@ def run_loo_evaluation(
     with open(config_path, encoding="utf-8") as f:
         config = json.load(f)
 
-    # Connect to MongoDB
-    mongo = MongoClient(config["mongodb"]["uri"], serverSelectionTimeoutMS=5000)
+    # Connect to MongoDB — prefer .env MONGODB_URI over config.json
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env")
+    mongo_uri = os.environ.get("MONGODB_URI") or config["mongodb"]["uri"]
+    mongo = MongoClient(mongo_uri, serverSelectionTimeoutMS=10000)
     mongo.server_info()
-    db = mongo[config["mongodb"]["db"]]
+    db_name = config["mongodb"].get("db") or config["mongodb"].get("database") or "hyperbert"
+    db = mongo[db_name]
     collection = db[config["mongodb"].get("clean_collection", "papers_clean")]
 
     from src.module3.engine import InferenceEngine
